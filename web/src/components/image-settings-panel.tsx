@@ -3,6 +3,7 @@
 import { type ReactNode, useState } from "react";
 import { ConfigProvider, Switch } from "antd";
 
+import type { PricingRule } from "@/constant/credits";
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import type { AiConfig } from "@/stores/use-config-store";
 
@@ -14,7 +15,18 @@ const qualityOptions = [
 ];
 const DIMENSION_STEP = 16;
 
-const aspectOptions = [
+type AspectOption = {
+    value: string;
+    label: string;
+    width: number;
+    height: number;
+    icon: string;
+    size?: string;
+    ratio?: string;
+    resolutionTier?: string;
+};
+
+const baseAspectOptions: AspectOption[] = [
     { value: "1:1", label: "1:1", width: 1024, height: 1024, icon: "square" },
     { value: "3:2", label: "3:2", width: 1536, height: 1024, icon: "landscape" },
     { value: "2:3", label: "2:3", width: 1024, height: 1536, icon: "portrait" },
@@ -22,11 +34,26 @@ const aspectOptions = [
     { value: "3:4", label: "3:4", width: 1024, height: 1360, icon: "portrait" },
     { value: "16:9", label: "16:9", width: 1824, height: 1024, icon: "landscape" },
     { value: "9:16", label: "9:16", width: 1024, height: 1824, icon: "portrait" },
-    { value: "1:1-2k", label: "1:1(2k)", size: "2048x2048", width: 2048, height: 2048, icon: "square" },
-    { value: "16:9-2k", label: "16:9(2k)", size: "2048x1152", width: 2048, height: 1152, icon: "landscape" },
-    { value: "9:16-2k", label: "9:16(2k)", size: "1152x2048", width: 1152, height: 2048, icon: "portrait" },
-    { value: "16:9-4k", label: "16:9(4k)", size: "3840x2160", width: 3840, height: 2160, icon: "landscape" },
-    { value: "9:16-4k", label: "9:16(4k)", size: "2160x3840", width: 2160, height: 3840, icon: "portrait" },
+];
+
+const tierAspectOptions: AspectOption[] = [
+    { value: "1:1-2k", label: "1:1(2k)", size: "2048x2048", width: 2048, height: 2048, icon: "square", ratio: "1:1", resolutionTier: "2k" },
+    { value: "3:2-2k", label: "3:2(2k)", size: "2048x1360", width: 2048, height: 1360, icon: "landscape", ratio: "3:2", resolutionTier: "2k" },
+    { value: "2:3-2k", label: "2:3(2k)", size: "1360x2048", width: 1360, height: 2048, icon: "portrait", ratio: "2:3", resolutionTier: "2k" },
+    { value: "4:3-2k", label: "4:3(2k)", size: "2048x1536", width: 2048, height: 1536, icon: "landscape", ratio: "4:3", resolutionTier: "2k" },
+    { value: "3:4-2k", label: "3:4(2k)", size: "1536x2048", width: 1536, height: 2048, icon: "portrait", ratio: "3:4", resolutionTier: "2k" },
+    { value: "16:9-2k", label: "16:9(2k)", size: "2048x1152", width: 2048, height: 1152, icon: "landscape", ratio: "16:9", resolutionTier: "2k" },
+    { value: "9:16-2k", label: "9:16(2k)", size: "1152x2048", width: 1152, height: 2048, icon: "portrait", ratio: "9:16", resolutionTier: "2k" },
+    { value: "1:1-4k", label: "1:1(4k)", size: "3840x3840", width: 3840, height: 3840, icon: "square", ratio: "1:1", resolutionTier: "4k" },
+    { value: "3:2-4k", label: "3:2(4k)", size: "3840x2560", width: 3840, height: 2560, icon: "landscape", ratio: "3:2", resolutionTier: "4k" },
+    { value: "2:3-4k", label: "2:3(4k)", size: "2560x3840", width: 2560, height: 3840, icon: "portrait", ratio: "2:3", resolutionTier: "4k" },
+    { value: "4:3-4k", label: "4:3(4k)", size: "3840x2880", width: 3840, height: 2880, icon: "landscape", ratio: "4:3", resolutionTier: "4k" },
+    { value: "3:4-4k", label: "3:4(4k)", size: "2880x3840", width: 2880, height: 3840, icon: "portrait", ratio: "3:4", resolutionTier: "4k" },
+    { value: "16:9-4k", label: "16:9(4k)", size: "3840x2160", width: 3840, height: 2160, icon: "landscape", ratio: "16:9", resolutionTier: "4k" },
+    { value: "9:16-4k", label: "9:16(4k)", size: "2160x3840", width: 2160, height: 3840, icon: "portrait", ratio: "9:16", resolutionTier: "4k" },
+];
+
+const autoAspectOption: AspectOption[] = [
     { value: "auto", label: "auto", width: 0, height: 0, icon: "auto" },
 ];
 
@@ -38,13 +65,20 @@ type ImageSettingsPanelProps = {
     className?: string;
     maxCount?: number;
     quickCount?: number;
+    pricingRules?: PricingRule[];
+    model?: string;
+    operation?: "generation" | "edit";
+    supportedRatios?: string[];
 };
 
-export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5", maxCount = 15, quickCount = 10 }: ImageSettingsPanelProps) {
+export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5", maxCount = 15, quickCount = 10, pricingRules, model, operation = "generation", supportedRatios }: ImageSettingsPanelProps) {
     const [snapDimensionToStep, setSnapDimensionToStep] = useState(true);
     const quality = config.quality || "auto";
     const count = Math.max(1, Math.min(maxCount, Math.floor(Math.abs(Number(config.count)) || 1)));
     const activeSize = config.size || "auto";
+    const activeRatios = normalizeSupportedRatios(supportedRatios);
+    const baseOptions = baseAspectOptions.filter((item) => activeRatios.includes(item.value));
+    const aspectOptions = [...baseOptions, ...tierAspectOptions.filter((item) => item.ratio && item.resolutionTier && activeRatios.includes(item.ratio) && hasPricingTier(pricingRules, { model, operation, resolutionTier: item.resolutionTier })), ...autoAspectOption];
     const selectedAspect = aspectOptions.find((item) => (item.size || item.value) === activeSize || item.value === activeSize);
     const dimensions = readSizeDimensions(activeSize, selectedAspect || aspectOptions[0]);
     const selectAspect = (value: string) => {
@@ -150,7 +184,23 @@ export function imageQualityLabel(value: string) {
 }
 
 export function imageSizeLabel(size: string) {
-    return aspectOptions.find((item) => (item.size || item.value) === size || item.value === size)?.label || size;
+    return [...baseAspectOptions, ...tierAspectOptions, ...autoAspectOption].find((item) => (item.size || item.value) === size || item.value === size)?.label || size;
+}
+
+function hasPricingTier(rules: PricingRule[] | undefined, { model, operation, resolutionTier }: { model?: string; operation: string; resolutionTier: string }) {
+    if (!model || !rules?.length) return false;
+    return rules.some((rule) => {
+        if (rule.enabled === false || rule.model !== model) return false;
+        if (normalizeToken(rule.modality) !== "image" || normalizeToken(rule.operation) !== operation || normalizeToken(rule.unit) !== "image") return false;
+        return normalizeResolutionTier(rule.resolutionTier || "") === resolutionTier;
+    });
+}
+
+function normalizeSupportedRatios(values?: string[]) {
+    const knownRatios = baseAspectOptions.map((item) => item.value);
+    if (!values?.length) return knownRatios;
+    const supported = Array.from(new Set(values.map(normalizeToken))).filter((item) => knownRatios.includes(item));
+    return supported.length ? supported : knownRatios;
 }
 
 function OptionPill({ selected, theme, onClick, children }: { selected: boolean; theme: CanvasTheme; onClick: () => void; children: ReactNode }) {
@@ -243,4 +293,17 @@ function readSizeDimensions(size: string, fallback: { width: number; height: num
 
 function alignDimension(value: number, enabled: boolean) {
     return enabled ? Math.ceil(value / DIMENSION_STEP) * DIMENSION_STEP : value;
+}
+
+function normalizeResolutionTier(value: string) {
+    const normalized = normalizeToken(value);
+    if (normalized === "low") return "1k";
+    if (normalized === "medium") return "2k";
+    if (normalized === "high") return "4k";
+    if (normalized.includes("4k")) return "4k";
+    return normalized;
+}
+
+function normalizeToken(value: string) {
+    return value.trim().toLowerCase();
 }

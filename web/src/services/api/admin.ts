@@ -208,6 +208,7 @@ export type AdminModelChannel = {
 export type AdminPublicModelChannelSettings = {
     availableModels: string[];
     pricingRules: AdminPricingRule[];
+    modelAspectRatios: Record<string, string[]>;
     defaultModel: string;
     defaultImageModel: string;
     defaultVideoModel: string;
@@ -222,7 +223,6 @@ export type AdminPricingRule = {
     operation: string;
     unit: string;
     resolutionTier: string;
-    quality: string;
     credits: number;
     minCredits: number;
     enabled: boolean;

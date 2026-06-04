@@ -28,7 +28,6 @@ type PricingRule struct {
 	Operation      string `json:"operation"`
 	Unit           string `json:"unit"`
 	ResolutionTier string `json:"resolutionTier"`
-	Quality        string `json:"quality"`
 	Credits        int    `json:"credits"`
 	MinCredits     int    `json:"minCredits"`
 	Enabled        bool   `json:"enabled"`
@@ -37,14 +36,15 @@ type PricingRule struct {
 
 // PublicModelChannelSetting 公开模型渠道配置。
 type PublicModelChannelSetting struct {
-	AvailableModels    []string      `json:"availableModels"`
-	PricingRules       []PricingRule `json:"pricingRules"`
-	DefaultModel       string        `json:"defaultModel"`
-	DefaultImageModel  string        `json:"defaultImageModel"`
-	DefaultVideoModel  string        `json:"defaultVideoModel"`
-	DefaultTextModel   string        `json:"defaultTextModel"`
-	SystemPrompt       string        `json:"systemPrompt"`
-	AllowCustomChannel *bool         `json:"allowCustomChannel"`
+	AvailableModels    []string            `json:"availableModels"`
+	PricingRules       []PricingRule       `json:"pricingRules"`
+	ModelAspectRatios  map[string][]string `json:"modelAspectRatios"`
+	DefaultModel       string              `json:"defaultModel"`
+	DefaultImageModel  string              `json:"defaultImageModel"`
+	DefaultVideoModel  string              `json:"defaultVideoModel"`
+	DefaultTextModel   string              `json:"defaultTextModel"`
+	SystemPrompt       string              `json:"systemPrompt"`
+	AllowCustomChannel *bool               `json:"allowCustomChannel"`
 }
 
 // PublicSetting 公开配置。

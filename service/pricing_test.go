@@ -12,7 +12,6 @@ func TestNormalizePricingRequestImageTier(t *testing.T) {
 		Modality:  "image",
 		Operation: "generation",
 		Unit:      "image",
-		Quality:   "high",
 		Size:      "2880x1620",
 		Quantity:  2,
 	})
@@ -20,8 +19,19 @@ func TestNormalizePricingRequestImageTier(t *testing.T) {
 	if request.ResolutionTier != "4k" {
 		t.Fatalf("resolution tier = %q, want 4k", request.ResolutionTier)
 	}
-	if request.Quality != "high" {
-		t.Fatalf("quality = %q, want high", request.Quality)
+}
+
+func TestNormalizePricingRequestDefaultsImageTierWithoutQuality(t *testing.T) {
+	request := normalizePricingRequest(PricingRequest{
+		Model:     "gpt-image-2",
+		Modality:  "image",
+		Operation: "generation",
+		Unit:      "image",
+		Quantity:  1,
+	})
+
+	if request.ResolutionTier != "1k" {
+		t.Fatalf("resolution tier = %q, want default 1k", request.ResolutionTier)
 	}
 }
 
@@ -48,13 +58,34 @@ func TestSelectPricingRulePrefersSpecificRule(t *testing.T) {
 	}
 }
 
+func TestSelectPricingRuleIgnoresImageQuality(t *testing.T) {
+	request := normalizePricingRequest(PricingRequest{
+		Model:     "gpt-image-2",
+		Modality:  "image",
+		Operation: "generation",
+		Unit:      "image",
+		Size:      "1024x1024",
+		Quantity:  1,
+	})
+	rules := normalizePricingRules([]model.PricingRule{
+		{Model: "gpt-image-2", Modality: "image", Operation: "generation", Unit: "image", ResolutionTier: "1k", Credits: 1, Enabled: true},
+	})
+
+	rule, ok := selectPricingRule(rules, request)
+	if !ok {
+		t.Fatal("expected matching rule")
+	}
+	if rule.Credits != 1 {
+		t.Fatalf("credits = %d, want 1", rule.Credits)
+	}
+}
+
 func TestSelectPricingRuleSkipsDisabledAndMismatchedRules(t *testing.T) {
 	request := normalizePricingRequest(PricingRequest{
 		Model:     "gpt-image-2",
 		Modality:  "image",
 		Operation: "edit",
 		Unit:      "image",
-		Quality:   "low",
 	})
 	rules := normalizePricingRules([]model.PricingRule{
 		{Model: "gpt-image-2", Modality: "image", Operation: "generation", Unit: "image", Credits: 1, Enabled: true},

@@ -49,7 +49,6 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
         unit: mode === "image" ? "image" : mode === "video" ? "second" : "request",
         count: mode === "image" ? config.count : mode === "video" ? config.videoSeconds : 1,
         size: config.size,
-        quality: config.quality,
         resolution: config.vquality,
     });
 

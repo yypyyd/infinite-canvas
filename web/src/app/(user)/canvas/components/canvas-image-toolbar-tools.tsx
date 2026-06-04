@@ -1,22 +1,24 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Camera, Copy, Lock, LockOpen, Maximize2, Scissors, Sparkles, Upload, ZoomIn } from "lucide-react";
+import { Brush, Camera, Copy, FileText, Lock, LockOpen, Maximize2, Scissors, Sparkles, Upload, ZoomIn } from "lucide-react";
 
 import type { CanvasNodeData } from "../types";
 
-export type ImageNodeActionToolId = "copyPrompt" | "replace" | "resize" | "crop" | "upscale" | "superResolve" | "angle" | "view";
+export type ImageNodeActionToolId = "copyPrompt" | "reversePrompt" | "replace" | "resize" | "maskEdit" | "crop" | "upscale" | "superResolve" | "angle" | "view";
 export type ImageQuickToolId = "info" | "delete" | "saveAsset" | "download" | "edit" | ImageNodeActionToolId;
 
 export type ImageToolHandlers = {
     onUpload: (node: CanvasNodeData) => void;
     onToggleFreeResize: (node: CanvasNodeData) => void;
+    onMaskEdit: (node: CanvasNodeData) => void;
     onCrop: (node: CanvasNodeData) => void;
     onUpscale: (node: CanvasNodeData) => void;
     onSuperResolve: (node: CanvasNodeData) => void;
     onAngle: (node: CanvasNodeData) => void;
     onViewImage: (node: CanvasNodeData) => void;
     onCopyPrompt: (node: CanvasNodeData) => void;
+    onReversePrompt: (node: CanvasNodeData) => void;
 };
 
 export type ImageToolDefinition = {
@@ -35,7 +37,7 @@ export type ImageQuickToolsConfig = {
     showLabels: boolean;
 };
 
-export const IMAGE_QUICK_TOOLS_STORAGE_KEY = "canvas-image-quick-tools-v3";
+export const IMAGE_QUICK_TOOLS_STORAGE_KEY = "canvas-image-quick-tools-v5";
 
 const defaultBaseToolIds: ImageQuickToolId[] = ["info", "delete", "saveAsset", "download", "edit"];
 
@@ -50,6 +52,15 @@ export const imageToolDefinitions: ImageToolDefinition[] = [
         run: (node, handlers) => handlers.onCopyPrompt(node),
     },
     {
+        id: "reversePrompt",
+        defaultVisible: true,
+        panelLabel: "反推提示词",
+        label: "反推提示词",
+        title: "创建反推提示词的文本和配置节点",
+        icon: () => <FileText className="size-4" />,
+        run: (node, handlers) => handlers.onReversePrompt(node),
+    },
+    {
         id: "replace",
         defaultVisible: true,
         panelLabel: "替换图片",
@@ -60,13 +71,22 @@ export const imageToolDefinitions: ImageToolDefinition[] = [
     },
     {
         id: "resize",
-        defaultVisible: true,
+        defaultVisible: false,
         panelLabel: "锁比例",
         label: (node) => (node.metadata?.freeResize ? "自由比例" : "锁比例"),
         title: (node) => (node.metadata?.freeResize ? "切换为等比缩放" : "切换为自由比例"),
         icon: (node) => (node.metadata?.freeResize ? <LockOpen className="size-4" /> : <Lock className="size-4" />),
         active: (node) => Boolean(node.metadata?.freeResize),
         run: (node, handlers) => handlers.onToggleFreeResize(node),
+    },
+    {
+        id: "maskEdit",
+        defaultVisible: true,
+        panelLabel: "局部编辑",
+        label: "局部编辑",
+        title: "添加蒙版遮罩后局部修改",
+        icon: () => <Brush className="size-4" />,
+        run: (node, handlers) => handlers.onMaskEdit(node),
     },
     {
         id: "crop",
@@ -88,7 +108,7 @@ export const imageToolDefinitions: ImageToolDefinition[] = [
     },
     {
         id: "superResolve",
-        defaultVisible: true,
+        defaultVisible: false,
         panelLabel: "超分",
         label: "超分",
         title: "AI 超分",
@@ -97,7 +117,7 @@ export const imageToolDefinitions: ImageToolDefinition[] = [
     },
     {
         id: "angle",
-        defaultVisible: true,
+        defaultVisible: false,
         panelLabel: "多角度",
         label: "多角度",
         title: "生成角度",

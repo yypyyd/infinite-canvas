@@ -15,16 +15,6 @@ export type CanvasResourceReference = {
     active: boolean;
 };
 
-type MentionInput = {
-    nodeId: string;
-    type: CanvasResourceKind;
-    title: string;
-    text?: string;
-    image?: { dataUrl: string };
-    video?: { url: string };
-    audio?: { url: string };
-};
-
 export function buildCanvasResourceReferences(nodes: CanvasNodeData[], connections: CanvasConnection[], contextNodeId?: string | null) {
     const contextNodes = contextNodeId ? getMentionResourceNodes(contextNodeId, nodes, connections) : [];
     const globalReferences = labelResourceNodes(nodes.filter(isResourceNode), false);
@@ -34,23 +24,6 @@ export function buildCanvasResourceReferences(nodes: CanvasNodeData[], connectio
 
 export function buildNodeMentionReferences(node: CanvasNodeData, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
     return labelResourceNodes(getMentionResourceNodes(node.id, nodes, connections), true);
-}
-
-export function buildInputMentionReferences(inputs: MentionInput[]) {
-    const counts: Record<CanvasResourceKind, number> = { image: 0, video: 0, audio: 0, text: 0 };
-    return inputs.map((input): CanvasResourceReference => {
-        const index = counts[input.type]++;
-        return {
-            id: input.nodeId,
-            nodeId: input.nodeId,
-            kind: input.type,
-            label: labelForKind(input.type, index),
-            title: input.title || labelForKind(input.type, index),
-            previewUrl: input.image?.dataUrl || input.video?.url || input.audio?.url,
-            text: input.text,
-            active: true,
-        };
-    });
 }
 
 export function getMentionResourceNodes(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
@@ -71,13 +44,10 @@ export function getGenerationResourceNodes(nodeId: string, nodes: CanvasNodeData
 }
 
 function getContextResourceNodes(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
-    const target = nodes.find((node) => node.id === nodeId);
-    const upstreamNodes = connections
+    return connections
         .filter((connection) => connection.toNodeId === nodeId)
         .map((connection) => nodes.find((node) => node.id === connection.fromNodeId))
         .filter((node): node is CanvasNodeData => Boolean(node && isResourceNode(node)));
-    const order = target?.metadata?.inputOrder || [];
-    return [...order.map((id) => upstreamNodes.find((node) => node.id === id)).filter((node): node is CanvasNodeData => Boolean(node)), ...upstreamNodes.filter((node) => !order.includes(node.id))];
 }
 
 function getConnectedConfigResourceNodes(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {

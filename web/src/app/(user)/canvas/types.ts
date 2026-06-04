@@ -23,6 +23,7 @@ export type CanvasImageGenerationType = "generation" | "edit";
 
 export type CanvasNodeMetadata = {
     content?: string;
+    composerContent?: string;
     prompt?: string;
     status?: CanvasNodeStatus;
     errorDetails?: string;
@@ -51,7 +52,6 @@ export type CanvasNodeMetadata = {
     batchUsesReferenceImages?: boolean;
     primaryImageId?: string;
     imageBatchExpanded?: boolean;
-    inputOrder?: string[];
     storageKey?: string;
     mimeType?: string;
     bytes?: number;

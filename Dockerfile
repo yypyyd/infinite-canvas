@@ -43,4 +43,4 @@ RUN mkdir -p /app/data/prompts
 
 EXPOSE 3000
 # 先启动内部 Go API，再由 Next.js 提供页面并代理 /api/*。
-CMD ["sh", "-c", "PORT=8080 /app/server & cd /app/web && node server.js"]
+CMD ["sh", "-c", "PORT=8080 /app/server & cd /app/web && PORT=3000 node server.js"]

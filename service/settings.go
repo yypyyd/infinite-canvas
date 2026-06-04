@@ -24,7 +24,6 @@ type PricingRequest struct {
 	Operation      string
 	Unit           string
 	ResolutionTier string
-	Quality        string
 	Size           string
 	Resolution     string
 	Quantity       int
@@ -89,6 +88,7 @@ func normalizePublicSettingWithChannels(setting model.PublicSetting, channels []
 		setting.ModelChannel.AvailableModels = []string{}
 	}
 	setting.ModelChannel.PricingRules = normalizePricingRules(setting.ModelChannel.PricingRules)
+	setting.ModelChannel.ModelAspectRatios = normalizeModelAspectRatios(setting.ModelChannel.ModelAspectRatios)
 	if setting.ModelChannel.AllowCustomChannel == nil {
 		enabled := true
 		setting.ModelChannel.AllowCustomChannel = &enabled
@@ -145,7 +145,6 @@ func normalizePricingRules(items []model.PricingRule) []model.PricingRule {
 		item.Operation = normalizePricingToken(item.Operation)
 		item.Unit = normalizePricingToken(item.Unit)
 		item.ResolutionTier = normalizeResolutionTier(item.ResolutionTier)
-		item.Quality = normalizeQualityTier(item.Quality)
 		item.Remark = strings.TrimSpace(item.Remark)
 		if item.Credits < 0 {
 			item.Credits = 0
@@ -166,12 +165,11 @@ func normalizePricingRequest(request PricingRequest) PricingRequest {
 	request.Modality = normalizePricingToken(request.Modality)
 	request.Operation = normalizePricingToken(request.Operation)
 	request.Unit = normalizePricingToken(request.Unit)
-	request.Quality = normalizeQualityTier(request.Quality)
 	request.ResolutionTier = normalizeResolutionTier(request.ResolutionTier)
 	if request.ResolutionTier == "" {
 		switch request.Modality {
 		case "image":
-			request.ResolutionTier = normalizeImageResolutionTier(request.Size, request.Quality)
+			request.ResolutionTier = normalizeImageResolutionTier(request.Size)
 		case "video":
 			request.ResolutionTier = normalizeVideoResolutionTier(firstPricingNonEmpty(request.Resolution, request.Size))
 		}
@@ -206,7 +204,6 @@ func pricingRuleScore(rule model.PricingRule, request PricingRequest) (int, bool
 		{rule.Operation, request.Operation},
 		{rule.Unit, request.Unit},
 		{rule.ResolutionTier, request.ResolutionTier},
-		{rule.Quality, request.Quality},
 	}
 	for _, field := range fields {
 		if field[0] == "" {
@@ -220,21 +217,31 @@ func pricingRuleScore(rule model.PricingRule, request PricingRequest) (int, bool
 	return score, true
 }
 
-func normalizePricingToken(value string) string {
-	return strings.ToLower(strings.TrimSpace(value))
+func normalizeModelAspectRatios(items map[string][]string) map[string][]string {
+	if items == nil {
+		return map[string][]string{}
+	}
+	result := map[string][]string{}
+	for modelName, ratios := range items {
+		modelName = strings.TrimSpace(modelName)
+		if modelName == "" {
+			continue
+		}
+		seen := map[string]bool{}
+		for _, ratio := range ratios {
+			ratio = normalizePricingToken(ratio)
+			if ratio == "" || seen[ratio] {
+				continue
+			}
+			seen[ratio] = true
+			result[modelName] = append(result[modelName], ratio)
+		}
+	}
+	return result
 }
 
-func normalizeQualityTier(value string) string {
-	value = normalizePricingToken(value)
-	switch value {
-	case "1k":
-		return "low"
-	case "2k":
-		return "medium"
-	case "4k":
-		return "high"
-	}
-	return value
+func normalizePricingToken(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
 }
 
 func normalizeResolutionTier(value string) string {
@@ -262,7 +269,7 @@ func normalizeResolutionTier(value string) string {
 	return value
 }
 
-func normalizeImageResolutionTier(size string, quality string) string {
+func normalizeImageResolutionTier(size string) string {
 	size = strings.ToLower(strings.TrimSpace(size))
 	if width, height, ok := parsePricingDimensions(size); ok {
 		longest := width
@@ -275,14 +282,6 @@ func normalizeImageResolutionTier(size string, quality string) string {
 		if longest <= 2048 {
 			return "2k"
 		}
-		return "4k"
-	}
-	switch quality {
-	case "low":
-		return "1k"
-	case "medium":
-		return "2k"
-	case "high":
 		return "4k"
 	}
 	return "1k"

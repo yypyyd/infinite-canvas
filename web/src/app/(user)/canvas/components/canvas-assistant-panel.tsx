@@ -44,7 +44,7 @@ type CanvasAssistantPanelProps = {
 export function CanvasAssistantPanel({ nodes, selectedNodeIds, sessions, activeSessionId, onSelectNodeIds, onSessionsChange, onInsertImage, onInsertText, onPasteImage, onCollapseStart, onCollapse }: CanvasAssistantPanelProps) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const effectiveConfig = useEffectiveConfig();
-    const modelCosts = useConfigStore((state) => state.publicSettings?.modelChannel.modelCosts);
+    const pricingRules = useConfigStore((state) => state.publicSettings?.modelChannel.pricingRules);
     const cleanupImages = useAssetStore((state) => state.cleanupImages);
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
@@ -331,7 +331,7 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, sessions, activeS
                             if (selectedNodeIds.has(id)) onSelectNodeIds(new Set(Array.from(selectedNodeIds).filter((nodeId) => nodeId !== id)));
                         }}
                         onPasteImage={onPasteImage}
-                        modelCosts={modelCosts}
+                        pricingRules={pricingRules}
                     />
                 ) : null}
 
@@ -376,7 +376,7 @@ function AssistantComposer({
     onMissingConfig,
     onRemoveReference,
     onPasteImage,
-    modelCosts,
+    pricingRules,
 }: {
     mode: AssistantMode;
     prompt: string;
@@ -390,11 +390,21 @@ function AssistantComposer({
     onMissingConfig: () => void;
     onRemoveReference: (id: string) => void;
     onPasteImage: (file: File) => void;
-    modelCosts?: { model: string; credits: number }[];
+    pricingRules?: { model: string; modality: string; operation: string; unit: string; resolutionTier?: string; quality?: string; credits: number; minCredits?: number; enabled?: boolean }[];
 }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const activeModel = mode === "image" ? config.imageModel || config.model : config.textModel || config.model;
-    const credits = requestCreditCost({ channelMode: config.channelMode, modelCosts, model: activeModel, count: mode === "image" ? config.count : 1 });
+    const credits = requestCreditCost({
+        channelMode: config.channelMode,
+        pricingRules,
+        model: activeModel,
+        modality: mode === "image" ? "image" : "text",
+        operation: mode === "image" ? (references.some((item) => item.dataUrl) ? "edit" : "generation") : "completion",
+        unit: mode === "image" ? "image" : "request",
+        count: mode === "image" ? config.count : 1,
+        size: config.size,
+        quality: config.quality,
+    });
 
     return (
         <div className="px-2 pb-2" onWheelCapture={(event) => event.stopPropagation()}>

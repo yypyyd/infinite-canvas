@@ -207,7 +207,7 @@ export type AdminModelChannel = {
 
 export type AdminPublicModelChannelSettings = {
     availableModels: string[];
-    modelCosts: AdminModelCost[];
+    pricingRules: AdminPricingRule[];
     defaultModel: string;
     defaultImageModel: string;
     defaultVideoModel: string;
@@ -216,9 +216,17 @@ export type AdminPublicModelChannelSettings = {
     allowCustomChannel: boolean;
 };
 
-export type AdminModelCost = {
+export type AdminPricingRule = {
     model: string;
+    modality: string;
+    operation: string;
+    unit: string;
+    resolutionTier: string;
+    quality: string;
     credits: number;
+    minCredits: number;
+    enabled: boolean;
+    remark: string;
 };
 
 export type AdminPublicSettings = {

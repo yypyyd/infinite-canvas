@@ -12,6 +12,7 @@ RUN bun run build
 # 构建 Go 后端入口。
 FROM golang:1.25-alpine AS api-build
 
+ENV PATH="/usr/local/go/bin:${PATH}"
 WORKDIR /app
 COPY go.mod go.sum ./
 COPY config ./config

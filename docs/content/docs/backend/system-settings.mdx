@@ -18,9 +18,9 @@ description: settings 表中 public 和 private 配置结构说明
 {
   "modelChannel": {
     "availableModels": ["gpt-5.5", "gpt-image-2"],
-    "modelCosts": [
-      { "model": "gpt-5.5", "credits": 1 },
-      { "model": "gpt-image-2", "credits": 10 }
+    "pricingRules": [
+      { "model": "gpt-image-2", "modality": "image", "operation": "generation", "unit": "image", "resolutionTier": "1k", "quality": "low", "credits": 10, "minCredits": 0, "enabled": true, "remark": "" },
+      { "model": "gpt-5.5", "modality": "text", "operation": "completion", "unit": "request", "resolutionTier": "", "quality": "", "credits": 1, "minCredits": 0, "enabled": true, "remark": "" }
     ],
     "defaultModel": "gpt-image-2",
     "defaultImageModel": "gpt-image-2",
@@ -47,7 +47,7 @@ description: settings 表中 public 和 private 配置结构说明
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `availableModels` | string[] | 系统可用模型；保存设置时会自动合并所有已启用私有渠道的模型 |
-| `modelCosts` | object[] | 模型算力点配置，后端模型接口调用前按模型预扣，上游失败时返还；未配置默认不扣除 |
+| `pricingRules` | object[] | 模型算力点配置，后端模型接口调用前按模型预扣，上游失败时返还；未配置默认不扣除 |
 | `defaultModel` | string | 默认模型，从 `availableModels` 中选择；为空或失效时优先选择文本模型 |
 | `defaultImageModel` | string | 默认图片模型，从 `availableModels` 中选择；为空或失效时优先选择 `seedream`、`image`、`gpt-image` 模型 |
 | `defaultVideoModel` | string | 默认视频模型，从 `availableModels` 中选择；为空或失效时优先选择 `seedance`、`video` 模型 |
@@ -55,7 +55,7 @@ description: settings 表中 public 和 private 配置结构说明
 | `systemPrompt` | string | 系统提示词 |
 | `allowCustomChannel` | boolean | 是否允许用户在配置弹窗中切换为本地直连渠道，默认允许 |
 
-`modelCosts` 每项字段：
+`pricingRules` 每项字段：
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |

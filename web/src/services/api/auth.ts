@@ -36,3 +36,7 @@ export async function register(payload: AuthPayload) {
 export async function fetchCurrentUser(token?: string) {
     return apiGet<AuthUser>("/api/auth/me", undefined, token);
 }
+
+export async function redeemCode(token: string, code: string) {
+    return apiPost<AuthUser>("/api/redeem-codes/redeem", { code }, token);
+}

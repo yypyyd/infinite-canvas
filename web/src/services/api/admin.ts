@@ -50,6 +50,32 @@ export type AdminCreditLogListResponse = {
     total: number;
 };
 
+export type AdminRedemptionCodeStatus = "active" | "used" | "disabled";
+
+export type AdminRedemptionCode = {
+    id: string;
+    code: string;
+    credits: number;
+    status: AdminRedemptionCodeStatus;
+    usedBy: string;
+    usedAt: string;
+    remark: string;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type AdminRedemptionCodeListResponse = {
+    items: AdminRedemptionCode[];
+    total: number;
+};
+
+export type GenerateRedemptionCodesPayload = {
+    credits: number;
+    quantity: number;
+    prefix?: string;
+    remark?: string;
+};
+
 export type AdminUserQuery = {
     keyword?: string;
     page?: number;
@@ -82,6 +108,18 @@ export async function saveAdminCreditLog(token: string, log: Partial<AdminCredit
 
 export async function deleteAdminCreditLog(token: string, id: string) {
     return apiDelete<boolean>(`/api/admin/credit-logs/${encodeURIComponent(id)}`, token);
+}
+
+export async function fetchAdminRedemptionCodes(token: string, query: AdminUserQuery = {}) {
+    return apiGet<AdminRedemptionCodeListResponse>("/api/admin/redeem-codes", compactApiParams(query), token);
+}
+
+export async function generateAdminRedemptionCodes(token: string, payload: GenerateRedemptionCodesPayload) {
+    return apiPost<AdminRedemptionCode[]>("/api/admin/redeem-codes/generate", payload, token);
+}
+
+export async function deleteAdminRedemptionCode(token: string, id: string) {
+    return apiDelete<boolean>(`/api/admin/redeem-codes/${encodeURIComponent(id)}`, token);
 }
 
 export async function fetchAdminPromptCategories(token: string) {

@@ -71,7 +71,11 @@ export const useUserStore = create<UserStore>()(
             name: AUTH_TOKEN_KEY,
             partialize: (state) => ({ token: state.token }),
             onRehydrateStorage: () => (state) => {
-                if (state) state.isReady = false;
+                if (!state) return;
+                state.isReady = false;
+                queueMicrotask(() => {
+                    void state.hydrateUser();
+                });
             },
         },
     ),

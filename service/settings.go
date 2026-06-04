@@ -18,6 +18,18 @@ import (
 
 var adminModelHTTPClient = &http.Client{Timeout: 30 * time.Second}
 
+type PricingRequest struct {
+	Model          string
+	Modality       string
+	Operation      string
+	Unit           string
+	ResolutionTier string
+	Quality        string
+	Size           string
+	Resolution     string
+	Quantity       int
+}
+
 func PublicSettings() (model.PublicSetting, error) {
 	settings, err := repository.GetSettings()
 	return normalizeSettings(settings).Public, err
@@ -76,15 +88,7 @@ func normalizePublicSettingWithChannels(setting model.PublicSetting, channels []
 	if setting.ModelChannel.AvailableModels == nil {
 		setting.ModelChannel.AvailableModels = []string{}
 	}
-	if setting.ModelChannel.ModelCosts == nil {
-		setting.ModelChannel.ModelCosts = []model.ModelCost{}
-	}
-	for i := range setting.ModelChannel.ModelCosts {
-		setting.ModelChannel.ModelCosts[i].Model = strings.TrimSpace(setting.ModelChannel.ModelCosts[i].Model)
-		if setting.ModelChannel.ModelCosts[i].Credits < 0 {
-			setting.ModelChannel.ModelCosts[i].Credits = 0
-		}
-	}
+	setting.ModelChannel.PricingRules = normalizePricingRules(setting.ModelChannel.PricingRules)
 	if setting.ModelChannel.AllowCustomChannel == nil {
 		enabled := true
 		setting.ModelChannel.AllowCustomChannel = &enabled
@@ -106,18 +110,222 @@ func normalizePublicSettingWithChannels(setting model.PublicSetting, channels []
 	return setting
 }
 
-func ModelCost(modelName string) (int, error) {
+func CalculateRequestCredits(request PricingRequest) (int, error) {
 	settings, err := repository.GetSettings()
 	if err != nil {
 		return 0, err
 	}
-	modelName = strings.TrimSpace(modelName)
-	for _, item := range normalizePublicSetting(settings.Public).ModelChannel.ModelCosts {
-		if item.Model == modelName {
-			return item.Credits, nil
+	request = normalizePricingRequest(request)
+	if request.Model == "" || request.Modality == "" || request.Operation == "" || request.Unit == "" {
+		return 0, safeMessageError{message: "模型计费参数不完整"}
+	}
+	rule, ok := selectPricingRule(normalizePublicSetting(settings.Public).ModelChannel.PricingRules, request)
+	if !ok {
+		return 0, safeMessageError{message: "模型未配置计费规则"}
+	}
+	quantity := request.Quantity
+	if quantity < 1 {
+		quantity = 1
+	}
+	credits := rule.Credits * quantity
+	if rule.MinCredits > credits {
+		credits = rule.MinCredits
+	}
+	return credits, nil
+}
+
+func normalizePricingRules(items []model.PricingRule) []model.PricingRule {
+	if items == nil {
+		return []model.PricingRule{}
+	}
+	result := make([]model.PricingRule, 0, len(items))
+	for _, item := range items {
+		item.Model = strings.TrimSpace(item.Model)
+		item.Modality = normalizePricingToken(item.Modality)
+		item.Operation = normalizePricingToken(item.Operation)
+		item.Unit = normalizePricingToken(item.Unit)
+		item.ResolutionTier = normalizeResolutionTier(item.ResolutionTier)
+		item.Quality = normalizeQualityTier(item.Quality)
+		item.Remark = strings.TrimSpace(item.Remark)
+		if item.Credits < 0 {
+			item.Credits = 0
+		}
+		if item.MinCredits < 0 {
+			item.MinCredits = 0
+		}
+		if item.Model == "" {
+			continue
+		}
+		result = append(result, item)
+	}
+	return result
+}
+
+func normalizePricingRequest(request PricingRequest) PricingRequest {
+	request.Model = strings.TrimSpace(request.Model)
+	request.Modality = normalizePricingToken(request.Modality)
+	request.Operation = normalizePricingToken(request.Operation)
+	request.Unit = normalizePricingToken(request.Unit)
+	request.Quality = normalizeQualityTier(request.Quality)
+	request.ResolutionTier = normalizeResolutionTier(request.ResolutionTier)
+	if request.ResolutionTier == "" {
+		switch request.Modality {
+		case "image":
+			request.ResolutionTier = normalizeImageResolutionTier(request.Size, request.Quality)
+		case "video":
+			request.ResolutionTier = normalizeVideoResolutionTier(firstPricingNonEmpty(request.Resolution, request.Size))
 		}
 	}
-	return 0, nil
+	if request.Quantity < 1 {
+		request.Quantity = 1
+	}
+	return request
+}
+
+func selectPricingRule(rules []model.PricingRule, request PricingRequest) (model.PricingRule, bool) {
+	var selected model.PricingRule
+	bestScore := -1
+	for _, rule := range rules {
+		if !rule.Enabled || rule.Model != request.Model {
+			continue
+		}
+		score, ok := pricingRuleScore(rule, request)
+		if !ok || score <= bestScore {
+			continue
+		}
+		bestScore = score
+		selected = rule
+	}
+	return selected, bestScore >= 0
+}
+
+func pricingRuleScore(rule model.PricingRule, request PricingRequest) (int, bool) {
+	score := 0
+	fields := [][2]string{
+		{rule.Modality, request.Modality},
+		{rule.Operation, request.Operation},
+		{rule.Unit, request.Unit},
+		{rule.ResolutionTier, request.ResolutionTier},
+		{rule.Quality, request.Quality},
+	}
+	for _, field := range fields {
+		if field[0] == "" {
+			continue
+		}
+		if field[0] != field[1] {
+			return 0, false
+		}
+		score++
+	}
+	return score, true
+}
+
+func normalizePricingToken(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func normalizeQualityTier(value string) string {
+	value = normalizePricingToken(value)
+	switch value {
+	case "1k":
+		return "low"
+	case "2k":
+		return "medium"
+	case "4k":
+		return "high"
+	}
+	return value
+}
+
+func normalizeResolutionTier(value string) string {
+	value = normalizePricingToken(value)
+	switch value {
+	case "low":
+		return "1k"
+	case "medium":
+		return "2k"
+	case "high":
+		return "4k"
+	case "720":
+		return "720p"
+	case "1080":
+		return "1080p"
+	case "2160":
+		return "4k"
+	}
+	if strings.HasSuffix(value, "p") || value == "1k" || value == "2k" || value == "4k" {
+		return value
+	}
+	if strings.Contains(value, "4k") {
+		return "4k"
+	}
+	return value
+}
+
+func normalizeImageResolutionTier(size string, quality string) string {
+	size = strings.ToLower(strings.TrimSpace(size))
+	if width, height, ok := parsePricingDimensions(size); ok {
+		longest := width
+		if height > longest {
+			longest = height
+		}
+		if longest <= 1024 {
+			return "1k"
+		}
+		if longest <= 2048 {
+			return "2k"
+		}
+		return "4k"
+	}
+	switch quality {
+	case "low":
+		return "1k"
+	case "medium":
+		return "2k"
+	case "high":
+		return "4k"
+	}
+	return "1k"
+}
+
+func normalizeVideoResolutionTier(value string) string {
+	value = normalizePricingToken(value)
+	if value == "" || value == "auto" || value == "medium" || value == "high" {
+		return "720p"
+	}
+	if value == "low" {
+		return "480p"
+	}
+	if strings.Contains(value, "4k") || strings.Contains(value, "2160") {
+		return "4k"
+	}
+	if strings.Contains(value, "1080") {
+		return "1080p"
+	}
+	if strings.Contains(value, "720") {
+		return "720p"
+	}
+	if strings.Contains(value, "480") {
+		return "480p"
+	}
+	return normalizeResolutionTier(value)
+}
+
+func parsePricingDimensions(value string) (int, int, bool) {
+	var width, height int
+	if _, err := fmt.Sscanf(value, "%dx%d", &width, &height); err != nil {
+		return 0, 0, false
+	}
+	return width, height, width > 0 && height > 0
+}
+
+func firstPricingNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func normalizePrivateSetting(setting model.PrivateSetting) model.PrivateSetting {

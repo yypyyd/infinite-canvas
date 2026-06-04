@@ -64,7 +64,7 @@ func proxyAIGetRequest(w http.ResponseWriter, r *http.Request, path string) {
 }
 
 func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
-	body, contentType, modelName, err := readAIRequest(r)
+	body, contentType, requestMeta, err := readAIRequest(r)
 	if err != nil {
 		log.Printf("AI proxy request read failed: %v", err)
 		Fail(w, "AI 接口请求失败")
@@ -75,20 +75,19 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		Fail(w, "未登录或权限不足")
 		return
 	}
-	credits, err := service.ModelCost(modelName)
+	credits, err := service.CalculateRequestCredits(pricingRequestForAIPath(path, requestMeta))
 	if err != nil {
-		log.Printf("AI proxy read model cost failed: model=%s err=%v", modelName, err)
+		log.Printf("AI proxy calculate credits failed: model=%s path=%s err=%v", requestMeta.ModelName, path, err)
+		FailError(w, err)
+		return
+	}
+	channel, err := service.SelectModelChannel(requestMeta.ModelName)
+	if err != nil {
+		log.Printf("AI proxy select channel failed: model=%s err=%v", requestMeta.ModelName, err)
 		Fail(w, "AI 接口请求失败")
 		return
 	}
-	credits *= readAIRequestCount(body, contentType)
-	channel, err := service.SelectModelChannel(modelName)
-	if err != nil {
-		log.Printf("AI proxy select channel failed: model=%s err=%v", modelName, err)
-		Fail(w, "AI 接口请求失败")
-		return
-	}
-	path = resolveAIProxyPath(channel.BaseURL, modelName, path)
+	path = resolveAIProxyPath(channel.BaseURL, requestMeta.ModelName, path)
 	request, err := http.NewRequest(http.MethodPost, service.BuildModelChannelURL(channel, path), bytes.NewReader(body))
 	if err != nil {
 		log.Printf("AI proxy build request failed: url=%s err=%v", service.BuildModelChannelURL(channel, path), err)
@@ -99,13 +98,13 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 	if contentType != "" {
 		request.Header.Set("Content-Type", contentType)
 	}
-	if err := service.ConsumeUserCredits(user.ID, modelName, credits, path); err != nil {
+	if err := service.ConsumeUserCredits(user.ID, requestMeta.ModelName, credits, path); err != nil {
 		FailError(w, err)
 		return
 	}
 	copyAIResponse(w, request, func() {
-		if err := service.RefundUserCredits(user.ID, modelName, credits, path); err != nil {
-			log.Printf("AI proxy refund credits failed: user=%s model=%s credits=%d err=%v", user.ID, modelName, credits, err)
+		if err := service.RefundUserCredits(user.ID, requestMeta.ModelName, credits, path); err != nil {
+			log.Printf("AI proxy refund credits failed: user=%s model=%s credits=%d err=%v", user.ID, requestMeta.ModelName, credits, err)
 		}
 	})
 }
@@ -144,71 +143,160 @@ func copyAIResponse(w http.ResponseWriter, request *http.Request, onFailure func
 	_, _ = io.Copy(w, response.Body)
 }
 
-func readAIRequest(r *http.Request) ([]byte, string, string, error) {
+type aiRequestMeta struct {
+	ModelName      string
+	Count          int
+	Size           string
+	Quality        string
+	Resolution     string
+	ResolutionTier string
+	Duration       int
+}
+
+func readAIRequest(r *http.Request) ([]byte, string, aiRequestMeta, error) {
 	contentType := r.Header.Get("Content-Type")
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		return nil, "", "", err
+		return nil, "", aiRequestMeta{}, err
 	}
-	modelName := ""
+	requestMeta := aiRequestMeta{Count: 1, Duration: 1}
 	if strings.HasPrefix(contentType, "multipart/form-data") {
-		modelName = readMultipartModel(body, contentType)
+		requestMeta = readMultipartAIRequest(body, contentType)
 	} else {
-		var payload struct {
-			Model string `json:"model"`
-		}
-		_ = json.Unmarshal(body, &payload)
-		modelName = payload.Model
+		requestMeta = readJSONAIRequest(body)
 	}
-	if strings.TrimSpace(modelName) == "" {
-		return nil, "", "", errMissingModel
+	requestMeta.ModelName = strings.TrimSpace(requestMeta.ModelName)
+	if requestMeta.Count < 1 {
+		requestMeta.Count = 1
 	}
-	return body, contentType, modelName, nil
+	if requestMeta.Duration < 1 {
+		requestMeta.Duration = 1
+	}
+	if requestMeta.ModelName == "" {
+		return nil, "", aiRequestMeta{}, errMissingModel
+	}
+	return body, contentType, requestMeta, nil
 }
 
-func readMultipartModel(body []byte, contentType string) string {
+func readMultipartAIRequest(body []byte, contentType string) aiRequestMeta {
 	_, params, err := mime.ParseMediaType(contentType)
 	if err != nil {
-		return ""
+		return aiRequestMeta{Count: 1, Duration: 1}
 	}
 	reader := multipart.NewReader(bytes.NewReader(body), params["boundary"])
 	form, err := reader.ReadForm(32 << 20)
 	if err != nil {
-		return ""
+		return aiRequestMeta{Count: 1, Duration: 1}
 	}
 	defer form.RemoveAll()
-	if values := form.Value["model"]; len(values) > 0 {
-		return values[0]
+	return aiRequestMeta{
+		ModelName:      firstFormValue(form, "model"),
+		Count:          readIntValue(firstFormValue(form, "n"), 1),
+		Size:           firstFormValue(form, "size", "ratio"),
+		Quality:        firstFormValue(form, "quality"),
+		Resolution:     firstFormValue(form, "resolution_name", "resolution", "vquality"),
+		ResolutionTier: firstFormValue(form, "resolutionTier"),
+		Duration:       readIntValue(firstFormValue(form, "seconds", "duration", "videoSeconds"), 1),
+	}
+}
+
+func readJSONAIRequest(body []byte) aiRequestMeta {
+	var payload map[string]any
+	_ = json.Unmarshal(body, &payload)
+	return aiRequestMeta{
+		ModelName:      readStringField(payload, "model"),
+		Count:          readIntField(payload, 1, "n"),
+		Size:           readStringField(payload, "size", "ratio"),
+		Quality:        readStringField(payload, "quality"),
+		Resolution:     readStringField(payload, "resolution", "resolution_name", "vquality"),
+		ResolutionTier: readStringField(payload, "resolutionTier"),
+		Duration:       readIntField(payload, 1, "duration", "seconds", "videoSeconds"),
+	}
+}
+
+func firstFormValue(form *multipart.Form, keys ...string) string {
+	for _, key := range keys {
+		if values := form.Value[key]; len(values) > 0 {
+			return values[0]
+		}
 	}
 	return ""
 }
 
-func readAIRequestCount(body []byte, contentType string) int {
-	count := 1
-	if strings.HasPrefix(contentType, "multipart/form-data") {
-		_, params, err := mime.ParseMediaType(contentType)
-		if err != nil {
-			return count
+func readStringField(payload map[string]any, keys ...string) string {
+	for _, key := range keys {
+		value, ok := payload[key]
+		if !ok {
+			continue
 		}
-		form, err := multipart.NewReader(bytes.NewReader(body), params["boundary"]).ReadForm(32 << 20)
-		if err != nil {
-			return count
+		if text, ok := value.(string); ok {
+			return text
 		}
-		defer form.RemoveAll()
-		if values := form.Value["n"]; len(values) > 0 {
-			_, _ = fmt.Sscan(values[0], &count)
-		}
-	} else {
-		var payload struct {
-			N int `json:"n"`
-		}
-		_ = json.Unmarshal(body, &payload)
-		count = payload.N
+		return fmt.Sprint(value)
 	}
-	if count < 1 {
-		return 1
+	return ""
+}
+
+func readIntField(payload map[string]any, defaultValue int, keys ...string) int {
+	for _, key := range keys {
+		value, ok := payload[key]
+		if !ok {
+			continue
+		}
+		switch typed := value.(type) {
+		case float64:
+			return int(typed)
+		case string:
+			return readIntValue(typed, defaultValue)
+		}
 	}
-	return count
+	return defaultValue
+}
+
+func readIntValue(value string, defaultValue int) int {
+	result := defaultValue
+	if strings.TrimSpace(value) == "" {
+		return result
+	}
+	_, _ = fmt.Sscan(value, &result)
+	return result
+}
+
+func pricingRequestForAIPath(path string, request aiRequestMeta) service.PricingRequest {
+	pricing := service.PricingRequest{
+		Model:          request.ModelName,
+		ResolutionTier: request.ResolutionTier,
+		Quality:        request.Quality,
+		Size:           request.Size,
+		Resolution:     request.Resolution,
+		Quantity:       1,
+	}
+	switch path {
+	case "/images/generations":
+		pricing.Modality = "image"
+		pricing.Operation = "generation"
+		pricing.Unit = "image"
+		pricing.Quantity = request.Count
+	case "/images/edits":
+		pricing.Modality = "image"
+		pricing.Operation = "edit"
+		pricing.Unit = "image"
+		pricing.Quantity = request.Count
+	case "/videos":
+		pricing.Modality = "video"
+		pricing.Operation = "generation"
+		pricing.Unit = "second"
+		pricing.Quantity = request.Duration
+	case "/chat/completions":
+		pricing.Modality = "text"
+		pricing.Operation = "completion"
+		pricing.Unit = "request"
+	case "/audio/speech":
+		pricing.Modality = "audio"
+		pricing.Operation = "speech"
+		pricing.Unit = "request"
+	}
+	return pricing
 }
 
 var errMissingModel = &aiError{"缺少模型名称"}

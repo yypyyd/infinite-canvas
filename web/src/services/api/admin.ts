@@ -122,6 +122,10 @@ export async function deleteAdminRedemptionCode(token: string, id: string) {
     return apiDelete<boolean>(`/api/admin/redeem-codes/${encodeURIComponent(id)}`, token);
 }
 
+export async function deleteAdminRedemptionCodes(token: string, payload: { ids?: string[]; status?: AdminRedemptionCodeStatus }) {
+    return apiPost<number>("/api/admin/redeem-codes/batch-delete", payload, token);
+}
+
 export async function fetchAdminPromptCategories(token: string) {
     return apiGet<AdminPromptCategory[]>("/api/admin/prompt-categories", undefined, token);
 }

@@ -40,7 +40,6 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
         unit: mode === "image" ? "image" : mode === "video" ? "second" : "request",
         count: mode === "image" ? count : mode === "video" ? config.videoSeconds : 1,
         size: config.size,
-        quality: config.quality,
         resolution: config.vquality,
     });
     const chipStyle = { background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.text };

@@ -266,7 +266,6 @@ func pricingRequestForAIPath(path string, request aiRequestMeta) service.Pricing
 	pricing := service.PricingRequest{
 		Model:          request.ModelName,
 		ResolutionTier: request.ResolutionTier,
-		Quality:        request.Quality,
 		Size:           request.Size,
 		Resolution:     request.Resolution,
 		Quantity:       1,

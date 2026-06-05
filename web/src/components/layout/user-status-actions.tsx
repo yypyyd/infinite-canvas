@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties, RefObject } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { App, Avatar, Dropdown, Form, Input, Modal, Tooltip } from "antd";
 import { Gift, Keyboard, LogOut, Settings2, Shield } from "lucide-react";
 import type { ItemType } from "antd/es/menu/interface";
@@ -36,6 +36,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
     const token = useUserStore((state) => state.token);
     const user = useUserStore((state) => state.user);
     const setSession = useUserStore((state) => state.setSession);
+    const refreshUser = useUserStore((state) => state.refreshUser);
     const logout = useUserStore((state) => state.clearSession);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const canvasTheme = canvasThemes[theme];
@@ -46,7 +47,30 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
     const naturalIconClass = "inline-flex size-7 shrink-0 items-center justify-center text-stone-600 transition hover:text-stone-950 dark:text-stone-300 dark:hover:text-white [&_svg]:size-4";
     const iconStyle: CSSProperties | undefined = variant === "canvas" ? { color: canvasTheme.node.text } : undefined;
     const versionStyle = iconStyle;
+    const creditStyle = iconStyle;
+    const creditClass =
+        variant === "canvas"
+            ? "flex h-8 shrink-0 items-center gap-1.5 px-1.5 text-xs font-medium tabular-nums opacity-75 transition hover:opacity-100"
+            : "flex h-8 shrink-0 items-center gap-1.5 px-1.5 text-xs font-medium tabular-nums text-stone-600 transition hover:text-stone-950 dark:text-stone-300 dark:hover:text-white";
     const avatarStyle: CSSProperties | undefined = variant === "canvas" ? { borderColor: canvasTheme.toolbar.border, color: canvasTheme.node.text, background: "transparent" } : undefined;
+
+    useEffect(() => {
+        if (!token || !user) return;
+
+        const refreshWhenVisible = () => {
+            if (document.visibilityState === "visible") void refreshUser();
+        };
+        const timer = window.setInterval(refreshWhenVisible, 20000);
+
+        window.addEventListener("focus", refreshWhenVisible);
+        document.addEventListener("visibilitychange", refreshWhenVisible);
+
+        return () => {
+            window.clearInterval(timer);
+            window.removeEventListener("focus", refreshWhenVisible);
+            document.removeEventListener("visibilitychange", refreshWhenVisible);
+        };
+    }, [refreshUser, token, user?.id]);
 
     const submitRedeemCode = async () => {
         if (!token) return;
@@ -77,6 +101,14 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
     return (
         <>
             <div className="inline-flex shrink-0 items-center gap-1">
+                {user ? (
+                    <Tooltip title="当前算力点余额" placement="bottom">
+                        <div className={creditClass} style={creditStyle}>
+                            <CreditSymbol className="text-sm leading-none" />
+                            <span>{credits.toLocaleString()}</span>
+                        </div>
+                    </Tooltip>
+                ) : null}
                 {showConfig ? (
                     <button type="button" className={naturalIconClass} style={iconStyle} onClick={() => openConfigDialog(false)} aria-label="配置" title="配置">
                         <Settings2 className="size-4" />
@@ -84,14 +116,6 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
                 ) : null}
                 <AnimatedThemeToggler theme={theme} onThemeChange={setTheme} className={naturalIconClass} style={iconStyle} aria-label={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"} title={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"} />
                 <VersionReleaseModal style={versionStyle} />
-                {variant === "canvas" && user ? (
-                    <Tooltip title="当前算力点余额" placement="bottom">
-                        <div className="flex h-8 shrink-0 items-center gap-1.5 px-1.5 text-xs font-medium tabular-nums opacity-75 transition hover:opacity-100" style={{ color: canvasTheme.node.text }}>
-                            <CreditSymbol className="text-sm leading-none" />
-                            <span>{credits.toLocaleString()}</span>
-                        </div>
-                    </Tooltip>
-                ) : null}
                 {!user && onOpenShortcuts ? (
                     <button type="button" className={naturalIconClass} style={iconStyle} onClick={onOpenShortcuts} aria-label="快捷键" title="快捷键">
                         <Keyboard className="size-4" />

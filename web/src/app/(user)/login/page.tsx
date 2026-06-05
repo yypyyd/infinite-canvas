@@ -88,14 +88,7 @@ function LoginContent() {
         <main className="flex h-full min-h-0 items-center justify-center overflow-y-auto bg-background bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] px-6 py-10 [background-size:16px_16px] dark:bg-[radial-gradient(rgba(245,245,244,.16)_1px,transparent_1px)]">
             <section className="w-full max-w-[420px]">
                 <div className="mb-7 text-center">
-                    <span
-                        className="mx-auto mb-4 block size-12 bg-stone-950 dark:bg-stone-100"
-                        style={{
-                            mask: "url(/logo.svg) center / contain no-repeat",
-                            WebkitMask: "url(/logo.svg) center / contain no-repeat",
-                        }}
-                        aria-label="无限画布"
-                    />
+                    <img src="/logo.png" alt="道生画境" className="mx-auto mb-4 block size-16 rounded-full object-cover" />
                     <h1 className="text-3xl font-semibold tracking-normal text-stone-950 dark:text-stone-100">账号登录</h1>
                 </div>
 

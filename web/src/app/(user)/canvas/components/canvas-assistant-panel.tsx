@@ -390,7 +390,7 @@ function AssistantComposer({
     onMissingConfig: () => void;
     onRemoveReference: (id: string) => void;
     onPasteImage: (file: File) => void;
-    pricingRules?: { model: string; modality: string; operation: string; unit: string; resolutionTier?: string; quality?: string; credits: number; minCredits?: number; enabled?: boolean }[];
+    pricingRules?: { model: string; modality: string; operation: string; unit: string; resolutionTier?: string; credits: number; minCredits?: number; enabled?: boolean }[];
 }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const activeModel = mode === "image" ? config.imageModel || config.model : config.textModel || config.model;
@@ -403,7 +403,6 @@ function AssistantComposer({
         unit: mode === "image" ? "image" : "request",
         count: mode === "image" ? config.count : 1,
         size: config.size,
-        quality: config.quality,
     });
 
     return (

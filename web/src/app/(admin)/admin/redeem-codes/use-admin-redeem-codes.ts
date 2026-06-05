@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { App } from "antd";
 
-import { deleteAdminRedemptionCode, fetchAdminRedemptionCodes, generateAdminRedemptionCodes, type GenerateRedemptionCodesPayload } from "@/services/api/admin";
+import { deleteAdminRedemptionCode, deleteAdminRedemptionCodes, fetchAdminRedemptionCodes, generateAdminRedemptionCodes, type AdminRedemptionCodeStatus, type GenerateRedemptionCodesPayload } from "@/services/api/admin";
 import { useUserStore } from "@/stores/use-user-store";
 
 const defaultPageSize = 10;
@@ -43,6 +43,15 @@ export function useAdminRedeemCodes() {
         onError: (error) => message.error(error instanceof Error ? error.message : "删除失败"),
     });
 
+    const batchDeleteMutation = useMutation({
+        mutationFn: (payload: { ids?: string[]; status?: AdminRedemptionCodeStatus }) => deleteAdminRedemptionCodes(token, payload),
+        onSuccess: async (deleted) => {
+            await queryClient.invalidateQueries({ queryKey: ["admin", "redeem-codes"] });
+            message.success(`已删除 ${deleted} 个兑换码`);
+        },
+        onError: (error) => message.error(error instanceof Error ? error.message : "批量删除失败"),
+    });
+
     useEffect(() => {
         if (query.isError) {
             const errorMessage = query.error instanceof Error ? query.error.message : "读取兑换码失败";
@@ -67,7 +76,7 @@ export function useAdminRedeemCodes() {
         page,
         pageSize,
         total: data?.total || 0,
-        isLoading: query.isFetching || generateMutation.isPending || deleteMutation.isPending,
+        isLoading: query.isFetching || generateMutation.isPending || deleteMutation.isPending || batchDeleteMutation.isPending,
         searchCodes: (value = keyword) => updateFilters({ keyword: value }),
         changePage: (value: number) => updateFilters({ page: value }),
         changePageSize: (value: number) => updateFilters({ pageSize: value }),
@@ -75,5 +84,7 @@ export function useAdminRedeemCodes() {
         refreshCodes: () => query.refetch(),
         generateCodes: (payload: GenerateRedemptionCodesPayload) => generateMutation.mutateAsync(payload),
         deleteCode: (id: string) => deleteMutation.mutateAsync(id),
+        deleteCodes: (ids: string[]) => batchDeleteMutation.mutateAsync({ ids }),
+        deleteUsedCodes: () => batchDeleteMutation.mutateAsync({ status: "used" }),
     };
 }

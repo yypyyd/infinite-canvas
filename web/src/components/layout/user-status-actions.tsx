@@ -3,7 +3,7 @@
 import type { CSSProperties, RefObject } from "react";
 import { useEffect, useState } from "react";
 import { App, Avatar, Dropdown, Form, Input, Modal, Tooltip } from "antd";
-import { Gift, Keyboard, LogOut, Settings2, Shield } from "lucide-react";
+import { Gift, Keyboard, LogOut, Settings2, Shield, ShoppingCart } from "lucide-react";
 import type { ItemType } from "antd/es/menu/interface";
 import Link from "next/link";
 
@@ -15,6 +15,8 @@ import { redeemCode } from "@/services/api/auth";
 import { useConfigStore } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useUserStore } from "@/stores/use-user-store";
+
+const CREDIT_PURCHASE_URL = "https://pay.ldxp.cn/shop/ODLR2IW6";
 
 type UserStatusActionsProps = {
     showConfig?: boolean;
@@ -52,6 +54,10 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
         variant === "canvas"
             ? "flex h-8 shrink-0 items-center gap-1.5 px-1.5 text-xs font-medium tabular-nums opacity-75 transition hover:opacity-100"
             : "flex h-8 shrink-0 items-center gap-1.5 px-1.5 text-xs font-medium tabular-nums text-stone-600 transition hover:text-stone-950 dark:text-stone-300 dark:hover:text-white";
+    const purchaseClass =
+        variant === "canvas"
+            ? "hidden h-8 shrink-0 items-center gap-1 px-1.5 text-xs font-medium opacity-75 transition hover:opacity-100 sm:inline-flex"
+            : "hidden h-8 shrink-0 items-center gap-1 px-1.5 text-xs font-medium text-stone-600 transition hover:text-stone-950 sm:inline-flex dark:text-stone-300 dark:hover:text-white";
     const avatarStyle: CSSProperties | undefined = variant === "canvas" ? { borderColor: canvasTheme.toolbar.border, color: canvasTheme.node.text, background: "transparent" } : undefined;
 
     useEffect(() => {
@@ -92,6 +98,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
     const menuItems: ItemType[] = [
         { key: "user", disabled: true, label: <span className="font-medium text-current">{userName}</span> },
         ...(user?.role === "admin" ? [{ key: "admin", icon: <Shield className="size-4" />, label: <Link href="/admin">管理后台</Link> }] : []),
+        { key: "purchase", icon: <ShoppingCart className="size-4" />, label: <a href={CREDIT_PURCHASE_URL} target="_blank" rel="noreferrer">购买算力</a> },
         { key: "redeem", icon: <Gift className="size-4" />, label: "兑换码", onClick: () => setRedeemOpen(true) },
         ...(onOpenShortcuts ? [{ key: "shortcuts", icon: <Keyboard className="size-4" />, label: "快捷键", onClick: onOpenShortcuts }] : []),
         { type: "divider" },
@@ -107,6 +114,14 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
                             <CreditSymbol className="text-sm leading-none" />
                             <span>{credits.toLocaleString()}</span>
                         </div>
+                    </Tooltip>
+                ) : null}
+                {user ? (
+                    <Tooltip title="购买算力" placement="bottom">
+                        <a href={CREDIT_PURCHASE_URL} target="_blank" rel="noreferrer" className={purchaseClass} style={creditStyle}>
+                            <ShoppingCart className="size-3.5" />
+                            <span>购买</span>
+                        </a>
                     </Tooltip>
                 ) : null}
                 {showConfig ? (

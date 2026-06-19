@@ -55,6 +55,22 @@ func DeleteRedemptionCode(id string) error {
 	return db.Delete(&model.RedemptionCode{}, "id = ?", id).Error
 }
 
+func DeleteRedemptionCodes(ids []string, status string) (int64, error) {
+	db, err := DB()
+	if err != nil {
+		return 0, err
+	}
+	tx := db.Model(&model.RedemptionCode{})
+	if len(ids) > 0 {
+		tx = tx.Where("id IN ?", ids)
+	}
+	if strings.TrimSpace(status) != "" {
+		tx = tx.Where("status = ?", status)
+	}
+	result := tx.Delete(&model.RedemptionCode{})
+	return result.RowsAffected, result.Error
+}
+
 func RedeemRedemptionCode(userID string, codeText string, redeemedAt string, log model.CreditLog) (model.RedemptionCode, model.User, error) {
 	db, err := DB()
 	if err != nil {

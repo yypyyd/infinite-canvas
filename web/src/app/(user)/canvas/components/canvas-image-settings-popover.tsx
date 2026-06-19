@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject, type SyntheticEvent } from "react";
 import { createPortal } from "react-dom";
 import { Settings2 } from "lucide-react";
 import { Button } from "antd";
@@ -40,6 +40,7 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChang
         setOpen(nextOpen);
         onOpenChange?.(nextOpen);
     };
+    const stopCanvasEvent = (event: SyntheticEvent) => event.stopPropagation();
 
     useEffect(() => {
         if (!open) return;
@@ -64,12 +65,38 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChang
         };
     }, [onOpenChange, open]);
 
-    const panel = open && buttonRect ? <ImageSettingsPortal buttonRect={buttonRect} panelRef={panelRef} placement={placement} theme={theme} config={config} onConfigChange={onConfigChange} pricingRules={pricingRules} model={activeModel} supportedRatios={modelAspectRatios?.[activeModel]} supportedResolutionTiers={modelDefinition?.resolutionTiers} /> : null;
+    const panel =
+        open && buttonRect ? (
+            <ImageSettingsPortal
+                buttonRect={buttonRect}
+                panelRef={panelRef}
+                placement={placement}
+                theme={theme}
+                config={config}
+                pricingRules={pricingRules}
+                onConfigChange={onConfigChange}
+                model={activeModel}
+                supportedRatios={modelAspectRatios?.[activeModel]}
+                supportedResolutionTiers={modelDefinition?.resolutionTiers}
+            />
+        ) : null;
 
     return (
         <>
             <span ref={buttonRef} className="inline-flex min-w-0">
-                <Button size="small" type="text" className={buttonClassName || "!h-8 !max-w-[180px] !justify-start !rounded-full !px-2.5"} style={{ background: theme.node.fill, color: theme.node.text }} icon={<Settings2 className="size-3.5" />} onClick={() => updateOpen(!open)}>
+                <Button
+                    size="small"
+                    type="text"
+                    className={buttonClassName || "!h-8 !max-w-[180px] !justify-start !rounded-full !px-2.5"}
+                    style={{ background: theme.node.fill, color: theme.node.text }}
+                    icon={<Settings2 className="size-3.5" />}
+                    onPointerDown={stopCanvasEvent}
+                    onMouseDown={stopCanvasEvent}
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        updateOpen(!open);
+                    }}
+                >
                     <span className="truncate">
                         {imageQualityLabel(quality)} · {imageSizeLabel(activeSize)} · {count} 张
                     </span>
@@ -86,8 +113,8 @@ function ImageSettingsPortal({
     placement,
     theme,
     config,
-    onConfigChange,
     pricingRules,
+    onConfigChange,
     model,
     supportedRatios,
     supportedResolutionTiers,
@@ -97,8 +124,8 @@ function ImageSettingsPortal({
     placement: CanvasImageSettingsPopoverProps["placement"];
     theme: (typeof canvasThemes)[keyof typeof canvasThemes];
     config: AiConfig;
-    onConfigChange: (key: keyof AiConfig, value: string) => void;
     pricingRules?: PricingRule[];
+    onConfigChange: (key: keyof AiConfig, value: string) => void;
     model: string;
     supportedRatios?: string[];
     supportedResolutionTiers?: string[];

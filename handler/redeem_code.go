@@ -18,6 +18,11 @@ type redeemCodeRequest struct {
 	Code string `json:"code"`
 }
 
+type deleteRedemptionCodesRequest struct {
+	IDs    []string `json:"ids"`
+	Status string   `json:"status"`
+}
+
 func AdminRedemptionCodes(w http.ResponseWriter, r *http.Request) {
 	result, err := service.ListRedemptionCodes(parseQuery(r))
 	if err != nil {
@@ -44,6 +49,17 @@ func AdminDeleteRedemptionCode(w http.ResponseWriter, r *http.Request, id string
 		return
 	}
 	OK(w, true)
+}
+
+func AdminDeleteRedemptionCodes(w http.ResponseWriter, r *http.Request) {
+	var request deleteRedemptionCodesRequest
+	_ = json.NewDecoder(r.Body).Decode(&request)
+	deleted, err := service.DeleteRedemptionCodes(request.IDs, request.Status)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, deleted)
 }
 
 func RedeemCode(w http.ResponseWriter, r *http.Request) {

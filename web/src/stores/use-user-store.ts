@@ -12,6 +12,7 @@ type UserStore = {
     isLoading: boolean;
     setSession: (token: string, user: AuthUser) => void;
     clearSession: () => void;
+    refreshUser: () => Promise<AuthUser | null>;
     hydrateUser: () => Promise<void>;
     login: (payload: AuthPayload) => Promise<AuthUser>;
     register: (payload: AuthPayload) => Promise<AuthUser>;
@@ -26,6 +27,25 @@ export const useUserStore = create<UserStore>()(
             isLoading: false,
             setSession: (token, user) => set({ token, user, isReady: true }),
             clearSession: () => set({ token: "", user: null, isReady: true }),
+            refreshUser: async () => {
+                const token = get().token;
+                if (!token) {
+                    set({ user: null, isReady: true });
+                    return null;
+                }
+                try {
+                    const user = await fetchCurrentUser(token);
+                    if (user.role === "guest") {
+                        set({ token: "", user: null, isReady: true });
+                        return null;
+                    }
+                    set({ user, isReady: true });
+                    return user;
+                } catch {
+                    set({ token: "", user: null, isReady: true });
+                    return null;
+                }
+            },
             hydrateUser: async () => {
                 const token = get().token;
                 if (!token) {
@@ -34,14 +54,9 @@ export const useUserStore = create<UserStore>()(
                 }
                 set({ isLoading: true });
                 try {
-                    const user = await fetchCurrentUser(token);
-                    if (user.role === "guest") {
-                        set({ token: "", user: null, isReady: true, isLoading: false });
-                        return;
-                    }
-                    set({ user, isReady: true, isLoading: false });
-                } catch {
-                    set({ token: "", user: null, isReady: true, isLoading: false });
+                    await get().refreshUser();
+                } finally {
+                    set({ isLoading: false });
                 }
             },
             login: async (payload) => {

@@ -65,6 +65,27 @@ func DeleteRedemptionCode(id string) error {
 	return repository.DeleteRedemptionCode(id)
 }
 
+func DeleteRedemptionCodes(ids []string, status string) (int64, error) {
+	cleanIDs := make([]string, 0, len(ids))
+	seen := map[string]bool{}
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		cleanIDs = append(cleanIDs, id)
+	}
+	status = strings.TrimSpace(status)
+	if len(cleanIDs) == 0 && status == "" {
+		return 0, safeMessageError{message: "请选择要删除的兑换码"}
+	}
+	if status != "" && status != string(model.RedemptionCodeStatusUsed) && status != string(model.RedemptionCodeStatusActive) && status != string(model.RedemptionCodeStatusDisabled) {
+		return 0, safeMessageError{message: "兑换码状态不支持"}
+	}
+	return repository.DeleteRedemptionCodes(cleanIDs, status)
+}
+
 func RedeemCode(userID string, code string) (model.AuthUser, error) {
 	code = normalizeRedemptionCode(code)
 	if strings.TrimSpace(userID) == "" {

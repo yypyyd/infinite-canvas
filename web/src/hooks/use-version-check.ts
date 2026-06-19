@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { App } from "antd";
 import { APP_VERSION } from "@/constant/env";
-import { parseChangelog, type ReleaseInfo } from "@/lib/release";
+import type { ReleaseInfo } from "@/lib/release";
 
-const latestVersionUrl = "https://raw.githubusercontent.com/basketikun/infinite-canvas/main/VERSION";
-const latestChangelogUrl = "https://raw.githubusercontent.com/basketikun/infinite-canvas/main/CHANGELOG.md";
+const remoteVersionUrl = "https://raw.githubusercontent.com/yypyyd/infinite-canvas/main/VERSION";
+const releaseUrl = "/api/app/releases";
 
 function readLocalReleases(): ReleaseInfo[] {
     try {
@@ -26,6 +26,17 @@ function isNewerVersion(latestVersion: string, currentVersion: string) {
     return latest.some((value, index) => value > current[index] && latest.slice(0, index).every((part, prevIndex) => part === current[prevIndex]));
 }
 
+function newerOrCurrent(remoteVersion: string, currentVersion: string) {
+    const version = remoteVersion.trim();
+    return isNewerVersion(version, currentVersion) ? version : currentVersion;
+}
+
+async function fetchReleaseInfo() {
+    const response = await fetch(releaseUrl, { cache: "no-store" });
+    if (!response.ok) throw new Error("版本信息读取失败");
+    return (await response.json()) as { version?: string; releases?: ReleaseInfo[] };
+}
+
 export function useVersionCheck() {
     const currentVersion = APP_VERSION;
     const { message } = App.useApp();
@@ -38,10 +49,10 @@ export function useVersionCheck() {
 
     const checkLatestVersion = useCallback(async () => {
         try {
-            const response = await fetch(latestVersionUrl);
+            const response = await fetch(remoteVersionUrl, { cache: "no-store" });
             if (!response.ok) return false;
             const version = await response.text();
-            setLatestVersion(version.trim() || currentVersion);
+            setLatestVersion(newerOrCurrent(version, currentVersion));
             return true;
         } catch {
             return false;
@@ -51,19 +62,19 @@ export function useVersionCheck() {
     const checkLatestRelease = useCallback(
         async (showMessage = false) => {
             setChecking(true);
+            setReleases(localReleases);
             try {
-                const [versionResponse, changelogResponse] = await Promise.all([fetch(latestVersionUrl), fetch(latestChangelogUrl)]);
-                if (!versionResponse.ok) throw new Error("版本读取失败");
-                if (!changelogResponse.ok) throw new Error("更新日志读取失败");
-                const [version, changelog] = await Promise.all([versionResponse.text(), changelogResponse.text()]);
-                setLatestVersion(version.trim() || currentVersion);
-                if (changelog.trim()) setReleases(parseChangelog(changelog));
-                if (showMessage) message.success("已获取最新版本信息");
+                const [releaseInfo, versionResponse] = await Promise.all([fetchReleaseInfo(), fetch(remoteVersionUrl, { cache: "no-store" })]);
+                if (!versionResponse.ok) throw new Error("远程版本读取失败");
+                const remoteVersion = await versionResponse.text();
+                setLatestVersion(newerOrCurrent(remoteVersion || releaseInfo.version || "", currentVersion));
+                if (releaseInfo.releases?.length) setReleases(releaseInfo.releases);
+                if (showMessage) message.success("已获取自有仓库版本信息");
                 return true;
             } catch {
                 setLatestVersion(currentVersion);
                 setReleases(localReleases);
-                if (showMessage) message.error("获取最新版本信息失败");
+                if (showMessage) message.error("获取自有仓库版本信息失败");
                 return false;
             } finally {
                 setChecking(false);

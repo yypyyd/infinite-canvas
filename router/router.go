@@ -62,6 +62,7 @@ func New() *gin.Engine {
 	})
 	admin.GET("/redeem-codes", gin.WrapF(handler.AdminRedemptionCodes))
 	admin.POST("/redeem-codes/generate", gin.WrapF(handler.AdminGenerateRedemptionCodes))
+	admin.POST("/redeem-codes/batch-delete", gin.WrapF(handler.AdminDeleteRedemptionCodes))
 	admin.DELETE("/redeem-codes/:id", func(c *gin.Context) {
 		handler.AdminDeleteRedemptionCode(c.Writer, c.Request, c.Param("id"))
 	})

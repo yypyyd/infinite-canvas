@@ -1,11 +1,12 @@
 "use client";
 
-import { DeleteOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
+import { CopyOutlined, DeleteOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { ProTable, type ProColumns } from "@ant-design/pro-components";
 import { Button, Card, Col, Form, Input, InputNumber, Modal, Row, Space, Tag, Tooltip, Typography } from "antd";
 import dayjs from "dayjs";
 import { useEffect, useState } from "react";
 
+import { useCopyText } from "@/hooks/use-copy-text";
 import type { AdminRedemptionCode, GenerateRedemptionCodesPayload } from "@/services/api/admin";
 import { useAdminRedeemCodes } from "./use-admin-redeem-codes";
 
@@ -24,11 +25,17 @@ const statusColors: Record<string, string> = {
 };
 
 export default function AdminRedeemCodesPage() {
-    const { codes, keyword, page, pageSize, total, isLoading, searchCodes, changePage, changePageSize, resetFilters, refreshCodes, generateCodes, deleteCode } = useAdminRedeemCodes();
+    const { codes, keyword, page, pageSize, total, isLoading, searchCodes, changePage, changePageSize, resetFilters, refreshCodes, generateCodes, deleteCode, deleteCodes, deleteUsedCodes } = useAdminRedeemCodes();
+    const copyText = useCopyText();
     const [generateForm] = Form.useForm<GenerateFormValues>();
     const [keywordText, setKeywordText] = useState(keyword);
     const [generateOpen, setGenerateOpen] = useState(false);
     const [deletingCode, setDeletingCode] = useState<AdminRedemptionCode | null>(null);
+    const [selectedCodeIds, setSelectedCodeIds] = useState<string[]>([]);
+    const [isBatchDeleteOpen, setIsBatchDeleteOpen] = useState(false);
+    const [isDeleteUsedOpen, setIsDeleteUsedOpen] = useState(false);
+    const selectedCodes = codes.filter((item) => selectedCodeIds.includes(item.id));
+    const selectedCodeTexts = selectedCodes.map((item) => item.code);
 
     useEffect(() => setKeywordText(keyword), [keyword]);
 
@@ -46,6 +53,22 @@ export default function AdminRedeemCodesPage() {
             quantity: Number(value.quantity || 0),
         });
         setGenerateOpen(false);
+    };
+
+    const copySelectedCodes = () => {
+        copyText(selectedCodeTexts.join("\n"), `已复制 ${selectedCodeTexts.length} 个兑换码`);
+    };
+
+    const batchDeleteCodes = async () => {
+        await deleteCodes(selectedCodeIds);
+        setSelectedCodeIds([]);
+        setIsBatchDeleteOpen(false);
+    };
+
+    const deleteUsed = async () => {
+        await deleteUsedCodes();
+        setSelectedCodeIds([]);
+        setIsDeleteUsedOpen(false);
     };
 
     const columns: ProColumns<AdminRedemptionCode>[] = [
@@ -151,7 +174,17 @@ export default function AdminRedeemCodesPage() {
                         </Space>
                     }
                     options={{ density: true, setting: true, reload: () => void refreshCodes() }}
+                    rowSelection={{ selectedRowKeys: selectedCodeIds, onChange: (keys) => setSelectedCodeIds(keys.map(String)) }}
                     toolBarRender={() => [
+                        <Button key="copy-selected" icon={<CopyOutlined />} disabled={!selectedCodeIds.length} onClick={copySelectedCodes}>
+                            批量复制{selectedCodeIds.length ? ` ${selectedCodeIds.length}` : ""}
+                        </Button>,
+                        <Button key="batch-delete" danger icon={<DeleteOutlined />} disabled={!selectedCodeIds.length} onClick={() => setIsBatchDeleteOpen(true)}>
+                            批量删除{selectedCodeIds.length ? ` ${selectedCodeIds.length}` : ""}
+                        </Button>,
+                        <Button key="delete-used" danger icon={<DeleteOutlined />} onClick={() => setIsDeleteUsedOpen(true)}>
+                            删除已使用
+                        </Button>,
                         <Button key="generate" type="primary" icon={<PlusOutlined />} onClick={() => setGenerateOpen(true)}>
                             生成兑换码
                         </Button>,
@@ -209,6 +242,32 @@ export default function AdminRedeemCodesPage() {
                 cancelText="取消"
             >
                 确定删除兑换码「{deletingCode?.code}」吗？删除后用户将不能再兑换它。
+            </Modal>
+
+            <Modal
+                title="批量删除兑换码"
+                open={isBatchDeleteOpen}
+                onCancel={() => setIsBatchDeleteOpen(false)}
+                onOk={() => void batchDeleteCodes()}
+                okText="删除"
+                okButtonProps={{ danger: true }}
+                cancelText="取消"
+                confirmLoading={isLoading}
+            >
+                确定删除选中的 {selectedCodeIds.length} 个兑换码吗？删除后用户将不能再兑换它们。
+            </Modal>
+
+            <Modal
+                title="删除已使用兑换码"
+                open={isDeleteUsedOpen}
+                onCancel={() => setIsDeleteUsedOpen(false)}
+                onOk={() => void deleteUsed()}
+                okText="删除已使用"
+                okButtonProps={{ danger: true }}
+                cancelText="取消"
+                confirmLoading={isLoading}
+            >
+                确定删除所有已使用的兑换码吗？未使用兑换码不会受影响。
             </Modal>
         </main>
     );

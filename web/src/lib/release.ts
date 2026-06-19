@@ -10,7 +10,9 @@ export function parseChangelog(content: string): ReleaseInfo[] {
         .slice(1)
         .map((block) => {
             const [title = "", ...lines] = block.trim().split("\n");
-            const [, version = title.trim(), date = ""] = title.match(/^(.+?)(?:\s+-\s+(.+))?$/) || [];
+            const titleMatch = title.trim().match(/^(.+?)\s+-\s+(.+)$/);
+            const version = titleMatch?.[1] || title.trim();
+            const date = titleMatch?.[2] || "";
             return {
                 version: version.trim(),
                 date: date.trim(),

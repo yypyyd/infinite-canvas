@@ -6,7 +6,8 @@ import { Button, Segmented } from "antd";
 
 import { ModelPicker } from "@/components/model-picker";
 import { defaultConfig, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
-import { CreditSymbol, requestCreditCost } from "@/constant/credits";
+import { CreditSymbol, requestCreditQuote } from "@/constant/credits";
+import { useUserStore } from "@/stores/use-user-store";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasImageSettingsPopover } from "./canvas-image-settings-popover";
@@ -26,14 +27,18 @@ type CanvasConfigNodePanelProps = {
 export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigChange, onGenerate, onComposerToggle }: CanvasConfigNodePanelProps) {
     const globalConfig = useEffectiveConfig();
     const pricingRules = useConfigStore((state) => state.publicSettings?.modelChannel.pricingRules);
+    const groupRatios = useConfigStore((state) => state.publicSettings?.modelChannel.groupRatios);
+    const userGroup = useUserStore((state) => state.user?.group || "default");
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const mode = node.metadata?.generationMode || "image";
     const config = buildNodeConfig(globalConfig, node, mode);
     const count = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
-    const credits = requestCreditCost({
+    const creditQuote = requestCreditQuote({
         channelMode: config.channelMode,
         pricingRules,
+        groupRatios,
+        userGroup,
         model: config.model,
         modality: mode,
         operation: mode === "text" ? "completion" : mode === "audio" ? "speech" : "generation",
@@ -129,10 +134,12 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
                 onClick={() => onGenerate(node.id)}
             >
                 <span className="inline-flex items-center gap-1.5">
-                    <span className="inline-flex items-center gap-1">
-                        <CreditSymbol />
-                        {credits.toLocaleString()}
-                    </span>
+                    {creditQuote.matched ? (
+                        <span className="inline-flex items-center gap-1">
+                            <CreditSymbol />
+                            {creditQuote.credits.toLocaleString()}
+                        </span>
+                    ) : null}
                     {isRunning ? <LoaderCircle className="size-4 animate-spin" /> : <Play className="size-4" />}
                     <span>开始生成</span>
                 </span>

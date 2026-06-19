@@ -28,11 +28,13 @@ type CanvasStore = {
     openProject: (id: string) => CanvasProject | null;
     renameProject: (id: string, title: string) => void;
     deleteProjects: (ids: string[]) => void;
+    replaceProjects: (projects: CanvasProject[]) => void;
     updateProject: (id: string, patch: Partial<Pick<CanvasProject, "nodes" | "connections" | "chatSessions" | "activeChatId" | "backgroundMode" | "showImageInfo" | "viewport">>) => void;
 };
 
 const initialViewport: ViewportTransform = { x: 0, y: 0, k: 1 };
 const CANVAS_STORE_KEY = "infinite-canvas:canvas_store";
+export const CANVAS_PROJECTS_REPLACED_EVENT = "infinite-canvas:projects-replaced";
 type PersistedCanvasState = Pick<CanvasStore, "projects">;
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let queuedPersistState: PersistedCanvasState | null = null;
@@ -112,6 +114,10 @@ export const useCanvasStore = create<CanvasStore>()(
                     const projects = state.projects.filter((project) => !ids.includes(project.id));
                     return { projects };
                 }),
+            replaceProjects: (projects) => {
+                set({ projects });
+                if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(CANVAS_PROJECTS_REPLACED_EVENT));
+            },
             updateProject: (id, patch) =>
                 set((state) => ({
                     projects: state.projects.map((project) => (project.id === id ? { ...project, ...patch, updatedAt: new Date().toISOString() } : project)),

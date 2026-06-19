@@ -18,9 +18,16 @@ description: settings 表中 public 和 private 配置结构说明
 {
   "modelChannel": {
     "availableModels": ["gpt-5.5", "gpt-image-2"],
+    "models": [
+      { "id": "gpt-image-2", "name": "GPT Image 2", "modality": "image", "enabled": true, "sort": 0, "aspectRatios": ["1:1", "3:2", "2:3"], "resolutionTiers": ["1k", "2k", "4k"], "remark": "" }
+    ],
+    "groupRatios": {
+      "default": 1,
+      "vip": 0.8
+    },
     "pricingRules": [
-      { "model": "gpt-image-2", "modality": "image", "operation": "generation", "unit": "image", "resolutionTier": "1k", "quality": "low", "credits": 10, "minCredits": 0, "enabled": true, "remark": "" },
-      { "model": "gpt-5.5", "modality": "text", "operation": "completion", "unit": "request", "resolutionTier": "", "quality": "", "credits": 1, "minCredits": 0, "enabled": true, "remark": "" }
+      { "model": "gpt-image-2", "modality": "image", "operation": "generation", "unit": "image", "resolutionTier": "1k", "billingMode": "fixed", "credits": 10, "minCredits": 0, "modelRatio": 1, "completionRatio": 1, "enabled": true, "remark": "" },
+      { "model": "gpt-5.5", "modality": "text", "operation": "completion", "unit": "request", "resolutionTier": "", "billingMode": "ratio", "credits": 0, "minCredits": 0, "modelRatio": 1, "completionRatio": 1, "enabled": true, "remark": "" }
     ],
     "defaultModel": "gpt-image-2",
     "defaultImageModel": "gpt-image-2",
@@ -47,7 +54,9 @@ description: settings 表中 public 和 private 配置结构说明
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `availableModels` | string[] | 系统可用模型；保存设置时会自动合并所有已启用私有渠道的模型 |
+| `models` | object[] | 模型管理配置，包含模型名称、类型、启用状态、排序、宽高比和分辨率档 |
 | `pricingRules` | object[] | 模型算力点配置，后端模型接口调用前按模型预扣，上游失败时返还；未配置默认不扣除 |
+| `groupRatios` | object | 用户分组倍率，例如 `default`、`vip`、`svip` |
 | `defaultModel` | string | 默认模型，从 `availableModels` 中选择；为空或失效时优先选择文本模型 |
 | `defaultImageModel` | string | 默认图片模型，从 `availableModels` 中选择；为空或失效时优先选择 `seedream`、`image`、`gpt-image` 模型 |
 | `defaultVideoModel` | string | 默认视频模型，从 `availableModels` 中选择；为空或失效时优先选择 `seedance`、`video` 模型 |
@@ -60,7 +69,10 @@ description: settings 表中 public 和 private 配置结构说明
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `model` | string | 模型名称 |
-| `credits` | number | 每次后端模型接口调用前预扣的算力点 |
+| `billingMode` | string | 计费模式：`fixed` 固定单价，`ratio` 倍率计费 |
+| `credits` | number | 固定计费模式下的基础单价 |
+| `modelRatio` | number | 倍率计费模式下的模型倍率 |
+| `completionRatio` | number | 补全倍率，预留给后续 token usage 结算 |
 
 用户侧请求模式：
 

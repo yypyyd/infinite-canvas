@@ -27,6 +27,7 @@ type saveUserRequest struct {
 	Email       string           `json:"email"`
 	DisplayName string           `json:"displayName"`
 	Role        model.UserRole   `json:"role"`
+	Group       string           `json:"group"`
 	Status      model.UserStatus `json:"status"`
 }
 
@@ -115,6 +116,7 @@ func AdminSaveUser(w http.ResponseWriter, r *http.Request) {
 		Email:       request.Email,
 		DisplayName: request.DisplayName,
 		Role:        request.Role,
+		Group:       request.Group,
 		Status:      request.Status,
 	}, request.Password)
 	if err != nil {

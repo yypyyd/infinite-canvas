@@ -17,6 +17,7 @@ export type AdminUser = {
     displayName: string;
     avatarUrl: string;
     role: "user" | "admin";
+    group: string;
     credits: number;
     affCode: string;
     affCount: number;
@@ -207,7 +208,9 @@ export type AdminModelChannel = {
 
 export type AdminPublicModelChannelSettings = {
     availableModels: string[];
+    models: AdminManagedModel[];
     pricingRules: AdminPricingRule[];
+    groupRatios: Record<string, number>;
     modelAspectRatios: Record<string, string[]>;
     defaultModel: string;
     defaultImageModel: string;
@@ -217,14 +220,28 @@ export type AdminPublicModelChannelSettings = {
     allowCustomChannel: boolean;
 };
 
+export type AdminManagedModel = {
+    id: string;
+    name: string;
+    modality: string;
+    enabled: boolean;
+    sort: number;
+    aspectRatios: string[];
+    resolutionTiers: string[];
+    remark: string;
+};
+
 export type AdminPricingRule = {
     model: string;
     modality: string;
     operation: string;
     unit: string;
     resolutionTier: string;
+    billingMode: "fixed" | "ratio";
     credits: number;
     minCredits: number;
+    modelRatio: number;
+    completionRatio: number;
     enabled: boolean;
     remark: string;
 };

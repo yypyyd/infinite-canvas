@@ -50,6 +50,7 @@ func EnsureDefaultAdmin() error {
 		Username:  strings.TrimSpace(config.Cfg.AdminUsername),
 		Password:  hash,
 		Role:      model.UserRoleAdmin,
+		Group:     "default",
 		AffCode:   newAffCode(),
 		Status:    model.UserStatusActive,
 		CreatedAt: now(),
@@ -89,6 +90,7 @@ func Register(username string, password string) (model.AuthSession, error) {
 		Username:  username,
 		Password:  hash,
 		Role:      model.UserRoleUser,
+		Group:     "default",
 		AffCode:   newAffCode(),
 		Status:    model.UserStatusActive,
 		CreatedAt: now(),
@@ -113,6 +115,7 @@ func Login(username string, password string) (model.AuthSession, error) {
 	}
 	normalizeUserDefaults(&user)
 	user.LastLoginAt = now()
+	user.Group = normalizeUserGroup(user.Group)
 	user.UpdatedAt = now()
 	user, err = repository.SaveUser(user)
 	if err != nil {
@@ -180,6 +183,7 @@ func LoginWithLinuxDo(r *http.Request, code string, state string) (model.AuthSes
 			DisplayName: strings.TrimSpace(profile.Name),
 			AvatarURL:   linuxDoAvatar(profile.AvatarTemplate),
 			Role:        model.UserRoleUser,
+			Group:       "default",
 			AffCode:     newAffCode(),
 			LinuxDoID:   linuxDoID,
 			Status:      model.UserStatusActive,
@@ -228,6 +232,7 @@ func CurrentAuthUser(tokenText string) (model.AuthUser, bool) {
 	if user.Status == model.UserStatusBan {
 		return model.AuthUser{}, false
 	}
+	normalizeUserDefaults(&user)
 	return model.PublicUser(user), true
 }
 
@@ -244,6 +249,7 @@ func ListUsers(q model.Query) (model.UserList, error) {
 }
 
 func SaveUser(user model.User, password string) (model.User, error) {
+	requestGroup := strings.TrimSpace(user.Group)
 	user.Username = strings.TrimSpace(user.Username)
 	if strings.ContainsAny(user.Username, " \t\r\n") {
 		return user, safeMessageError{message: "用户名不能包含空格"}
@@ -275,6 +281,9 @@ func SaveUser(user model.User, password string) (model.User, error) {
 		user.AvatarURL = saved.AvatarURL
 		user.Credits = saved.Credits
 		user.Extra = saved.Extra
+		if requestGroup == "" {
+			user.Group = saved.Group
+		}
 		if user.AffCode == "" {
 			user.AffCode = saved.AffCode
 		}
@@ -297,6 +306,7 @@ func SaveUser(user model.User, password string) (model.User, error) {
 		return user, safeMessageError{message: "密码不能为空"}
 	}
 	user.UpdatedAt = now()
+	user.Group = normalizeUserGroup(user.Group)
 	user, err := repository.SaveUser(user)
 	user.Password = ""
 	return user, err
@@ -404,7 +414,7 @@ func DeleteUser(id string) error {
 }
 
 func GuestUser() model.AuthUser {
-	return model.AuthUser{ID: "", Username: "guest", Role: model.UserRoleGuest}
+	return model.AuthUser{ID: "", Username: "guest", Role: model.UserRoleGuest, Group: "default"}
 }
 
 func newSession(user model.User) (model.AuthSession, error) {
@@ -454,9 +464,18 @@ func normalizeUserDefaults(user *model.User) {
 	if user.Status == "" {
 		user.Status = model.UserStatusActive
 	}
+	user.Group = normalizeUserGroup(user.Group)
 	if user.AffCode == "" {
 		user.AffCode = newAffCode()
 	}
+}
+
+func normalizeUserGroup(group string) string {
+	group = strings.ToLower(strings.TrimSpace(group))
+	if group == "" {
+		return "default"
+	}
+	return group
 }
 
 type linuxDoTokenResponse struct {

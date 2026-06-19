@@ -40,6 +40,7 @@ description: 当前后端主要数据表与字段说明
 | `display_name` | string | 昵称 |
 | `avatar_url` | string | 头像地址 |
 | `role` | string | 角色：`user`、`admin` |
+| `group` | string | 用户计费分组，默认 `default` |
 | `credits` | number | 算力点余额 |
 | `aff_code` | string | 用户自己的邀请码，唯一索引 |
 | `aff_count` | number | 已邀请用户数量，冗余统计字段 |
@@ -117,7 +118,9 @@ description: 当前后端主要数据表与字段说明
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `availableModels` | string[] | 系统可用模型列表 |
+| `models` | object[] | 模型管理配置，包含模型名称、类型、启用状态、排序、宽高比和分辨率档 |
 | `pricingRules` | object[] | 模型算力点配置 |
+| `groupRatios` | object | 用户分组倍率配置 |
 | `defaultModel` | string | 默认模型 |
 | `defaultImageModel` | string | 默认图片模型 |
 | `defaultVideoModel` | string | 默认视频模型 |
@@ -130,7 +133,10 @@ description: 当前后端主要数据表与字段说明
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `model` | string | 模型名称 |
-| `credits` | number | 每次后端模型接口调用前预扣的算力点，未配置默认不扣除 |
+| `billingMode` | string | 计费模式：`fixed` 固定单价，`ratio` 倍率计费 |
+| `credits` | number | 固定计费模式下的基础单价 |
+| `modelRatio` | number | 倍率计费模式下的模型倍率 |
+| `completionRatio` | number | 补全倍率，预留给后续 token usage 结算 |
 
 `auth.linuxDo` 当前字段：
 

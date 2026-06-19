@@ -15,14 +15,19 @@ export type PricingRule = {
     operation: string;
     unit: string;
     resolutionTier?: string;
+    billingMode?: "fixed" | "ratio";
     credits: number;
     minCredits?: number;
+    modelRatio?: number;
+    completionRatio?: number;
     enabled?: boolean;
 };
 
 export function requestCreditCost(options: {
     channelMode: string;
     pricingRules?: PricingRule[];
+    groupRatios?: Record<string, number>;
+    userGroup?: string;
     model: string;
     modality: string;
     operation?: string;
@@ -39,6 +44,8 @@ export function requestCreditCost(options: {
 export function requestCreditQuote(options: {
     channelMode: string;
     pricingRules?: PricingRule[];
+    groupRatios?: Record<string, number>;
+    userGroup?: string;
     model: string;
     modality: string;
     operation?: string;
@@ -52,7 +59,7 @@ export function requestCreditQuote(options: {
     const request = normalizePricingRequest(options);
     const rule = selectPricingRule(options.pricingRules || [], request);
     if (!rule) return { credits: 0, matched: false };
-    const credits = rule.credits * request.quantity;
+    const credits = calculateRuleCredits(rule, request.quantity, groupRatio(options.groupRatios, options.userGroup));
     return { credits: Math.max(credits, Math.max(0, Number(rule.minCredits) || 0)), matched: true };
 }
 
@@ -121,6 +128,23 @@ function pricingRuleScore(rule: NormalizedCreditRequest, request: NormalizedCred
         score += 1;
     }
     return score;
+}
+
+function calculateRuleCredits(rule: PricingRule, quantity: number, ratio: number) {
+    const normalizedRatio = ratio > 0 ? ratio : 1;
+    if (rule.billingMode === "ratio") {
+        const modelRatio = Number(rule.modelRatio) > 0 ? Number(rule.modelRatio) : 1;
+        return Math.ceil(quantity * modelRatio * normalizedRatio);
+    }
+    return Math.ceil((Number(rule.credits) || 0) * quantity * normalizedRatio);
+}
+
+function groupRatio(items?: Record<string, number>, userGroup?: string) {
+    const group = normalizeToken(userGroup || "default");
+    const value = Number(items?.[group]);
+    if (value > 0) return value;
+    const defaultValue = Number(items?.default);
+    return defaultValue > 0 ? defaultValue : 1;
 }
 
 function resolutionTierForRequest(modality: string, size: string, resolution: string) {

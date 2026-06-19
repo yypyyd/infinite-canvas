@@ -6,7 +6,8 @@ import { Button } from "antd";
 
 import { ModelPicker } from "@/components/model-picker";
 import { defaultConfig, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
-import { CreditSymbol, requestCreditCost } from "@/constant/credits";
+import { CreditSymbol, requestCreditQuote } from "@/constant/credits";
+import { useUserStore } from "@/stores/use-user-store";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasImageSettingsPopover } from "./canvas-image-settings-popover";
@@ -32,6 +33,8 @@ type CanvasNodePromptPanelProps = {
 export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfigChange, onGenerate, mentionReferences = [], onImageSettingsOpenChange }: CanvasNodePromptPanelProps) {
     const globalConfig = useEffectiveConfig();
     const pricingRules = useConfigStore((state) => state.publicSettings?.modelChannel.pricingRules);
+    const groupRatios = useConfigStore((state) => state.publicSettings?.modelChannel.groupRatios);
+    const userGroup = useUserStore((state) => state.user?.group || "default");
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const mode = defaultMode(node.type);
@@ -40,9 +43,11 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
     const hasImageContent = node.type === CanvasNodeType.Image && Boolean(node.metadata?.content);
     const isEditingExistingContent = hasTextContent || hasImageContent;
     const [prompt, setPrompt] = useState(isEditingExistingContent ? "" : node.metadata?.prompt || "");
-    const credits = requestCreditCost({
+    const creditQuote = requestCreditQuote({
         channelMode: config.channelMode,
         pricingRules,
+        groupRatios,
+        userGroup,
         model: config.model,
         modality: mode,
         operation: mode === "text" ? "completion" : mode === "audio" ? "speech" : hasImageContent ? "edit" : "generation",
@@ -123,10 +128,12 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
                     aria-label="生成"
                 >
                     <span className="flex items-center gap-1.5">
-                        <span className="inline-flex items-center gap-1 text-xs font-medium tabular-nums">
-                            <CreditSymbol />
-                            {credits.toLocaleString()}
-                        </span>
+                        {creditQuote.matched ? (
+                            <span className="inline-flex items-center gap-1 text-xs font-medium tabular-nums">
+                                <CreditSymbol />
+                                {creditQuote.credits.toLocaleString()}
+                            </span>
+                        ) : null}
                         {isRunning ? <LoaderCircle className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
                     </span>
                 </Button>

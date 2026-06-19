@@ -7,6 +7,7 @@ import dayjs from "dayjs";
 import { useEffect, useState } from "react";
 
 import type { AdminUser } from "@/services/api/admin";
+import { useConfigStore } from "@/stores/use-config-store";
 import { useAdminUsers } from "./use-admin-users";
 
 type UserFormValues = Partial<AdminUser> & { password?: string };
@@ -21,8 +22,15 @@ const statusOptions = [
     { label: "禁用", value: "ban" },
 ];
 
+const groupOptions = [
+    { label: "default", value: "default" },
+    { label: "vip", value: "vip" },
+    { label: "svip", value: "svip" },
+];
+
 export default function AdminUsersPage() {
     const { users, keyword, page, pageSize, total, isLoading, searchUsers, changePage, changePageSize, resetFilters, refreshUsers, saveUser: saveAdminUser, adjustCredits, deleteUser } = useAdminUsers();
+    const groupRatios = useConfigStore((state) => state.publicSettings?.modelChannel.groupRatios);
     const [form] = Form.useForm<UserFormValues>();
     const [keywordText, setKeywordText] = useState(keyword);
     const [editingUser, setEditingUser] = useState<Partial<AdminUser> | null>(null);
@@ -31,8 +39,10 @@ export default function AdminUsersPage() {
     useEffect(() => setKeywordText(keyword), [keyword]);
 
     useEffect(() => {
-        if (editingUser) form.setFieldsValue({ role: "user", status: "active", ...editingUser, password: "" });
+        if (editingUser) form.setFieldsValue({ role: "user", group: "default", status: "active", ...editingUser, password: "" });
     }, [editingUser, form]);
+
+    const userGroupOptions = mergeGroupOptions(groupOptions, Object.keys(groupRatios || {}), editingUser?.group);
 
     const saveUser = async () => {
         const value = await form.validateFields();
@@ -71,6 +81,12 @@ export default function AdminUsersPage() {
             dataIndex: "role",
             width: 100,
             render: (_, item) => <Tag color={item.role === "admin" ? "gold" : "default"}>{item.role === "admin" ? "管理员" : "用户"}</Tag>,
+        },
+        {
+            title: "分组",
+            dataIndex: "group",
+            width: 100,
+            render: (_, item) => <Tag>{item.group || "default"}</Tag>,
         },
         {
             title: "状态",
@@ -169,7 +185,7 @@ export default function AdminUsersPage() {
                     }
                     options={{ density: true, setting: true, reload: () => void refreshUsers() }}
                     toolBarRender={() => [
-                        <Button key="add" type="primary" icon={<PlusOutlined />} onClick={() => setEditingUser({ role: "user", status: "active" })}>
+                        <Button key="add" type="primary" icon={<PlusOutlined />} onClick={() => setEditingUser({ role: "user", group: "default", status: "active" })}>
                             新增
                         </Button>,
                     ]}
@@ -212,6 +228,11 @@ export default function AdminUsersPage() {
                         <Col span={12}>
                             <Form.Item name="role" label="角色" rules={[{ required: true, message: "请选择角色" }]}>
                                 <Select options={roleOptions} />
+                            </Form.Item>
+                        </Col>
+                        <Col span={12}>
+                            <Form.Item name="group" label="用户分组" rules={[{ required: true, message: "请选择用户分组" }]}>
+                                <Select showSearch options={userGroupOptions} />
                             </Form.Item>
                         </Col>
                         <Col span={12}>
@@ -258,4 +279,13 @@ export default function AdminUsersPage() {
             </Modal>
         </main>
     );
+}
+
+function mergeGroupOptions(baseOptions: { label: string; value: string }[], configuredGroups: string[], currentGroup?: string) {
+    const groups = new Set(baseOptions.map((item) => item.value));
+    if (currentGroup) groups.add(currentGroup);
+    for (const group of configuredGroups) {
+        if (group.trim()) groups.add(group.trim());
+    }
+    return Array.from(groups).map((group) => ({ label: group, value: group }));
 }

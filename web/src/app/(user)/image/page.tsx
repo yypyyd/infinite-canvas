@@ -20,6 +20,7 @@ import { formatBytes, formatDuration, getDataUrlByteSize, readImageMeta } from "
 import { requestEdit, requestGeneration } from "@/services/api/image";
 import { deleteStoredImages, resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { useAssetStore } from "@/stores/use-asset-store";
+import { useUserStore } from "@/stores/use-user-store";
 import type { ReferenceImage } from "@/types/image";
 
 type GeneratedImage = {
@@ -77,7 +78,10 @@ export default function ImagePage() {
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const pricingRules = useConfigStore((state) => state.publicSettings?.modelChannel.pricingRules);
+    const groupRatios = useConfigStore((state) => state.publicSettings?.modelChannel.groupRatios);
+    const managedModels = useConfigStore((state) => state.publicSettings?.modelChannel.models);
     const modelAspectRatios = useConfigStore((state) => state.publicSettings?.modelChannel.modelAspectRatios);
+    const userGroup = useUserStore((state) => state.user?.group || "default");
     const addAsset = useAssetStore((state) => state.addAsset);
     const [prompt, setPrompt] = useState("");
     const [references, setReferences] = useState<ReferenceImage[]>([]);
@@ -95,12 +99,15 @@ export default function ImagePage() {
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
     const model = effectiveConfig.imageModel || effectiveConfig.model;
+    const modelDefinition = managedModels?.find((item) => item.id === model);
     const imageOperation = references.length ? "edit" : "generation";
     const canGenerate = Boolean(prompt.trim());
     const generationCount = Math.max(1, Math.min(10, Number(config.count) || 1));
     const creditQuote = requestCreditQuote({
         channelMode: effectiveConfig.channelMode,
         pricingRules,
+        groupRatios,
+        userGroup,
         model,
         modality: "image",
         operation: imageOperation,
@@ -418,7 +425,7 @@ export default function ImagePage() {
                             </div>
 
                             <div className="hidden gap-4 sm:grid sm:grid-cols-2">
-                                <GenerationSettings config={effectiveConfig} model={model} operation={imageOperation} pricingRules={pricingRules} supportedRatios={modelAspectRatios?.[model]} updateConfig={updateConfig} openConfigDialog={openConfigDialog} />
+                                <GenerationSettings config={effectiveConfig} model={model} operation={imageOperation} pricingRules={pricingRules} supportedRatios={modelAspectRatios?.[model]} supportedResolutionTiers={modelDefinition?.resolutionTiers} updateConfig={updateConfig} openConfigDialog={openConfigDialog} />
                             </div>
                         </div>
 
@@ -490,7 +497,7 @@ export default function ImagePage() {
             </Drawer>
             <Drawer title="参数" placement="bottom" size="82vh" open={settingsOpen} onClose={() => setSettingsOpen(false)}>
                 <div className="grid grid-cols-2 gap-3 pb-4">
-                    <GenerationSettings config={effectiveConfig} model={model} operation={imageOperation} pricingRules={pricingRules} supportedRatios={modelAspectRatios?.[model]} updateConfig={updateConfig} openConfigDialog={openConfigDialog} />
+                    <GenerationSettings config={effectiveConfig} model={model} operation={imageOperation} pricingRules={pricingRules} supportedRatios={modelAspectRatios?.[model]} supportedResolutionTiers={modelDefinition?.resolutionTiers} updateConfig={updateConfig} openConfigDialog={openConfigDialog} />
                 </div>
             </Drawer>
             <PromptSelectDialog open={promptDialogOpen} onOpenChange={setPromptDialogOpen} onSelect={setPrompt} />
@@ -508,6 +515,7 @@ function GenerationSettings({
     operation,
     pricingRules,
     supportedRatios,
+    supportedResolutionTiers,
     updateConfig,
     openConfigDialog,
 }: {
@@ -516,6 +524,7 @@ function GenerationSettings({
     operation: "generation" | "edit";
     pricingRules?: PricingRule[];
     supportedRatios?: string[];
+    supportedResolutionTiers?: string[];
     updateConfig: UpdateAiConfig;
     openConfigDialog: (shouldPromptContinue?: boolean) => void;
 }) {
@@ -528,7 +537,7 @@ function GenerationSettings({
                 <ModelPicker config={config} value={model} onChange={(value) => updateConfig("imageModel", value)} capability="image" fullWidth onMissingConfig={() => openConfigDialog(false)} />
             </label>
             <div className="col-span-2">
-                <ImageSettingsPanel config={config} onConfigChange={(key, value) => updateConfig(key, value)} theme={theme} showTitle={false} className="space-y-4" maxCount={10} pricingRules={pricingRules} model={model} operation={operation} supportedRatios={supportedRatios} />
+                <ImageSettingsPanel config={config} onConfigChange={(key, value) => updateConfig(key, value)} theme={theme} showTitle={false} className="space-y-4" maxCount={10} pricingRules={pricingRules} model={model} operation={operation} supportedRatios={supportedRatios} supportedResolutionTiers={supportedResolutionTiers} />
             </div>
         </>
     );

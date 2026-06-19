@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -87,8 +88,11 @@ func normalizePublicSettingWithChannels(setting model.PublicSetting, channels []
 	if setting.ModelChannel.AvailableModels == nil {
 		setting.ModelChannel.AvailableModels = []string{}
 	}
+	enabledModels := enabledChannelModels(channels)
+	setting.ModelChannel.Models = normalizeModelDefinitions(setting.ModelChannel.Models, setting.ModelChannel.AvailableModels, setting.ModelChannel.ModelAspectRatios, enabledModels)
 	setting.ModelChannel.PricingRules = normalizePricingRules(setting.ModelChannel.PricingRules)
-	setting.ModelChannel.ModelAspectRatios = normalizeModelAspectRatios(setting.ModelChannel.ModelAspectRatios)
+	setting.ModelChannel.GroupRatios = normalizeGroupRatios(setting.ModelChannel.GroupRatios)
+	setting.ModelChannel.ModelAspectRatios = normalizeModelAspectRatios(modelAspectRatiosFromDefinitions(setting.ModelChannel.Models, setting.ModelChannel.ModelAspectRatios))
 	if setting.ModelChannel.AllowCustomChannel == nil {
 		enabled := true
 		setting.ModelChannel.AllowCustomChannel = &enabled
@@ -97,8 +101,10 @@ func normalizePublicSettingWithChannels(setting model.PublicSetting, channels []
 		enabled := true
 		setting.Auth.AllowRegister = &enabled
 	}
-	enabledModels := enabledChannelModels(channels)
-	if len(enabledModels) > 0 {
+	managedModels := enabledManagedModelIDs(setting.ModelChannel.Models)
+	if len(managedModels) > 0 {
+		setting.ModelChannel.AvailableModels = managedModels
+	} else if len(enabledModels) > 0 {
 		setting.ModelChannel.AvailableModels = enabledModels
 	} else {
 		setting.ModelChannel.AvailableModels = uniqueModelNames(setting.ModelChannel.AvailableModels)
@@ -111,6 +117,10 @@ func normalizePublicSettingWithChannels(setting model.PublicSetting, channels []
 }
 
 func CalculateRequestCredits(request PricingRequest) (int, error) {
+	return CalculateRequestCreditsForGroup(request, "default")
+}
+
+func CalculateRequestCreditsForGroup(request PricingRequest, userGroup string) (int, error) {
 	settings, err := repository.GetSettings()
 	if err != nil {
 		return 0, err
@@ -119,7 +129,8 @@ func CalculateRequestCredits(request PricingRequest) (int, error) {
 	if request.Model == "" || request.Modality == "" || request.Operation == "" || request.Unit == "" {
 		return 0, safeMessageError{message: "模型计费参数不完整"}
 	}
-	rule, ok := selectPricingRule(normalizePublicSetting(settings.Public).ModelChannel.PricingRules, request)
+	public := normalizePublicSetting(settings.Public)
+	rule, ok := selectPricingRule(public.ModelChannel.PricingRules, request)
 	if !ok {
 		return 0, safeMessageError{message: "模型未配置计费规则"}
 	}
@@ -127,11 +138,28 @@ func CalculateRequestCredits(request PricingRequest) (int, error) {
 	if quantity < 1 {
 		quantity = 1
 	}
-	credits := rule.Credits * quantity
+	credits := calculateRuleCredits(rule, quantity, groupRatio(public.ModelChannel.GroupRatios, userGroup))
 	if rule.MinCredits > credits {
 		credits = rule.MinCredits
 	}
 	return credits, nil
+}
+
+func calculateRuleCredits(rule model.PricingRule, quantity int, ratio float64) int {
+	if quantity < 1 {
+		quantity = 1
+	}
+	if ratio <= 0 {
+		ratio = 1
+	}
+	if rule.BillingMode == "ratio" {
+		modelRatio := rule.ModelRatio
+		if modelRatio <= 0 {
+			modelRatio = 1
+		}
+		return int(math.Ceil(float64(quantity) * modelRatio * ratio))
+	}
+	return int(math.Ceil(float64(rule.Credits*quantity) * ratio))
 }
 
 func normalizePricingRules(items []model.PricingRule) []model.PricingRule {
@@ -145,6 +173,10 @@ func normalizePricingRules(items []model.PricingRule) []model.PricingRule {
 		item.Operation = normalizePricingToken(item.Operation)
 		item.Unit = normalizePricingToken(item.Unit)
 		item.ResolutionTier = normalizeResolutionTier(item.ResolutionTier)
+		item.BillingMode = normalizePricingToken(item.BillingMode)
+		if item.BillingMode != "ratio" {
+			item.BillingMode = "fixed"
+		}
 		item.Remark = strings.TrimSpace(item.Remark)
 		if item.Credits < 0 {
 			item.Credits = 0
@@ -152,9 +184,116 @@ func normalizePricingRules(items []model.PricingRule) []model.PricingRule {
 		if item.MinCredits < 0 {
 			item.MinCredits = 0
 		}
+		if item.ModelRatio <= 0 {
+			item.ModelRatio = 1
+		}
+		if item.CompletionRatio <= 0 {
+			item.CompletionRatio = 1
+		}
 		if item.Model == "" {
 			continue
 		}
+		result = append(result, item)
+	}
+	return result
+}
+
+func normalizeModelDefinitions(items []model.ModelDefinition, availableModels []string, aspectRatios map[string][]string, channelModels []string) []model.ModelDefinition {
+	seedModels := uniqueModelNames(append(append([]string{}, availableModels...), channelModels...))
+	if len(items) == 0 {
+		items = make([]model.ModelDefinition, 0, len(seedModels))
+		for index, modelName := range seedModels {
+			items = append(items, model.ModelDefinition{ID: modelName, Name: modelName, Modality: defaultModelModality(modelName), Enabled: true, Sort: index, AspectRatios: aspectRatios[modelName], ResolutionTiers: []string{"1k"}})
+		}
+	}
+	result := make([]model.ModelDefinition, 0, len(items))
+	seen := map[string]bool{}
+	for _, item := range items {
+		item.ID = strings.TrimSpace(item.ID)
+		if item.ID == "" || seen[item.ID] {
+			continue
+		}
+		seen[item.ID] = true
+		item.Name = strings.TrimSpace(item.Name)
+		if item.Name == "" {
+			item.Name = item.ID
+		}
+		item.Modality = normalizePricingToken(item.Modality)
+		if item.Modality == "" {
+			item.Modality = defaultModelModality(item.ID)
+		}
+		item.AspectRatios = normalizeStringList(item.AspectRatios, normalizePricingToken)
+		item.ResolutionTiers = normalizeStringList(item.ResolutionTiers, normalizeResolutionTier)
+		item.Remark = strings.TrimSpace(item.Remark)
+		result = append(result, item)
+	}
+	sort.SliceStable(result, func(i, j int) bool {
+		if result[i].Sort == result[j].Sort {
+			return result[i].ID < result[j].ID
+		}
+		return result[i].Sort < result[j].Sort
+	})
+	return result
+}
+
+func normalizeGroupRatios(items map[string]float64) map[string]float64 {
+	result := map[string]float64{"default": 1}
+	for key, value := range items {
+		key = normalizePricingToken(key)
+		if key == "" || value <= 0 {
+			continue
+		}
+		result[key] = value
+	}
+	return result
+}
+
+func groupRatio(items map[string]float64, userGroup string) float64 {
+	userGroup = normalizePricingToken(userGroup)
+	if userGroup == "" {
+		userGroup = "default"
+	}
+	if value := items[userGroup]; value > 0 {
+		return value
+	}
+	if value := items["default"]; value > 0 {
+		return value
+	}
+	return 1
+}
+
+func enabledManagedModelIDs(items []model.ModelDefinition) []string {
+	result := []string{}
+	for _, item := range items {
+		if item.Enabled && strings.TrimSpace(item.ID) != "" {
+			result = append(result, item.ID)
+		}
+	}
+	return uniqueModelNames(result)
+}
+
+func modelAspectRatiosFromDefinitions(items []model.ModelDefinition, fallback map[string][]string) map[string][]string {
+	result := map[string][]string{}
+	for key, value := range fallback {
+		result[key] = value
+	}
+	for _, item := range items {
+		if item.ID != "" && len(item.AspectRatios) > 0 {
+			result[item.ID] = item.AspectRatios
+		}
+	}
+	return result
+}
+
+func normalizeStringList(items []string, normalize func(string) string) []string {
+	result := []string{}
+	seen := map[string]bool{}
+	for _, item := range items {
+		item = normalize(item)
+		if item == "" || seen[item] {
+			continue
+		}
+		seen[item] = true
 		result = append(result, item)
 	}
 	return result
@@ -500,6 +639,16 @@ func isImageModelName(modelName string) bool {
 
 func isTextModelName(modelName string) bool {
 	return !isImageModelName(modelName) && !isVideoModelName(modelName)
+}
+
+func defaultModelModality(modelName string) string {
+	if isVideoModelName(modelName) {
+		return "video"
+	}
+	if isImageModelName(modelName) {
+		return "image"
+	}
+	return "text"
 }
 
 func normalizeModelChannel(channel model.ModelChannel) model.ModelChannel {

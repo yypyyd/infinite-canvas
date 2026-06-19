@@ -9,7 +9,7 @@ const (
 	SettingKeyPrivate SettingKey = "private"
 )
 
-// ModelChannel 模型渠道配置。
+// ModelChannel stores a private upstream channel.
 type ModelChannel struct {
 	Protocol string   `json:"protocol"`
 	Name     string   `json:"name"`
@@ -21,23 +21,40 @@ type ModelChannel struct {
 	Remark   string   `json:"remark"`
 }
 
-// PricingRule 模型算力点计费规则。
-type PricingRule struct {
-	Model          string `json:"model"`
-	Modality       string `json:"modality"`
-	Operation      string `json:"operation"`
-	Unit           string `json:"unit"`
-	ResolutionTier string `json:"resolutionTier"`
-	Credits        int    `json:"credits"`
-	MinCredits     int    `json:"minCredits"`
-	Enabled        bool   `json:"enabled"`
-	Remark         string `json:"remark"`
+// ModelDefinition stores public model management metadata.
+type ModelDefinition struct {
+	ID              string   `json:"id"`
+	Name            string   `json:"name"`
+	Modality        string   `json:"modality"`
+	Enabled         bool     `json:"enabled"`
+	Sort            int      `json:"sort"`
+	AspectRatios    []string `json:"aspectRatios"`
+	ResolutionTiers []string `json:"resolutionTiers"`
+	Remark          string   `json:"remark"`
 }
 
-// PublicModelChannelSetting 公开模型渠道配置。
+// PricingRule stores model credit billing rules.
+type PricingRule struct {
+	Model           string  `json:"model"`
+	Modality        string  `json:"modality"`
+	Operation       string  `json:"operation"`
+	Unit            string  `json:"unit"`
+	ResolutionTier  string  `json:"resolutionTier"`
+	BillingMode     string  `json:"billingMode"`
+	Credits         int     `json:"credits"`
+	MinCredits      int     `json:"minCredits"`
+	ModelRatio      float64 `json:"modelRatio"`
+	CompletionRatio float64 `json:"completionRatio"`
+	Enabled         bool    `json:"enabled"`
+	Remark          string  `json:"remark"`
+}
+
+// PublicModelChannelSetting stores frontend-visible model channel settings.
 type PublicModelChannelSetting struct {
 	AvailableModels    []string            `json:"availableModels"`
+	Models             []ModelDefinition   `json:"models"`
 	PricingRules       []PricingRule       `json:"pricingRules"`
+	GroupRatios        map[string]float64  `json:"groupRatios"`
 	ModelAspectRatios  map[string][]string `json:"modelAspectRatios"`
 	DefaultModel       string              `json:"defaultModel"`
 	DefaultImageModel  string              `json:"defaultImageModel"`
@@ -47,7 +64,7 @@ type PublicModelChannelSetting struct {
 	AllowCustomChannel *bool               `json:"allowCustomChannel"`
 }
 
-// PublicSetting 公开配置。
+// PublicSetting stores frontend-visible settings.
 type PublicSetting struct {
 	ModelChannel PublicModelChannelSetting `json:"modelChannel"`
 	Auth         PublicAuthSetting         `json:"auth"`
@@ -62,14 +79,13 @@ type PublicLinuxDoAuthSetting struct {
 	Enabled bool `json:"enabled"`
 }
 
-// PrivateSetting 私有配置。
+// PrivateSetting stores backend-only settings.
 type PrivateSetting struct {
 	Channels   []ModelChannel     `json:"channels"`
 	PromptSync PromptSyncSetting  `json:"promptSync"`
 	Auth       PrivateAuthSetting `json:"auth"`
 }
 
-// PromptSyncSetting 提示词定时同步配置。
 type PromptSyncSetting struct {
 	Enabled *bool  `json:"enabled"`
 	Cron    string `json:"cron"`
@@ -84,7 +100,7 @@ type PrivateLinuxDoAuthSetting struct {
 	ClientSecret string `json:"clientSecret"`
 }
 
-// Setting 系统配置。
+// Setting stores a JSON settings row.
 type Setting struct {
 	Key       SettingKey      `json:"key" gorm:"primaryKey"`
 	Value     json.RawMessage `json:"value" gorm:"serializer:json"`
@@ -92,7 +108,7 @@ type Setting struct {
 	UpdatedAt string          `json:"updatedAt"`
 }
 
-// Settings 系统公开和私有配置。
+// Settings stores public and private settings together.
 type Settings struct {
 	Public  PublicSetting  `json:"public"`
 	Private PrivateSetting `json:"private"`

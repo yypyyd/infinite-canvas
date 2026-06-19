@@ -27,13 +27,13 @@ type AspectOption = {
 };
 
 const baseAspectOptions: AspectOption[] = [
-    { value: "1:1", label: "1:1", width: 1024, height: 1024, icon: "square" },
-    { value: "3:2", label: "3:2", width: 1536, height: 1024, icon: "landscape" },
-    { value: "2:3", label: "2:3", width: 1024, height: 1536, icon: "portrait" },
-    { value: "4:3", label: "4:3", width: 1360, height: 1024, icon: "landscape" },
-    { value: "3:4", label: "3:4", width: 1024, height: 1360, icon: "portrait" },
-    { value: "16:9", label: "16:9", width: 1824, height: 1024, icon: "landscape" },
-    { value: "9:16", label: "9:16", width: 1024, height: 1824, icon: "portrait" },
+    { value: "1:1", label: "1:1", width: 1024, height: 1024, icon: "square", resolutionTier: "1k" },
+    { value: "3:2", label: "3:2", width: 1536, height: 1024, icon: "landscape", resolutionTier: "1k" },
+    { value: "2:3", label: "2:3", width: 1024, height: 1536, icon: "portrait", resolutionTier: "1k" },
+    { value: "4:3", label: "4:3", width: 1360, height: 1024, icon: "landscape", resolutionTier: "1k" },
+    { value: "3:4", label: "3:4", width: 1024, height: 1360, icon: "portrait", resolutionTier: "1k" },
+    { value: "16:9", label: "16:9", width: 1824, height: 1024, icon: "landscape", resolutionTier: "1k" },
+    { value: "9:16", label: "9:16", width: 1024, height: 1824, icon: "portrait", resolutionTier: "1k" },
 ];
 
 const tierAspectOptions: AspectOption[] = [
@@ -69,16 +69,18 @@ type ImageSettingsPanelProps = {
     model?: string;
     operation?: "generation" | "edit";
     supportedRatios?: string[];
+    supportedResolutionTiers?: string[];
 };
 
-export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5", maxCount = 15, quickCount = 10, pricingRules, model, operation = "generation", supportedRatios }: ImageSettingsPanelProps) {
+export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5", maxCount = 15, quickCount = 10, pricingRules, model, operation = "generation", supportedRatios, supportedResolutionTiers }: ImageSettingsPanelProps) {
     const [snapDimensionToStep, setSnapDimensionToStep] = useState(true);
     const quality = config.quality || "auto";
     const count = Math.max(1, Math.min(maxCount, Math.floor(Math.abs(Number(config.count)) || 1)));
     const activeSize = config.size || "auto";
     const activeRatios = normalizeSupportedRatios(supportedRatios);
-    const baseOptions = baseAspectOptions.filter((item) => activeRatios.includes(item.value));
-    const aspectOptions = [...baseOptions, ...tierAspectOptions.filter((item) => item.ratio && item.resolutionTier && activeRatios.includes(item.ratio) && hasPricingTier(pricingRules, { model, operation, resolutionTier: item.resolutionTier })), ...autoAspectOption];
+    const activeResolutionTiers = supportedResolutionTiers ? normalizeSupportedResolutionTiers(supportedResolutionTiers) : null;
+    const baseOptions = baseAspectOptions.filter((item) => activeRatios.includes(item.value) && hasResolutionTier(activeResolutionTiers, item.resolutionTier || "1k"));
+    const aspectOptions = [...baseOptions, ...tierAspectOptions.filter((item) => item.ratio && item.resolutionTier && activeRatios.includes(item.ratio) && hasResolutionTier(activeResolutionTiers, item.resolutionTier) && hasPricingTier(pricingRules, { model, operation, resolutionTier: item.resolutionTier })), ...autoAspectOption];
     const selectedAspect = aspectOptions.find((item) => (item.size || item.value) === activeSize || item.value === activeSize);
     const dimensions = readSizeDimensions(activeSize, selectedAspect || aspectOptions[0]);
     const selectAspect = (value: string) => {
@@ -201,6 +203,14 @@ function normalizeSupportedRatios(values?: string[]) {
     if (!values?.length) return knownRatios;
     const supported = Array.from(new Set(values.map(normalizeToken))).filter((item) => knownRatios.includes(item));
     return supported.length ? supported : knownRatios;
+}
+
+function normalizeSupportedResolutionTiers(values: string[]) {
+    return Array.from(new Set(values.map(normalizeResolutionTier).filter(Boolean)));
+}
+
+function hasResolutionTier(tiers: string[] | null, tier: string) {
+    return !tiers || tiers.includes(normalizeResolutionTier(tier));
 }
 
 function OptionPill({ selected, theme, onClick, children }: { selected: boolean; theme: CanvasTheme; onClick: () => void; children: ReactNode }) {

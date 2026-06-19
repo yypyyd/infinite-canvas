@@ -7,7 +7,7 @@ import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { EditorView } from "@uiw/react-codemirror";
 
-import { fetchAdminSettings, fetchChannelModels, saveAdminSettings, testChannelModel, type AdminModelChannel, type AdminPricingRule, type AdminSettings } from "@/services/api/admin";
+import { fetchAdminSettings, fetchChannelModels, saveAdminSettings, testChannelModel, type AdminManagedModel, type AdminModelChannel, type AdminPricingRule, type AdminSettings } from "@/services/api/admin";
 import { useUserStore } from "@/stores/use-user-store";
 
 const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), { ssr: false });
@@ -28,7 +28,9 @@ const emptySettings: AdminSettings = {
     public: {
         modelChannel: {
             availableModels: [],
+            models: [],
             pricingRules: [],
+            groupRatios: { default: 1 },
             modelAspectRatios: {},
             defaultModel: "",
             defaultImageModel: "",
@@ -77,7 +79,9 @@ export default function AdminSettingsPage() {
     const [isSaving, setIsSaving] = useState(false);
     const [pricingRules, setPricingRules] = useState<AdminPricingRule[]>([]);
     const [knownModels, setKnownModels] = useState<string[]>([]);
-    const publicModels = Form.useWatch(["public", "modelChannel", "availableModels"], form) || [];
+    const rawPublicModels = Form.useWatch(["public", "modelChannel", "availableModels"], form) || [];
+    const managedModels = Form.useWatch(["public", "modelChannel", "models"], form) || [];
+    const publicModels = enabledManagedModelIds(managedModels).length ? enabledManagedModelIds(managedModels) : rawPublicModels;
     const channelModels = useMemo(() => collectChannelModels(channels), [channels]);
     const channelTableData = useMemo(() => channels.map((channel, index) => ({ ...channel, _index: index, _rowKey: String(index) + "-" + channel.name + "-" + channel.baseUrl })), [channels]);
     const activeMode = editorMode[activeTab];
@@ -342,9 +346,10 @@ export default function AdminSettingsPage() {
         if (!token) return;
         const values = normalizeSettings(form.getFieldsValue(true) as AdminSettings);
         const nextChannelModels = collectChannelModels(nextChannels);
+        const nextManagedModels = normalizeManagedModels(values.public.modelChannel.models || [], nextChannelModels, values.public.modelChannel.modelAspectRatios);
         const nextSettings = normalizeSettings({
             ...values,
-            public: { ...values.public, modelChannel: { ...values.public.modelChannel, availableModels: nextChannelModels } },
+            public: { ...values.public, modelChannel: { ...values.public.modelChannel, models: nextManagedModels, availableModels: enabledManagedModelIds(nextManagedModels), modelAspectRatios: modelAspectRatiosFromManagedModels(nextManagedModels, values.public.modelChannel.modelAspectRatios) } },
             private: { ...values.private, channels: nextChannels },
         });
         const saved = normalizeSettings(await saveAdminSettings(token, nextSettings));
@@ -417,8 +422,13 @@ export default function AdminSettingsPage() {
                             <Form form={form} layout="vertical" initialValues={emptySettings} requiredMark={false}>
                                 <Row gutter={16}>
                                     <Col span={24}>
-                                        <Form.Item name={["public", "modelChannel", "availableModels"]} label="系统可用模型（请先在私有配置里配置渠道）" extra="保存设置时会自动合并所有已启用私有渠道的模型，前台模型下拉会读取这里的公开列表">
-                                            <Select mode="multiple" placeholder="请选择系统可用模型" options={channelModels.map((item) => ({ label: item, value: item }))} />
+                                        <Form.Item name={["public", "modelChannel", "models"]} label="模型管理" extra="前台模型下拉、模型类型、宽高比和可选分辨率档优先读取这里；保存时会自动同步公开 availableModels。">
+                                            <ModelDefinitionEditor sourceModels={uniqueModels([...channelModels, ...knownModels])} />
+                                        </Form.Item>
+                                    </Col>
+                                    <Col span={24}>
+                                        <Form.Item name={["public", "modelChannel", "groupRatios"]} label="用户分组倍率" extra="最终扣费会乘以用户所属分组倍率；未命中的分组会使用 default。">
+                                            <GroupRatioEditor />
                                         </Form.Item>
                                     </Col>
                                     <Col xs={24} md={6}>
@@ -454,11 +464,6 @@ export default function AdminSettingsPage() {
                                     <Col span={24}>
                                         <Form.Item name={["public", "auth", "allowRegister"]} label="是否允许用户注册" extra="关闭后隐藏注册入口，注册接口也会拒绝新用户创建" valuePropName="checked">
                                             <Switch />
-                                        </Form.Item>
-                                    </Col>
-                                    <Col span={24}>
-                                        <Form.Item name={["public", "modelChannel", "modelAspectRatios"]} label="模型宽高比能力" extra="前台只展示这里配置的宽高比；不配置某个模型时，会显示通用比例。上游 /models 通常只返回模型名，不返回尺寸能力。">
-                                            <ModelAspectRatioEditor models={uniqueModels([...publicModels, ...knownModels])} />
                                         </Form.Item>
                                     </Col>
                                     <Col span={24}>
@@ -825,95 +830,99 @@ export default function AdminSettingsPage() {
     );
 }
 
-function ModelAspectRatioEditor({ value, onChange, models }: { value?: Record<string, string[]>; onChange?: (value: Record<string, string[]>) => void; models: string[] }) {
+function ModelDefinitionEditor({ value, onChange, sourceModels }: { value?: AdminManagedModel[]; onChange?: (value: AdminManagedModel[]) => void; sourceModels: string[] }) {
     const [nextModel, setNextModel] = useState("");
-    const normalized = normalizeModelAspectRatios(value || {});
-    const existingModels = Object.keys(normalized);
-    const selectableModels = uniqueModels([...models, ...existingModels]).filter((model) => !existingModels.includes(model));
-    const optionModels = uniqueModels([...selectableModels, nextModel].filter(Boolean));
-
-    const updateValue = (next: Record<string, string[]>) => {
-        onChange?.(normalizeModelAspectRatios(next));
-    };
-    const addModel = () => {
-        const model = nextModel.trim() || selectableModels[0] || "";
-        if (!model) return;
-        const ratios = inferModelAspectRatios(model);
-        updateValue({ ...normalized, [model]: ratios.length ? ratios : modelAspectRatioOptions });
+    const normalized = normalizeManagedModels(value || []);
+    const existing = new Set(normalized.map((item) => item.id));
+    const candidates = uniqueModels([...sourceModels, nextModel].filter(Boolean)).filter((model) => !existing.has(model));
+    const updateValue = (next: AdminManagedModel[]) => onChange?.(normalizeManagedModels(next));
+    const addModel = (modelName = nextModel.trim() || candidates[0] || "") => {
+        if (!modelName || existing.has(modelName)) return;
+        updateValue([
+            ...normalized,
+            {
+                id: modelName,
+                name: modelName,
+                modality: defaultModality(modelName),
+                enabled: true,
+                sort: normalized.length,
+                aspectRatios: inferModelAspectRatios(modelName),
+                resolutionTiers: ["1k"],
+                remark: "",
+            },
+        ]);
         setNextModel("");
     };
-    const fillKnownModels = () => {
-        const next = { ...normalized };
-        for (const model of models) {
-            if (next[model]?.length) continue;
-            const ratios = inferModelAspectRatios(model);
-            if (ratios.length) next[model] = ratios;
+    const fillSourceModels = () => {
+        const next = [...normalized];
+        const seen = new Set(next.map((item) => item.id));
+        for (const model of sourceModels) {
+            if (seen.has(model)) continue;
+            seen.add(model);
+            next.push({ id: model, name: model, modality: defaultModality(model), enabled: true, sort: next.length, aspectRatios: inferModelAspectRatios(model), resolutionTiers: ["1k"], remark: "" });
         }
         updateValue(next);
     };
-
+    const setField = <K extends keyof AdminManagedModel>(index: number, key: K, fieldValue: AdminManagedModel[K]) => {
+        updateValue(normalized.map((item, itemIndex) => (itemIndex === index ? { ...item, [key]: fieldValue } : item)));
+    };
     return (
         <Flex vertical gap={10}>
             <Flex gap={8} wrap>
-                <Select
-                    showSearch
-                    allowClear
-                    style={{ minWidth: 260, flex: 1 }}
-                    placeholder="选择或输入模型名称"
-                    value={nextModel || undefined}
-                    options={optionModels.map((model) => ({ label: model, value: model }))}
-                    onChange={(value) => setNextModel(value || "")}
-                    onSearch={setNextModel}
-                />
-                <Button icon={<PlusOutlined />} onClick={addModel}>
+                <Select showSearch allowClear style={{ minWidth: 260, flex: 1 }} placeholder="选择或输入模型 ID" value={nextModel || undefined} options={candidates.map((model) => ({ label: model, value: model }))} onChange={(model) => setNextModel(model || "")} onSearch={setNextModel} />
+                <Button icon={<PlusOutlined />} onClick={() => addModel()}>
                     添加模型
                 </Button>
-                <Button onClick={fillKnownModels}>按已知模型预填</Button>
+                <Button onClick={fillSourceModels}>按渠道模型补齐</Button>
             </Flex>
             <Table
-                rowKey="model"
+                rowKey="id"
                 size="small"
                 pagination={false}
-                dataSource={Object.entries(normalized).map(([model, ratios]) => ({ model, ratios }))}
-                locale={{ emptyText: "暂无模型宽高比配置" }}
+                scroll={{ x: 1320 }}
+                dataSource={normalized.map((item, index) => ({ ...item, _index: index }))}
                 columns={[
-                    {
-                        title: "模型",
-                        dataIndex: "model",
-                        width: 260,
-                        render: (model: string) => <Typography.Text copyable>{model}</Typography.Text>,
-                    },
-                    {
-                        title: "支持宽高比",
-                        dataIndex: "ratios",
-                        render: (ratios: string[], item: { model: string }) => (
-                            <Select
-                                mode="multiple"
-                                allowClear
-                                style={{ width: "100%" }}
-                                placeholder="选择该模型支持的宽高比"
-                                value={ratios}
-                                options={modelAspectRatioOptions.map((ratio) => ({ label: ratio, value: ratio }))}
-                                onChange={(values) => updateValue({ ...normalized, [item.model]: values })}
-                            />
-                        ),
-                    },
-                    {
-                        title: "操作",
-                        width: 88,
-                        render: (_: unknown, item: { model: string }) => (
-                            <Button
-                                size="small"
-                                danger
-                                icon={<DeleteOutlined />}
-                                onClick={() => {
-                                    const next = { ...normalized };
-                                    delete next[item.model];
-                                    updateValue(next);
-                                }}
-                            />
-                        ),
-                    },
+                    { title: "模型 ID", dataIndex: "id", width: 220, render: (_: unknown, item: AdminManagedModel & { _index: number }) => <Input value={item.id} onChange={(event) => setField(item._index, "id", event.target.value)} /> },
+                    { title: "显示名称", dataIndex: "name", width: 180, render: (_: unknown, item: AdminManagedModel & { _index: number }) => <Input value={item.name} onChange={(event) => setField(item._index, "name", event.target.value)} /> },
+                    { title: "类型", dataIndex: "modality", width: 110, render: (_: unknown, item: AdminManagedModel & { _index: number }) => <Select className="!w-full" value={item.modality} options={pricingOptions.modality} onChange={(next) => setField(item._index, "modality", next)} /> },
+                    { title: "宽高比", dataIndex: "aspectRatios", width: 260, render: (_: unknown, item: AdminManagedModel & { _index: number }) => <Select mode="multiple" allowClear className="!w-full" value={item.aspectRatios} options={modelAspectRatioOptions.map((ratio) => ({ label: ratio, value: ratio }))} onChange={(next) => setField(item._index, "aspectRatios", next)} /> },
+                    { title: "分辨率档", dataIndex: "resolutionTiers", width: 220, render: (_: unknown, item: AdminManagedModel & { _index: number }) => <Select mode="tags" allowClear className="!w-full" value={item.resolutionTiers} options={["1k", "2k", "4k", "480p", "720p", "1080p"].map((tier) => ({ label: tier, value: tier }))} onChange={(next) => setField(item._index, "resolutionTiers", next)} /> },
+                    { title: "排序", dataIndex: "sort", width: 90, render: (_: unknown, item: AdminManagedModel & { _index: number }) => <InputNumber className="!w-full" value={item.sort} precision={0} onChange={(next) => setField(item._index, "sort", Number(next) || 0)} /> },
+                    { title: "启用", dataIndex: "enabled", width: 80, render: (_: unknown, item: AdminManagedModel & { _index: number }) => <Switch checked={item.enabled} onChange={(checked) => setField(item._index, "enabled", checked)} /> },
+                    { title: "备注", dataIndex: "remark", width: 180, render: (_: unknown, item: AdminManagedModel & { _index: number }) => <Input value={item.remark} onChange={(event) => setField(item._index, "remark", event.target.value)} /> },
+                    { title: "操作", width: 76, fixed: "right" as const, render: (_: unknown, item: AdminManagedModel & { _index: number }) => <Button danger size="small" icon={<DeleteOutlined />} onClick={() => updateValue(normalized.filter((_, index) => index !== item._index))} /> },
+                ]}
+            />
+        </Flex>
+    );
+}
+
+function GroupRatioEditor({ value, onChange }: { value?: Record<string, number>; onChange?: (value: Record<string, number>) => void }) {
+    const normalized = normalizeGroupRatios(value || {});
+    const rows = Object.entries(normalized).map(([group, ratio]) => ({ group, ratio }));
+    type GroupRatioRow = { group: string; ratio: number; _index: number };
+    const tableRows: GroupRatioRow[] = rows.map((item, index) => ({ ...item, _index: index }));
+    const updateRows = (nextRows: { group: string; ratio: number }[]) => {
+        const next: Record<string, number> = {};
+        for (const item of nextRows) {
+            if (item.group.trim()) next[item.group.trim()] = Number(item.ratio) || 1;
+        }
+        onChange?.(normalizeGroupRatios(next));
+    };
+    return (
+        <Flex vertical gap={10}>
+            <Button size="small" icon={<PlusOutlined />} onClick={() => updateRows([...rows, { group: "vip", ratio: 1 }])}>
+                添加分组
+            </Button>
+            <Table<GroupRatioRow>
+                rowKey="group"
+                size="small"
+                pagination={false}
+                dataSource={tableRows}
+                columns={[
+                    { title: "分组", dataIndex: "group", render: (_: unknown, item: { group: string; ratio: number; _index: number }) => <Input value={item.group} disabled={item.group === "default"} onChange={(event) => updateRows(rows.map((row, index) => (index === item._index ? { ...row, group: normalizePricingToken(event.target.value) } : row)))} /> },
+                    { title: "倍率", dataIndex: "ratio", width: 180, render: (_: unknown, item: { group: string; ratio: number; _index: number }) => <InputNumber min={0.0001} step={0.1} className="!w-full" value={item.ratio} onChange={(next) => updateRows(rows.map((row, index) => (index === item._index ? { ...row, ratio: Number(next) || 1 } : row)))} /> },
+                    { title: "操作", width: 80, render: (_: unknown, item: { group: string; _index: number }) => <Button danger size="small" disabled={item.group === "default"} icon={<DeleteOutlined />} onClick={() => updateRows(rows.filter((_, index) => index !== item._index))} /> },
                 ]}
             />
         </Flex>
@@ -937,7 +946,9 @@ function normalizePublicSetting(setting: Partial<AdminSettings["public"]> = {}):
             ...emptySettings.public.modelChannel,
             ...(setting.modelChannel || {}),
             availableModels: setting.modelChannel?.availableModels || [],
+            models: normalizeManagedModels(setting.modelChannel?.models || [], setting.modelChannel?.availableModels || [], setting.modelChannel?.modelAspectRatios || {}),
             pricingRules: normalizePricingRules(setting.modelChannel?.pricingRules || []),
+            groupRatios: normalizeGroupRatios(setting.modelChannel?.groupRatios || {}),
             modelAspectRatios: normalizeModelAspectRatios(setting.modelChannel?.modelAspectRatios || {}),
         },
         auth: {
@@ -959,6 +970,51 @@ function normalizeModelAspectRatios(items: Record<string, string[]>): Record<str
     return result;
 }
 
+function normalizeManagedModels(items: Partial<AdminManagedModel>[], availableModels: string[] = [], aspectRatios: Record<string, string[]> = {}): AdminManagedModel[] {
+    const seedModels = items.length ? items : availableModels.map((model, index) => ({ id: model, name: model, modality: defaultModality(model), enabled: true, sort: index, aspectRatios: aspectRatios[model] || inferModelAspectRatios(model), resolutionTiers: ["1k"], remark: "" }));
+    const seen = new Set<string>();
+    return seedModels
+        .map((item, index) => {
+            const id = (item.id || "").trim();
+            if (!id || seen.has(id)) return null;
+            seen.add(id);
+            return {
+                id,
+                name: item.name?.trim() || id,
+                modality: normalizePricingToken(item.modality || defaultModality(id)),
+                enabled: item.enabled !== false,
+                sort: Number(item.sort ?? index) || 0,
+                aspectRatios: Array.from(new Set((item.aspectRatios || []).map(normalizePricingToken).filter(Boolean))),
+                resolutionTiers: Array.from(new Set((item.resolutionTiers || []).map(normalizeResolutionTier).filter(Boolean))),
+                remark: item.remark || "",
+            } as AdminManagedModel;
+        })
+        .filter(Boolean)
+        .sort((a, b) => (a!.sort === b!.sort ? a!.id.localeCompare(b!.id) : a!.sort - b!.sort)) as AdminManagedModel[];
+}
+
+function normalizeGroupRatios(items: Record<string, number>): Record<string, number> {
+    const result: Record<string, number> = { default: 1 };
+    for (const [rawGroup, rawRatio] of Object.entries(items || {})) {
+        const group = normalizePricingToken(rawGroup);
+        const ratio = Number(rawRatio);
+        if (group && ratio > 0) result[group] = ratio;
+    }
+    return result;
+}
+
+function enabledManagedModelIds(items: Partial<AdminManagedModel>[] = []) {
+    return items.filter((item) => item.enabled !== false && item.id).sort((a, b) => (Number(a.sort) || 0) - (Number(b.sort) || 0)).map((item) => item.id || "");
+}
+
+function modelAspectRatiosFromManagedModels(items: AdminManagedModel[], fallback: Record<string, string[]>) {
+    const result = { ...fallback };
+    for (const item of items) {
+        if (item.id && item.aspectRatios.length) result[item.id] = item.aspectRatios;
+    }
+    return normalizeModelAspectRatios(result);
+}
+
 function inferModelAspectRatios(modelName: string) {
     const model = modelName.toLowerCase();
     if (!model) return [];
@@ -976,8 +1032,11 @@ function normalizePricingRules(items: Partial<AdminSettings["public"]["modelChan
             operation: normalizePricingToken(item.operation || "generation"),
             unit: normalizePricingToken(item.unit || (item.modality === "video" ? "second" : "image")),
             resolutionTier: normalizePricingToken(item.resolutionTier || ""),
+            billingMode: item.billingMode === "ratio" ? "ratio" : "fixed",
             credits: Math.max(0, Number(item.credits) || 0),
             minCredits: Math.max(0, Number(item.minCredits) || 0),
+            modelRatio: Math.max(0, Number(item.modelRatio) || 1),
+            completionRatio: Math.max(0, Number(item.completionRatio) || 1),
             enabled: item.enabled !== false,
             remark: item.remark || "",
         }));
@@ -1072,6 +1131,24 @@ function pricingRuleColumns(form: any, setPricingRules: (items: AdminPricingRule
             render: (_: unknown, item: AdminPricingRule & { _index: number }) => <InputNumber min={0} step={1} precision={0} className="!w-full" value={item.credits} onChange={(value) => setPricingRuleField(form, setPricingRules, item._index, "credits", Number(value) || 0)} />,
         },
         {
+            title: "计费模式",
+            dataIndex: "billingMode",
+            width: 120,
+            render: (_: unknown, item: AdminPricingRule & { _index: number }) => <Select className="!w-full" value={item.billingMode} options={[{ label: "固定", value: "fixed" }, { label: "倍率", value: "ratio" }]} onChange={(value) => setPricingRuleField(form, setPricingRules, item._index, "billingMode", value)} />,
+        },
+        {
+            title: "模型倍率",
+            dataIndex: "modelRatio",
+            width: 110,
+            render: (_: unknown, item: AdminPricingRule & { _index: number }) => <InputNumber min={0} step={0.1} className="!w-full" value={item.modelRatio} onChange={(value) => setPricingRuleField(form, setPricingRules, item._index, "modelRatio", Number(value) || 1)} />,
+        },
+        {
+            title: "补全倍率",
+            dataIndex: "completionRatio",
+            width: 110,
+            render: (_: unknown, item: AdminPricingRule & { _index: number }) => <InputNumber min={0} step={0.1} className="!w-full" value={item.completionRatio} onChange={(value) => setPricingRuleField(form, setPricingRules, item._index, "completionRatio", Number(value) || 1)} />,
+        },
+        {
             title: "最低",
             dataIndex: "minCredits",
             width: 110,
@@ -1139,8 +1216,11 @@ function defaultPricingRule(model: string): AdminPricingRule {
         operation: modality === "text" ? "completion" : modality === "audio" ? "speech" : "generation",
         unit: defaultUnit(model),
         resolutionTier: "",
+        billingMode: "fixed",
         credits: 1,
         minCredits: 0,
+        modelRatio: 1,
+        completionRatio: 1,
         enabled: true,
         remark: "",
     };
@@ -1165,6 +1245,17 @@ function normalizePricingToken(value: string) {
     return value.trim().toLowerCase();
 }
 
+function normalizeResolutionTier(value: string) {
+    const normalized = normalizePricingToken(value);
+    if (normalized === "low") return "1k";
+    if (normalized === "medium") return "2k";
+    if (normalized === "high" || normalized === "2160") return "4k";
+    if (normalized === "720") return "720p";
+    if (normalized === "1080") return "1080p";
+    if (normalized.includes("4k")) return "4k";
+    return normalized;
+}
+
 function mergeChannelApiKeys(currentChannels: AdminModelChannel[], saved: AdminSettings): AdminSettings {
     const channels = saved.private.channels.map((item, index) => ({
         ...item,
@@ -1183,6 +1274,7 @@ function collectChannelModels(channels: AdminModelChannel[]) {
 function collectKnownModels(settings: AdminSettings) {
     return uniqueModels([
         ...(settings.public.modelChannel.availableModels || []),
+        ...(settings.public.modelChannel.models || []).map((item) => item.id),
         ...(settings.public.modelChannel.pricingRules || []).map((item) => item.model),
         ...Object.keys(settings.public.modelChannel.modelAspectRatios || {}),
         ...settings.private.channels.flatMap((channel) => channel.models || []),
@@ -1238,7 +1330,9 @@ async function collectSettings(form: any, editorMode: Record<SettingsTabKey, Edi
         }
         values.private = privateSetting;
     }
-    values.public.modelChannel.availableModels = collectChannelModels(values.private.channels);
+    values.public.modelChannel.models = normalizeManagedModels(values.public.modelChannel.models || [], collectChannelModels(values.private.channels), values.public.modelChannel.modelAspectRatios);
+    values.public.modelChannel.availableModels = enabledManagedModelIds(values.public.modelChannel.models);
+    values.public.modelChannel.modelAspectRatios = modelAspectRatiosFromManagedModels(values.public.modelChannel.models, values.public.modelChannel.modelAspectRatios);
     return normalizeSettings(values);
 }
 

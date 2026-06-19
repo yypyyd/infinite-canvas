@@ -18,7 +18,7 @@ import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useThemeStore } from "@/stores/use-theme-store";
-import { cropDataUrl, upscaleDataUrl } from "../utils/canvas-image-data";
+import { cropDataUrl, splitDataUrl, upscaleDataUrl } from "../utils/canvas-image-data";
 import { fitNodeSize, nodeSizeFromRatio } from "../utils/canvas-node-size";
 import { App, Button, Dropdown, Modal } from "antd";
 import { NODE_DEFAULT_SIZE, getNodeSpec } from "../constants";
@@ -30,6 +30,7 @@ import { CanvasNodeContextMenu } from "../components/canvas-context-menu";
 import { CanvasNodeAngleDialog, type CanvasImageAngleParams } from "../components/canvas-node-angle-dialog";
 import { CanvasNodeCropDialog, type CanvasImageCropRect } from "../components/canvas-node-crop-dialog";
 import { CanvasNodeMaskEditDialog, type CanvasImageMaskEditPayload } from "../components/canvas-node-mask-edit-dialog";
+import { CanvasNodeSplitDialog, type CanvasImageSplitParams } from "../components/canvas-node-split-dialog";
 import { CanvasNodeUpscaleDialog, type CanvasImageUpscaleParams } from "../components/canvas-node-upscale-dialog";
 import { buildNodeChatMessages, buildNodeGenerationContext, buildNodeGenerationInputs, hydrateNodeGenerationContext, type NodeGenerationInput } from "../components/canvas-node-generation";
 import { CanvasNodeHoverToolbar, CanvasNodeInfoModal } from "../components/canvas-node-hover-toolbar";
@@ -40,7 +41,7 @@ import { CanvasNodePromptPanel, type CanvasNodeGenerationMode } from "../compone
 import { CanvasToolbar } from "../components/canvas-toolbar";
 import { AssetPickerModal, type AssetPickerTab, type InsertAssetPayload } from "../components/asset-picker-modal";
 import { CanvasZoomControls } from "../components/canvas-zoom-controls";
-import { useCanvasStore } from "../stores/use-canvas-store";
+import { CANVAS_PROJECTS_REPLACED_EVENT, useCanvasStore, type CanvasProject } from "../stores/use-canvas-store";
 import { buildCanvasResourceReferences, buildNodeMentionReferences } from "../utils/canvas-resource-references";
 import {
     CanvasNodeType,
@@ -280,6 +281,7 @@ function InfiniteCanvasPage() {
     const [editRequestNonce, setEditRequestNonce] = useState(0);
     const [infoNodeId, setInfoNodeId] = useState<string | null>(null);
     const [cropNodeId, setCropNodeId] = useState<string | null>(null);
+    const [splitNodeId, setSplitNodeId] = useState<string | null>(null);
     const [maskEditNodeId, setMaskEditNodeId] = useState<string | null>(null);
     const [upscaleNodeId, setUpscaleNodeId] = useState<string | null>(null);
     const [superResolveNodeId, setSuperResolveNodeId] = useState<string | null>(null);
@@ -322,6 +324,33 @@ function InfiniteCanvasPage() {
         [cleanupAssetImages],
     );
 
+    const restoreProjectState = useCallback(async (project: CanvasProject) => {
+        const restoredNodes = await hydrateCanvasImages(resetInterruptedGeneration(project.nodes));
+        const restoredSessions = await hydrateAssistantImages(project.chatSessions || []);
+        setNodes(restoredNodes);
+        setConnections(project.connections);
+        setChatSessions(restoredSessions);
+        setActiveChatId(project.activeChatId || null);
+        setBackgroundMode(project.backgroundMode);
+        setShowImageInfo(project.showImageInfo || false);
+        setViewport(project.viewport);
+        historyRef.current = { past: [], future: [] };
+        if (historyCommitTimerRef.current) {
+            clearTimeout(historyCommitTimerRef.current);
+            historyCommitTimerRef.current = null;
+        }
+        lastHistoryRef.current = {
+            nodes: restoredNodes,
+            connections: project.connections,
+            chatSessions: restoredSessions,
+            activeChatId: project.activeChatId || null,
+            backgroundMode: project.backgroundMode,
+            showImageInfo: project.showImageInfo || false,
+        };
+        setHistoryState({ canUndo: false, canRedo: false });
+        setProjectLoaded(true);
+    }, []);
+
     useEffect(() => {
         if (!hydrated) return;
         setProjectLoaded(false);
@@ -331,34 +360,17 @@ function InfiniteCanvasPage() {
             return;
         }
 
-        const restore = async () => {
-            const restoredNodes = await hydrateCanvasImages(resetInterruptedGeneration(project.nodes));
-            const restoredSessions = await hydrateAssistantImages(project.chatSessions || []);
-            setNodes(restoredNodes);
-            setConnections(project.connections);
-            setChatSessions(restoredSessions);
-            setActiveChatId(project.activeChatId || null);
-            setBackgroundMode(project.backgroundMode);
-            setShowImageInfo(project.showImageInfo || false);
-            setViewport(project.viewport);
-            historyRef.current = { past: [], future: [] };
-            if (historyCommitTimerRef.current) {
-                clearTimeout(historyCommitTimerRef.current);
-                historyCommitTimerRef.current = null;
-            }
-            lastHistoryRef.current = {
-                nodes: restoredNodes,
-                connections: project.connections,
-                chatSessions: restoredSessions,
-                activeChatId: project.activeChatId || null,
-                backgroundMode: project.backgroundMode,
-                showImageInfo: project.showImageInfo || false,
-            };
-            setHistoryState({ canUndo: false, canRedo: false });
-            setProjectLoaded(true);
+        void restoreProjectState(project);
+    }, [hydrated, openProject, projectId, restoreProjectState, router]);
+
+    useEffect(() => {
+        const handleProjectsReplaced = () => {
+            const project = useCanvasStore.getState().projects.find((item) => item.id === projectId);
+            if (project) void restoreProjectState(project);
         };
-        void restore();
-    }, [hydrated, openProject, projectId, router]);
+        window.addEventListener(CANVAS_PROJECTS_REPLACED_EVENT, handleProjectsReplaced);
+        return () => window.removeEventListener(CANVAS_PROJECTS_REPLACED_EVENT, handleProjectsReplaced);
+    }, [projectId, restoreProjectState]);
 
     useEffect(() => {
         if (!projectLoaded || applyingHistoryRef.current || historyPausedRef.current) return;
@@ -584,6 +596,7 @@ function InfiniteCanvasPage() {
     const toolbarNode = toolbarNodeId ? nodeById.get(toolbarNodeId) || null : null;
     const infoNode = infoNodeId ? nodeById.get(infoNodeId) || null : null;
     const cropNode = cropNodeId ? nodeById.get(cropNodeId) || null : null;
+    const splitNode = splitNodeId ? nodeById.get(splitNodeId) || null : null;
     const maskEditNode = maskEditNodeId ? nodeById.get(maskEditNodeId) || null : null;
     const upscaleNode = upscaleNodeId ? nodeById.get(upscaleNodeId) || null : null;
     const superResolveNode = superResolveNodeId ? nodeById.get(superResolveNodeId) || null : null;
@@ -1291,6 +1304,7 @@ function InfiniteCanvasPage() {
                 setEditingNodeId(null);
                 setInfoNodeId(null);
                 setCropNodeId(null);
+                setSplitNodeId(null);
                 setMaskEditNodeId(null);
                 setPendingConnectionCreate(null);
             }
@@ -1517,6 +1531,55 @@ function InfiniteCanvasPage() {
         setDialogNodeId(childId);
         setCropNodeId(null);
     }, []);
+
+    const splitImageNode = useCallback(
+        async (node: CanvasNodeData, params: CanvasImageSplitParams) => {
+            if (!node.metadata?.content) return;
+            const pieces = await splitDataUrl(node.metadata.content, params);
+            const uploaded = await Promise.all(pieces.map((piece) => uploadImage(piece.dataUrl).then((image) => ({ ...piece, image }))));
+            const gap = 24;
+            const outerGap = 96;
+            const sourceWidth = node.metadata.naturalWidth || node.width;
+            const sourceHeight = node.metadata.naturalHeight || node.height;
+            const pieceDisplayWidth = Math.max(120, Math.min(260, node.width / params.columns));
+            const nodesToAdd = uploaded.map(({ row, column, image }) => {
+                const width = Math.max(80, pieceDisplayWidth);
+                const height = width * (image.height / image.width);
+                const id = nanoid();
+                return {
+                    id,
+                    type: CanvasNodeType.Image,
+                    title: `切分图片 ${row + 1}-${column + 1}`,
+                    position: {
+                        x: node.position.x + node.width + outerGap + column * (width + gap),
+                        y: node.position.y + row * (height + gap),
+                    },
+                    width,
+                    height,
+                    metadata: {
+                        ...imageMetadata(image),
+                        prompt: node.metadata?.prompt,
+                        splitFromNodeId: node.id,
+                        splitRow: row,
+                        splitColumn: column,
+                        splitRows: params.rows,
+                        splitColumns: params.columns,
+                        sourceNaturalWidth: sourceWidth,
+                        sourceNaturalHeight: sourceHeight,
+                    },
+                } satisfies CanvasNodeData;
+            });
+
+            setNodes((prev) => [...prev, ...nodesToAdd]);
+            setConnections((prev) => [...prev, ...nodesToAdd.map((child) => ({ id: nanoid(), fromNodeId: node.id, toNodeId: child.id }))]);
+            setSelectedNodeIds(new Set(nodesToAdd.map((child) => child.id)));
+            setSelectedConnectionId(null);
+            setSplitNodeId(null);
+            if (nodesToAdd[0]) setDialogNodeId(nodesToAdd[0].id);
+            message.success(`已生成 ${nodesToAdd.length} 个子节点`);
+        },
+        [message],
+    );
 
     const maskEditImageNode = useCallback(
         async (node: CanvasNodeData, payload: CanvasImageMaskEditPayload) => {
@@ -2436,6 +2499,7 @@ function InfiniteCanvasPage() {
                     onSaveAsset={(node) => void saveNodeAsset(node)}
                     onMaskEdit={(node) => setMaskEditNodeId(node.id)}
                     onCrop={(node) => setCropNodeId(node.id)}
+                    onSplit={(node) => setSplitNodeId(node.id)}
                     onUpscale={(node) => setUpscaleNodeId(node.id)}
                     onSuperResolve={(node) => setSuperResolveNodeId(node.id)}
                     onAngle={(node) => setAngleNodeId(node.id)}
@@ -2504,6 +2568,8 @@ function InfiniteCanvasPage() {
                 <CanvasNodeInfoModal node={infoNode} open={Boolean(infoNode)} onClose={() => setInfoNodeId(null)} />
 
                 {cropNode?.metadata?.content ? <CanvasNodeCropDialog dataUrl={cropNode.metadata.content} open={Boolean(cropNode)} onClose={() => setCropNodeId(null)} onConfirm={(crop) => void cropImageNode(cropNode!, crop)} /> : null}
+
+                {splitNode?.metadata?.content ? <CanvasNodeSplitDialog dataUrl={splitNode.metadata.content} open={Boolean(splitNode)} onClose={() => setSplitNodeId(null)} onConfirm={(params) => void splitImageNode(splitNode!, params)} /> : null}
 
                 {maskEditNode?.metadata?.content ? <CanvasNodeMaskEditDialog dataUrl={maskEditNode.metadata.content} open={Boolean(maskEditNode)} onClose={() => setMaskEditNodeId(null)} onConfirm={(payload) => void maskEditImageNode(maskEditNode!, payload)} /> : null}
 

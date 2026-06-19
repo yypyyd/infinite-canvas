@@ -75,7 +75,7 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		Fail(w, "未登录或权限不足")
 		return
 	}
-	credits, err := service.CalculateRequestCredits(pricingRequestForAIPath(path, requestMeta))
+	credits, err := service.CalculateRequestCreditsForGroup(pricingRequestForAIPath(path, requestMeta), user.Group)
 	if err != nil {
 		log.Printf("AI proxy calculate credits failed: model=%s path=%s err=%v", requestMeta.ModelName, path, err)
 		FailError(w, err)

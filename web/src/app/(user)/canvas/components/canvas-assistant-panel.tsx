@@ -8,7 +8,8 @@ import { motion } from "motion/react";
 import { ImageGenerationPending } from "@/components/image-generation-pending";
 import { ModelPicker } from "@/components/model-picker";
 import { useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
-import { CreditSymbol, requestCreditCost } from "@/constant/credits";
+import { CreditSymbol, requestCreditQuote, type PricingRule } from "@/constant/credits";
+import { useUserStore } from "@/stores/use-user-store";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { nanoid } from "nanoid";
 import { cn } from "@/lib/utils";
@@ -45,6 +46,8 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, sessions, activeS
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const effectiveConfig = useEffectiveConfig();
     const pricingRules = useConfigStore((state) => state.publicSettings?.modelChannel.pricingRules);
+    const groupRatios = useConfigStore((state) => state.publicSettings?.modelChannel.groupRatios);
+    const userGroup = useUserStore((state) => state.user?.group || "default");
     const cleanupImages = useAssetStore((state) => state.cleanupImages);
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
@@ -332,6 +335,8 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, sessions, activeS
                         }}
                         onPasteImage={onPasteImage}
                         pricingRules={pricingRules}
+                        groupRatios={groupRatios}
+                        userGroup={userGroup}
                     />
                 ) : null}
 
@@ -377,6 +382,8 @@ function AssistantComposer({
     onRemoveReference,
     onPasteImage,
     pricingRules,
+    groupRatios,
+    userGroup,
 }: {
     mode: AssistantMode;
     prompt: string;
@@ -390,13 +397,17 @@ function AssistantComposer({
     onMissingConfig: () => void;
     onRemoveReference: (id: string) => void;
     onPasteImage: (file: File) => void;
-    pricingRules?: { model: string; modality: string; operation: string; unit: string; resolutionTier?: string; credits: number; minCredits?: number; enabled?: boolean }[];
+    pricingRules?: PricingRule[];
+    groupRatios?: Record<string, number>;
+    userGroup?: string;
 }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const activeModel = mode === "image" ? config.imageModel || config.model : config.textModel || config.model;
-    const credits = requestCreditCost({
+    const creditQuote = requestCreditQuote({
         channelMode: config.channelMode,
         pricingRules,
+        groupRatios,
+        userGroup,
         model: activeModel,
         modality: mode === "image" ? "image" : "text",
         operation: mode === "image" ? (references.some((item) => item.dataUrl) ? "edit" : "generation") : "completion",
@@ -454,10 +465,12 @@ function AssistantComposer({
                         aria-label="发送"
                     >
                         <span className="flex items-center gap-1.5">
-                            <span className="inline-flex items-center gap-1 text-xs font-medium tabular-nums">
-                                <CreditSymbol />
-                                {credits.toLocaleString()}
-                            </span>
+                            {creditQuote.matched ? (
+                                <span className="inline-flex items-center gap-1 text-xs font-medium tabular-nums">
+                                    <CreditSymbol />
+                                    {creditQuote.credits.toLocaleString()}
+                                </span>
+                            ) : null}
                             {isRunning ? <LoaderCircle className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
                         </span>
                     </Button>

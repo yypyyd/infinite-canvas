@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { Settings2 } from "lucide-react";
 import { Button } from "antd";
 
+import type { PricingRule } from "@/constant/credits";
 import { ImageSettingsPanel, imageQualityLabel, imageSizeLabel } from "@/components/image-settings-panel";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -24,6 +25,7 @@ type CanvasImageSettingsPopoverProps = {
 export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChange, buttonClassName, placement = "topLeft" }: CanvasImageSettingsPopoverProps) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const pricingRules = useConfigStore((state) => state.publicSettings?.modelChannel.pricingRules);
+    const managedModels = useConfigStore((state) => state.publicSettings?.modelChannel.models);
     const modelAspectRatios = useConfigStore((state) => state.publicSettings?.modelChannel.modelAspectRatios);
     const buttonRef = useRef<HTMLSpanElement>(null);
     const panelRef = useRef<HTMLDivElement>(null);
@@ -32,6 +34,8 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChang
     const quality = config.quality || "auto";
     const count = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const activeSize = config.size || "auto";
+    const activeModel = config.imageModel || config.model;
+    const modelDefinition = managedModels?.find((item) => item.id === activeModel);
     const updateOpen = (nextOpen: boolean) => {
         setOpen(nextOpen);
         onOpenChange?.(nextOpen);
@@ -60,7 +64,7 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChang
         };
     }, [onOpenChange, open]);
 
-    const panel = open && buttonRect ? <ImageSettingsPortal buttonRect={buttonRect} panelRef={panelRef} placement={placement} theme={theme} config={config} onConfigChange={onConfigChange} /> : null;
+    const panel = open && buttonRect ? <ImageSettingsPortal buttonRect={buttonRect} panelRef={panelRef} placement={placement} theme={theme} config={config} onConfigChange={onConfigChange} pricingRules={pricingRules} model={activeModel} supportedRatios={modelAspectRatios?.[activeModel]} supportedResolutionTiers={modelDefinition?.resolutionTiers} /> : null;
 
     return (
         <>
@@ -83,6 +87,10 @@ function ImageSettingsPortal({
     theme,
     config,
     onConfigChange,
+    pricingRules,
+    model,
+    supportedRatios,
+    supportedResolutionTiers,
 }: {
     buttonRect: DOMRect;
     panelRef: RefObject<HTMLDivElement | null>;
@@ -90,6 +98,10 @@ function ImageSettingsPortal({
     theme: (typeof canvasThemes)[keyof typeof canvasThemes];
     config: AiConfig;
     onConfigChange: (key: keyof AiConfig, value: string) => void;
+    pricingRules?: PricingRule[];
+    model: string;
+    supportedRatios?: string[];
+    supportedResolutionTiers?: string[];
 }) {
     const width = 356;
     const gap = 8;
@@ -121,7 +133,7 @@ function ImageSettingsPortal({
             onMouseDown={(event) => event.stopPropagation()}
             onClick={(event) => event.stopPropagation()}
         >
-            <ImageSettingsPanel config={config} onConfigChange={(key, value) => onConfigChange(key, value)} theme={theme} className="space-y-4" pricingRules={pricingRules} model={config.imageModel || config.model} operation="generation" supportedRatios={modelAspectRatios?.[config.imageModel || config.model]} />
+            <ImageSettingsPanel config={config} onConfigChange={(key, value) => onConfigChange(key, value)} theme={theme} className="space-y-4" pricingRules={pricingRules} model={model} operation="generation" supportedRatios={supportedRatios} supportedResolutionTiers={supportedResolutionTiers} />
         </div>,
         document.body,
     );

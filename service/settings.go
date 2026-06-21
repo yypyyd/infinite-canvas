@@ -90,7 +90,7 @@ func normalizePublicSettingWithChannels(setting model.PublicSetting, channels []
 	}
 	enabledModels := enabledChannelModels(channels)
 	setting.ModelChannel.Models = normalizeModelDefinitions(setting.ModelChannel.Models, setting.ModelChannel.AvailableModels, setting.ModelChannel.ModelAspectRatios, enabledModels)
-	setting.ModelChannel.PricingRules = normalizePricingRules(setting.ModelChannel.PricingRules)
+	setting.ModelChannel.PricingRules = appendDefaultPricingRulesForModels(normalizePricingRules(setting.ModelChannel.PricingRules), setting.ModelChannel.Models)
 	setting.ModelChannel.GroupRatios = normalizeGroupRatios(setting.ModelChannel.GroupRatios)
 	setting.ModelChannel.ModelAspectRatios = normalizeModelAspectRatios(modelAspectRatiosFromDefinitions(setting.ModelChannel.Models, setting.ModelChannel.ModelAspectRatios))
 	if setting.ModelChannel.AllowCustomChannel == nil {
@@ -198,8 +198,77 @@ func normalizePricingRules(items []model.PricingRule) []model.PricingRule {
 	return result
 }
 
+func appendDefaultPricingRulesForModels(rules []model.PricingRule, models []model.ModelDefinition) []model.PricingRule {
+	result := append([]model.PricingRule{}, rules...)
+	for _, item := range models {
+		if !item.Enabled || strings.TrimSpace(item.ID) == "" {
+			continue
+		}
+		for _, rule := range defaultPricingRulesForModel(item) {
+			if hasPricingFallbackRule(result, rule) {
+				continue
+			}
+			result = append(result, rule)
+		}
+	}
+	return result
+}
+
+func defaultPricingRulesForModel(item model.ModelDefinition) []model.PricingRule {
+	modelID := strings.TrimSpace(item.ID)
+	base := model.PricingRule{
+		Model:           modelID,
+		BillingMode:     "fixed",
+		Credits:         1,
+		MinCredits:      0,
+		ModelRatio:      1,
+		CompletionRatio: 1,
+		Enabled:         true,
+		Remark:          "auto default",
+	}
+	switch normalizePricingToken(item.Modality) {
+	case "image":
+		return []model.PricingRule{
+			defaultPricingRule(base, "image", "generation", "image"),
+			defaultPricingRule(base, "image", "edit", "image"),
+		}
+	case "video":
+		return []model.PricingRule{defaultPricingRule(base, "video", "generation", "second")}
+	case "audio":
+		return []model.PricingRule{defaultPricingRule(base, "audio", "speech", "request")}
+	default:
+		return []model.PricingRule{defaultPricingRule(base, "text", "completion", "request")}
+	}
+}
+
+func defaultPricingRule(base model.PricingRule, modality string, operation string, unit string) model.PricingRule {
+	base.Modality = modality
+	base.Operation = operation
+	base.Unit = unit
+	return base
+}
+
+func hasPricingFallbackRule(rules []model.PricingRule, target model.PricingRule) bool {
+	for _, rule := range rules {
+		if !rule.Enabled {
+			continue
+		}
+		if rule.Model == target.Model &&
+			rule.Modality == target.Modality &&
+			rule.Operation == target.Operation &&
+			rule.Unit == target.Unit &&
+			rule.ResolutionTier == "" {
+			return true
+		}
+	}
+	return false
+}
+
 func normalizeModelDefinitions(items []model.ModelDefinition, availableModels []string, aspectRatios map[string][]string, channelModels []string) []model.ModelDefinition {
-	seedModels := uniqueModelNames(append(append([]string{}, availableModels...), channelModels...))
+	seedModels := uniqueModelNames(channelModels)
+	if len(seedModels) == 0 {
+		seedModels = uniqueModelNames(availableModels)
+	}
 	if len(items) == 0 {
 		items = make([]model.ModelDefinition, 0, len(seedModels))
 		for index, modelName := range seedModels {

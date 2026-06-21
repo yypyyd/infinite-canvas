@@ -19,6 +19,7 @@ type ImageApiResponse = {
     code?: number;
     msg?: string;
 };
+type RequestOptions = { signal?: AbortSignal };
 
 const QUALITY_BASE: Record<string, number> = {
     low: 1024,
@@ -123,10 +124,12 @@ function parseImagePayload(payload: ImageApiResponse) {
 }
 
 function readAxiosError(error: unknown, fallback: string) {
+    if (axios.isCancel(error)) return "请求已取消";
     if (axios.isAxiosError<{ error?: { message?: string }; msg?: string; code?: number }>(error)) {
         const responseData = error.response?.data;
         return responseData?.msg || responseData?.error?.message || readStatusError(error.response?.status, fallback);
     }
+    if (error instanceof DOMException && error.name === "AbortError") return "请求已取消";
     return error instanceof Error ? error.message : fallback;
 }
 
@@ -181,7 +184,7 @@ function withSystemMessage(config: AiConfig, messages: ChatCompletionMessage[]) 
     return systemPrompt ? [{ role: "system" as const, content: systemPrompt }, ...messages] : messages;
 }
 
-export async function requestGeneration(config: AiConfig, prompt: string) {
+export async function requestGeneration(config: AiConfig, prompt: string, options?: RequestOptions) {
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const quality = normalizeQuality(config.quality);
     const requestSize = resolveRequestSize(config.size);
@@ -199,6 +202,7 @@ export async function requestGeneration(config: AiConfig, prompt: string) {
             },
             {
                 headers: aiHeaders(config, "application/json"),
+                signal: options?.signal,
             },
         );
         const images = parseImagePayload(response.data);
@@ -209,7 +213,7 @@ export async function requestGeneration(config: AiConfig, prompt: string) {
     }
 }
 
-export async function requestEdit(config: AiConfig, prompt: string, references: ReferenceImage[], mask?: ReferenceImage) {
+export async function requestEdit(config: AiConfig, prompt: string, references: ReferenceImage[], mask?: ReferenceImage, options?: RequestOptions) {
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const quality = normalizeQuality(config.quality);
     const requestSize = resolveRequestSize(config.size);
@@ -231,7 +235,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     if (mask) formData.set("mask", dataUrlToFile(mask));
 
     try {
-        const response = await axios.post<ImageApiResponse>(aiApiUrl(config, "/images/edits"), formData, { headers: aiHeaders(config) });
+        const response = await axios.post<ImageApiResponse>(aiApiUrl(config, "/images/edits"), formData, { headers: aiHeaders(config), signal: options?.signal });
         const images = parseImagePayload(response.data);
         refreshRemoteUser(config);
         return images;
@@ -240,7 +244,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     }
 }
 
-export async function requestImageQuestion(config: AiConfig, messages: ChatCompletionMessage[], onDelta: (text: string) => void) {
+export async function requestImageQuestion(config: AiConfig, messages: ChatCompletionMessage[], onDelta: (text: string) => void, options?: RequestOptions) {
     let buffer = "";
     let answer = "";
     let processedLength = 0;
@@ -258,6 +262,7 @@ export async function requestImageQuestion(config: AiConfig, messages: ChatCompl
                     ...aiHeaders(config, "application/json"),
                 } as Record<string, string>,
                 responseType: "text",
+                signal: options?.signal,
                 onDownloadProgress: (event) => {
                     const responseText = String(event.event?.target?.responseText || "");
                     const nextText = responseText.slice(processedLength);

@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { Image as ImageIcon, LoaderCircle, MessageSquare, Music2, Play, Settings2, Video } from "lucide-react";
+import { Image as ImageIcon, LoaderCircle, MessageSquare, Music2, Play, Settings2, Square, Video } from "lucide-react";
 import { Button, Segmented } from "antd";
 
 import { ModelPicker } from "@/components/model-picker";
@@ -21,10 +21,11 @@ type CanvasConfigNodePanelProps = {
     inputSummary: { textCount: number; imageCount: number; videoCount: number; audioCount: number };
     onConfigChange: (nodeId: string, patch: Partial<CanvasNodeMetadata>) => void;
     onGenerate: (nodeId: string) => void;
+    onStop: (nodeId: string) => void;
     onComposerToggle: () => void;
 };
 
-export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigChange, onGenerate, onComposerToggle }: CanvasConfigNodePanelProps) {
+export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigChange, onGenerate, onStop, onComposerToggle }: CanvasConfigNodePanelProps) {
     const globalConfig = useEffectiveConfig();
     const pricingRules = useConfigStore((state) => state.publicSettings?.modelChannel.pricingRules);
     const groupRatios = useConfigStore((state) => state.publicSettings?.modelChannel.groupRatios);
@@ -129,19 +130,30 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
             <Button
                 type="primary"
                 className="mt-auto !h-9 !w-full !cursor-pointer !rounded-lg"
-                disabled={isRunning || !canGenerate}
+                danger={isRunning}
+                disabled={!isRunning && !canGenerate}
                 onMouseDown={(event) => event.stopPropagation()}
-                onClick={() => onGenerate(node.id)}
+                onClick={() => (isRunning ? onStop(node.id) : onGenerate(node.id))}
             >
                 <span className="inline-flex items-center gap-1.5">
-                    {creditQuote.matched ? (
-                        <span className="inline-flex items-center gap-1">
-                            <CreditSymbol />
-                            {creditQuote.credits.toLocaleString()}
-                        </span>
-                    ) : null}
-                    {isRunning ? <LoaderCircle className="size-4 animate-spin" /> : <Play className="size-4" />}
-                    <span>开始生成</span>
+                    {isRunning ? (
+                        <>
+                            <LoaderCircle className="size-4 animate-spin" />
+                            <Square className="size-3.5 fill-current" />
+                            <span>停止</span>
+                        </>
+                    ) : (
+                        <>
+                            {creditQuote.matched ? (
+                                <span className="inline-flex items-center gap-1">
+                                    <CreditSymbol />
+                                    {creditQuote.credits.toLocaleString()}
+                                </span>
+                            ) : null}
+                            <Play className="size-4" />
+                        </>
+                    )}
+                    {!isRunning ? <span>开始生成</span> : null}
                 </span>
             </Button>
         </div>

@@ -9,14 +9,12 @@ import Link from "next/link";
 
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { VersionReleaseModal } from "@/components/layout/version-release-modal";
-import { CreditSymbol } from "@/constant/credits";
+import { CREDIT_PURCHASE_URL, CreditSymbol } from "@/constant/credits";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { redeemCode } from "@/services/api/auth";
 import { useConfigStore } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useUserStore } from "@/stores/use-user-store";
-
-const CREDIT_PURCHASE_URL = "https://pay.ldxp.cn/shop/ODLR2IW6";
 
 type UserStatusActionsProps = {
     showConfig?: boolean;

@@ -99,6 +99,26 @@ func TestNormalizeSettingsPublishesEnabledChannelModelsAndRepairsDefaults(t *tes
 	}
 }
 
+func TestNormalizeSettingsAddsNewChannelModelsToExistingCatalog(t *testing.T) {
+	settings := normalizeSettings(model.Settings{
+		Public: model.PublicSetting{ModelChannel: model.PublicModelChannelSetting{Models: []model.ModelDefinition{
+			{ID: "gpt-5.5", Name: "GPT 5.5", Modality: "text", Enabled: false},
+		}}},
+		Private: model.PrivateSetting{Channels: []model.ModelChannel{
+			{Enabled: true, Models: []string{"gpt-5.5", "gpt-image-2", "firefly-video"}},
+		}},
+	})
+
+	models := settings.Public.ModelChannel.Models
+	if len(models) != 3 || models[0].ID != "gpt-5.5" || models[0].Enabled || models[1].ID != "gpt-image-2" || !models[1].Enabled || models[2].ID != "firefly-video" || len(models[2].ResolutionTiers) != 0 {
+		t.Fatalf("model catalog = %#v", models)
+	}
+	if want := []string{"gpt-image-2", "firefly-video"}; !reflect.DeepEqual(settings.Public.ModelChannel.AvailableModels, want) {
+		t.Fatalf("available models = %#v, want %#v", settings.Public.ModelChannel.AvailableModels, want)
+	}
+	assertHasPricingRule(t, settings.Public.ModelChannel.PricingRules, "gpt-image-2", "image", "generation", "image", "")
+}
+
 func TestNormalizeSettingsAppendsDefaultPricingRulesForEnabledModels(t *testing.T) {
 	settings := normalizeSettings(model.Settings{
 		Public: model.PublicSetting{
@@ -106,6 +126,8 @@ func TestNormalizeSettingsAppendsDefaultPricingRulesForEnabledModels(t *testing.
 				Models: []model.ModelDefinition{
 					{ID: "gpt-5.5", Modality: "text", Enabled: true},
 					{ID: "gpt-image-2", Modality: "image", Enabled: true},
+					{ID: "dall-e-3", Modality: "image", Enabled: true},
+					{ID: "custom-image", Modality: "image", Operations: []string{"generation", "edit"}, Enabled: true},
 					{ID: "firefly-video", Modality: "video", Enabled: true},
 					{ID: "tts-1", Modality: "audio", Enabled: true},
 					{ID: "disabled-video", Modality: "video", Enabled: false},
@@ -118,6 +140,10 @@ func TestNormalizeSettingsAppendsDefaultPricingRulesForEnabledModels(t *testing.
 	assertHasPricingRule(t, rules, "gpt-5.5", "text", "completion", "request", "")
 	assertHasPricingRule(t, rules, "gpt-image-2", "image", "generation", "image", "")
 	assertHasPricingRule(t, rules, "gpt-image-2", "image", "edit", "image", "")
+	assertHasPricingRule(t, rules, "dall-e-3", "image", "generation", "image", "")
+	assertNoPricingRule(t, rules, "dall-e-3", "image", "edit", "image", "")
+	assertHasPricingRule(t, rules, "custom-image", "image", "generation", "image", "")
+	assertHasPricingRule(t, rules, "custom-image", "image", "edit", "image", "")
 	assertHasPricingRule(t, rules, "firefly-video", "video", "generation", "second", "")
 	assertHasPricingRule(t, rules, "tts-1", "audio", "speech", "request", "")
 	assertNoPricingRule(t, rules, "disabled-video", "video", "generation", "second", "")
@@ -183,7 +209,7 @@ func TestNormalizeSettingsAddsFallbackBesideResolutionPricingRule(t *testing.T) 
 	rules := settings.Public.ModelChannel.PricingRules
 	assertHasPricingRule(t, rules, "firefly-image-5", "image", "generation", "image", "2k")
 	assertHasPricingRule(t, rules, "firefly-image-5", "image", "generation", "image", "")
-	assertHasPricingRule(t, rules, "firefly-image-5", "image", "edit", "image", "")
+	assertNoPricingRule(t, rules, "firefly-image-5", "image", "edit", "image", "")
 }
 
 func assertHasPricingRule(t *testing.T, rules []model.PricingRule, modelName string, modality string, operation string, unit string, resolutionTier string) {

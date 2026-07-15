@@ -26,6 +26,7 @@ type ModelDefinition struct {
 	ID              string   `json:"id"`
 	Name            string   `json:"name"`
 	Modality        string   `json:"modality"`
+	Operations      []string `json:"operations"`
 	Enabled         bool     `json:"enabled"`
 	Sort            int      `json:"sort"`
 	AspectRatios    []string `json:"aspectRatios"`
@@ -66,38 +67,62 @@ type PublicModelChannelSetting struct {
 
 // PublicSetting stores frontend-visible settings.
 type PublicSetting struct {
-	ModelChannel PublicModelChannelSetting `json:"modelChannel"`
-	Auth         PublicAuthSetting         `json:"auth"`
+	ModelChannel  PublicModelChannelSetting `json:"modelChannel"`
+	Auth          PublicAuthSetting         `json:"auth"`
+	Announcements AnnouncementSetting       `json:"announcements"`
+	CheckIn       CheckInSetting            `json:"checkIn"`
 }
 
 type PublicAuthSetting struct {
-	AllowRegister *bool                    `json:"allowRegister"`
-	LinuxDo       PublicLinuxDoAuthSetting `json:"linuxDo"`
+	AllowRegister          *bool    `json:"allowRegister"`
+	EmailVerification      bool     `json:"emailVerification"`
+	EmailDomainRestriction bool     `json:"emailDomainRestriction"`
+	EmailDomains           []string `json:"emailDomains"`
+	NewUserReward          bool     `json:"newUserReward"`
+	NewUserRewardCredits   int      `json:"newUserRewardCredits"`
 }
 
-type PublicLinuxDoAuthSetting struct {
-	Enabled bool `json:"enabled"`
+type Announcement struct {
+	ID        int    `json:"id"`
+	Title     string `json:"title"`
+	Content   string `json:"content"`
+	Type      string `json:"type"`
+	PublishAt string `json:"publishAt"`
+	Enabled   bool   `json:"enabled"`
+}
+
+type AnnouncementSetting struct {
+	Enabled bool           `json:"enabled"`
+	Items   []Announcement `json:"items"`
+}
+
+type CheckInSetting struct {
+	Enabled       bool `json:"enabled"`
+	Reward        bool `json:"reward"`
+	RewardCredits int  `json:"rewardCredits"`
 }
 
 // PrivateSetting stores backend-only settings.
 type PrivateSetting struct {
-	Channels   []ModelChannel     `json:"channels"`
-	PromptSync PromptSyncSetting  `json:"promptSync"`
-	Auth       PrivateAuthSetting `json:"auth"`
+	Channels   []ModelChannel    `json:"channels"`
+	PromptSync PromptSyncSetting `json:"promptSync"`
+	Email      EmailSetting      `json:"email"`
+}
+
+type EmailSetting struct {
+	SMTPHost           string `json:"smtpHost"`
+	SMTPPort           int    `json:"smtpPort"`
+	SMTPUsername       string `json:"smtpUsername"`
+	SMTPPassword       string `json:"smtpPassword"`
+	SMTPFromEmail      string `json:"smtpFromEmail"`
+	SMTPFromName       string `json:"smtpFromName"`
+	SMTPSecurity       string `json:"smtpSecurity"`
+	PasswordConfigured bool  `json:"passwordConfigured"`
 }
 
 type PromptSyncSetting struct {
 	Enabled *bool  `json:"enabled"`
 	Cron    string `json:"cron"`
-}
-
-type PrivateAuthSetting struct {
-	LinuxDo PrivateLinuxDoAuthSetting `json:"linuxDo"`
-}
-
-type PrivateLinuxDoAuthSetting struct {
-	ClientID     string `json:"clientId"`
-	ClientSecret string `json:"clientSecret"`
 }
 
 // Setting stores a JSON settings row.

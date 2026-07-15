@@ -32,7 +32,9 @@ type PricingRequest struct {
 
 func PublicSettings() (model.PublicSetting, error) {
 	settings, err := repository.GetSettings()
-	return normalizeSettings(settings).Public, err
+	public := normalizeSettings(settings).Public
+	public.Announcements.Items = publishedAnnouncements(public.Announcements)
+	return public, err
 }
 
 func AdminSettings() (model.Settings, error) {
@@ -45,9 +47,15 @@ func SaveSettings(settings model.Settings) (model.Settings, error) {
 	if err != nil {
 		return model.Settings{}, err
 	}
+	emailDomainRestriction := settings.Public.Auth.EmailDomainRestriction
 	settings = normalizeSettings(settings)
+	if emailDomainRestriction && len(settings.Public.Auth.EmailDomains) == 0 {
+		return model.Settings{}, safeMessageError{message: "启用邮箱域名限制前请至少填写一个有效域名"}
+	}
 	keepPrivateAPIKeys(&settings, normalizeSettings(saved))
-	keepPrivateAuthSecrets(&settings, normalizeSettings(saved))
+	if err := validateEmailSetting(settings.Private.Email); err != nil {
+		return model.Settings{}, err
+	}
 	result, err := repository.SaveSettings(settings, now())
 	if err == nil {
 		RefreshPromptSyncScheduler()
@@ -101,6 +109,18 @@ func normalizePublicSettingWithChannels(setting model.PublicSetting, channels []
 		enabled := true
 		setting.Auth.AllowRegister = &enabled
 	}
+	setting.Auth.EmailVerification = true
+	setting.Auth.EmailDomains = normalizeStringList(setting.Auth.EmailDomains, normalizeEmailDomain)
+	if len(setting.Auth.EmailDomains) == 0 {
+		setting.Auth.EmailDomainRestriction = false
+	}
+	if setting.Auth.NewUserRewardCredits < 0 {
+		setting.Auth.NewUserRewardCredits = 0
+	}
+	setting.Announcements = normalizeAnnouncementSetting(setting.Announcements)
+	if setting.CheckIn.RewardCredits < 0 {
+		setting.CheckIn.RewardCredits = 0
+	}
 	managedModels := enabledManagedModelIDs(setting.ModelChannel.Models)
 	if len(managedModels) > 0 {
 		setting.ModelChannel.AvailableModels = managedModels
@@ -114,6 +134,54 @@ func normalizePublicSettingWithChannels(setting model.PublicSetting, channels []
 	setting.ModelChannel.DefaultVideoModel = repairDefaultModel(setting.ModelChannel.DefaultVideoModel, setting.ModelChannel.AvailableModels, isVideoModelName)
 	setting.ModelChannel.DefaultModel = repairDefaultModel(setting.ModelChannel.DefaultModel, setting.ModelChannel.AvailableModels, isTextModelName)
 	return setting
+}
+
+func normalizeAnnouncementSetting(setting model.AnnouncementSetting) model.AnnouncementSetting {
+	if setting.Items == nil {
+		setting.Items = []model.Announcement{}
+	}
+	result := make([]model.Announcement, 0, len(setting.Items))
+	seen := map[int]bool{}
+	for index, item := range setting.Items {
+		item.Title = strings.TrimSpace(item.Title)
+		item.Content = strings.TrimSpace(item.Content)
+		item.Type = normalizePricingToken(item.Type)
+		item.PublishAt = strings.TrimSpace(item.PublishAt)
+		if item.ID <= 0 {
+			item.ID = index + 1
+		}
+		if seen[item.ID] || item.Title == "" || item.Content == "" {
+			continue
+		}
+		seen[item.ID] = true
+		switch item.Type {
+		case "success", "warning", "error":
+		default:
+			item.Type = "info"
+		}
+		result = append(result, item)
+	}
+	setting.Items = result
+	return setting
+}
+
+func publishedAnnouncements(setting model.AnnouncementSetting) []model.Announcement {
+	if !setting.Enabled {
+		return []model.Announcement{}
+	}
+	current := time.Now()
+	result := make([]model.Announcement, 0, len(setting.Items))
+	for _, item := range setting.Items {
+		if !item.Enabled {
+			continue
+		}
+		if publishAt, err := time.Parse(time.RFC3339, item.PublishAt); err == nil && publishAt.After(current) {
+			continue
+		}
+		result = append(result, item)
+	}
+	sort.SliceStable(result, func(i, j int) bool { return result[i].PublishAt > result[j].PublishAt })
+	return result
 }
 
 func CalculateRequestCredits(request PricingRequest) (int, error) {
@@ -216,6 +284,7 @@ func appendDefaultPricingRulesForModels(rules []model.PricingRule, models []mode
 
 func defaultPricingRulesForModel(item model.ModelDefinition) []model.PricingRule {
 	modelID := strings.TrimSpace(item.ID)
+	modality := normalizePricingToken(item.Modality)
 	base := model.PricingRule{
 		Model:           modelID,
 		BillingMode:     "fixed",
@@ -226,19 +295,18 @@ func defaultPricingRulesForModel(item model.ModelDefinition) []model.PricingRule
 		Enabled:         true,
 		Remark:          "auto default",
 	}
-	switch normalizePricingToken(item.Modality) {
-	case "image":
-		return []model.PricingRule{
-			defaultPricingRule(base, "image", "generation", "image"),
-			defaultPricingRule(base, "image", "edit", "image"),
-		}
-	case "video":
-		return []model.PricingRule{defaultPricingRule(base, "video", "generation", "second")}
-	case "audio":
-		return []model.PricingRule{defaultPricingRule(base, "audio", "speech", "request")}
-	default:
-		return []model.PricingRule{defaultPricingRule(base, "text", "completion", "request")}
+	unit := "request"
+	if modality == "image" {
+		unit = "image"
+	} else if modality == "video" {
+		unit = "second"
 	}
+	operations := normalizeModelOperations(item.Operations, modelID, modality)
+	rules := make([]model.PricingRule, 0, len(operations))
+	for _, operation := range operations {
+		rules = append(rules, defaultPricingRule(base, modality, operation, unit))
+	}
+	return rules
 }
 
 func defaultPricingRule(base model.PricingRule, modality string, operation string, unit string) model.PricingRule {
@@ -272,7 +340,8 @@ func normalizeModelDefinitions(items []model.ModelDefinition, availableModels []
 	if len(items) == 0 {
 		items = make([]model.ModelDefinition, 0, len(seedModels))
 		for index, modelName := range seedModels {
-			items = append(items, model.ModelDefinition{ID: modelName, Name: modelName, Modality: defaultModelModality(modelName), Enabled: true, Sort: index, AspectRatios: aspectRatios[modelName], ResolutionTiers: []string{"1k"}})
+			modality := defaultModelModality(modelName)
+			items = append(items, model.ModelDefinition{ID: modelName, Name: modelName, Modality: modality, Enabled: true, Sort: index, AspectRatios: aspectRatios[modelName], ResolutionTiers: defaultModelResolutionTiers(modality)})
 		}
 	}
 	result := make([]model.ModelDefinition, 0, len(items))
@@ -291,10 +360,32 @@ func normalizeModelDefinitions(items []model.ModelDefinition, availableModels []
 		if item.Modality == "" {
 			item.Modality = defaultModelModality(item.ID)
 		}
+		item.Operations = normalizeModelOperations(item.Operations, item.ID, item.Modality)
 		item.AspectRatios = normalizeStringList(item.AspectRatios, normalizePricingToken)
 		item.ResolutionTiers = normalizeStringList(item.ResolutionTiers, normalizeResolutionTier)
+		if item.Modality != "image" && item.Modality != "video" {
+			item.AspectRatios = []string{}
+			item.ResolutionTiers = []string{}
+		}
 		item.Remark = strings.TrimSpace(item.Remark)
 		result = append(result, item)
+	}
+	for _, modelName := range seedModels {
+		if seen[modelName] {
+			continue
+		}
+		seen[modelName] = true
+		modality := defaultModelModality(modelName)
+		result = append(result, model.ModelDefinition{
+			ID:              modelName,
+			Name:            modelName,
+			Modality:        modality,
+			Operations:      defaultModelOperations(modelName, modality),
+			Enabled:         true,
+			Sort:            len(result),
+			AspectRatios:    normalizeStringList(aspectRatios[modelName], normalizePricingToken),
+			ResolutionTiers: defaultModelResolutionTiers(modality),
+		})
 	}
 	sort.SliceStable(result, func(i, j int) bool {
 		if result[i].Sort == result[j].Sort {
@@ -303,6 +394,68 @@ func normalizeModelDefinitions(items []model.ModelDefinition, availableModels []
 		return result[i].Sort < result[j].Sort
 	})
 	return result
+}
+
+func defaultModelResolutionTiers(modality string) []string {
+	if normalizePricingToken(modality) == "image" {
+		return []string{"1k"}
+	}
+	return []string{}
+}
+
+func normalizeModelOperations(items []string, modelName string, modality string) []string {
+	allowed := map[string]bool{}
+	switch normalizePricingToken(modality) {
+	case "image":
+		allowed["generation"] = true
+		allowed["edit"] = true
+	case "video":
+		allowed["generation"] = true
+	case "audio":
+		allowed["speech"] = true
+	default:
+		allowed["completion"] = true
+	}
+	result := []string{}
+	seen := map[string]bool{}
+	for _, operation := range items {
+		operation = normalizePricingToken(operation)
+		if allowed[operation] && !seen[operation] {
+			seen[operation] = true
+			result = append(result, operation)
+		}
+	}
+	if len(result) == 0 {
+		return defaultModelOperations(modelName, modality)
+	}
+	return result
+}
+
+func defaultModelOperations(modelName string, modality string) []string {
+	modality = normalizePricingToken(modality)
+	if modality == "video" {
+		return []string{"generation"}
+	}
+	if modality == "audio" {
+		return []string{"speech"}
+	}
+	if modality != "image" {
+		return []string{"completion"}
+	}
+	name := strings.ToLower(strings.TrimSpace(modelName))
+	editOnly := []string{"qwen-image-edit", "image-edit", "image_edit", "inpaint", "outpaint", "remove-background", "flux-pro-1.0-fill", "flux-pro-1.0-expand"}
+	for _, pattern := range editOnly {
+		if strings.Contains(name, pattern) {
+			return []string{"edit"}
+		}
+	}
+	editable := []string{"gpt-image", "dall-e-2", "flux-kontext", "seedream", "nano-banana"}
+	for _, pattern := range editable {
+		if strings.Contains(name, pattern) {
+			return []string{"generation", "edit"}
+		}
+	}
+	return []string{"generation"}
 }
 
 func normalizeGroupRatios(items map[string]float64) map[string]float64 {
@@ -540,6 +693,7 @@ func normalizePrivateSetting(setting model.PrivateSetting) model.PrivateSetting 
 		setting.Channels = []model.ModelChannel{}
 	}
 	setting.PromptSync = normalizePromptSyncSetting(setting.PromptSync)
+	setting.Email = normalizeEmailSetting(setting.Email)
 	for i := range setting.Channels {
 		if setting.Channels[i].Protocol == "" {
 			setting.Channels[i].Protocol = "openai"
@@ -554,11 +708,67 @@ func normalizePrivateSetting(setting model.PrivateSetting) model.PrivateSetting 
 	return setting
 }
 
+func normalizeEmailSetting(setting model.EmailSetting) model.EmailSetting {
+	setting.SMTPHost = strings.TrimSpace(setting.SMTPHost)
+	setting.SMTPUsername = strings.TrimSpace(setting.SMTPUsername)
+	setting.SMTPFromEmail = strings.ToLower(strings.TrimSpace(setting.SMTPFromEmail))
+	setting.SMTPFromName = strings.TrimSpace(setting.SMTPFromName)
+	setting.SMTPSecurity = strings.ToLower(strings.TrimSpace(setting.SMTPSecurity))
+	if setting.SMTPPort <= 0 || setting.SMTPPort > 65535 {
+		setting.SMTPPort = 587
+	}
+	if setting.SMTPSecurity == "" && setting.SMTPPort == 465 {
+		setting.SMTPSecurity = "ssl"
+	}
+	if setting.SMTPSecurity != "ssl" && setting.SMTPSecurity != "none" {
+		setting.SMTPSecurity = "starttls"
+	}
+	return setting
+}
+
+func validateEmailSetting(setting model.EmailSetting) error {
+	if setting.SMTPHost == "" && setting.SMTPUsername == "" && setting.SMTPPassword == "" && setting.SMTPFromEmail == "" {
+		return nil
+	}
+	if setting.SMTPHost == "" || setting.SMTPFromEmail == "" {
+		return safeMessageError{message: "请完整填写 SMTP 服务器和发件邮箱"}
+	}
+	if _, err := normalizeEmailAddress(setting.SMTPFromEmail); err != nil {
+		return safeMessageError{message: "请输入有效的 SMTP 发件邮箱"}
+	}
+	if (setting.SMTPUsername == "") != (setting.SMTPPassword == "") {
+		return safeMessageError{message: "SMTP 账号和密码必须同时配置"}
+	}
+	if setting.SMTPSecurity == "none" && setting.SMTPUsername != "" {
+		return safeMessageError{message: "SMTP 账号密码必须使用 STARTTLS 或 SSL/TLS 加密传输"}
+	}
+	return nil
+}
+
+func normalizeEmailDomain(value string) string {
+	value = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(value, "@")))
+	if len(value) == 0 || len(value) > 253 || strings.ContainsAny(value, "@ /\\") {
+		return ""
+	}
+	for _, label := range strings.Split(value, ".") {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return ""
+		}
+		for _, char := range label {
+			if (char < 'a' || char > 'z') && (char < '0' || char > '9') && char != '-' {
+				return ""
+			}
+		}
+	}
+	return value
+}
+
 func hidePrivateAPIKeys(settings model.Settings) model.Settings {
 	for i := range settings.Private.Channels {
 		settings.Private.Channels[i].APIKey = ""
 	}
-	settings.Private.Auth.LinuxDo.ClientSecret = ""
+	settings.Private.Email.PasswordConfigured = settings.Private.Email.SMTPPassword != ""
+	settings.Private.Email.SMTPPassword = ""
 	return settings
 }
 
@@ -571,12 +781,10 @@ func keepPrivateAPIKeys(settings *model.Settings, saved model.Settings) {
 			settings.Private.Channels[i].APIKey = channel.APIKey
 		}
 	}
-}
-
-func keepPrivateAuthSecrets(settings *model.Settings, saved model.Settings) {
-	if strings.TrimSpace(settings.Private.Auth.LinuxDo.ClientSecret) == "" {
-		settings.Private.Auth.LinuxDo.ClientSecret = saved.Private.Auth.LinuxDo.ClientSecret
+	if settings.Private.Email.SMTPPassword == "" {
+		settings.Private.Email.SMTPPassword = saved.Private.Email.SMTPPassword
 	}
+	settings.Private.Email.PasswordConfigured = false
 }
 
 func findSavedChannel(channel model.ModelChannel, saved []model.ModelChannel, index int) (model.ModelChannel, bool) {
@@ -698,16 +906,21 @@ func repairDefaultModel(current string, models []string, preferred func(string) 
 
 func isVideoModelName(modelName string) bool {
 	name := strings.ToLower(strings.TrimSpace(modelName))
-	return strings.Contains(name, "seedance") || strings.Contains(name, "video")
+	return strings.Contains(name, "seedance") || strings.Contains(name, "video") || strings.Contains(name, "sora") || strings.Contains(name, "veo") || strings.Contains(name, "kling") || strings.Contains(name, "wan")
 }
 
 func isImageModelName(modelName string) bool {
 	name := strings.ToLower(strings.TrimSpace(modelName))
-	return strings.Contains(name, "seedream") || strings.Contains(name, "gpt-image") || strings.Contains(name, "image")
+	return strings.Contains(name, "seedream") || strings.Contains(name, "gpt-image") || strings.Contains(name, "image") || strings.Contains(name, "dall-e") || strings.Contains(name, "imagen") || strings.Contains(name, "flux") || strings.Contains(name, "nano-banana")
+}
+
+func isAudioModelName(modelName string) bool {
+	name := strings.ToLower(strings.TrimSpace(modelName))
+	return strings.Contains(name, "audio") || strings.Contains(name, "speech") || strings.Contains(name, "tts")
 }
 
 func isTextModelName(modelName string) bool {
-	return !isImageModelName(modelName) && !isVideoModelName(modelName)
+	return !isImageModelName(modelName) && !isVideoModelName(modelName) && !isAudioModelName(modelName)
 }
 
 func defaultModelModality(modelName string) string {
@@ -716,6 +929,9 @@ func defaultModelModality(modelName string) string {
 	}
 	if isImageModelName(modelName) {
 		return "image"
+	}
+	if isAudioModelName(modelName) {
+		return "audio"
 	}
 	return "text"
 }

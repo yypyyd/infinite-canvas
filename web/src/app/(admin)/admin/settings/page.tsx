@@ -9,6 +9,10 @@ import { EditorView } from "@uiw/react-codemirror";
 
 import { fetchAdminSettings, fetchChannelModels, saveAdminSettings, testChannelModel, type AdminManagedModel, type AdminModelChannel, type AdminPricingRule, type AdminSettings } from "@/services/api/admin";
 import { useUserStore } from "@/stores/use-user-store";
+import { ModelCatalogEditor } from "./components/model-catalog-editor";
+import { OperationSettingsEditor } from "./components/operation-settings-editor";
+import { EmailSettingsEditor } from "./components/email-settings-editor";
+import { inferModelModality, inferModelOperations, normalizeModelOperations } from "./model-capabilities";
 
 const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), { ssr: false });
 const jsonEditorTheme = EditorView.theme({
@@ -39,9 +43,15 @@ const emptySettings: AdminSettings = {
             systemPrompt: "",
             allowCustomChannel: true,
         },
-        auth: { allowRegister: true, linuxDo: { enabled: false } },
+        auth: { allowRegister: true, emailVerification: true, emailDomainRestriction: false, emailDomains: [], newUserReward: false, newUserRewardCredits: 0 },
+        announcements: { enabled: false, items: [] },
+        checkIn: { enabled: false, reward: false, rewardCredits: 0 },
     },
-    private: { channels: [], promptSync: { enabled: true, cron: "*/5 * * * *" }, auth: { linuxDo: { clientId: "", clientSecret: "" } } },
+    private: {
+        channels: [],
+        promptSync: { enabled: true, cron: "*/5 * * * *" },
+        email: { smtpHost: "", smtpPort: 587, smtpUsername: "", smtpPassword: "", smtpFromEmail: "", smtpFromName: "道生画境", smtpSecurity: "starttls", passwordConfigured: false },
+    },
 };
 const emptyChannel: AdminModelChannel = { protocol: "openai", name: "", baseUrl: "", apiKey: "", models: [], weight: 1, enabled: true, remark: "" };
 
@@ -124,6 +134,12 @@ export default function AdminSettingsPage() {
 
     const saveSettings = async () => {
         if (!token) return;
+        try {
+            await form.validateFields();
+        } catch {
+            message.error("请先修正表单中的配置错误");
+            return;
+        }
         const values = await collectSettings(form, editorMode, jsonText, message);
         if (!values) {
             return;
@@ -422,8 +438,13 @@ export default function AdminSettingsPage() {
                             <Form form={form} layout="vertical" initialValues={emptySettings} requiredMark={false}>
                                 <Row gutter={16}>
                                     <Col span={24}>
-                                        <Form.Item name={["public", "modelChannel", "models"]} label="模型管理" extra="前台模型下拉、模型类型、宽高比和可选分辨率档优先读取这里；保存时会自动同步公开 availableModels。">
-                                            <ModelDefinitionEditor sourceModels={uniqueModels([...channelModels, ...knownModels])} />
+                                        <Form.Item name={["public", "modelChannel", "models"]} style={{ marginBottom: 16 }}>
+                                            <ModelCatalogEditor
+                                                candidateModels={uniqueModels([...channelModels, ...knownModels])}
+                                                channelModels={channelModels}
+                                                pricingRules={pricingRules}
+                                                onPricingRulesChange={(items) => setPricingRulesValue(form, setPricingRules, items)}
+                                            />
                                         </Form.Item>
                                     </Col>
                                     <Col span={24}>
@@ -461,34 +482,7 @@ export default function AdminSettingsPage() {
                                             <Switch />
                                         </Form.Item>
                                     </Col>
-                                    <Col span={24}>
-                                        <Form.Item name={["public", "auth", "allowRegister"]} label="是否允许用户注册" extra="关闭后隐藏注册入口，注册接口也会拒绝新用户创建" valuePropName="checked">
-                                            <Switch />
-                                        </Form.Item>
-                                    </Col>
-                                    <Col span={24}>
-                                        <Flex justify="space-between" align="center" gap={12} wrap style={{ marginBottom: 8 }}>
-                                            <Typography.Title level={5} style={{ margin: 0 }}>
-                                                模型计费规则
-                                            </Typography.Title>
-                                            <Space>
-                                                <Button size="small" icon={<PlusOutlined />} onClick={() => addPricingRule(form, setPricingRules, publicModels[0] || "")}>
-                                                    增加规则
-                                                </Button>
-                                                <Button size="small" onClick={() => addDefaultPricingRules(form, setPricingRules, publicModels)}>
-                                                    按模型生成默认规则
-                                                </Button>
-                                            </Space>
-                                        </Flex>
-                                        <Table
-                                            rowKey="_rowKey"
-                                            pagination={false}
-                                            size="small"
-                                            scroll={{ x: 1180 }}
-                                            dataSource={pricingRules.map((rule, index) => ({ ...rule, _index: index, _rowKey: String(index) + "-" + rule.model + "-" + rule.modality + "-" + rule.operation + "-" + rule.unit }))}
-                                            columns={pricingRuleColumns(form, setPricingRules, publicModels)}
-                                        />
-                                    </Col>
+                                    <Col span={24}><OperationSettingsEditor /></Col>
                                 </Row>
                             </Form>
                         ) : (
@@ -507,41 +501,7 @@ export default function AdminSettingsPage() {
                     ) : activeMode === "visual" ? (
                         <Form form={form} layout="vertical" initialValues={emptySettings} requiredMark={false}>
                             <Flex vertical gap={12}>
-                                <Card
-                                    size="small"
-                                    title={
-                                        <Space>
-                                            <img src="/icons/linuxdo.svg" alt="" width={18} height={18} />
-                                            Linux.do 登录
-                                        </Space>
-                                    }
-                                >
-                                    <Flex vertical gap={14}>
-                                        <Typography.Text type="secondary">
-                                            本项目接口回调地址是 /api/auth/linux-do/callback，请在 Linux.do 应用后台自行拼接站点前缀。
-                                            <Typography.Link href="https://connect.linux.do" target="_blank" rel="noreferrer">
-                                                点击此处管理你的 LinuxDO OAuth App
-                                            </Typography.Link>
-                                        </Typography.Text>
-                                        <Row gutter={16}>
-                                            <Col xs={24} md={6}>
-                                                <Form.Item name={["public", "auth", "linuxDo", "enabled"]} label="开启 Linux.do 登录" valuePropName="checked">
-                                                    <Switch />
-                                                </Form.Item>
-                                            </Col>
-                                            <Col xs={24} md={9}>
-                                                <Form.Item name={["private", "auth", "linuxDo", "clientId"]} label="Linux.do Client ID">
-                                                    <Input placeholder="输入 Linux.do OAuth App 的 ID" />
-                                                </Form.Item>
-                                            </Col>
-                                            <Col xs={24} md={9}>
-                                                <Form.Item name={["private", "auth", "linuxDo", "clientSecret"]} label="Linux.do Client Secret">
-                                                    <Input.Password placeholder="留空则沿用已保存的密钥" />
-                                                </Form.Item>
-                                            </Col>
-                                        </Row>
-                                    </Flex>
-                                </Card>
+                                <EmailSettingsEditor />
                                 <Card size="small" title="提示词定时同步">
                                     <Row gutter={16} align="middle">
                                         <Col xs={24} md={8}>
@@ -830,73 +790,6 @@ export default function AdminSettingsPage() {
     );
 }
 
-function ModelDefinitionEditor({ value, onChange, sourceModels }: { value?: AdminManagedModel[]; onChange?: (value: AdminManagedModel[]) => void; sourceModels: string[] }) {
-    const [nextModel, setNextModel] = useState("");
-    const normalized = normalizeManagedModels(value || []);
-    const existing = new Set(normalized.map((item) => item.id));
-    const candidates = uniqueModels([...sourceModels, nextModel].filter(Boolean)).filter((model) => !existing.has(model));
-    const updateValue = (next: AdminManagedModel[]) => onChange?.(normalizeManagedModels(next));
-    const addModel = (modelName = nextModel.trim() || candidates[0] || "") => {
-        if (!modelName || existing.has(modelName)) return;
-        updateValue([
-            ...normalized,
-            {
-                id: modelName,
-                name: modelName,
-                modality: defaultModality(modelName),
-                enabled: true,
-                sort: normalized.length,
-                aspectRatios: inferModelAspectRatios(modelName),
-                resolutionTiers: ["1k"],
-                remark: "",
-            },
-        ]);
-        setNextModel("");
-    };
-    const fillSourceModels = () => {
-        const next = [...normalized];
-        const seen = new Set(next.map((item) => item.id));
-        for (const model of sourceModels) {
-            if (seen.has(model)) continue;
-            seen.add(model);
-            next.push({ id: model, name: model, modality: defaultModality(model), enabled: true, sort: next.length, aspectRatios: inferModelAspectRatios(model), resolutionTiers: ["1k"], remark: "" });
-        }
-        updateValue(next);
-    };
-    const setField = <K extends keyof AdminManagedModel>(index: number, key: K, fieldValue: AdminManagedModel[K]) => {
-        updateValue(normalized.map((item, itemIndex) => (itemIndex === index ? { ...item, [key]: fieldValue } : item)));
-    };
-    return (
-        <Flex vertical gap={10}>
-            <Flex gap={8} wrap>
-                <Select showSearch allowClear style={{ minWidth: 260, flex: 1 }} placeholder="选择或输入模型 ID" value={nextModel || undefined} options={candidates.map((model) => ({ label: model, value: model }))} onChange={(model) => setNextModel(model || "")} onSearch={setNextModel} />
-                <Button icon={<PlusOutlined />} onClick={() => addModel()}>
-                    添加模型
-                </Button>
-                <Button onClick={fillSourceModels}>按渠道模型补齐</Button>
-            </Flex>
-            <Table
-                rowKey="id"
-                size="small"
-                pagination={false}
-                scroll={{ x: 1320 }}
-                dataSource={normalized.map((item, index) => ({ ...item, _index: index }))}
-                columns={[
-                    { title: "模型 ID", dataIndex: "id", width: 220, render: (_: unknown, item: AdminManagedModel & { _index: number }) => <Input value={item.id} onChange={(event) => setField(item._index, "id", event.target.value)} /> },
-                    { title: "显示名称", dataIndex: "name", width: 180, render: (_: unknown, item: AdminManagedModel & { _index: number }) => <Input value={item.name} onChange={(event) => setField(item._index, "name", event.target.value)} /> },
-                    { title: "类型", dataIndex: "modality", width: 110, render: (_: unknown, item: AdminManagedModel & { _index: number }) => <Select className="!w-full" value={item.modality} options={pricingOptions.modality} onChange={(next) => setField(item._index, "modality", next)} /> },
-                    { title: "宽高比", dataIndex: "aspectRatios", width: 260, render: (_: unknown, item: AdminManagedModel & { _index: number }) => <Select mode="multiple" allowClear className="!w-full" value={item.aspectRatios} options={modelAspectRatioOptions.map((ratio) => ({ label: ratio, value: ratio }))} onChange={(next) => setField(item._index, "aspectRatios", next)} /> },
-                    { title: "分辨率档", dataIndex: "resolutionTiers", width: 220, render: (_: unknown, item: AdminManagedModel & { _index: number }) => <Select mode="tags" allowClear className="!w-full" value={item.resolutionTiers} options={["1k", "2k", "4k", "480p", "720p", "1080p"].map((tier) => ({ label: tier, value: tier }))} onChange={(next) => setField(item._index, "resolutionTiers", next)} /> },
-                    { title: "排序", dataIndex: "sort", width: 90, render: (_: unknown, item: AdminManagedModel & { _index: number }) => <InputNumber className="!w-full" value={item.sort} precision={0} onChange={(next) => setField(item._index, "sort", Number(next) || 0)} /> },
-                    { title: "启用", dataIndex: "enabled", width: 80, render: (_: unknown, item: AdminManagedModel & { _index: number }) => <Switch checked={item.enabled} onChange={(checked) => setField(item._index, "enabled", checked)} /> },
-                    { title: "备注", dataIndex: "remark", width: 180, render: (_: unknown, item: AdminManagedModel & { _index: number }) => <Input value={item.remark} onChange={(event) => setField(item._index, "remark", event.target.value)} /> },
-                    { title: "操作", width: 76, fixed: "right" as const, render: (_: unknown, item: AdminManagedModel & { _index: number }) => <Button danger size="small" icon={<DeleteOutlined />} onClick={() => updateValue(normalized.filter((_, index) => index !== item._index))} /> },
-                ]}
-            />
-        </Flex>
-    );
-}
-
 function GroupRatioEditor({ value, onChange }: { value?: Record<string, number>; onChange?: (value: Record<string, number>) => void }) {
     const normalized = normalizeGroupRatios(value || {});
     const rows = Object.entries(normalized).map(([group, ratio]) => ({ group, ratio }));
@@ -953,9 +846,27 @@ function normalizePublicSetting(setting: Partial<AdminSettings["public"]> = {}):
         },
         auth: {
             allowRegister: setting.auth?.allowRegister !== false,
-            linuxDo: {
-                enabled: setting.auth?.linuxDo?.enabled === true,
-            },
+            emailVerification: true,
+            emailDomainRestriction: setting.auth?.emailDomainRestriction === true,
+            emailDomains: Array.from(new Set((setting.auth?.emailDomains || []).map(normalizeEmailDomain).filter(Boolean))),
+            newUserReward: setting.auth?.newUserReward === true,
+            newUserRewardCredits: Math.max(0, Number(setting.auth?.newUserRewardCredits) || 0),
+        },
+        announcements: {
+            enabled: setting.announcements?.enabled === true,
+            items: (setting.announcements?.items || []).map((item, index) => ({
+                id: Number(item.id) || index + 1,
+                title: item.title?.trim() || "",
+                content: item.content?.trim() || "",
+                type: (["success", "warning", "error"].includes(item.type) ? item.type : "info") as "info" | "success" | "warning" | "error",
+                publishAt: item.publishAt || "",
+                enabled: item.enabled !== false,
+            })),
+        },
+        checkIn: {
+            enabled: setting.checkIn?.enabled === true,
+            reward: setting.checkIn?.reward === true,
+            rewardCredits: Math.max(0, Number(setting.checkIn?.rewardCredits) || 0),
         },
     };
 }
@@ -971,21 +882,27 @@ function normalizeModelAspectRatios(items: Record<string, string[]>): Record<str
 }
 
 function normalizeManagedModels(items: Partial<AdminManagedModel>[], availableModels: string[] = [], aspectRatios: Record<string, string[]> = {}): AdminManagedModel[] {
-    const seedModels = items.length ? items : availableModels.map((model, index) => ({ id: model, name: model, modality: defaultModality(model), enabled: true, sort: index, aspectRatios: aspectRatios[model] || inferModelAspectRatios(model), resolutionTiers: ["1k"], remark: "" }));
+    const seedModels = items.length ? items : availableModels.map((model, index) => {
+        const modality = inferModelModality(model);
+        return { id: model, name: model, modality, operations: inferModelOperations(model, modality), enabled: true, sort: index, aspectRatios: aspectRatios[model] || inferModelAspectRatios(model), resolutionTiers: modality === "image" ? ["1k"] : [], remark: "" };
+    });
     const seen = new Set<string>();
     return seedModels
         .map((item, index) => {
             const id = (item.id || "").trim();
             if (!id || seen.has(id)) return null;
             seen.add(id);
+            const modality = normalizePricingToken(item.modality || inferModelModality(id));
+            const supportsResolution = modality === "image" || modality === "video";
             return {
                 id,
                 name: item.name?.trim() || id,
-                modality: normalizePricingToken(item.modality || defaultModality(id)),
+                modality,
+                operations: normalizeModelOperations(item.operations || [], id, modality),
                 enabled: item.enabled !== false,
                 sort: Number(item.sort ?? index) || 0,
-                aspectRatios: Array.from(new Set((item.aspectRatios || []).map(normalizePricingToken).filter(Boolean))),
-                resolutionTiers: Array.from(new Set((item.resolutionTiers || []).map(normalizeResolutionTier).filter(Boolean))),
+                aspectRatios: supportsResolution ? Array.from(new Set((item.aspectRatios || []).map(normalizePricingToken).filter(Boolean))) : [],
+                resolutionTiers: supportsResolution ? Array.from(new Set((item.resolutionTiers || []).map(normalizeResolutionTier).filter(Boolean))) : [],
                 remark: item.remark || "",
             } as AdminManagedModel;
         })
@@ -1049,11 +966,15 @@ function normalizePrivateSetting(setting: Partial<AdminSettings["private"]> = {}
             enabled: setting.promptSync?.enabled !== false,
             cron: setting.promptSync?.cron || "*/5 * * * *",
         },
-        auth: {
-            linuxDo: {
-                clientId: setting.auth?.linuxDo?.clientId || "",
-                clientSecret: setting.auth?.linuxDo?.clientSecret || "",
-            },
+        email: {
+            smtpHost: setting.email?.smtpHost?.trim() || "",
+            smtpPort: Math.min(65535, Math.max(1, Number(setting.email?.smtpPort) || 587)),
+            smtpUsername: setting.email?.smtpUsername?.trim() || "",
+            smtpPassword: setting.email?.smtpPassword || "",
+            smtpFromEmail: setting.email?.smtpFromEmail?.trim().toLowerCase() || "",
+            smtpFromName: setting.email?.smtpFromName?.trim() || "道生画境",
+            smtpSecurity: setting.email?.smtpSecurity === "ssl" || setting.email?.smtpSecurity === "none" ? setting.email.smtpSecurity : "starttls",
+            passwordConfigured: setting.email?.passwordConfigured === true,
         },
     };
 }
@@ -1071,178 +992,18 @@ function normalizeChannel(item: Partial<AdminModelChannel> = {}): AdminModelChan
     };
 }
 
-const pricingOptions = {
-    modality: [
-        { label: "图片", value: "image" },
-        { label: "视频", value: "video" },
-        { label: "文本", value: "text" },
-        { label: "音频", value: "audio" },
-    ],
-    operation: [
-        { label: "生成", value: "generation" },
-        { label: "编辑", value: "edit" },
-        { label: "补全", value: "completion" },
-        { label: "语音", value: "speech" },
-    ],
-    unit: [
-        { label: "张", value: "image" },
-        { label: "秒", value: "second" },
-        { label: "请求", value: "request" },
-        { label: "Token", value: "token" },
-    ],
-};
-
-function pricingRuleColumns(form: any, setPricingRules: (items: AdminPricingRule[]) => void, publicModels: string[]) {
-    return [
-        {
-            title: "模型",
-            dataIndex: "model",
-            width: 220,
-            render: (_: unknown, item: AdminPricingRule & { _index: number }) => <Select showSearch className="!w-full" value={item.model} options={publicModels.map((model) => ({ label: model, value: model }))} onChange={(value) => setPricingRuleField(form, setPricingRules, item._index, "model", value)} />,
-        },
-        {
-            title: "类型",
-            dataIndex: "modality",
-            width: 110,
-            render: (_: unknown, item: AdminPricingRule & { _index: number }) => <Select className="!w-full" value={item.modality} options={pricingOptions.modality} onChange={(value) => setPricingRuleField(form, setPricingRules, item._index, "modality", value)} />,
-        },
-        {
-            title: "操作",
-            dataIndex: "operation",
-            width: 130,
-            render: (_: unknown, item: AdminPricingRule & { _index: number }) => <Select className="!w-full" value={item.operation} options={pricingOptions.operation} onChange={(value) => setPricingRuleField(form, setPricingRules, item._index, "operation", value)} />,
-        },
-        {
-            title: "单位",
-            dataIndex: "unit",
-            width: 110,
-            render: (_: unknown, item: AdminPricingRule & { _index: number }) => <Select className="!w-full" value={item.unit} options={pricingOptions.unit} onChange={(value) => setPricingRuleField(form, setPricingRules, item._index, "unit", value)} />,
-        },
-        {
-            title: "分辨率档",
-            dataIndex: "resolutionTier",
-            width: 120,
-            render: (_: unknown, item: AdminPricingRule & { _index: number }) => <Input value={item.resolutionTier} placeholder="1k/720p" onChange={(event) => setPricingRuleField(form, setPricingRules, item._index, "resolutionTier", event.target.value)} />,
-        },
-        {
-            title: "单价",
-            dataIndex: "credits",
-            width: 110,
-            render: (_: unknown, item: AdminPricingRule & { _index: number }) => <InputNumber min={0} step={1} precision={0} className="!w-full" value={item.credits} onChange={(value) => setPricingRuleField(form, setPricingRules, item._index, "credits", Number(value) || 0)} />,
-        },
-        {
-            title: "计费模式",
-            dataIndex: "billingMode",
-            width: 120,
-            render: (_: unknown, item: AdminPricingRule & { _index: number }) => <Select className="!w-full" value={item.billingMode} options={[{ label: "固定", value: "fixed" }, { label: "倍率", value: "ratio" }]} onChange={(value) => setPricingRuleField(form, setPricingRules, item._index, "billingMode", value)} />,
-        },
-        {
-            title: "模型倍率",
-            dataIndex: "modelRatio",
-            width: 110,
-            render: (_: unknown, item: AdminPricingRule & { _index: number }) => <InputNumber min={0} step={0.1} className="!w-full" value={item.modelRatio} onChange={(value) => setPricingRuleField(form, setPricingRules, item._index, "modelRatio", Number(value) || 1)} />,
-        },
-        {
-            title: "补全倍率",
-            dataIndex: "completionRatio",
-            width: 110,
-            render: (_: unknown, item: AdminPricingRule & { _index: number }) => <InputNumber min={0} step={0.1} className="!w-full" value={item.completionRatio} onChange={(value) => setPricingRuleField(form, setPricingRules, item._index, "completionRatio", Number(value) || 1)} />,
-        },
-        {
-            title: "最低",
-            dataIndex: "minCredits",
-            width: 110,
-            render: (_: unknown, item: AdminPricingRule & { _index: number }) => <InputNumber min={0} step={1} precision={0} className="!w-full" value={item.minCredits} onChange={(value) => setPricingRuleField(form, setPricingRules, item._index, "minCredits", Number(value) || 0)} />,
-        },
-        {
-            title: "启用",
-            dataIndex: "enabled",
-            width: 90,
-            render: (_: unknown, item: AdminPricingRule & { _index: number }) => <Switch checked={item.enabled} onChange={(checked) => setPricingRuleField(form, setPricingRules, item._index, "enabled", checked)} />,
-        },
-        {
-            title: "备注",
-            dataIndex: "remark",
-            width: 180,
-            render: (_: unknown, item: AdminPricingRule & { _index: number }) => <Input value={item.remark} onChange={(event) => setPricingRuleField(form, setPricingRules, item._index, "remark", event.target.value)} />,
-        },
-        {
-            title: "操作",
-            key: "actions",
-            width: 80,
-            fixed: "right" as const,
-            render: (_: unknown, item: AdminPricingRule & { _index: number }) => <Button danger size="small" icon={<DeleteOutlined />} onClick={() => removePricingRule(form, setPricingRules, item._index)} />,
-        },
-    ];
-}
-
-function addPricingRule(form: any, setPricingRules: (items: AdminPricingRule[]) => void, model: string) {
-    setPricingRulesValue(form, setPricingRules, [...currentPricingRules(form), defaultPricingRule(model)]);
-}
-
-function addDefaultPricingRules(form: any, setPricingRules: (items: AdminPricingRule[]) => void, models: string[]) {
-    const current = currentPricingRules(form);
-    const existing = new Set(current.map((item) => item.model + ":" + item.modality + ":" + item.operation + ":" + item.unit));
-    const additions = models
-        .filter((model) => model && !existing.has(model + ":" + defaultModality(model) + ":generation:" + defaultUnit(model)))
-        .map((model) => defaultPricingRule(model));
-    if (additions.length) setPricingRulesValue(form, setPricingRules, [...current, ...additions]);
-}
-
-function removePricingRule(form: any, setPricingRules: (items: AdminPricingRule[]) => void, index: number) {
-    setPricingRulesValue(form, setPricingRules, currentPricingRules(form).filter((_, itemIndex) => itemIndex !== index));
-}
-
-function setPricingRuleField<K extends keyof AdminPricingRule>(form: any, setPricingRules: (items: AdminPricingRule[]) => void, index: number, key: K, value: AdminPricingRule[K]) {
-    const next = currentPricingRules(form).map((item, itemIndex) => (itemIndex === index ? normalizePricingRules([{ ...item, [key]: value }])[0] : item));
-    setPricingRulesValue(form, setPricingRules, next);
-}
-
-function currentPricingRules(form: any) {
-    return normalizePricingRules(form.getFieldValue(["public", "modelChannel", "pricingRules"]) || []);
-}
-
 function setPricingRulesValue(form: any, setPricingRules: (items: AdminPricingRule[]) => void, items: AdminPricingRule[]) {
     const normalized = normalizePricingRules(items);
     form.setFieldValue(["public", "modelChannel", "pricingRules"], normalized);
     setPricingRules(normalized);
 }
 
-function defaultPricingRule(model: string): AdminPricingRule {
-    const modality = defaultModality(model);
-    return {
-        model,
-        modality,
-        operation: modality === "text" ? "completion" : modality === "audio" ? "speech" : "generation",
-        unit: defaultUnit(model),
-        resolutionTier: "",
-        billingMode: "fixed",
-        credits: 1,
-        minCredits: 0,
-        modelRatio: 1,
-        completionRatio: 1,
-        enabled: true,
-        remark: "",
-    };
-}
-
-function defaultModality(model: string) {
-    const value = model.toLowerCase();
-    if (value.includes("seedance") || value.includes("video") || value.includes("sora") || value.includes("veo") || value.includes("kling") || value.includes("wan")) return "video";
-    if (value.includes("audio") || value.includes("speech") || value.includes("tts")) return "audio";
-    if (value.includes("seedream") || value.includes("image") || value.includes("gpt-image")) return "image";
-    return "text";
-}
-
-function defaultUnit(model: string) {
-    const modality = defaultModality(model);
-    if (modality === "image") return "image";
-    if (modality === "video") return "second";
-    return "request";
-}
-
 function normalizePricingToken(value: string) {
     return value.trim().toLowerCase();
+}
+
+function normalizeEmailDomain(value: string) {
+    return value.trim().toLowerCase().replace(/^@/, "");
 }
 
 function normalizeResolutionTier(value: string) {

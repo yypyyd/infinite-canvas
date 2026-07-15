@@ -20,7 +20,8 @@ type User struct {
 	ID          string     `json:"id" gorm:"primaryKey"`
 	Username    string     `json:"username" gorm:"uniqueIndex"`
 	Password    string     `json:"password,omitempty"`
-	Email       string     `json:"email"`
+	Email       string     `json:"email" gorm:"index"`
+	EmailKey    *string    `json:"-" gorm:"uniqueIndex"`
 	DisplayName string     `json:"displayName"`
 	AvatarURL   string     `json:"avatarUrl"`
 	Role        UserRole   `json:"role"`
@@ -85,6 +86,8 @@ const (
 	CreditLogTypeAIConsume   CreditLogType = "ai_consume"
 	CreditLogTypeAIRefund    CreditLogType = "ai_refund"
 	CreditLogTypeRedeem      CreditLogType = "redeem_code"
+	CreditLogTypeCheckIn     CreditLogType = "daily_check_in"
+	CreditLogTypeNewUser     CreditLogType = "new_user_reward"
 )
 
 // CreditLog 用户算力点变更流水。

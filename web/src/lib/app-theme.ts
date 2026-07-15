@@ -49,10 +49,10 @@ export function getAntThemeConfig(dark: boolean): ThemeConfig {
             colorLink: color.primary,
             colorLinkHover: color.primaryHover,
             colorLinkActive: color.primary,
-            colorTextLightSolid: color.primaryText,
         },
         components: {
             Button: {
+                primaryColor: color.primaryText,
                 primaryShadow: "none",
             },
             Menu: {

@@ -20,7 +20,9 @@ description: 当前后端主要数据表与字段说明
 当前启动时执行 `AutoMigrate`，自动维护以下表：
 
 - `users`
+- `email_verifications`
 - `credit_logs`
+- `check_ins`
 - `prompts`
 - `assets`
 - `settings`
@@ -29,7 +31,7 @@ description: 当前后端主要数据表与字段说明
 
 ### users
 
-系统用户表。用户基础信息、角色、算力点余额和第三方登录标识放在该表中。
+系统用户表。用户基础信息、角色和算力点余额放在该表中。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
@@ -37,6 +39,7 @@ description: 当前后端主要数据表与字段说明
 | `username` | string | 用户名，唯一索引 |
 | `password` | string | 密码哈希 |
 | `email` | string | 邮箱 |
+| `email_key` | nullable string | 规范化邮箱唯一键；历史空值为 `NULL`，新注册用户用于防止并发重复注册 |
 | `display_name` | string | 昵称 |
 | `avatar_url` | string | 头像地址 |
 | `role` | string | 角色：`user`、`admin` |
@@ -46,11 +49,11 @@ description: 当前后端主要数据表与字段说明
 | `aff_count` | number | 已邀请用户数量，冗余统计字段 |
 | `inviter_id` | string | 邀请人用户 ID |
 | `github_id` | string | GitHub 用户 ID |
-| `linux_do_id` | string | Linux.do 用户 ID |
+| `linux_do_id` | string | 历史预留字段，当前登录流程不再使用 |
 | `wechat_id` | string | 微信用户 ID |
 | `status` | string | 用户状态：`active`、`ban` |
 | `last_login_at` | string | 最近登录时间 |
-| `extra` | json | 扩展信息，第三方资料按平台命名空间保存，如 `linuxDo` |
+| `extra` | json | 扩展信息 |
 | `created_at` | string | 创建时间 |
 | `updated_at` | string | 更新时间 |
 
@@ -111,15 +114,17 @@ description: 当前后端主要数据表与字段说明
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `modelChannel` | object | 模型渠道公开配置组 |
-| `auth` | object | 公开登录配置 |
+| `auth` | object | 公开登录和新用户奖励配置 |
+| `announcements` | object | 平台公告开关和公告列表 |
+| `checkIn` | object | 每日签到和奖励配置 |
 
 `modelChannel` 当前字段：
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `availableModels` | string[] | 系统可用模型列表 |
-| `models` | object[] | 模型管理配置，包含模型名称、类型、启用状态、排序、宽高比和分辨率档 |
-| `pricingRules` | object[] | 模型算力点配置 |
+| `models` | object[] | 模型中心配置，包含模型名称、类型、支持操作、启用状态、排序、宽高比和分辨率档；渠道新模型会自动补入 |
+| `pricingRules` | object[] | 模型算力点配置；新增模型会按模型能力自动生成默认规则 |
 | `groupRatios` | object | 用户分组倍率配置 |
 | `defaultModel` | string | 默认模型 |
 | `defaultImageModel` | string | 默认图片模型 |
@@ -133,16 +138,34 @@ description: 当前后端主要数据表与字段说明
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `model` | string | 模型名称 |
+| `operation` | string | 由模型中心 `operations` 自动展开的内部操作类型 |
+| `unit` | string | 由模型类型自动生成的内部计费单位 |
+| `resolutionTier` | string | 分辨率价格档；为空时是默认价格 |
 | `billingMode` | string | 计费模式：`fixed` 固定单价，`ratio` 倍率计费 |
 | `credits` | number | 固定计费模式下的基础单价 |
 | `modelRatio` | number | 倍率计费模式下的模型倍率 |
 | `completionRatio` | number | 补全倍率，预留给后续 token usage 结算 |
 
-`auth.linuxDo` 当前字段：
+`auth` 当前字段：
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `enabled` | bool | 是否开启 Linux.do 登录 |
+| `allowRegister` | bool | 是否允许用户注册 |
+| `newUserReward` | bool | 是否向新注册用户赠送额度 |
+| `newUserRewardCredits` | number | 新用户实际赠送额度 |
+| `emailVerification` | bool | 注册强制邮箱验证，固定开启 |
+| `emailDomainRestriction` | bool | 是否限制可注册邮箱域名 |
+| `emailDomains` | string[] | 允许注册的邮箱域名列表 |
+
+`announcements.items` 每项包含 `id`、`title`、`content`、`type`、`publishAt`、`enabled`；公开接口只返回已启用且到达发布时间的公告。
+
+`checkIn` 当前字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `enabled` | bool | 是否开启每日签到 |
+| `reward` | bool | 签到是否赠送额度 |
+| `rewardCredits` | number | 每次签到赠送的固定额度 |
 
 `private.value` 当前字段：
 
@@ -150,7 +173,7 @@ description: 当前后端主要数据表与字段说明
 | --- | --- | --- |
 | `channels` | object[] | 模型渠道配置列表 |
 | `promptSync` | object | GitHub 远程提示词定时同步配置 |
-| `auth` | object | 私有登录配置 |
+| `email` | object | SMTP 私有配置；密码读取时脱敏，不会出现在公开设置接口 |
 
 `channels` 每项字段：
 
@@ -172,24 +195,48 @@ description: 当前后端主要数据表与字段说明
 | `enabled` | bool | 是否开启定时同步，默认开启 |
 | `cron` | string | Cron 表达式，默认每 5 分钟 |
 
-`auth.linuxDo` 当前字段：
+后端请求模型时，先按模型名筛选启用且包含该模型的渠道，再按 `weight` 加权随机选择一个渠道。
+
+### email_verifications
+
+注册邮箱验证码表。每个规范化邮箱只保留最新验证码，主键为邮箱 SHA-256 标识，不保存明文验证码。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `clientId` | string | Linux.do OAuth App Client ID |
-| `clientSecret` | string | Linux.do OAuth App Client Secret，后台返回时隐藏 |
+| `id` | string | 规范化邮箱的 SHA-256 标识，主键 |
+| `email` | string | 规范化邮箱，仅用于注册校验和后台排查 |
+| `code_hash` | string | 验证码 HMAC-SHA256 摘要 |
+| `request_ip` | string | 请求来源 IP，用于发送频率限制 |
+| `expires_at` | string | 验证码过期时间 |
+| `sent_at` | string | 最近发送时间 |
+| `attempts` | number | 验证失败次数，最多 5 次 |
+| `used_at` | string | 一次性消费时间，空值表示未使用 |
+| `created_at` | string | 首次创建时间 |
+| `updated_at` | string | 最近更新时间 |
 
-后端请求模型时，先按模型名筛选启用且包含该模型的渠道，再按 `weight` 加权随机选择一个渠道。
+注册成功时，`used_at` 更新、用户创建和新用户额度流水写入同一数据库事务；并发请求只有一次可以消费成功。
 
-### credit_logs
+### check_ins
 
-用户算力点变更流水表。当前记录后台手动调整、模型调用预扣和模型调用失败返还。
+用户每日签到记录表。`user_id + check_in_date` 是联合唯一索引，防止并发请求重复签到和重复发放额度。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `id` | string | 主键 |
 | `user_id` | string | 关联用户 ID |
-| `type` | string | 类型：`admin_adjust`、`ai_consume`、`ai_refund` |
+| `check_in_date` | string | 签到日期，按 Asia/Shanghai 的 `YYYY-MM-DD` 保存 |
+| `reward_credits` | number | 本次实际获得的额度，未开启奖励时为 0 |
+| `created_at` | string | 创建时间 |
+
+### credit_logs
+
+用户算力点变更流水表。当前记录后台调整、模型消费与返还、兑换码、签到和新用户赠送。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 主键 |
+| `user_id` | string | 关联用户 ID |
+| `type` | string | 额度变动类型 |
 | `amount` | number | 本次变动数量，增加为正，扣减为负 |
 | `balance` | number | 变动后的用户算力点余额 |
 | `related_id` | string | 关联业务 ID，可为空 |
@@ -204,3 +251,6 @@ description: 当前后端主要数据表与字段说明
 | `admin_adjust` | 后台手动调整 |
 | `ai_consume` | 调用后端模型接口消费 |
 | `ai_refund` | 后端模型接口调用失败返还 |
+| `redeem_code` | 兑换码充值 |
+| `daily_check_in` | 每日签到奖励 |
+| `new_user_reward` | 新用户注册奖励 |

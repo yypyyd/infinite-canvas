@@ -21,17 +21,40 @@ export type AuthSession = {
     user: AuthUser;
 };
 
-export type AuthPayload = {
+export type LoginPayload = {
     username: string;
     password: string;
 };
 
-export async function login(payload: AuthPayload) {
+export type RegisterPayload = LoginPayload & {
+    email: string;
+    code: string;
+};
+
+export type CheckInStatus = {
+    enabled: boolean;
+    reward: boolean;
+    rewardCredits: number;
+    checkedInToday: boolean;
+    checkInDate: string;
+};
+
+export type CheckInResult = {
+    rewardCredits: number;
+    checkInDate: string;
+    user: AuthUser;
+};
+
+export async function login(payload: LoginPayload) {
     return apiPost<AuthSession>("/api/auth/login", payload);
 }
 
-export async function register(payload: AuthPayload) {
+export async function register(payload: RegisterPayload) {
     return apiPost<AuthSession>("/api/auth/register", payload);
+}
+
+export async function sendRegistrationEmailCode(email: string) {
+    return apiPost<boolean>("/api/auth/email-code", { email });
 }
 
 export async function fetchCurrentUser(token?: string) {
@@ -40,4 +63,12 @@ export async function fetchCurrentUser(token?: string) {
 
 export async function redeemCode(token: string, code: string) {
     return apiPost<AuthUser>("/api/redeem-codes/redeem", { code }, token);
+}
+
+export async function fetchCheckInStatus(token: string) {
+    return apiGet<CheckInStatus>("/api/check-in", undefined, token);
+}
+
+export async function checkIn(token: string) {
+    return apiPost<CheckInResult>("/api/check-in", undefined, token);
 }

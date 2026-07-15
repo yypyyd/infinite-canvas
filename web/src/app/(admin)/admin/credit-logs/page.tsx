@@ -16,6 +16,8 @@ const creditLogTypeLabels: Record<string, string> = {
     ai_consume: "模型消费",
     ai_refund: "失败返还",
     redeem_code: "兑换码充值",
+    daily_check_in: "每日签到",
+    new_user_reward: "新用户赠送",
 };
 
 export default function AdminCreditLogsPage() {

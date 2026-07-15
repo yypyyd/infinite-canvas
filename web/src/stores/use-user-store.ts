@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-import { AUTH_TOKEN_KEY, fetchCurrentUser, login, register, type AuthPayload, type AuthUser } from "@/services/api/auth";
+import { AUTH_TOKEN_KEY, fetchCurrentUser, login, register, type AuthUser, type LoginPayload, type RegisterPayload } from "@/services/api/auth";
 
 type UserStore = {
     token: string;
@@ -14,8 +14,8 @@ type UserStore = {
     clearSession: () => void;
     refreshUser: () => Promise<AuthUser | null>;
     hydrateUser: () => Promise<void>;
-    login: (payload: AuthPayload) => Promise<AuthUser>;
-    register: (payload: AuthPayload) => Promise<AuthUser>;
+    login: (payload: LoginPayload) => Promise<AuthUser>;
+    register: (payload: RegisterPayload) => Promise<AuthUser>;
 };
 
 export const useUserStore = create<UserStore>()(

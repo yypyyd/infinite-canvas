@@ -22,7 +22,6 @@ export type AdminUser = {
     affCode: string;
     affCount: number;
     inviterId: string;
-    linuxDoId: string;
     status: "active" | "ban";
     lastLoginAt: string;
     createdAt: string;
@@ -228,6 +227,7 @@ export type AdminManagedModel = {
     id: string;
     name: string;
     modality: string;
+    operations: string[];
     enabled: boolean;
     sort: number;
     aspectRatios: string[];
@@ -254,10 +254,30 @@ export type AdminPublicSettings = {
     modelChannel: AdminPublicModelChannelSettings;
     auth: {
         allowRegister: boolean;
-        linuxDo: {
-            enabled: boolean;
-        };
+        emailVerification: boolean;
+        emailDomainRestriction: boolean;
+        emailDomains: string[];
+        newUserReward: boolean;
+        newUserRewardCredits: number;
     };
+    announcements: {
+        enabled: boolean;
+        items: AdminAnnouncement[];
+    };
+    checkIn: {
+        enabled: boolean;
+        reward: boolean;
+        rewardCredits: number;
+    };
+};
+
+export type AdminAnnouncement = {
+    id: number;
+    title: string;
+    content: string;
+    type: "info" | "success" | "warning" | "error";
+    publishAt: string;
+    enabled: boolean;
 };
 
 export type AdminPrivateSettings = {
@@ -266,11 +286,15 @@ export type AdminPrivateSettings = {
         enabled: boolean;
         cron: string;
     };
-    auth: {
-        linuxDo: {
-            clientId: string;
-            clientSecret: string;
-        };
+    email: {
+        smtpHost: string;
+        smtpPort: number;
+        smtpUsername: string;
+        smtpPassword: string;
+        smtpFromEmail: string;
+        smtpFromName: string;
+        smtpSecurity: "ssl" | "starttls" | "none";
+        passwordConfigured: boolean;
     };
 };
 

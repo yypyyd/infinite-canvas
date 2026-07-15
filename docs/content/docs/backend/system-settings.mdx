@@ -19,7 +19,7 @@ description: settings 表中 public 和 private 配置结构说明
   "modelChannel": {
     "availableModels": ["gpt-5.5", "gpt-image-2"],
     "models": [
-      { "id": "gpt-image-2", "name": "GPT Image 2", "modality": "image", "enabled": true, "sort": 0, "aspectRatios": ["1:1", "3:2", "2:3"], "resolutionTiers": ["1k", "2k", "4k"], "remark": "" }
+      { "id": "gpt-image-2", "name": "GPT Image 2", "modality": "image", "operations": ["generation", "edit"], "enabled": true, "sort": 0, "aspectRatios": ["1:1", "3:2", "2:3"], "resolutionTiers": ["1k", "2k", "4k"], "remark": "" }
     ],
     "groupRatios": {
       "default": 1,
@@ -37,9 +37,22 @@ description: settings 表中 public 和 private 配置结构说明
   },
   "auth": {
     "allowRegister": true,
-    "linuxDo": {
-      "enabled": false
-    }
+    "emailVerification": true,
+    "emailDomainRestriction": true,
+    "emailDomains": ["qq.com", "gmail.com"],
+    "newUserReward": true,
+    "newUserRewardCredits": 20
+  },
+  "announcements": {
+    "enabled": true,
+    "items": [
+      { "id": 1, "title": "平台更新", "content": "新增每日签到。", "type": "info", "publishAt": "<RFC3339 时间>", "enabled": true }
+    ]
+  },
+  "checkIn": {
+    "enabled": true,
+    "reward": true,
+    "rewardCredits": 5
   }
 }
 ```
@@ -48,14 +61,16 @@ description: settings 表中 public 和 private 配置结构说明
 | --- | --- | --- |
 | `modelChannel` | object | 模型渠道公开配置组 |
 | `auth` | object | 认证相关公开配置 |
+| `announcements` | object | 平台公告配置 |
+| `checkIn` | object | 每日签到配置 |
 
 `modelChannel` 字段：
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `availableModels` | string[] | 系统可用模型；保存设置时会自动合并所有已启用私有渠道的模型 |
-| `models` | object[] | 模型管理配置，包含模型名称、类型、启用状态、排序、宽高比和分辨率档 |
-| `pricingRules` | object[] | 模型算力点配置，后端模型接口调用前按模型预扣，上游失败时返还；未配置默认不扣除 |
+| `availableModels` | string[] | 系统可用模型，由模型中心中已启用的模型生成 |
+| `models` | object[] | 模型中心配置，包含模型名称、类型、支持操作、启用状态、排序、宽高比和分辨率档；已启用渠道的新模型会自动补入 |
+| `pricingRules` | object[] | 模型算力点配置，后端模型接口调用前按模型预扣，上游失败时返还；新增模型会按模型能力自动生成默认规则 |
 | `groupRatios` | object | 用户分组倍率，例如 `default`、`vip`、`svip` |
 | `defaultModel` | string | 默认模型，从 `availableModels` 中选择；为空或失效时优先选择文本模型 |
 | `defaultImageModel` | string | 默认图片模型，从 `availableModels` 中选择；为空或失效时优先选择 `seedream`、`image`、`gpt-image` 模型 |
@@ -69,6 +84,9 @@ description: settings 表中 public 和 private 配置结构说明
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `model` | string | 模型名称 |
+| `operation` | string | 内部操作类型，由模型中心的 `operations` 自动展开；图片模型会按能力注册表区分生成与编辑，识别错误时可在模型信息中修正 |
+| `unit` | string | 内部计费单位，由模型类型自动生成：图片按张、视频按秒、文本和音频按请求 |
+| `resolutionTier` | string | 分辨率价格档，例如 `1k`、`2k`、`4k`、`720p`；为空时是默认价格 |
 | `billingMode` | string | 计费模式：`fixed` 固定单价，`ratio` 倍率计费 |
 | `credits` | number | 固定计费模式下的基础单价 |
 | `modelRatio` | number | 倍率计费模式下的模型倍率 |
@@ -86,7 +104,26 @@ description: settings 表中 public 和 private 配置结构说明
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `allowRegister` | boolean | 是否允许用户注册，默认允许；关闭后注册入口隐藏，注册接口拒绝新用户创建 |
-| `linuxDo.enabled` | boolean | 是否开启 Linux.do 登录 |
+| `emailVerification` | boolean | 注册邮箱验证状态，固定为 `true` |
+| `emailDomainRestriction` | boolean | 是否只允许指定邮箱域名注册 |
+| `emailDomains` | string[] | 允许注册的邮箱域名；未开启限制时可为空 |
+| `newUserReward` | boolean | 是否在本地注册成功时赠送一次额度 |
+| `newUserRewardCredits` | number | 新用户赠送额度，最小为 0 |
+
+`announcements` 字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `enabled` | boolean | 是否在前台显示公告入口 |
+| `items` | object[] | 公告列表；支持类型、发布时间和单条启停，公开接口会过滤未发布项目 |
+
+`checkIn` 字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `enabled` | boolean | 是否开启每日签到 |
+| `reward` | boolean | 签到是否赠送额度；关闭后仍记录签到 |
+| `rewardCredits` | number | 每次签到赠送的固定额度 |
 
 ## private.value
 
@@ -107,6 +144,16 @@ description: settings 表中 public 和 private 配置结构说明
   "promptSync": {
     "enabled": true,
     "cron": "*/5 * * * *"
+  },
+  "email": {
+    "smtpHost": "smtp.example.com",
+    "smtpPort": 587,
+    "smtpUsername": "no-reply@example.com",
+    "smtpPassword": "<仅保存，不返回>",
+    "smtpFromEmail": "no-reply@example.com",
+    "smtpFromName": "道生画境",
+    "smtpSecurity": "starttls",
+    "passwordConfigured": true
   }
 }
 ```
@@ -115,6 +162,7 @@ description: settings 表中 public 和 private 配置结构说明
 | --- | --- | --- |
 | `channels` | object[] | 模型渠道列表 |
 | `promptSync` | object | GitHub 远程提示词定时同步配置 |
+| `email` | object | 注册验证码 SMTP 私有配置；密码不会出现在公开接口，后台读取时也只返回是否已配置 |
 
 `channels` 每项字段：
 
@@ -137,3 +185,18 @@ description: settings 表中 public 和 private 配置结构说明
 | --- | --- | --- |
 | `enabled` | boolean | 是否开启定时同步，默认开启 |
 | `cron` | string | Cron 表达式，默认每 5 分钟 |
+
+`email` 字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `smtpHost` | string | SMTP 服务器域名 |
+| `smtpPort` | number | SMTP 端口，STARTTLS 常用 587，隐式 TLS 常用 465 |
+| `smtpUsername` | string | SMTP 登录账号；无认证的内网 SMTP 可为空 |
+| `smtpPassword` | string | SMTP 密码或授权码；后台提交空值表示沿用旧值，读取设置时始终为空 |
+| `smtpFromEmail` | string | 发件邮箱 |
+| `smtpFromName` | string | 发件人名称 |
+| `smtpSecurity` | string | `starttls`、`ssl` 或 `none`；`none` 不允许携带账号密码 |
+| `passwordConfigured` | boolean | 后台只读状态，表示是否已有 SMTP 密码 |
+
+注册验证码为 6 位数字，使用加密随机数生成并仅保存 HMAC-SHA256 摘要；10 分钟过期、60 秒内同邮箱不能重发、同 IP 每分钟最多请求 5 次、最多尝试 5 次。注册事务会原子消费验证码并创建用户，验证码不能重复使用。

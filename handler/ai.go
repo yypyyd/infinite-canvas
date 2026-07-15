@@ -134,11 +134,204 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		FailError(w, err)
 		return
 	}
-	copyAIResponse(w, request, func() {
+	onFailure := func() {
 		if err := service.RefundUserCredits(user.ID, requestMeta.ModelName, credits, path); err != nil {
 			log.Printf("AI proxy refund credits failed: user=%s model=%s credits=%d err=%v", user.ID, requestMeta.ModelName, credits, err)
 		}
-	}, aiResponseAdapter(channel.BaseURL, requestMeta.ModelName, originalPath), aiRetryPolicyForRequest(channel.BaseURL, requestMeta.ModelName, originalPath))
+	}
+	if isChatGPT2APIImageTaskChannel(channel.BaseURL, originalPath) {
+		copyChatGPT2APIImageTaskResponse(w, channel.BaseURL, channel.APIKey, body, onFailure)
+		return
+	}
+	copyAIResponse(w, request, onFailure, aiResponseAdapter(channel.BaseURL, requestMeta.ModelName, originalPath), aiRetryPolicyForRequest(channel.BaseURL, requestMeta.ModelName, originalPath))
+}
+
+type chatGPT2APIImageTask struct {
+	ID     string           `json:"id"`
+	Status string           `json:"status"`
+	Data   []map[string]any `json:"data"`
+	Error  string           `json:"error"`
+}
+
+func isChatGPT2APIImageTaskChannel(baseURL string, path string) bool {
+	if path != "/images/generations" {
+		return false
+	}
+	parsed, err := url.Parse(strings.TrimSpace(baseURL))
+	return err == nil && strings.EqualFold(parsed.Hostname(), "chat2.pluskk.xyz")
+}
+
+func copyChatGPT2APIImageTaskResponse(w http.ResponseWriter, baseURL string, apiKey string, body []byte, onFailure func()) {
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		onFailure()
+		Fail(w, "AI 接口请求失败：请求参数无效")
+		return
+	}
+	taskPayload := map[string]any{
+		"client_task_id": fmt.Sprintf("huantu-%d", time.Now().UnixNano()),
+		"prompt":         payload["prompt"],
+		"model":          payload["model"],
+	}
+	for _, key := range []string{"size", "quality"} {
+		if value, ok := payload[key]; ok {
+			taskPayload[key] = value
+		}
+	}
+	taskBody, _ := json.Marshal(taskPayload)
+	upstreamBaseURL := strings.TrimSuffix(strings.TrimRight(strings.TrimSpace(baseURL), "/"), "/v1")
+	task, responseBody, statusCode, err := requestChatGPT2APIImageTask(http.MethodPost, upstreamBaseURL+"/api/image-tasks/generations", apiKey, taskBody)
+	if err != nil || statusCode >= http.StatusBadRequest || task.ID == "" {
+		log.Printf("AI async image task submit failed: status=%d err=%v", statusCode, err)
+		onFailure()
+		if statusCode >= http.StatusBadRequest {
+			Fail(w, aiUpstreamStatusMessage(statusCode, responseBody))
+		} else {
+			Fail(w, "AI 接口请求失败：上游任务提交失败")
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-transform")
+	w.Header().Set("X-Accel-Buffering", "no")
+	deadline := time.Now().Add(6 * time.Minute)
+	for {
+		switch strings.ToLower(task.Status) {
+		case "success":
+			data := normalizeChatGPT2APIImageTaskData(upstreamBaseURL, apiKey, task.Data)
+			if len(data) == 0 {
+				onFailure()
+				Fail(w, "AI 接口请求失败：上游任务没有返回图片")
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"created": time.Now().Unix(), "data": data})
+			return
+		case "error", "failed":
+			onFailure()
+			Fail(w, "AI 接口请求失败："+safeUpstreamText(task.Error))
+			return
+		}
+		if time.Now().After(deadline) {
+			onFailure()
+			Fail(w, "AI 接口请求失败：上游生图任务等待超时")
+			return
+		}
+		writeAIKeepAlive(w)
+		time.Sleep(10 * time.Second)
+		pollURL := upstreamBaseURL + "/api/image-tasks?ids=" + url.QueryEscape(task.ID)
+		nextTask, _, pollStatus, pollErr := requestChatGPT2APIImageTask(http.MethodGet, pollURL, apiKey, nil)
+		if pollErr != nil || pollStatus >= http.StatusInternalServerError {
+			log.Printf("AI async image task poll failed: id=%s status=%d err=%v", task.ID, pollStatus, pollErr)
+			continue
+		}
+		if pollStatus >= http.StatusBadRequest {
+			onFailure()
+			Fail(w, "AI 接口请求失败：上游任务查询失败")
+			return
+		}
+		task = nextTask
+	}
+}
+
+func requestChatGPT2APIImageTask(method string, requestURL string, apiKey string, body []byte) (chatGPT2APIImageTask, []byte, int, error) {
+	request, err := http.NewRequest(method, requestURL, bytes.NewReader(body))
+	if err != nil {
+		return chatGPT2APIImageTask{}, nil, 0, err
+	}
+	request.Header.Set("Authorization", "Bearer "+apiKey)
+	if len(body) > 0 {
+		request.Header.Set("Content-Type", "application/json")
+	}
+	response, responseBody, err := doAIRequestWithRetry(request, &aiRetryPolicy{MaxRetries: 2, Delay: 2 * time.Second})
+	if err != nil {
+		return chatGPT2APIImageTask{}, nil, 0, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode >= http.StatusBadRequest {
+		return chatGPT2APIImageTask{}, responseBody, response.StatusCode, nil
+	}
+	var task chatGPT2APIImageTask
+	if method == http.MethodGet {
+		var list struct {
+			Items []chatGPT2APIImageTask `json:"items"`
+		}
+		if err := json.Unmarshal(responseBody, &list); err != nil {
+			return task, responseBody, response.StatusCode, err
+		}
+		if len(list.Items) == 0 {
+			return task, responseBody, response.StatusCode, fmt.Errorf("image task not found")
+		}
+		task = list.Items[0]
+	} else if err := json.Unmarshal(responseBody, &task); err != nil {
+		return task, responseBody, response.StatusCode, err
+	}
+	return task, responseBody, response.StatusCode, nil
+}
+
+func normalizeChatGPT2APIImageTaskData(baseURL string, apiKey string, data []map[string]any) []map[string]any {
+	result := make([]map[string]any, 0, len(data))
+	for _, item := range data {
+		urlValue := firstStringValue(item, "url")
+		encoded := firstStringValue(item, "b64_json")
+		if encoded == "" && urlValue != "" {
+			encoded = downloadChatGPT2APIImage(baseURL, apiKey, urlValue)
+		}
+		if encoded == "" && urlValue == "" {
+			continue
+		}
+		next := map[string]any{}
+		if encoded != "" {
+			next["b64_json"] = encoded
+		}
+		if urlValue != "" {
+			next["url"] = urlValue
+		}
+		if revisedPrompt := firstStringValue(item, "revised_prompt"); revisedPrompt != "" {
+			next["revised_prompt"] = revisedPrompt
+		}
+		result = append(result, next)
+	}
+	return result
+}
+
+func downloadChatGPT2APIImage(baseURL string, apiKey string, imageURL string) string {
+	parsed, err := url.Parse(imageURL)
+	if err != nil {
+		return ""
+	}
+	if !parsed.IsAbs() {
+		base, baseErr := url.Parse(baseURL + "/")
+		if baseErr != nil {
+			return ""
+		}
+		parsed = base.ResolveReference(parsed)
+	}
+	request, err := http.NewRequest(http.MethodGet, parsed.String(), nil)
+	if err != nil {
+		return ""
+	}
+	request.Header.Set("Authorization", "Bearer "+apiKey)
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return ""
+	}
+	defer response.Body.Close()
+	if response.StatusCode >= http.StatusBadRequest {
+		return ""
+	}
+	imageBody, err := io.ReadAll(io.LimitReader(response.Body, 32<<20))
+	if err != nil || len(imageBody) == 0 {
+		return ""
+	}
+	return base64.StdEncoding.EncodeToString(imageBody)
+}
+
+func writeAIKeepAlive(w http.ResponseWriter) {
+	_, _ = io.WriteString(w, strings.Repeat(" ", 2048)+"\n")
+	if flusher, ok := w.(http.Flusher); ok {
+		flusher.Flush()
+	}
 }
 
 func copyAIResponse(w http.ResponseWriter, request *http.Request, onFailure func(), adapter func([]byte) ([]byte, string, bool), retryPolicy *aiRetryPolicy) {
@@ -148,7 +341,7 @@ func copyAIResponse(w http.ResponseWriter, request *http.Request, onFailure func
 		if onFailure != nil {
 			onFailure()
 		}
-		Fail(w, "AI ??????")
+		Fail(w, "AI 接口请求失败：上游连接中断，请稍后重试")
 		return
 	}
 	defer response.Body.Close()
@@ -254,7 +447,7 @@ func copyVideoGenerationsContent(w http.ResponseWriter, request *http.Request) {
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		log.Printf("AI proxy request failed: url=%s err=%v", request.URL.String(), err)
-		Fail(w, "AI 鎺ュ彛璇锋眰澶辫触")
+		Fail(w, "AI 接口请求失败：上游连接中断，请稍后重试")
 		return
 	}
 	defer response.Body.Close()

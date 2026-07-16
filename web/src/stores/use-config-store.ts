@@ -34,29 +34,10 @@ export type AiConfig = {
     size: string;
     count: string;
     canvasImageCount: string;
-    webdavSync: WebdavSyncConfig;
 };
 
 export const CONFIG_STORE_KEY = "infinite-canvas:ai_config_store";
 export type ModelCapability = "image" | "video" | "text" | "audio";
-export type WebdavSyncConfig = {
-    enabled: boolean;
-    url: string;
-    username: string;
-    password: string;
-    directory: string;
-    proxyMode: "direct";
-    lastSyncedAt?: string;
-};
-
-export const defaultWebdavSyncConfig: WebdavSyncConfig = {
-    enabled: false,
-    url: "",
-    username: "",
-    password: "",
-    directory: "infinite-canvas",
-    proxyMode: "direct",
-};
 
 export const defaultConfig: AiConfig = {
     channelMode: "local",
@@ -85,7 +66,6 @@ export const defaultConfig: AiConfig = {
     size: "1:1",
     count: "1",
     canvasImageCount: "3",
-    webdavSync: defaultWebdavSyncConfig,
 };
 
 type ConfigStore = {
@@ -227,7 +207,8 @@ export const useConfigStore = create<ConfigStore>()(
             name: CONFIG_STORE_KEY,
             partialize: (state) => ({ config: state.config }),
             merge: (persisted, current) => {
-                const persistedConfig = ((persisted as Partial<ConfigStore>).config || {}) as Partial<AiConfig>;
+                const storedConfig = ((persisted as Partial<ConfigStore>).config || {}) as Partial<AiConfig> & { webdavSync?: unknown };
+                const { webdavSync: _removedWebdav, ...persistedConfig } = storedConfig;
                 const config = { ...defaultConfig, ...persistedConfig };
                 return {
                     ...current,
@@ -247,7 +228,6 @@ export const useConfigStore = create<ConfigStore>()(
                         videoGenerateAudio: config.videoGenerateAudio || "true",
                         videoWatermark: config.videoWatermark || "false",
                         canvasImageCount: config.canvasImageCount || "3",
-                        webdavSync: { ...defaultWebdavSyncConfig, ...(persistedConfig.webdavSync || {}), proxyMode: "direct" },
                         imageModels: Array.isArray(persistedConfig.imageModels) ? normalizeModelList(config.imageModels) : filterModelsByCapability(config.models, "image"),
                         videoModels: Array.isArray(persistedConfig.videoModels) ? normalizeModelList(config.videoModels) : filterModelsByCapability(config.models, "video"),
                         textModels: Array.isArray(persistedConfig.textModels) ? normalizeModelList(config.textModels) : filterModelsByCapability(config.models, "text"),

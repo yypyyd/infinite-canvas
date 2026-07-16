@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, App, Button, Form, Input, Modal, Segmented, Select } from "antd";
+import { App, Button, Form, Input, Modal, Segmented, Select } from "antd";
 import { useState } from "react";
 
 import { ModelPicker } from "@/components/model-picker";
@@ -26,9 +26,6 @@ const modelGroups: ModelGroup[] = [
 export function AppConfigModal() {
     const { message } = App.useApp();
     const [loadingModels, setLoadingModels] = useState(false);
-    const [testingWebdav, setTestingWebdav] = useState(false);
-    const [syncingWebdav, setSyncingWebdav] = useState(false);
-    const [syncStatus, setSyncStatus] = useState("");
     const config = useConfigStore((state) => state.config);
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const isConfigOpen = useConfigStore((state) => state.isConfigOpen);
@@ -42,7 +39,6 @@ export function AppConfigModal() {
     const effectiveMode = allowCustomChannel ? config.channelMode : "remote";
     const modelConfig = effectiveMode === "remote" ? effectiveConfig : config;
     const modelOptions = config.models.map((model) => ({ label: model, value: model }));
-    const webdavConfig = config.webdavSync;
 
     const finishConfig = () => {
         setConfigDialogOpen(false);
@@ -91,48 +87,6 @@ export function AppConfigModal() {
         const next = uniqueModels(models);
         updateConfig(group.modelsKey, next);
         if (!next.includes(config[group.modelKey])) updateConfig(group.modelKey, next[0] || "");
-    };
-
-    const updateWebdavSync = (patch: Partial<AiConfig["webdavSync"]>) => {
-        updateConfig("webdavSync", { ...webdavConfig, ...patch, proxyMode: "direct" });
-    };
-
-    const testWebdav = async () => {
-        setTestingWebdav(true);
-        setSyncStatus("正在测试 WebDAV 连接");
-        try {
-            const { testWebdavConnection } = await import("@/services/webdav-sync");
-            await testWebdavConnection({ ...webdavConfig, proxyMode: "direct" });
-            setSyncStatus("WebDAV 连接正常");
-            message.success("WebDAV 连接正常");
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : "WebDAV 连接测试失败";
-            setSyncStatus(errorMessage);
-            message.error(errorMessage);
-        } finally {
-            setTestingWebdav(false);
-        }
-    };
-
-    const syncWebdavNow = async () => {
-        setSyncingWebdav(true);
-        setSyncStatus("准备同步");
-        try {
-            const { syncAppDataToWebdav } = await import("@/services/app-sync");
-            const result = await syncAppDataToWebdav({ ...webdavConfig, proxyMode: "direct" }, (event) => {
-                const progress = event.current && event.total ? ` ${event.current}/${event.total}` : "";
-                setSyncStatus(`${event.label ? `${event.label}：` : ""}${event.stage}${progress}`);
-            });
-            updateWebdavSync({ lastSyncedAt: result.syncedAt });
-            setSyncStatus(`同步完成：${result.projects} 个画布、${result.assets} 个素材、${result.files} 个媒体文件`);
-            message.success("WebDAV 同步完成");
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : "WebDAV 同步失败";
-            setSyncStatus(errorMessage);
-            message.error(errorMessage);
-        } finally {
-            setSyncingWebdav(false);
-        }
     };
 
     return (
@@ -259,39 +213,6 @@ export function AppConfigModal() {
                     <Form.Item label="默认音频指令" className="mb-4">
                         <Input.TextArea rows={2} value={config.audioInstructions} placeholder="例如：自然、温暖、适合旁白。" onChange={(event) => updateConfig("audioInstructions", event.target.value)} />
                     </Form.Item>
-                    <section className="mb-5 rounded-lg border border-stone-200 p-3 dark:border-stone-800">
-                        <div className="mb-3 flex items-start justify-between gap-3">
-                            <div>
-                                <div className="text-sm font-semibold">WebDAV 同步</div>
-                                <div className="mt-1 text-xs text-stone-500">同步画布、我的素材、生图/视频日志和本地媒体文件。当前仅使用浏览器直连模式。</div>
-                            </div>
-                            <Segmented size="small" value={webdavConfig.enabled ? "enabled" : "disabled"} options={[{ label: "关闭", value: "disabled" }, { label: "开启", value: "enabled" }]} onChange={(value) => updateWebdavSync({ enabled: value === "enabled" })} />
-                        </div>
-                        <div className="grid gap-4 md:grid-cols-2">
-                            <Form.Item label="WebDAV 地址" className="mb-0">
-                                <Input placeholder="https://example.com/dav" value={webdavConfig.url} onChange={(event) => updateWebdavSync({ url: event.target.value })} />
-                            </Form.Item>
-                            <Form.Item label="远程目录" className="mb-0">
-                                <Input value={webdavConfig.directory} onChange={(event) => updateWebdavSync({ directory: event.target.value })} />
-                            </Form.Item>
-                            <Form.Item label="用户名" className="mb-0">
-                                <Input value={webdavConfig.username} onChange={(event) => updateWebdavSync({ username: event.target.value })} />
-                            </Form.Item>
-                            <Form.Item label="密码 / 应用密码" className="mb-0">
-                                <Input.Password value={webdavConfig.password} onChange={(event) => updateWebdavSync({ password: event.target.value })} />
-                            </Form.Item>
-                        </div>
-                        <div className="mt-3 flex flex-wrap items-center gap-2">
-                            <Button loading={testingWebdav} disabled={!webdavConfig.url.trim() || syncingWebdav} onClick={() => void testWebdav()}>
-                                测试连接
-                            </Button>
-                            <Button type="primary" loading={syncingWebdav} disabled={!webdavConfig.enabled || !webdavConfig.url.trim() || testingWebdav} onClick={() => void syncWebdavNow()}>
-                                立即同步
-                            </Button>
-                            {webdavConfig.lastSyncedAt ? <span className="text-xs text-stone-500">上次同步：{new Date(webdavConfig.lastSyncedAt).toLocaleString()}</span> : null}
-                        </div>
-                        {syncStatus ? <Alert className="mt-3" type={syncStatus.includes("失败") || syncStatus.includes("错误") ? "error" : "info"} showIcon message={syncStatus} /> : null}
-                    </section>
                     {effectiveMode === "local" ? (
                         <Form.Item label="系统提示词" className="mb-0">
                             <Input.TextArea rows={3} value={config.systemPrompt} placeholder="例如：你是一位擅长电影感写实摄影的视觉导演。" onChange={(event) => updateConfig("systemPrompt", event.target.value)} />

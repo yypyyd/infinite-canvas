@@ -3,7 +3,7 @@
 import type { CSSProperties, RefObject } from "react";
 import { useEffect, useState } from "react";
 import { App, Avatar, Dropdown, Form, Input, Modal, Tooltip } from "antd";
-import { CircleUserRound, Gift, History, Keyboard, ListChecks, LogOut, ReceiptText, Settings2, Shield, ShoppingCart } from "lucide-react";
+import { CircleUserRound, Cloud, CloudOff, Gift, History, Keyboard, ListChecks, LoaderCircle, LogOut, ReceiptText, Settings2, Shield, ShoppingCart } from "lucide-react";
 import type { ItemType } from "antd/es/menu/interface";
 import Link from "next/link";
 
@@ -13,6 +13,7 @@ import { CREDIT_PURCHASE_URL, CreditSymbol } from "@/constant/credits";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { redeemCode } from "@/services/api/auth";
 import { useConfigStore } from "@/stores/use-config-store";
+import { useCloudSyncStore, type CloudSyncStatus } from "@/stores/use-cloud-sync-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useUserStore } from "@/stores/use-user-store";
 
@@ -39,6 +40,8 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
     const refreshUser = useUserStore((state) => state.refreshUser);
     const logout = useUserStore((state) => state.clearSession);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
+    const syncStatus = useCloudSyncStore((state) => state.status);
+    const syncError = useCloudSyncStore((state) => state.error);
     const canvasTheme = canvasThemes[theme];
     const userName = user?.displayName || user?.username || "";
     const credits = user?.credits ?? 0;
@@ -135,6 +138,13 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
                         </a>
                     </Tooltip>
                 ) : null}
+                {user ? (
+                    <Tooltip title={cloudStatusText(syncStatus, syncError)} placement="bottom">
+                        <span className={naturalIconClass} style={syncStatus === "error" ? { ...iconStyle, color: "#ef4444" } : iconStyle} aria-label={cloudStatusText(syncStatus, syncError)}>
+                            {syncStatus === "syncing" ? <LoaderCircle className="animate-spin" /> : syncStatus === "offline" || syncStatus === "error" ? <CloudOff /> : <Cloud />}
+                        </span>
+                    </Tooltip>
+                ) : null}
                 {showConfig ? (
                     <button type="button" className={naturalIconClass} style={iconStyle} onClick={() => openConfigDialog(false)} aria-label="配置" title="配置">
                         <Settings2 className="size-4" />
@@ -179,4 +189,12 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
             </Modal>
         </>
     );
+}
+
+function cloudStatusText(status: CloudSyncStatus, error: string) {
+    if (status === "syncing") return "正在保存到账号";
+    if (status === "saved") return "已保存到账号";
+    if (status === "offline") return "当前离线，联网后自动保存";
+    if (status === "error") return error || "账号云端保存失败";
+    return "本地保存";
 }

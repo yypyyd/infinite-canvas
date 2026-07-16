@@ -2,7 +2,7 @@
 
 import localforage from "localforage";
 
-import type { CloudSyncChange, CloudSyncDomain } from "@/services/api/cloud-sync";
+import type { CloudSyncChange, CloudSyncDomain, CloudSyncRecord } from "@/services/api/cloud-sync";
 
 export const CLOUD_SYNC_QUEUE_CHANGED_EVENT = "infinite-canvas:cloud-sync-queue-changed";
 
@@ -34,6 +34,14 @@ export function removeCloudChanges(items: PendingCloudChange[]) {
     return Promise.all(items.map(async (item) => {
         const current = await queueStore.getItem<PendingCloudChange>(item.key);
         if (current?.queuedAt === item.queuedAt) await queueStore.removeItem(item.key);
+    }));
+}
+
+export function rebaseCloudChanges(ownerId: string, records: CloudSyncRecord[]) {
+    return Promise.all(records.map(async (record) => {
+        const key = queueKey(ownerId, record.domain, record.objectId);
+        const current = await queueStore.getItem<PendingCloudChange>(key);
+        if (current?.ownerId === ownerId) await queueStore.setItem(key, { ...current, baseRevision: record.revision });
     }));
 }
 

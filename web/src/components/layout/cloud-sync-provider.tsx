@@ -8,7 +8,7 @@ import { useEffect, useRef } from "react";
 import type { CanvasProject } from "@/app/(user)/canvas/stores/use-canvas-store";
 import { useCanvasStore } from "@/app/(user)/canvas/stores/use-canvas-store";
 import { cloudFileExists, downloadCloudFile, fetchCloudBootstrap, fetchCloudChanges, fetchCloudStorageStatus, pushCloudChanges, uploadCloudFile, type CloudSyncRecord } from "@/services/api/cloud-sync";
-import { CLOUD_SYNC_QUEUE_CHANGED_EVENT, queueCloudRecord, readCloudChanges, removeCloudChanges, type PendingCloudChange } from "@/services/cloud-sync-queue";
+import { CLOUD_SYNC_QUEUE_CHANGED_EVENT, queueCloudRecord, readCloudChanges, rebaseCloudChanges, removeCloudChanges, type PendingCloudChange } from "@/services/cloud-sync-queue";
 import { getMediaBlob, resolveMediaUrl, setMediaBlob } from "@/services/file-storage";
 import { getImageBlob, resolveImageUrl, setImageBlob } from "@/services/image-storage";
 import type { Asset } from "@/stores/use-asset-store";
@@ -112,8 +112,10 @@ async function flushPendingChanges(token: string, userId: string, warn: (content
     const conflicts = new Map(result.conflicts.map((item) => [`${item.domain}:${item.objectId}`, item]));
     const accepted = pending.filter((item) => !conflicts.has(`${item.domain}:${item.objectId}`));
     await removeCloudChanges(accepted);
+    await rebaseCloudChanges(userId, result.records);
     let currentQueue = await readCloudChanges(userId);
     const currentKeys = new Set(currentQueue.map((item) => item.key));
+    applyCloudRevisions(userId, result.records.filter((record) => currentKeys.has(`${userId}:${record.domain}:${record.objectId}`)));
     applyCloudRecords(userId, result.records.filter((record) => !currentKeys.has(`${userId}:${record.domain}:${record.objectId}`)));
     await setCursor(userId, result.cursor);
     if (!result.conflicts.length) return;
@@ -161,6 +163,20 @@ function applyCloudRecords(userId: string, records: CloudSyncRecord[]) {
         const assets = new Map((useAssetStore.getState().assetsByOwner[userId] || []).map((item) => [item.id, item]));
         assetRecords.forEach((record) => record.deleted ? assets.delete(record.objectId) : assets.set(record.objectId, recordAsset(record)));
         useAssetStore.getState().replaceOwnerAssets(userId, sortUpdated([...assets.values()]));
+    }
+}
+
+function applyCloudRevisions(userId: string, records: CloudSyncRecord[]) {
+    if (!records.length) return;
+    const projectRevisions = new Map(records.filter((item) => item.domain === "canvas_project" && !item.deleted).map((item) => [item.objectId, item.revision]));
+    if (projectRevisions.size) {
+        const projects = useCanvasStore.getState().projectsByOwner[userId] || [];
+        useCanvasStore.getState().replaceOwnerProjects(userId, projects.map((project) => projectRevisions.has(project.id) ? { ...project, cloudRevision: projectRevisions.get(project.id) } : project));
+    }
+    const assetRevisions = new Map(records.filter((item) => item.domain === "asset" && !item.deleted).map((item) => [item.objectId, item.revision]));
+    if (assetRevisions.size) {
+        const assets = useAssetStore.getState().assetsByOwner[userId] || [];
+        useAssetStore.getState().replaceOwnerAssets(userId, assets.map((asset) => assetRevisions.has(asset.id) ? { ...asset, cloudRevision: assetRevisions.get(asset.id) } : asset));
     }
 }
 

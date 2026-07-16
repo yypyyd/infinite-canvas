@@ -1,6 +1,6 @@
 "use client";
 
-import { FileTextOutlined, HomeOutlined, KeyOutlined, LogoutOutlined, PictureOutlined, SettingOutlined, TransactionOutlined, UserOutlined } from "@ant-design/icons";
+import { BarChartOutlined, CloudServerOutlined, FileTextOutlined, HomeOutlined, KeyOutlined, LogoutOutlined, PictureOutlined, SettingOutlined, TransactionOutlined, UserOutlined } from "@ant-design/icons";
 import { Button, Flex, Layout, Menu, Spin, Typography, theme } from "antd";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -11,7 +11,16 @@ import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { adminLayoutStyle } from "@/lib/app-theme";
 import { useUserStore } from "@/stores/use-user-store";
 
-const adminMenus = [
+type AdminMenuItem = {
+    key: string;
+    icon: ReactNode;
+    label: string;
+    exact?: boolean;
+};
+
+const adminMenus: AdminMenuItem[] = [
+    { key: "/admin", icon: <BarChartOutlined />, label: "运营看板", exact: true },
+    { key: "/admin/generation-tasks", icon: <CloudServerOutlined />, label: "生成任务" },
     { key: "/admin/users", icon: <UserOutlined />, label: "用户管理" },
     { key: "/admin/credit-logs", icon: <TransactionOutlined />, label: "算力点日志" },
     { key: "/admin/redeem-codes", icon: <KeyOutlined />, label: "兑换码" },
@@ -21,6 +30,8 @@ const adminMenus = [
 ];
 
 const pageTitles: Record<string, string> = {
+    "/admin": "运营看板",
+    "/admin/generation-tasks": "生成任务",
     "/admin/users": "用户管理",
     "/admin/credit-logs": "算力点日志",
     "/admin/redeem-codes": "兑换码",
@@ -30,7 +41,8 @@ const pageTitles: Record<string, string> = {
 };
 
 function currentAdminKey(pathname: string) {
-    return adminMenus.find((item) => pathname.startsWith(item.key))?.key || "/admin/users";
+    if (pathname === "/admin") return "/admin";
+    return adminMenus.filter((item) => !("exact" in item)).find((item) => pathname.startsWith(item.key))?.key || "/admin";
 }
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
@@ -89,11 +101,12 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                     mode="inline"
                     selectedKeys={[activeKey]}
                     style={adminLayoutStyle.menu}
-                    items={adminMenus.map((item) => ({
-                        ...item,
+                    items={adminMenus.map((menu) => ({
+                        key: menu.key,
+                        icon: menu.icon,
                         label: (
-                            <Link href={item.key} style={{ color: "inherit" }}>
-                                {item.label}
+                            <Link href={menu.key} style={{ color: "inherit" }}>
+                                {menu.label}
                             </Link>
                         ),
                         style: adminLayoutStyle.menuItem,

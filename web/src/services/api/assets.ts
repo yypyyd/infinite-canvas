@@ -3,7 +3,7 @@ import { apiGet, compactApiParams } from "@/services/api/request";
 export type AssetLibraryItem = {
     id: string;
     title: string;
-    type: "text" | "image" | "video";
+    type: "text" | "image" | "video" | "audio";
     coverUrl: string;
     tags: string[];
     category: string;

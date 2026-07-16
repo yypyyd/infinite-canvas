@@ -63,6 +63,30 @@ export type CreditLogListResponse = {
     total: number;
 };
 
+export type GenerationTask = {
+    id: string;
+    userId: string;
+    model: string;
+    upstreamModel: string;
+    channelName: string;
+    path: string;
+    modality: string;
+    operation: string;
+    resolutionTier: string;
+    quantity: number;
+    credits: number;
+    status: "running" | "success" | "failed";
+    errorMessage: string;
+    durationMs: number;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type GenerationTaskListResponse = {
+    items: GenerationTask[];
+    total: number;
+};
+
 export async function login(payload: LoginPayload) {
     return apiPost<AuthSession>("/api/auth/login", payload);
 }
@@ -89,6 +113,10 @@ export async function changePassword(token: string, payload: { currentPassword: 
 
 export async function fetchCreditLogs(token: string, query: { keyword?: string; type?: string; page?: number; pageSize?: number } = {}) {
     return apiGet<CreditLogListResponse>("/api/credit-logs", compactApiParams(query), token);
+}
+
+export async function fetchGenerationTasks(token: string, query: { keyword?: string; type?: string; category?: string; page?: number; pageSize?: number } = {}) {
+    return apiGet<GenerationTaskListResponse>("/api/generation-tasks", compactApiParams(query), token);
 }
 
 export async function redeemCode(token: string, code: string) {

@@ -10,9 +10,11 @@ import { useCopyText } from "@/hooks/use-copy-text";
 import { cn } from "@/lib/utils";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { fetchAssetLibrary, type AssetLibraryItem } from "@/services/api/assets";
+import { uploadMediaFile } from "@/services/file-storage";
 import { uploadImage } from "@/services/image-storage";
 
 const PAGE_SIZE = 12;
+const assetTypeLabels: Record<string, string> = { text: "文本", image: "图片", video: "视频", audio: "音频" };
 
 export default function AssetLibraryPage() {
     const { message } = App.useApp();
@@ -60,7 +62,19 @@ export default function AssetLibraryPage() {
                     data: { dataUrl: image.url, storageKey: image.storageKey, width: image.width, height: image.height, bytes: image.bytes, mimeType: image.mimeType },
                     metadata: { source: "asset-library", assetId: asset.id },
                 });
-            } else {
+            } else if (asset.type === "video") {
+                const video = await uploadMediaFile(asset.url, "asset-video");
+                addAsset({
+                    kind: "video",
+                    title: asset.title,
+                    coverUrl: asset.coverUrl,
+                    tags: asset.tags,
+                    source: asset.category,
+                    note: asset.description,
+                    data: { url: video.url, storageKey: video.storageKey, width: video.width || 1280, height: video.height || 720, bytes: video.bytes, mimeType: video.mimeType },
+                    metadata: { source: "asset-library", assetId: asset.id },
+                });
+            } else if (asset.type === "text") {
                 addAsset({
                     kind: "text",
                     title: asset.title,
@@ -71,6 +85,9 @@ export default function AssetLibraryPage() {
                     data: { content: asset.content },
                     metadata: { source: "asset-library", assetId: asset.id },
                 });
+            } else {
+                message.warning("音频素材暂只支持复制链接");
+                return;
             }
             message.success("已加入我的素材");
         } catch {
@@ -115,6 +132,8 @@ export default function AssetLibraryPage() {
                                     { label: "全部", value: "" },
                                     { label: "文本", value: "text" },
                                     { label: "图片", value: "image" },
+                                    { label: "视频", value: "video" },
+                                    { label: "音频", value: "audio" },
                                 ].map((item) => (
                                     <Tag.CheckableTag
                                         key={item.value || "all"}
@@ -189,7 +208,7 @@ export default function AssetLibraryPage() {
                                 {selectedAsset.title}
                             </Typography.Title>
                             <div className="flex flex-wrap gap-1.5">
-                                <Tag>{selectedAsset.type === "image" ? "图片" : "文本"}</Tag>
+                                <Tag>{typeLabel(selectedAsset.type)}</Tag>
                                 {selectedAsset.tags.map((tag) => (
                                     <Tag key={tag}>{tag}</Tag>
                                 ))}
@@ -208,12 +227,12 @@ export default function AssetLibraryPage() {
                                     复制文本
                                 </Button>
                             ) : null}
-                            {selectedAsset.type === "image" ? (
+                            {selectedAsset.type !== "text" ? (
                                 <Button type="primary" icon={<Copy className="size-4" />} onClick={() => copyText(selectedAsset.url)}>
                                     复制链接
                                 </Button>
                             ) : null}
-                            <Button icon={<FolderPlus className="size-4" />} onClick={() => void saveToMyAssets(selectedAsset)}>
+                            <Button icon={<FolderPlus className="size-4" />} disabled={selectedAsset.type === "audio"} onClick={() => void saveToMyAssets(selectedAsset)}>
                                 加入我的素材
                             </Button>
                         </div>
@@ -245,7 +264,7 @@ function LibraryCard({ asset, onOpen, onAdd }: { asset: AssetLibraryItem; onOpen
                 <div className="p-4">
                     <div className="flex items-start justify-between gap-3">
                         <h2 className="line-clamp-1 text-sm font-semibold text-stone-950 dark:text-stone-100">{asset.title}</h2>
-                        <Tag className="m-0 shrink-0 text-[11px]">{asset.type === "image" ? "图片" : "文本"}</Tag>
+                        <Tag className="m-0 shrink-0 text-[11px]">{typeLabel(asset.type)}</Tag>
                     </div>
                     <Typography.Paragraph type="secondary" ellipsis={{ rows: 3 }} className="!mb-0 !mt-2 !text-xs !leading-5">
                         {asset.type === "text" ? asset.content : asset.url}
@@ -264,12 +283,16 @@ function LibraryCard({ asset, onOpen, onAdd }: { asset: AssetLibraryItem; onOpen
                 <Button size="small" onClick={onOpen}>
                     查看
                 </Button>
-                <Button size="small" icon={<FolderPlus className="size-3.5" />} onClick={onAdd}>
+                <Button size="small" icon={<FolderPlus className="size-3.5" />} disabled={asset.type === "audio"} onClick={onAdd}>
                     加入我的素材
                 </Button>
             </div>
         </Card>
     );
+}
+
+function typeLabel(type: string) {
+    return assetTypeLabels[type] || "素材";
 }
 
 async function remoteImageToDataUrl(url: string) {

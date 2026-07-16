@@ -82,6 +82,46 @@ export type AdminUserQuery = {
     pageSize?: number;
 };
 
+export type AdminGenerationTask = {
+    id: string;
+    userId: string;
+    model: string;
+    upstreamModel: string;
+    channelName: string;
+    path: string;
+    modality: string;
+    operation: string;
+    resolutionTier: string;
+    quantity: number;
+    credits: number;
+    status: "running" | "success" | "failed";
+    errorMessage: string;
+    durationMs: number;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type AdminGenerationTaskListResponse = {
+    items: AdminGenerationTask[];
+    total: number;
+};
+
+export type AdminGenerationTaskQuery = {
+    keyword?: string;
+    type?: string;
+    category?: string;
+    page?: number;
+    pageSize?: number;
+};
+
+export type AdminDashboard = {
+    metrics: { key: string; label: string; value: number }[];
+    recentTasks: AdminGenerationTask[];
+    topModels: { name: string; value: number }[];
+    channelErrors: { name: string; value: number }[];
+    recentFailures: AdminGenerationTask[];
+};
+
 export async function fetchAdminUsers(token: string, query: AdminUserQuery = {}) {
     return apiGet<AdminUserListResponse>("/api/admin/users", compactApiParams(query), token);
 }
@@ -108,6 +148,14 @@ export async function saveAdminCreditLog(token: string, log: Partial<AdminCredit
 
 export async function deleteAdminCreditLog(token: string, id: string) {
     return apiDelete<boolean>(`/api/admin/credit-logs/${encodeURIComponent(id)}`, token);
+}
+
+export async function fetchAdminDashboard(token: string) {
+    return apiGet<AdminDashboard>("/api/admin/dashboard", undefined, token);
+}
+
+export async function fetchAdminGenerationTasks(token: string, query: AdminGenerationTaskQuery = {}) {
+    return apiGet<AdminGenerationTaskListResponse>("/api/admin/generation-tasks", compactApiParams(query), token);
 }
 
 export async function fetchAdminRedemptionCodes(token: string, query: AdminUserQuery = {}) {
@@ -145,7 +193,7 @@ export type AdminPromptQuery = {
 export type AdminAsset = {
     id: string;
     title: string;
-    type: "text" | "image" | "video";
+    type: "text" | "image" | "video" | "audio";
     coverUrl: string;
     tags: string[];
     category: string;
@@ -196,6 +244,27 @@ export async function saveAdminAsset(token: string, asset: Partial<AdminAsset>) 
 
 export async function deleteAdminAsset(token: string, id: string) {
     return apiDelete<boolean>(`/api/admin/assets/${encodeURIComponent(id)}`, token);
+}
+
+export type UploadedAdminAssetFile = {
+    url: string;
+    name: string;
+    mimeType: string;
+    size: number;
+    type: "image" | "video" | "audio";
+};
+
+export async function uploadAdminAssetFile(token: string, file: File) {
+    const body = new FormData();
+    body.append("file", file);
+    const response = await fetch("/api/admin/asset-files", {
+        method: "POST",
+        body,
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    const result = (await response.json()) as { code: number; data: UploadedAdminAssetFile; msg: string };
+    if (!response.ok || result.code !== 0) throw new Error(result.msg || "上传失败");
+    return result.data;
 }
 
 export type AdminModelChannel = {

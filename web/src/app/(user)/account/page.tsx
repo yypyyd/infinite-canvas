@@ -4,18 +4,18 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { App, Avatar, Button, Card, Descriptions, Empty, Form, Image as AntImage, Input, Modal, Pagination, Select, Skeleton, Table, Tabs, Tag, Typography, type TableColumnsType } from "antd";
 import dayjs from "dayjs";
 import { saveAs } from "file-saver";
-import { CircleUserRound, Clock3, Coins, ExternalLink, Film, History, ImageIcon, KeyRound, PencilLine, ReceiptText, RefreshCw, Search, ShieldCheck, Trash2, WalletCards } from "lucide-react";
+import { CircleUserRound, Clock3, Coins, ExternalLink, Film, History, ImageIcon, KeyRound, ListChecks, PencilLine, ReceiptText, RefreshCw, Search, ShieldCheck, Trash2, WalletCards } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { CREDIT_PURCHASE_URL, CreditSymbol } from "@/constant/credits";
 import { formatDuration } from "@/lib/image-utils";
-import { changePassword, fetchCreditLogs, updateProfile as updateUserProfile, type CreditLog } from "@/services/api/auth";
+import { changePassword, fetchCreditLogs, fetchGenerationTasks, updateProfile as updateUserProfile, type CreditLog, type GenerationTask } from "@/services/api/auth";
 import { countGenerationHistory, deleteGenerationHistory, readGenerationHistory, resolveGenerationHistoryMedia, resolveGenerationHistoryPreview, type GenerationHistoryItem } from "@/services/generation-history";
 import { useUserStore } from "@/stores/use-user-store";
 
-type AccountTab = "profile" | "history" | "credits";
+type AccountTab = "profile" | "tasks" | "history" | "credits";
 type ProfileFormValues = { displayName: string; avatarUrl: string };
 type PasswordFormValues = { currentPassword: string; newPassword: string; confirmPassword: string };
 
@@ -23,6 +23,7 @@ const historyPageSize = 12;
 const creditPageSize = 12;
 const accountTabs = [
     { key: "profile", label: <span className="inline-flex items-center gap-2"><CircleUserRound className="size-4" />个人资料</span> },
+    { key: "tasks", label: <span className="inline-flex items-center gap-2"><ListChecks className="size-4" />任务中心</span> },
     { key: "history", label: <span className="inline-flex items-center gap-2"><History className="size-4" />生成记录</span> },
     { key: "credits", label: <span className="inline-flex items-center gap-2"><ReceiptText className="size-4" />算力明细</span> },
 ];
@@ -34,6 +35,7 @@ const creditTypeMeta: Record<string, { label: string; color?: string }> = {
     daily_check_in: { label: "每日签到", color: "gold" },
     new_user_reward: { label: "新用户赠送", color: "purple" },
 };
+const modalityLabels: Record<string, string> = { image: "图片", video: "视频", text: "文本", audio: "音频" };
 
 export default function AccountPage() {
     return (
@@ -49,7 +51,7 @@ function AccountContent() {
     const user = useUserStore((state) => state.user);
     const isReady = useUserStore((state) => state.isReady);
     const requestedTab = searchParams.get("tab");
-    const activeTab: AccountTab = requestedTab === "history" || requestedTab === "credits" ? requestedTab : "profile";
+    const activeTab: AccountTab = requestedTab === "tasks" || requestedTab === "history" || requestedTab === "credits" ? requestedTab : "profile";
     const accountHref = activeTab === "profile" ? "/account" : `/account?tab=${activeTab}`;
     const historyCountQuery = useQuery({
         queryKey: ["generation-history-count", user?.id],
@@ -110,7 +112,7 @@ function AccountContent() {
                 </div>
 
                 <div className="mt-5">
-                    {activeTab === "profile" ? <ProfileSection /> : activeTab === "history" ? <HistorySection /> : <CreditsSection />}
+                    {activeTab === "profile" ? <ProfileSection /> : activeTab === "tasks" ? <TaskSection /> : activeTab === "history" ? <HistorySection /> : <CreditsSection />}
                 </div>
             </div>
         </main>
@@ -232,6 +234,103 @@ function ProfileSection() {
             </Modal>
         </>
     );
+}
+
+function TaskSection() {
+    const token = useUserStore((state) => state.token);
+    const [keywordText, setKeywordText] = useState("");
+    const [keyword, setKeyword] = useState("");
+    const [status, setStatus] = useState("");
+    const [modality, setModality] = useState("");
+    const [page, setPage] = useState(1);
+    const query = useQuery({
+        queryKey: ["generation-tasks", token, keyword, status, modality, page],
+        queryFn: () => fetchGenerationTasks(token, { keyword, type: status, category: modality, page, pageSize: creditPageSize }),
+        enabled: Boolean(token),
+        refetchInterval: 30000,
+    });
+    const columns = useMemo<TableColumnsType<GenerationTask>>(() => [
+        { title: "时间", dataIndex: "createdAt", width: 170, render: (value: string) => <span className="text-muted-foreground">{dayjs(value).format("YYYY-MM-DD HH:mm")}</span> },
+        { title: "模型", dataIndex: "model", render: (value: string, item) => <div><div className="font-medium">{value || "—"}</div>{item.channelName ? <div className="text-xs text-muted-foreground">{item.channelName}</div> : null}</div> },
+        { title: "类型", dataIndex: "modality", width: 110, render: (value: string) => <Tag className="m-0">{modalityLabel(value)}</Tag> },
+        { title: "消耗", dataIndex: "credits", width: 90, align: "right", render: (value: number) => value.toLocaleString() },
+        { title: "状态", dataIndex: "status", width: 100, render: (value: GenerationTask["status"]) => <TaskStatusTag status={value} /> },
+        { title: "耗时", dataIndex: "durationMs", width: 100, render: (value: number) => (value ? `${(value / 1000).toFixed(1)}s` : "—") },
+        { title: "错误", dataIndex: "errorMessage", ellipsis: true, render: (value: string) => value ? <Typography.Text type="danger">{value}</Typography.Text> : "—" },
+    ], []);
+
+    return (
+        <Card>
+            <div className="flex flex-col gap-4 border-b border-border pb-5 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                    <h2 className="text-lg font-semibold">任务中心</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">记录当前账号通过后端渠道发起的模型请求，方便查看状态、扣费和失败原因。</p>
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                    <Input.Search
+                        allowClear
+                        value={keywordText}
+                        placeholder="搜索模型、渠道或错误"
+                        enterButton
+                        onChange={(event) => setKeywordText(event.target.value)}
+                        onSearch={(value) => { setKeyword(value); setPage(1); }}
+                        className="sm:w-72"
+                    />
+                    <Select
+                        value={status}
+                        onChange={(value) => { setStatus(value); setPage(1); }}
+                        className="sm:w-36"
+                        options={[{ label: "全部状态", value: "" }, { label: "运行中", value: "running" }, { label: "成功", value: "success" }, { label: "失败", value: "failed" }]}
+                    />
+                    <Select
+                        value={modality}
+                        onChange={(value) => { setModality(value); setPage(1); }}
+                        className="sm:w-36"
+                        options={[{ label: "全部类型", value: "" }, { label: "图片", value: "image" }, { label: "视频", value: "video" }, { label: "文本", value: "text" }, { label: "音频", value: "audio" }]}
+                    />
+                    <Button icon={<RefreshCw className="size-4" />} onClick={() => void query.refetch()}>
+                        刷新
+                    </Button>
+                </div>
+            </div>
+            <div className="mt-5 hidden md:block">
+                <Table<GenerationTask> rowKey="id" columns={columns} dataSource={query.data?.items || []} loading={query.isFetching} pagination={false} scroll={{ x: 920 }} locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={query.isError ? "读取任务失败" : "暂无任务"} /> }} />
+            </div>
+            <div className="mt-5 space-y-2 md:hidden">
+                {query.isFetching ? <Skeleton active /> : query.data?.items?.length ? query.data.items.map((item) => <TaskCard key={item.id} item={item} />) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={query.isError ? "读取任务失败" : "暂无任务"} />}
+            </div>
+            {(query.data?.total || 0) > creditPageSize ? <div className="mt-5 flex justify-end"><Pagination current={page} pageSize={creditPageSize} total={query.data?.total || 0} showSizeChanger={false} onChange={setPage} /></div> : null}
+        </Card>
+    );
+}
+
+function TaskCard({ item }: { item: GenerationTask }) {
+    return (
+        <article className="rounded-xl border border-border p-3">
+            <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                    <div className="truncate text-sm font-medium">{item.model || "未命名模型"}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{dayjs(item.createdAt).format("YYYY-MM-DD HH:mm")}</div>
+                </div>
+                <TaskStatusTag status={item.status} />
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                <span>{modalityLabel(item.modality)}</span>
+                <span className="text-right">消耗 {item.credits.toLocaleString()} 点</span>
+                {item.channelName ? <span className="col-span-2 truncate">渠道 {item.channelName}</span> : null}
+                {item.errorMessage ? <span className="col-span-2 text-red-500">{item.errorMessage}</span> : null}
+            </div>
+        </article>
+    );
+}
+
+function TaskStatusTag({ status }: { status: GenerationTask["status"] }) {
+    const meta = { running: { label: "运行中", color: "processing" }, success: { label: "成功", color: "success" }, failed: { label: "失败", color: "error" } }[status] || { label: status, color: "default" };
+    return <Tag className="m-0" color={meta.color}>{meta.label}</Tag>;
+}
+
+function modalityLabel(value: string) {
+    return modalityLabels[value] || value || "未知";
 }
 
 function HistorySection() {

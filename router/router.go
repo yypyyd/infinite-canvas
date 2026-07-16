@@ -23,6 +23,7 @@ func New() *gin.Engine {
 	api.POST("/auth/profile", middleware.UserAuth, gin.WrapF(handler.UpdateProfile))
 	api.POST("/auth/password", middleware.UserAuth, gin.WrapF(handler.ChangePassword))
 	api.GET("/credit-logs", middleware.UserAuth, gin.WrapF(handler.UserCreditLogs))
+	api.GET("/generation-tasks", middleware.UserAuth, gin.WrapF(handler.UserGenerationTasks))
 	api.GET("/settings", gin.WrapF(handler.Settings))
 	api.GET("/check-in", middleware.UserAuth, gin.WrapF(handler.CheckInStatus))
 	api.POST("/check-in", middleware.UserAuth, gin.WrapF(handler.CheckIn))
@@ -32,6 +33,12 @@ func New() *gin.Engine {
 	})
 	api.HEAD("/media/references/:id", func(c *gin.Context) {
 		handler.ReferenceMedia(c.Writer, c.Request, c.Param("id"))
+	})
+	api.GET("/asset-files/:name", func(c *gin.Context) {
+		handler.AssetFile(c.Writer, c.Request, c.Param("name"))
+	})
+	api.HEAD("/asset-files/:name", func(c *gin.Context) {
+		handler.AssetFile(c.Writer, c.Request, c.Param("name"))
 	})
 	v1 := api.Group("/v1", middleware.UserAuth)
 	v1.POST("/images/generations", gin.WrapF(handler.AIImagesGenerations))
@@ -52,6 +59,8 @@ func New() *gin.Engine {
 
 	admin := api.Group("/admin", middleware.AdminAuth)
 	admin.GET("/users", gin.WrapF(handler.AdminUsers))
+	admin.GET("/dashboard", gin.WrapF(handler.AdminDashboard))
+	admin.GET("/generation-tasks", gin.WrapF(handler.AdminGenerationTasks))
 	admin.POST("/users", gin.WrapF(handler.AdminSaveUser))
 	admin.POST("/users/:id/credits", func(c *gin.Context) {
 		handler.AdminAdjustUserCredits(c.Writer, c.Request, c.Param("id"))
@@ -84,6 +93,7 @@ func New() *gin.Engine {
 	})
 	admin.GET("/assets", gin.WrapF(handler.AdminAssets))
 	admin.POST("/assets", gin.WrapF(handler.AdminSaveAsset))
+	admin.POST("/asset-files", gin.WrapF(handler.AdminUploadAssetFile))
 	admin.DELETE("/assets/:id", func(c *gin.Context) {
 		handler.AdminDeleteAsset(c.Writer, c.Request, c.Param("id"))
 	})

@@ -23,6 +23,7 @@ description: 当前后端主要数据表与字段说明
 - `email_verifications`
 - `credit_logs`
 - `check_ins`
+- `generation_tasks`
 - `prompts`
 - `assets`
 - `settings`
@@ -263,3 +264,32 @@ description: 当前后端主要数据表与字段说明
 | `redeem_code` | 兑换码充值 |
 | `daily_check_in` | 每日签到奖励 |
 | `new_user_reward` | 新用户注册奖励 |
+
+### generation_tasks
+
+后端模型请求任务表。用户通过后端渠道调用图片、视频、文本、音频模型时会写入该表，用于个人任务中心和后台运营排障。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 主键 |
+| `user_id` | string | 发起任务的用户 ID |
+| `model` | string | 前台请求的对外模型 |
+| `upstream_model` | string | 实际发送给上游的模型 |
+| `channel_name` | string | 命中的后台渠道名称 |
+| `path` | string | 实际请求的上游路径 |
+| `modality` | string | 模型类型：`image`、`video`、`text`、`audio` |
+| `operation` | string | 操作类型，例如 `generation`、`edit`、`completion`、`speech` |
+| `resolution_tier` | string | 命中的分辨率档 |
+| `quantity` | number | 计费数量，例如图片张数或视频秒数 |
+| `credits` | number | 本次预扣算力点 |
+| `status` | string | 状态：`running`、`success`、`failed` |
+| `error_message` | text | 失败原因摘要 |
+| `duration_ms` | number | 后端请求耗时 |
+| `created_at` | string | 创建时间 |
+| `updated_at` | string | 更新时间 |
+
+当前任务表记录后端代理请求本身的状态；视频类异步上游的后续轮询结果仍由前端和上游任务接口决定，后续如需要完整任务生命周期，可继续扩展为服务端轮询和结果文件归档。
+
+### 服务器素材文件
+
+后台素材库支持上传图片、视频和音频文件，文件保存在数据库目录旁的 `asset-files/` 目录，并通过 `/api/asset-files/{name}` 提供访问；素材表中的 `url` 或 `cover_url` 保存该访问地址。

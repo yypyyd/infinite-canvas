@@ -3,7 +3,7 @@
 import type { CSSProperties, RefObject } from "react";
 import { useEffect, useState } from "react";
 import { App, Avatar, Dropdown, Form, Input, Modal, Tooltip } from "antd";
-import { CircleUserRound, Gift, History, Keyboard, LogOut, ReceiptText, Settings2, Shield, ShoppingCart } from "lucide-react";
+import { CircleUserRound, Gift, History, Keyboard, ListChecks, LogOut, ReceiptText, Settings2, Shield, ShoppingCart } from "lucide-react";
 import type { ItemType } from "antd/es/menu/interface";
 import Link from "next/link";
 
@@ -105,6 +105,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
         },
         { type: "divider" },
         { key: "account", icon: <CircleUserRound className="size-4" />, label: <Link href="/account">个人中心</Link> },
+        { key: "tasks", icon: <ListChecks className="size-4" />, label: <Link href="/account?tab=tasks">任务中心</Link> },
         { key: "history", icon: <History className="size-4" />, label: <Link href="/account?tab=history">生成记录</Link> },
         { key: "credits", icon: <ReceiptText className="size-4" />, label: <Link href="/account?tab=credits">算力明细</Link> },
         ...(user?.role === "admin" ? [{ key: "admin", icon: <Shield className="size-4" />, label: <Link href="/admin">管理后台</Link> }] : []),

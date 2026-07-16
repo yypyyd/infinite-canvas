@@ -1,12 +1,13 @@
 "use client";
 
-import { CopyOutlined, DeleteOutlined, EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
+import { CopyOutlined, DeleteOutlined, EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, UploadOutlined } from "@ant-design/icons";
 import { ProTable, type ProColumns } from "@ant-design/pro-components";
-import { Button, Card, Col, Flex, Form, Image, Input, Modal, Row, Select, Space, Tag, Tooltip, Typography } from "antd";
-import { useEffect, useState } from "react";
+import { App, Button, Card, Col, Flex, Form, Image, Input, Modal, Row, Select, Space, Tag, Tooltip, Typography } from "antd";
+import { useEffect, useRef, useState } from "react";
 
 import { useCopyText } from "@/hooks/use-copy-text";
-import type { AdminAsset } from "@/services/api/admin";
+import { uploadAdminAssetFile, type AdminAsset } from "@/services/api/admin";
+import { useUserStore } from "@/stores/use-user-store";
 import { useAdminAssets } from "./use-admin-assets";
 
 type AssetFormValues = Partial<AdminAsset> & { tagText?: string };
@@ -15,18 +16,25 @@ const typeOptions = [
     { label: "全部类型", value: "" },
     { label: "文本", value: "text" },
     { label: "图片", value: "image" },
+    { label: "视频", value: "video" },
+    { label: "音频", value: "audio" },
 ];
 
 const editTypeOptions = typeOptions.slice(1);
+const assetTypeLabels: Record<string, string> = { text: "文本", image: "图片", video: "视频", audio: "音频" };
 
 export default function AdminAssetsPage() {
+    const { message } = App.useApp();
+    const token = useUserStore((state) => state.token);
     const { assets, tags, keyword, kind, tag, page, pageSize, total, isLoading, searchAssets, changeKind, changeTag, changePage, changePageSize, resetFilters, refreshAssets, saveAsset: saveAdminAsset, deleteAsset } = useAdminAssets();
     const copyText = useCopyText();
     const [form] = Form.useForm<AssetFormValues>();
+    const fileInputRef = useRef<HTMLInputElement | null>(null);
     const [keywordText, setKeywordText] = useState(keyword);
     const [editingAsset, setEditingAsset] = useState<Partial<AdminAsset> | null>(null);
     const [detailAsset, setDetailAsset] = useState<AdminAsset | null>(null);
     const [deletingAsset, setDeletingAsset] = useState<AdminAsset | null>(null);
+    const [uploading, setUploading] = useState(false);
     const formType = Form.useWatch("type", form) || editingAsset?.type || "text";
     const tagOptions = tags.map((item) => ({ label: item, value: item }));
 
@@ -52,6 +60,26 @@ export default function AdminAssetsPage() {
         setEditingAsset(null);
     };
 
+    const uploadFile = async (file?: File) => {
+        if (!file || !token) return;
+        setUploading(true);
+        try {
+            const result = await uploadAdminAssetFile(token, file);
+            form.setFieldsValue({
+                type: result.type,
+                title: form.getFieldValue("title") || result.name.replace(/\.[^.]+$/, ""),
+                url: result.url,
+                coverUrl: result.type === "image" ? result.url : form.getFieldValue("coverUrl"),
+            });
+            message.success("文件已上传");
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "上传失败");
+        } finally {
+            setUploading(false);
+            if (fileInputRef.current) fileInputRef.current.value = "";
+        }
+    };
+
     const columns: ProColumns<AdminAsset>[] = [
         {
             title: "封面",
@@ -73,7 +101,7 @@ export default function AdminAssetsPage() {
             title: "类型",
             dataIndex: "type",
             width: 84,
-            render: (_, item) => <Tag>{item.type === "image" ? "图片" : "文本"}</Tag>,
+            render: (_, item) => <Tag>{typeLabel(item.type)}</Tag>,
         },
         {
             title: "标签",
@@ -199,6 +227,15 @@ export default function AdminAssetsPage() {
                     <Form.Item name="coverUrl" label="封面 URL">
                         <Input />
                     </Form.Item>
+                    <input ref={fileInputRef} type="file" className="hidden" accept="image/*,video/*,audio/*" onChange={(event) => void uploadFile(event.target.files?.[0])} />
+                    <Form.Item label="服务器文件">
+                        <Space wrap>
+                            <Button icon={<UploadOutlined />} loading={uploading} onClick={() => fileInputRef.current?.click()}>
+                                上传到素材库
+                            </Button>
+                            <Typography.Text type="secondary">上传后会自动回填标题、类型和 URL。</Typography.Text>
+                        </Space>
+                    </Form.Item>
                     <Form.Item name="tagText" label="标签，用逗号分隔">
                         <Input />
                     </Form.Item>
@@ -208,8 +245,8 @@ export default function AdminAssetsPage() {
                     <Form.Item name="description" label="描述">
                         <Input.TextArea rows={3} />
                     </Form.Item>
-                    {formType === "image" ? (
-                        <Form.Item name="url" label="图片 URL" rules={[{ required: true, message: "请输入图片 URL" }]}>
+                    {formType !== "text" ? (
+                        <Form.Item name="url" label={`${typeLabel(formType)} URL`} rules={[{ required: true, message: "请输入文件 URL" }]}>
                             <Input />
                         </Form.Item>
                     ) : (
@@ -230,7 +267,7 @@ export default function AdminAssetsPage() {
                                     {detailAsset.title}
                                 </Typography.Title>
                                 <Space wrap>
-                                    <Tag>{detailAsset.type === "image" ? "图片" : "文本"}</Tag>
+                                    <Tag>{typeLabel(detailAsset.type)}</Tag>
                                     {detailAsset.category ? <Tag>{detailAsset.category}</Tag> : null}
                                     {(detailAsset.tags || []).map((tag) => (
                                         <Tag key={tag}>{tag}</Tag>
@@ -243,8 +280,8 @@ export default function AdminAssetsPage() {
                                 {detailAsset.description}
                             </Typography.Paragraph>
                         ) : null}
-                        <Input.TextArea value={detailAsset.type === "image" ? detailAsset.url || detailAsset.coverUrl : detailAsset.content} rows={7} readOnly />
-                        <Button icon={<CopyOutlined />} onClick={() => copyText(detailAsset.type === "image" ? detailAsset.url || detailAsset.coverUrl : detailAsset.content)}>
+                        <Input.TextArea value={detailAsset.type !== "text" ? detailAsset.url || detailAsset.coverUrl : detailAsset.content} rows={7} readOnly />
+                        <Button icon={<CopyOutlined />} onClick={() => copyText(detailAsset.type !== "text" ? detailAsset.url || detailAsset.coverUrl : detailAsset.content)}>
                             复制内容
                         </Button>
                     </Flex>
@@ -268,4 +305,8 @@ export default function AdminAssetsPage() {
             </Modal>
         </main>
     );
+}
+
+function typeLabel(type?: string) {
+    return assetTypeLabels[type || ""] || "素材";
 }

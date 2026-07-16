@@ -52,6 +52,6 @@ Deploy an explicitly approved revision while preserving server configuration and
    - Restore the recorded commit or image and restart with the same runtime command.
    - Verify health after rollback and report both the failed revision and restored revision.
 
-## First-deployment learning
+## Production target
 
-After the first successful deployment, add a concise `references/production-target.md` containing only stable, non-secret facts: project directory, runtime type, service name, deploy/restart commands, health endpoint, persistent paths, and rollback command. Read that reference on later deployments and revalidate it against the server before mutation.
+Read [references/production-target.md](references/production-target.md) before connecting. Revalidate its facts read-only before every mutation, and update it after a successful deployment only when stable, non-secret deployment details change.

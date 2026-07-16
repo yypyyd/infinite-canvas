@@ -1,0 +1,4 @@
+interface:
+  display_name: "Production Server Deployment"
+  short_description: "Safely deploy and verify the production server"
+  default_prompt: "Use $production-server-deployment to deploy the approved commit to production and verify the service."

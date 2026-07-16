@@ -203,10 +203,17 @@ export type AdminModelChannel = {
     name: string;
     baseUrl: string;
     apiKey: string;
-    models: string[];
+    models: AdminChannelModel[];
     weight: number;
     enabled: boolean;
     remark: string;
+};
+
+export type AdminChannelModel = {
+    model: string;
+    upstreamModel: string;
+    operations: string[];
+    resolutionTiers: string[];
 };
 
 export type AdminPublicModelChannelSettings = {

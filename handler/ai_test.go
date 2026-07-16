@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"mime/multipart"
 	"strings"
 	"testing"
 )
@@ -107,6 +108,32 @@ func TestAdaptVividAIImageRequestBody(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Fatalf("body %s missing %s", text, want)
 		}
+	}
+}
+
+func TestReplaceAIRequestModel(t *testing.T) {
+	body, _, err := replaceAIRequestModel([]byte(`{"model":"public-image","prompt":"test"}`), "application/json", "upstream-image")
+	if err != nil || !strings.Contains(string(body), `"model":"upstream-image"`) {
+		t.Fatalf("body=%s err=%v", body, err)
+	}
+}
+
+func TestReplaceMultipartAIRequestModel(t *testing.T) {
+	var source strings.Builder
+	writer := multipart.NewWriter(&source)
+	_ = writer.WriteField("model", "public-image")
+	_ = writer.WriteField("prompt", "test")
+	file, _ := writer.CreateFormFile("image", "image.png")
+	_, _ = file.Write([]byte("png"))
+	_ = writer.Close()
+
+	body, contentType, err := replaceAIRequestModel([]byte(source.String()), writer.FormDataContentType(), "upstream-image")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := readMultipartAIRequest(body, contentType)
+	if request.ModelName != "upstream-image" {
+		t.Fatalf("model = %q, want upstream-image", request.ModelName)
 	}
 }
 

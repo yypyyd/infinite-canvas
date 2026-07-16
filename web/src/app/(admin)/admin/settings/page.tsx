@@ -7,8 +7,9 @@ import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { EditorView } from "@uiw/react-codemirror";
 
-import { fetchAdminSettings, fetchChannelModels, saveAdminSettings, testChannelModel, type AdminManagedModel, type AdminModelChannel, type AdminPricingRule, type AdminSettings } from "@/services/api/admin";
+import { fetchAdminSettings, fetchChannelModels, saveAdminSettings, testChannelModel, type AdminChannelModel, type AdminManagedModel, type AdminModelChannel, type AdminPricingRule, type AdminSettings } from "@/services/api/admin";
 import { useUserStore } from "@/stores/use-user-store";
+import { ChannelModelCapabilitiesEditor } from "./components/channel-model-capabilities-editor";
 import { ModelCatalogEditor } from "./components/model-catalog-editor";
 import { OperationSettingsEditor } from "./components/operation-settings-editor";
 import { EmailSettingsEditor } from "./components/email-settings-editor";
@@ -91,6 +92,7 @@ export default function AdminSettingsPage() {
     const [knownModels, setKnownModels] = useState<string[]>([]);
     const rawPublicModels = Form.useWatch(["public", "modelChannel", "availableModels"], form) || [];
     const managedModels = Form.useWatch(["public", "modelChannel", "models"], form) || [];
+    const channelFormModels = Form.useWatch("models", channelForm) || [];
     const publicModels = enabledManagedModelIds(managedModels).length ? enabledManagedModelIds(managedModels) : rawPublicModels;
     const channelModels = useMemo(() => collectChannelModels(channels), [channels]);
     const channelTableData = useMemo(() => channels.map((channel, index) => ({ ...channel, _index: index, _rowKey: String(index) + "-" + channel.name + "-" + channel.baseUrl })), [channels]);
@@ -203,7 +205,7 @@ export default function AdminSettingsPage() {
         setIsChannelDrawerOpen(true);
         const channel = index === null ? emptyChannel : normalizeChannel(channels[index]);
         channelForm.setFieldsValue(channel);
-        rememberModels(channel.models);
+        rememberModels(channelModelNames(channel.models));
     };
 
     const closeChannelDrawer = () => {
@@ -214,7 +216,7 @@ export default function AdminSettingsPage() {
 
     const saveChannel = async () => {
         const channel = normalizeChannel(await channelForm.validateFields());
-        rememberModels(channel.models);
+        rememberModels(channelModelNames(channel.models));
         const nextChannels = [...channels];
         if (editingChannelIndex === null) nextChannels.push(channel);
         else nextChannels[editingChannelIndex] = channel;
@@ -236,7 +238,7 @@ export default function AdminSettingsPage() {
         setIsFetchingChannelModels(true);
         try {
             const channelModels = await fetchChannelModels(token, { index: editingChannelIndex ?? undefined, channel: normalizeChannel(channel) });
-            const current = isModelSelectorOpen ? uniqueModels(modelSelectSelected) : uniqueModels(channelForm.getFieldValue("models") || []);
+            const current = isModelSelectorOpen ? uniqueModels(modelSelectSelected) : channelModelNames(channelForm.getFieldValue("models") || []);
             rememberModels(channelModels);
             if (!channelModels.length) {
                 message.warning("上游未返回模型列表，请手动输入模型名称");
@@ -258,7 +260,7 @@ export default function AdminSettingsPage() {
     };
 
     const openChannelModelSelector = (sourceModels?: string[]) => {
-        const current = uniqueModels(channelForm.getFieldValue("models") || []);
+        const current = channelModelNames(channelForm.getFieldValue("models") || []);
         const source = uniqueModels(sourceModels !== undefined ? sourceModels : [...knownModels, ...current]);
         setModelSelectExisting(current);
         setModelSelectSource(source);
@@ -276,9 +278,11 @@ export default function AdminSettingsPage() {
     };
 
     const confirmChannelModelSelector = () => {
-        const models = uniqueModels(modelSelectSelected);
+        const currentModels = normalizeChannelModels(channelForm.getFieldValue("models") || []);
+        const currentModelMap = new Map(currentModels.map((item) => [item.model, item]));
+        const models = uniqueModels(modelSelectSelected).map((model) => currentModelMap.get(model) || createChannelModel(model, managedModels));
         channelForm.setFieldValue("models", models);
-        rememberModels(models);
+        rememberModels(channelModelNames(models));
         closeChannelModelSelector();
     };
 
@@ -356,7 +360,7 @@ export default function AdminSettingsPage() {
     };
 
     const testChannel = testChannelIndex === null ? null : normalizeChannel(channels[testChannelIndex]);
-    const testModels = (testChannel?.models || []).filter((model) => model.toLowerCase().includes(testKeyword.trim().toLowerCase()));
+    const testModels = (testChannel?.models || []).filter((item) => `${item.model} ${item.upstreamModel}`.toLowerCase().includes(testKeyword.trim().toLowerCase()));
 
     async function persistChannels(nextChannels: AdminModelChannel[]) {
         if (!token) return;
@@ -530,9 +534,9 @@ export default function AdminSettingsPage() {
                                         {
                                             title: "模型",
                                             dataIndex: "models",
-                                            render: (value: string[]) => (
+                                            render: (value: AdminChannelModel[]) => (
                                                 <Typography.Text ellipsis style={{ maxWidth: 360 }}>
-                                                    {modelSummary(value || [])}
+                                                    {modelSummary(channelModelNames(value || []))}
                                                 </Typography.Text>
                                             ),
                                         },
@@ -584,7 +588,7 @@ export default function AdminSettingsPage() {
                 <Drawer
                     title={editingChannelIndex === null ? "新增渠道" : "编辑渠道"}
                     open={isChannelDrawerOpen}
-                    size={560}
+                    size={720}
                     onClose={closeChannelDrawer}
                     extra={
                         <Space>
@@ -629,15 +633,14 @@ export default function AdminSettingsPage() {
                                 </Form.Item>
                             </Col>
                             <Col span={24}>
-                                <Form.Item label="渠道可用模型">
-                                    <Space.Compact style={{ width: "100%" }}>
-                                        <Form.Item name="models" noStyle>
-                                            <Select mode="tags" maxTagCount="responsive" tokenSeparators={[",", "\n"]} options={knownModels.map((model) => ({ label: model, value: model }))} />
-                                        </Form.Item>
+                                <Form.Item label="渠道可用模型" extra="先选择模型，再为每个模型声明当前渠道实际支持的操作和分辨率。">
+                                    <Flex align="center" gap={12} wrap>
                                         <Button onClick={() => openChannelModelSelector()}>选择模型</Button>
-                                    </Space.Compact>
+                                        <Typography.Text type="secondary">{modelSummary(channelModelNames(channelFormModels))}</Typography.Text>
+                                    </Flex>
                                 </Form.Item>
                             </Col>
+                            <Col span={24}><ChannelModelCapabilitiesEditor managedModels={managedModels} /></Col>
                             <Col span={24}>
                                 <Form.Item name="remark" label="备注">
                                     <Input.TextArea rows={3} />
@@ -745,13 +748,14 @@ export default function AdminSettingsPage() {
                             rowKey="model"
                             pagination={false}
                             scroll={{ y: 420 }}
-                            dataSource={testModels.map((model) => ({ model }))}
+                            dataSource={testModels}
                             rowSelection={{
                                 selectedRowKeys: selectedTestModels,
                                 onChange: (keys) => setSelectedTestModels(keys.map(String)),
                             }}
                             columns={[
-                                { title: "模型名称", dataIndex: "model", render: (value) => <Typography.Text strong>{value}</Typography.Text> },
+                                { title: "对外模型", dataIndex: "model", render: (value) => <Typography.Text strong>{value}</Typography.Text> },
+                                { title: "上游模型", dataIndex: "upstreamModel", render: (value) => <Typography.Text type="secondary">{value}</Typography.Text> },
                                 {
                                     title: "状态",
                                     dataIndex: "model",
@@ -884,7 +888,7 @@ function normalizeModelAspectRatios(items: Record<string, string[]>): Record<str
 function normalizeManagedModels(items: Partial<AdminManagedModel>[], availableModels: string[] = [], aspectRatios: Record<string, string[]> = {}): AdminManagedModel[] {
     const seedModels = items.length ? items : availableModels.map((model, index) => {
         const modality = inferModelModality(model);
-        return { id: model, name: model, modality, operations: inferModelOperations(model, modality), enabled: true, sort: index, aspectRatios: aspectRatios[model] || inferModelAspectRatios(model), resolutionTiers: modality === "image" ? ["1k"] : [], remark: "" };
+        return { id: model, name: model, modality, operations: inferModelOperations(model, modality), enabled: true, sort: index, aspectRatios: aspectRatios[model] || inferModelAspectRatios(model), resolutionTiers: defaultResolutionTiers(modality), remark: "" };
     });
     const seen = new Set<string>();
     return seedModels
@@ -985,11 +989,47 @@ function normalizeChannel(item: Partial<AdminModelChannel> = {}): AdminModelChan
         name: item.name || "",
         baseUrl: item.baseUrl || "",
         apiKey: item.apiKey || "",
-        models: item.models || [],
+        models: normalizeChannelModels(item.models || []),
         weight: Math.max(1, Number(item.weight) || 1),
         enabled: item.enabled !== false,
         remark: item.remark || "",
     };
+}
+
+function normalizeChannelModels(items: Partial<AdminChannelModel>[] = []): AdminChannelModel[] {
+    const seen = new Set<string>();
+    return items.flatMap((item) => {
+        const model = item.model?.trim() || "";
+        if (!model || seen.has(model)) return [];
+        seen.add(model);
+        return [{
+            model,
+            upstreamModel: item.upstreamModel?.trim() || model,
+            operations: Array.from(new Set((item.operations || []).map(normalizePricingToken).filter(Boolean))),
+            resolutionTiers: Array.from(new Set((item.resolutionTiers || []).map(normalizeResolutionTier).filter(Boolean))),
+        }];
+    });
+}
+
+function createChannelModel(model: string, managedModels: AdminManagedModel[]): AdminChannelModel {
+    const managedModel = managedModels.find((item) => item.id === model);
+    const modality = managedModel?.modality || inferModelModality(model);
+    return normalizeChannelModels([{
+        model,
+        upstreamModel: model,
+        operations: managedModel?.operations?.length ? managedModel.operations : inferModelOperations(model, modality),
+        resolutionTiers: managedModel?.resolutionTiers?.length ? managedModel.resolutionTiers : defaultResolutionTiers(modality),
+    }])[0];
+}
+
+function defaultResolutionTiers(modality: string) {
+    if (modality === "image") return ["1k"];
+    if (modality === "video") return ["720p"];
+    return [];
+}
+
+function channelModelNames(items: AdminChannelModel[]) {
+    return uniqueModels(items.map((item) => item.model));
 }
 
 function setPricingRulesValue(form: any, setPricingRules: (items: AdminPricingRule[]) => void, items: AdminPricingRule[]) {
@@ -1029,7 +1069,7 @@ function mergeChannelApiKeys(currentChannels: AdminModelChannel[], saved: AdminS
 }
 
 function collectChannelModels(channels: AdminModelChannel[]) {
-    return uniqueModels(channels.filter((channel) => channel.enabled).flatMap((channel) => channel.models || []));
+    return uniqueModels(channels.filter((channel) => channel.enabled).flatMap((channel) => channelModelNames(channel.models || [])));
 }
 
 function collectKnownModels(settings: AdminSettings) {
@@ -1038,7 +1078,7 @@ function collectKnownModels(settings: AdminSettings) {
         ...(settings.public.modelChannel.models || []).map((item) => item.id),
         ...(settings.public.modelChannel.pricingRules || []).map((item) => item.model),
         ...Object.keys(settings.public.modelChannel.modelAspectRatios || {}),
-        ...settings.private.channels.flatMap((channel) => channel.models || []),
+        ...settings.private.channels.flatMap((channel) => channelModelNames(channel.models || [])),
     ]);
 }
 

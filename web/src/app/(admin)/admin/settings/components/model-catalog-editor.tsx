@@ -119,7 +119,7 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
     const setModelEnabled = (id: string, enabled: boolean) => updateModels(models.map((model) => (model.id === id ? { ...model, enabled } : model)));
     const setRuleField = <K extends keyof AdminPricingRule>(index: number, key: K, nextValue: AdminPricingRule[K]) => setDraftRules((current) => current.map((rule, ruleIndex) => (ruleIndex === index ? normalizeRule({ ...rule, [key]: nextValue }) : rule)));
     const changeModality = (next: string) => {
-        const resolutionTiers = next === "image" ? ["1k"] : [];
+        const resolutionTiers = defaultResolutionTiers(next);
         form.setFieldsValue({ resolutionTiers, operations: inferModelOperations(form.getFieldValue("id") || "", next) });
         setDraftRules(pricingTiers([], { ...form.getFieldsValue(), modality: next, resolutionTiers } as AdminManagedModel));
     };
@@ -209,7 +209,7 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
                     <Row gutter={16}>
                         <Col span={16}>
                             <Form.Item name="id" label="模型 ID" rules={[{ required: true, whitespace: true, message: "请输入模型 ID" }]} extra={editingModel ? "模型 ID 保存后不允许修改，避免渠道和历史规则失联。" : undefined}>
-                                {editingModel ? <Input disabled /> : <AutoComplete options={candidateModels.filter((model) => !models.some((item) => item.id === model)).map((model) => ({ value: model }))} onChange={(modelID) => { const next = inferModelModality(modelID); const resolutionTiers = next === "image" ? ["1k"] : []; const model = createModel(modelID, next, models.length); form.setFieldsValue({ name: modelID, modality: next, operations: model.operations, aspectRatios: model.aspectRatios, resolutionTiers }); setDraftRules(pricingTiers([], { ...model, resolutionTiers })); }} placeholder="例如 gpt-image-1" />}
+                                {editingModel ? <Input disabled /> : <AutoComplete options={candidateModels.filter((model) => !models.some((item) => item.id === model)).map((model) => ({ value: model }))} onChange={(modelID) => { const next = inferModelModality(modelID); const resolutionTiers = defaultResolutionTiers(next); const model = createModel(modelID, next, models.length); form.setFieldsValue({ name: modelID, modality: next, operations: model.operations, aspectRatios: model.aspectRatios, resolutionTiers }); setDraftRules(pricingTiers([], { ...model, resolutionTiers })); }} placeholder="例如 gpt-image-1" />}
                             </Form.Item>
                         </Col>
                         <Col span={8}>
@@ -272,7 +272,13 @@ function RuleSummary({ rules }: { rules: AdminPricingRule[] }) {
 }
 
 function createModel(id: string, modality: string, sort: number): AdminManagedModel {
-    return { id, name: id, modality, operations: inferModelOperations(id, modality), enabled: true, sort, aspectRatios: inferAspectRatios(id), resolutionTiers: modality === "image" ? ["1k"] : [], remark: "" };
+    return { id, name: id, modality, operations: inferModelOperations(id, modality), enabled: true, sort, aspectRatios: inferAspectRatios(id), resolutionTiers: defaultResolutionTiers(modality), remark: "" };
+}
+
+function defaultResolutionTiers(modality: string) {
+    if (modality === "image") return ["1k"];
+    if (modality === "video") return ["720p"];
+    return [];
 }
 
 function normalizeModels(models: AdminManagedModel[]) {

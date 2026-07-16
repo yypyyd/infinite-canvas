@@ -123,7 +123,7 @@ description: 当前后端主要数据表与字段说明
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `availableModels` | string[] | 系统可用模型列表 |
-| `models` | object[] | 模型中心配置，包含模型名称、类型、支持操作、启用状态、排序、宽高比和分辨率档；渠道新模型会自动补入 |
+| `models` | object[] | 模型中心配置，包含模型名称、类型、支持操作、启用状态、排序、宽高比和分辨率档；渠道新模型会自动补入，图片默认 1K、视频默认 720P |
 | `pricingRules` | object[] | 模型算力点配置；新增模型会按模型能力自动生成默认规则 |
 | `groupRatios` | object | 用户分组倍率配置 |
 | `defaultModel` | string | 默认模型 |
@@ -183,10 +183,19 @@ description: 当前后端主要数据表与字段说明
 | `name` | string | 渠道名称 |
 | `baseUrl` | string | 渠道接口地址 |
 | `apiKey` | string | 渠道密钥 |
-| `models` | string[] | 渠道可用模型列表 |
-| `weight` | number | 渠道权重，同一模型命中多个渠道时按权重随机 |
+| `models` | object[] | 渠道模型映射与能力列表 |
+| `weight` | number | 渠道权重，同一请求命中多个能力相符的渠道时按权重随机 |
 | `enabled` | bool | 是否启用 |
 | `remark` | string | 备注 |
+
+`channels.models` 每项字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `model` | string | 对外模型名，与模型中心和计费规则关联 |
+| `upstreamModel` | string | 当前渠道使用的真实上游模型名 |
+| `operations` | string[] | 当前渠道支持的操作列表 |
+| `resolutionTiers` | string[] | 当前渠道支持的分辨率档列表，图片使用 `1k/2k/4k`，视频使用 `480p/720p/1080p`；无分辨率概念的模型为空 |
 
 `promptSync` 字段：
 
@@ -195,7 +204,7 @@ description: 当前后端主要数据表与字段说明
 | `enabled` | bool | 是否开启定时同步，默认开启 |
 | `cron` | string | Cron 表达式，默认每 5 分钟 |
 
-后端请求模型时，先按模型名筛选启用且包含该模型的渠道，再按 `weight` 加权随机选择一个渠道。
+后端请求模型时，先按对外模型名、操作和分辨率档筛选启用且能力相符的渠道，再按 `weight` 加权随机选择一个渠道；统一售价仍由公开 `pricingRules` 决定，渠道配置只影响路由和上游模型映射。
 
 ### email_verifications
 

@@ -30,6 +30,11 @@ type PricingRequest struct {
 	Quantity       int
 }
 
+type ModelChannelSelection struct {
+	Channel model.ModelChannel
+	Model   model.ChannelModel
+}
+
 func PublicSettings() (model.PublicSetting, error) {
 	settings, err := repository.GetSettings()
 	public := normalizeSettings(settings).Public
@@ -75,6 +80,9 @@ func AdminTestChannelModel(index *int, channel model.ModelChannel, modelName str
 	resolved, err := resolveAdminChannel(index, channel)
 	if err != nil {
 		return "", err
+	}
+	if channelModel, ok := findChannelModel(resolved.Models, modelName); ok {
+		modelName = channelModel.UpstreamModel
 	}
 	if isArkAgentPlanChannel(resolved) || isSeedanceModelName(modelName) {
 		return testArkSeedanceChannelModel(resolved, modelName)
@@ -397,8 +405,11 @@ func normalizeModelDefinitions(items []model.ModelDefinition, availableModels []
 }
 
 func defaultModelResolutionTiers(modality string) []string {
-	if normalizePricingToken(modality) == "image" {
+	switch normalizePricingToken(modality) {
+	case "image":
 		return []string{"1k"}
+	case "video":
+		return []string{"720p"}
 	}
 	return []string{}
 }
@@ -695,15 +706,7 @@ func normalizePrivateSetting(setting model.PrivateSetting) model.PrivateSetting 
 	setting.PromptSync = normalizePromptSyncSetting(setting.PromptSync)
 	setting.Email = normalizeEmailSetting(setting.Email)
 	for i := range setting.Channels {
-		if setting.Channels[i].Protocol == "" {
-			setting.Channels[i].Protocol = "openai"
-		}
-		if setting.Channels[i].Models == nil {
-			setting.Channels[i].Models = []string{}
-		}
-		if setting.Channels[i].Weight <= 0 {
-			setting.Channels[i].Weight = 1
-		}
+		setting.Channels[i] = normalizeModelChannel(setting.Channels[i])
 	}
 	return setting
 }
@@ -799,27 +802,28 @@ func findSavedChannel(channel model.ModelChannel, saved []model.ModelChannel, in
 	return model.ModelChannel{}, false
 }
 
-func SelectModelChannel(modelName string) (model.ModelChannel, error) {
+func SelectModelChannel(request PricingRequest) (ModelChannelSelection, error) {
 	settings, err := repository.GetSettings()
 	if err != nil {
-		return model.ModelChannel{}, err
+		return ModelChannelSelection{}, err
 	}
-	channels := modelChannelsForModel(normalizePrivateSetting(settings.Private).Channels, modelName)
-	if len(channels) == 0 {
-		return model.ModelChannel{}, errors.New("没有可用模型渠道")
+	request = normalizePricingRequest(request)
+	selections := modelChannelSelectionsForRequest(normalizePrivateSetting(settings.Private).Channels, request)
+	if len(selections) == 0 {
+		return ModelChannelSelection{}, safeMessageError{message: fmt.Sprintf("模型 %s 没有支持当前操作或分辨率的可用渠道", request.Model)}
 	}
 	total := 0
-	for _, channel := range channels {
-		total += channel.Weight
+	for _, selection := range selections {
+		total += selection.Channel.Weight
 	}
 	hit := rand.Intn(total)
-	for _, channel := range channels {
-		hit -= channel.Weight
+	for _, selection := range selections {
+		hit -= selection.Channel.Weight
 		if hit < 0 {
-			return channel, nil
+			return selection, nil
 		}
 	}
-	return channels[0], nil
+	return selections[0], nil
 }
 
 func BuildModelChannelURL(channel model.ModelChannel, path string) string {
@@ -867,7 +871,9 @@ func enabledChannelModels(channels []model.ModelChannel) []string {
 		if !channel.Enabled {
 			continue
 		}
-		models = append(models, channel.Models...)
+		for _, item := range channel.Models {
+			models = append(models, item.Model)
+		}
 	}
 	return uniqueModelNames(models)
 }
@@ -941,8 +947,25 @@ func normalizeModelChannel(channel model.ModelChannel) model.ModelChannel {
 		channel.Protocol = "openai"
 	}
 	if channel.Models == nil {
-		channel.Models = []string{}
+		channel.Models = []model.ChannelModel{}
 	}
+	models := make([]model.ChannelModel, 0, len(channel.Models))
+	seen := map[string]bool{}
+	for _, item := range channel.Models {
+		item.Model = strings.TrimSpace(item.Model)
+		if item.Model == "" || seen[item.Model] {
+			continue
+		}
+		seen[item.Model] = true
+		item.UpstreamModel = strings.TrimSpace(item.UpstreamModel)
+		if item.UpstreamModel == "" {
+			item.UpstreamModel = item.Model
+		}
+		item.Operations = normalizeStringList(item.Operations, normalizePricingToken)
+		item.ResolutionTiers = normalizeStringList(item.ResolutionTiers, normalizeResolutionTier)
+		models = append(models, item)
+	}
+	channel.Models = models
 	if channel.Weight <= 0 {
 		channel.Weight = 1
 	}
@@ -1112,18 +1135,47 @@ func (err safeMessageError) SafeMessage() string {
 	return err.message
 }
 
-func modelChannelsForModel(channels []model.ModelChannel, modelName string) []model.ModelChannel {
-	result := []model.ModelChannel{}
+func modelChannelSelectionsForRequest(channels []model.ModelChannel, request PricingRequest) []ModelChannelSelection {
+	result := []ModelChannelSelection{}
 	for _, channel := range channels {
 		if !channel.Enabled || channel.BaseURL == "" || channel.APIKey == "" {
 			continue
 		}
 		for _, item := range channel.Models {
-			if strings.TrimSpace(item) == modelName {
-				result = append(result, channel)
+			if channelModelSupportsRequest(item, request) {
+				result = append(result, ModelChannelSelection{Channel: channel, Model: item})
 				break
 			}
 		}
 	}
 	return result
+}
+
+func channelModelSupportsRequest(item model.ChannelModel, request PricingRequest) bool {
+	if item.Model != request.Model {
+		return false
+	}
+	if request.Operation != "" && !containsPricingValue(item.Operations, request.Operation) {
+		return false
+	}
+	return request.ResolutionTier == "" || containsPricingValue(item.ResolutionTiers, request.ResolutionTier)
+}
+
+func containsPricingValue(items []string, value string) bool {
+	for _, item := range items {
+		if item == value {
+			return true
+		}
+	}
+	return false
+}
+
+func findChannelModel(items []model.ChannelModel, modelName string) (model.ChannelModel, bool) {
+	modelName = strings.TrimSpace(modelName)
+	for _, item := range items {
+		if item.Model == modelName {
+			return item, true
+		}
+	}
+	return model.ChannelModel{}, false
 }

@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/basketikun/infinite-canvas/config"
 	"github.com/basketikun/infinite-canvas/model"
@@ -331,6 +333,69 @@ func AdjustUserCredits(id string, credits int) (model.User, error) {
 	return user, err
 }
 
+func UpdateProfile(userID string, displayName string, avatarURL string) (model.AuthUser, error) {
+	user, ok, err := repository.GetUserByID(userID)
+	if err != nil || !ok {
+		if err != nil {
+			return model.AuthUser{}, err
+		}
+		return model.AuthUser{}, safeMessageError{message: "用户不存在"}
+	}
+	displayName = strings.TrimSpace(displayName)
+	if utf8.RuneCountInString(displayName) > 32 {
+		return model.AuthUser{}, safeMessageError{message: "昵称不能超过 32 个字符"}
+	}
+	avatarURL = strings.TrimSpace(avatarURL)
+	if len(avatarURL) > 1000 {
+		return model.AuthUser{}, safeMessageError{message: "头像地址过长"}
+	}
+	if avatarURL != "" {
+		parsed, parseErr := url.ParseRequestURI(avatarURL)
+		if parseErr != nil {
+			return model.AuthUser{}, safeMessageError{message: "头像地址必须是有效的 HTTP 或 HTTPS 地址"}
+		}
+		scheme := strings.ToLower(parsed.Scheme)
+		if (scheme != "http" && scheme != "https") || parsed.Host == "" {
+			return model.AuthUser{}, safeMessageError{message: "头像地址必须是有效的 HTTP 或 HTTPS 地址"}
+		}
+	}
+	user.DisplayName = displayName
+	user.AvatarURL = avatarURL
+	user.UpdatedAt = now()
+	user, err = repository.SaveUser(user)
+	if err != nil {
+		return model.AuthUser{}, err
+	}
+	return model.PublicUser(user), nil
+}
+
+func ChangePassword(userID string, currentPassword string, newPassword string) error {
+	if currentPassword == "" || newPassword == "" {
+		return safeMessageError{message: "当前密码和新密码不能为空"}
+	}
+	if utf8.RuneCountInString(newPassword) < 6 {
+		return safeMessageError{message: "新密码不能少于 6 个字符"}
+	}
+	user, ok, err := repository.GetUserByID(userID)
+	if err != nil || !ok {
+		if err != nil {
+			return err
+		}
+		return safeMessageError{message: "用户不存在"}
+	}
+	if bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(currentPassword)) != nil {
+		return safeMessageError{message: "当前密码错误"}
+	}
+	hash, err := hashPassword(newPassword)
+	if err != nil {
+		return err
+	}
+	user.Password = hash
+	user.UpdatedAt = now()
+	_, err = repository.SaveUser(user)
+	return err
+}
+
 func ConsumeUserCredits(userID string, modelName string, credits int, path string) error {
 	if credits <= 0 {
 		return nil
@@ -383,6 +448,14 @@ func RefundUserCredits(userID string, modelName string, credits int, path string
 
 func ListCreditLogs(q model.Query) (model.CreditLogList, error) {
 	logs, total, err := repository.ListCreditLogs(q)
+	if err != nil {
+		return model.CreditLogList{}, err
+	}
+	return model.CreditLogList{Items: logs, Total: int(total)}, nil
+}
+
+func ListUserCreditLogs(userID string, q model.Query) (model.CreditLogList, error) {
+	logs, total, err := repository.ListUserCreditLogs(userID, q)
 	if err != nil {
 		return model.CreditLogList{}, err
 	}

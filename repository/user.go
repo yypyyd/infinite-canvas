@@ -161,11 +161,25 @@ func ListCreditLogs(q model.Query) ([]model.CreditLog, int64, error) {
 	if err != nil {
 		return nil, 0, err
 	}
+	return listCreditLogs(db.Model(&model.CreditLog{}), q)
+}
+
+func ListUserCreditLogs(userID string, q model.Query) ([]model.CreditLog, int64, error) {
+	db, err := DB()
+	if err != nil {
+		return nil, 0, err
+	}
+	return listCreditLogs(db.Model(&model.CreditLog{}).Where("user_id = ?", userID), q)
+}
+
+func listCreditLogs(tx *gorm.DB, q model.Query) ([]model.CreditLog, int64, error) {
 	q.Normalize()
-	tx := db.Model(&model.CreditLog{})
 	if keyword := strings.TrimSpace(q.Keyword); keyword != "" {
 		like := "%" + keyword + "%"
-		tx = tx.Where("user_id LIKE ? OR type LIKE ? OR remark LIKE ? OR related_id LIKE ?", like, like, like, like)
+		tx = tx.Where("(user_id LIKE ? OR type LIKE ? OR remark LIKE ? OR related_id LIKE ?)", like, like, like, like)
+	}
+	if logType := strings.TrimSpace(q.Type); logType != "" {
+		tx = tx.Where("type = ?", logType)
 	}
 	var total int64
 	if err := tx.Count(&total).Error; err != nil {

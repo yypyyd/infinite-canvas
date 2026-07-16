@@ -43,6 +43,7 @@ type GenerationResult = {
 
 type GenerationLog = {
     id: string;
+    ownerId: string;
     createdAt: number;
     title: string;
     prompt: string;
@@ -82,6 +83,7 @@ export default function ImagePage() {
     const managedModels = useConfigStore((state) => state.publicSettings?.modelChannel.models);
     const modelAspectRatios = useConfigStore((state) => state.publicSettings?.modelChannel.modelAspectRatios);
     const userGroup = useUserStore((state) => state.user?.group || "default");
+    const historyOwnerId = useUserStore((state) => state.user?.id || "guest");
     const addAsset = useAssetStore((state) => state.addAsset);
     const [prompt, setPrompt] = useState("");
     const [references, setReferences] = useState<ReferenceImage[]>([]);
@@ -123,8 +125,11 @@ export default function ImagePage() {
     }, [running, startedAt]);
 
     useEffect(() => {
+        setSelectedLogIds([]);
+        setPreviewLog(null);
+        setResults([]);
         void refreshLogs();
-    }, []);
+    }, [historyOwnerId]);
 
     const addReferences = async (files?: FileList | null) => {
         const imageFiles = Array.from(files || []).filter((file) => file.type.startsWith("image/"));
@@ -197,6 +202,7 @@ export default function ImagePage() {
             );
             saveLog(
                 buildLog({
+                    ownerId: historyOwnerId,
                     prompt: text,
                     model,
                     config: { ...snapshot.config, count: String(generationCount) },
@@ -275,7 +281,7 @@ export default function ImagePage() {
         void logStore.setItem(log.id, serializeLog(log)).then(refreshLogs);
     };
 
-    const refreshLogs = async () => setLogs(await readStoredLogs());
+    const refreshLogs = async () => setLogs(await readStoredLogs(historyOwnerId));
 
     const previewGenerationLog = async (log: GenerationLog) => {
         setPreviewLog(log);
@@ -734,12 +740,12 @@ function LogCard({ log, selected, active, onSelectedChange, onClick }: { log: Ge
     );
 }
 
-async function readStoredLogs() {
+async function readStoredLogs(ownerId: string) {
     if (typeof window === "undefined") return [];
     try {
         const values: GenerationLog[] = [];
         await logStore.iterate<GenerationLog, void>((value) => {
-            values.push(value);
+            if ((value.ownerId || "guest") === ownerId) values.push(value);
         });
         const logs = await Promise.all(values.map(normalizeLog));
         return logs.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
@@ -764,6 +770,7 @@ async function normalizeLog(log: Partial<GenerationLog>): Promise<GenerationLog>
     const config = normalizeLogConfig(log);
     return {
         id: log.id || nanoid(),
+        ownerId: log.ownerId || "guest",
         createdAt: log.createdAt || Date.now(),
         title: log.title || log.model || "未命名",
         prompt: log.prompt || log.title || "",
@@ -821,6 +828,7 @@ function ReferenceOrderButtons({ index, total, onMove }: { index: number; total:
 }
 
 function buildLog({
+    ownerId,
     prompt,
     model,
     config,
@@ -831,6 +839,7 @@ function buildLog({
     status,
     images,
 }: {
+    ownerId: string;
     prompt: string;
     model: string;
     config: GenerationLogConfig;
@@ -850,6 +859,7 @@ function buildLog({
     };
     return {
         id: nanoid(),
+        ownerId,
         createdAt: Date.now(),
         title: prompt.slice(0, 12) || "未命名",
         prompt,

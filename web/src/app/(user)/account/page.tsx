@@ -1,0 +1,561 @@
+"use client";
+
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { App, Avatar, Button, Card, Descriptions, Empty, Form, Image as AntImage, Input, Modal, Pagination, Select, Skeleton, Table, Tabs, Tag, Typography, type TableColumnsType } from "antd";
+import dayjs from "dayjs";
+import { saveAs } from "file-saver";
+import { CircleUserRound, Clock3, Coins, ExternalLink, Film, History, ImageIcon, KeyRound, PencilLine, ReceiptText, RefreshCw, Search, ShieldCheck, Trash2, WalletCards } from "lucide-react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
+
+import { CREDIT_PURCHASE_URL, CreditSymbol } from "@/constant/credits";
+import { formatDuration } from "@/lib/image-utils";
+import { changePassword, fetchCreditLogs, updateProfile as updateUserProfile, type CreditLog } from "@/services/api/auth";
+import { countGenerationHistory, deleteGenerationHistory, readGenerationHistory, resolveGenerationHistoryMedia, resolveGenerationHistoryPreview, type GenerationHistoryItem } from "@/services/generation-history";
+import { useUserStore } from "@/stores/use-user-store";
+
+type AccountTab = "profile" | "history" | "credits";
+type ProfileFormValues = { displayName: string; avatarUrl: string };
+type PasswordFormValues = { currentPassword: string; newPassword: string; confirmPassword: string };
+
+const historyPageSize = 12;
+const creditPageSize = 12;
+const accountTabs = [
+    { key: "profile", label: <span className="inline-flex items-center gap-2"><CircleUserRound className="size-4" />个人资料</span> },
+    { key: "history", label: <span className="inline-flex items-center gap-2"><History className="size-4" />生成记录</span> },
+    { key: "credits", label: <span className="inline-flex items-center gap-2"><ReceiptText className="size-4" />算力明细</span> },
+];
+const creditTypeMeta: Record<string, { label: string; color?: string }> = {
+    admin_adjust: { label: "后台调整" },
+    ai_consume: { label: "模型消费", color: "blue" },
+    ai_refund: { label: "失败返还", color: "cyan" },
+    redeem_code: { label: "兑换码充值", color: "green" },
+    daily_check_in: { label: "每日签到", color: "gold" },
+    new_user_reward: { label: "新用户赠送", color: "purple" },
+};
+
+export default function AccountPage() {
+    return (
+        <Suspense fallback={<AccountPageSkeleton />}>
+            <AccountContent />
+        </Suspense>
+    );
+}
+
+function AccountContent() {
+    const router = useRouter();
+    const searchParams = useSearchParams();
+    const user = useUserStore((state) => state.user);
+    const isReady = useUserStore((state) => state.isReady);
+    const requestedTab = searchParams.get("tab");
+    const activeTab: AccountTab = requestedTab === "history" || requestedTab === "credits" ? requestedTab : "profile";
+    const accountHref = activeTab === "profile" ? "/account" : `/account?tab=${activeTab}`;
+    const historyCountQuery = useQuery({
+        queryKey: ["generation-history-count", user?.id],
+        queryFn: () => countGenerationHistory(user?.id || ""),
+        enabled: Boolean(user?.id),
+        staleTime: 0,
+    });
+
+    useEffect(() => {
+        if (isReady && !user?.id) router.replace(`/login?redirect=${encodeURIComponent(accountHref)}`);
+    }, [accountHref, isReady, router, user?.id]);
+
+    if (!isReady || !user) return <AccountPageSkeleton />;
+
+    const userName = user.displayName || user.username;
+    const avatarText = (userName.trim()[0] || "U").toUpperCase();
+
+    return (
+        <main className="h-full overflow-y-auto bg-background">
+            <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
+                <section className="relative overflow-hidden rounded-[28px] border border-border bg-card">
+                    <div className="pointer-events-none absolute -right-14 -top-20 size-64 rounded-full border border-border/70" />
+                    <div className="pointer-events-none absolute right-16 top-9 size-20 rounded-full border border-dashed border-border" />
+                    <div className="relative flex flex-col gap-5 px-5 py-6 sm:flex-row sm:items-center sm:px-7 sm:py-8">
+                        <Avatar size={72} src={user.avatarUrl || undefined} className="shrink-0 border border-border bg-foreground text-xl font-semibold text-background">
+                            {avatarText}
+                        </Avatar>
+                        <div className="min-w-0 flex-1">
+                            <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">Account / 个人工作台</div>
+                            <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                <h1 className="truncate text-2xl font-semibold tracking-tight sm:text-3xl">{userName}</h1>
+                                <Tag className="m-0">{user.role === "admin" ? "管理员" : "普通用户"}</Tag>
+                                <Tag className="m-0" color="blue">{user.group || "default"}</Tag>
+                            </div>
+                            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+                                <span>@{user.username}</span>
+                                {user.email ? <><span>·</span><span>{user.email}</span></> : null}
+                            </div>
+                        </div>
+                        <Button type="primary" href={CREDIT_PURCHASE_URL} target="_blank" rel="noreferrer" icon={<WalletCards className="size-4" />}>
+                            购买算力
+                        </Button>
+                    </div>
+                    <div className="relative grid grid-cols-1 border-t border-border sm:grid-cols-3 sm:divide-x sm:divide-border">
+                        <AccountMetric icon={<Coins />} label="当前算力" value={user.credits.toLocaleString()} suffix="点" />
+                        <AccountMetric icon={<History />} label="本机生成记录" value={historyCountQuery.isLoading ? "—" : String(historyCountQuery.data || 0)} suffix="条" />
+                        <AccountMetric icon={<Clock3 />} label="加入时间" value={user.createdAt ? dayjs(user.createdAt).format("YYYY.MM.DD") : "—"} />
+                    </div>
+                </section>
+
+                <div className="mt-6 rounded-2xl border border-border bg-card px-4 sm:px-6">
+                    <Tabs
+                        activeKey={activeTab}
+                        items={accountTabs}
+                        onChange={(key) => router.replace(key === "profile" ? "/account" : `/account?tab=${key}`, { scroll: false })}
+                        tabBarStyle={{ margin: 0 }}
+                    />
+                </div>
+
+                <div className="mt-5">
+                    {activeTab === "profile" ? <ProfileSection /> : activeTab === "history" ? <HistorySection /> : <CreditsSection />}
+                </div>
+            </div>
+        </main>
+    );
+}
+
+function AccountMetric({ icon, label, value, suffix }: { icon: ReactNode; label: string; value: string; suffix?: string }) {
+    return (
+        <div className="flex items-center gap-3 px-5 py-4 sm:px-7 sm:py-5">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground [&_svg]:size-4">{icon}</span>
+            <div className="min-w-0">
+                <div className="text-xs text-muted-foreground">{label}</div>
+                <div className="mt-0.5 truncate text-xl font-semibold tabular-nums">{value}{suffix ? <span className="ml-1 text-xs font-normal text-muted-foreground">{suffix}</span> : null}</div>
+            </div>
+        </div>
+    );
+}
+
+function ProfileSection() {
+    const { message } = App.useApp();
+    const [profileForm] = Form.useForm<ProfileFormValues>();
+    const [passwordForm] = Form.useForm<PasswordFormValues>();
+    const [profileOpen, setProfileOpen] = useState(false);
+    const [passwordOpen, setPasswordOpen] = useState(false);
+    const token = useUserStore((state) => state.token);
+    const user = useUserStore((state) => state.user);
+    const setSession = useUserStore((state) => state.setSession);
+    const updateMutation = useMutation({
+        mutationFn: (values: ProfileFormValues) => updateUserProfile(token, values),
+        onSuccess: (nextUser) => {
+            setSession(token, nextUser);
+            setProfileOpen(false);
+            message.success("个人资料已更新");
+        },
+        onError: (error) => message.error(error instanceof Error ? error.message : "更新失败"),
+    });
+    const passwordMutation = useMutation({
+        mutationFn: ({ currentPassword, newPassword }: PasswordFormValues) => changePassword(token, { currentPassword, newPassword }),
+        onSuccess: () => {
+            setPasswordOpen(false);
+            passwordForm.resetFields();
+            message.success("密码已修改");
+        },
+        onError: (error) => message.error(error instanceof Error ? error.message : "修改密码失败"),
+    });
+
+    if (!user) return null;
+
+    const openProfileEditor = () => {
+        profileForm.setFieldsValue({ displayName: user.displayName, avatarUrl: user.avatarUrl });
+        setProfileOpen(true);
+    };
+    const descriptionItems = [
+        { key: "username", label: "用户名", children: <Typography.Text copyable>{user.username}</Typography.Text> },
+        { key: "email", label: "电子邮箱", children: user.email || "未绑定" },
+        { key: "displayName", label: "昵称", children: user.displayName || "未设置" },
+        { key: "group", label: "用户组", children: <Tag className="m-0" color="blue">{user.group || "default"}</Tag> },
+        { key: "id", label: "用户 ID", children: <Typography.Text copyable>{user.id}</Typography.Text> },
+        { key: "createdAt", label: "注册时间", children: user.createdAt ? dayjs(user.createdAt).format("YYYY-MM-DD HH:mm") : "—" },
+    ];
+
+    return (
+        <>
+            <div className="grid gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,.65fr)]">
+                <Card title={<span className="inline-flex items-center gap-2"><CircleUserRound className="size-4" />个人资料</span>} extra={<Button type="text" icon={<PencilLine className="size-4" />} onClick={openProfileEditor}>编辑</Button>}>
+                    <Descriptions items={descriptionItems} column={{ xs: 1, sm: 2 }} size="middle" />
+                </Card>
+                <div className="space-y-5">
+                    <Card title={<span className="inline-flex items-center gap-2"><ShieldCheck className="size-4" />账号安全</span>}>
+                        <div className="flex items-start gap-3">
+                            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground"><KeyRound className="size-4" /></span>
+                            <div className="min-w-0 flex-1">
+                                <div className="font-medium">登录密码</div>
+                                <p className="mt-1 text-sm leading-6 text-muted-foreground">修改密码前需要验证当前密码。</p>
+                            </div>
+                            <Button onClick={() => setPasswordOpen(true)}>修改</Button>
+                        </div>
+                    </Card>
+                    <Card title="数据存储">
+                        <p className="text-sm leading-7 text-muted-foreground">生成结果默认保存在当前浏览器，可通过配置中的 WebDAV 手动同步。算力流水保存在服务端并跟随账号。</p>
+                        <Link href="/account?tab=history" className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-foreground hover:underline">
+                            查看本机生成记录 <ExternalLink className="size-3.5" />
+                        </Link>
+                    </Card>
+                </div>
+            </div>
+
+            <Modal title="编辑个人资料" open={profileOpen} onCancel={() => setProfileOpen(false)} onOk={() => profileForm.submit()} confirmLoading={updateMutation.isPending} okText="保存" cancelText="取消" destroyOnHidden>
+                <Form<ProfileFormValues> form={profileForm} layout="vertical" requiredMark={false} onFinish={(values) => updateMutation.mutate(values)}>
+                    <Form.Item name="displayName" label="昵称" rules={[{ max: 32, message: "昵称不能超过 32 个字符" }]}>
+                        <Input maxLength={32} showCount placeholder={user.username} />
+                    </Form.Item>
+                    <Form.Item name="avatarUrl" label="头像地址" rules={[{ pattern: /^https?:\/\//i, message: "请输入完整的 HTTP 或 HTTPS 地址" }]} extra="留空时使用用户名首字母头像">
+                        <Input placeholder="https://example.com/avatar.png" />
+                    </Form.Item>
+                </Form>
+            </Modal>
+
+            <Modal title="修改密码" open={passwordOpen} onCancel={() => setPasswordOpen(false)} onOk={() => passwordForm.submit()} confirmLoading={passwordMutation.isPending} okText="修改密码" cancelText="取消" destroyOnHidden>
+                <Form<PasswordFormValues> form={passwordForm} layout="vertical" requiredMark={false} onFinish={(values) => passwordMutation.mutate(values)}>
+                    <Form.Item name="currentPassword" label="当前密码" rules={[{ required: true, message: "请输入当前密码" }]}>
+                        <Input.Password autoComplete="current-password" />
+                    </Form.Item>
+                    <Form.Item name="newPassword" label="新密码" rules={[{ required: true, message: "请输入新密码" }, { min: 6, message: "新密码不能少于 6 个字符" }]}>
+                        <Input.Password autoComplete="new-password" />
+                    </Form.Item>
+                    <Form.Item
+                        name="confirmPassword"
+                        label="确认新密码"
+                        dependencies={["newPassword"]}
+                        rules={[
+                            { required: true, message: "请再次输入新密码" },
+                            ({ getFieldValue }) => ({ validator: (_, value) => !value || getFieldValue("newPassword") === value ? Promise.resolve() : Promise.reject(new Error("两次输入的密码不一致")) }),
+                        ]}
+                    >
+                        <Input.Password autoComplete="new-password" />
+                    </Form.Item>
+                </Form>
+            </Modal>
+        </>
+    );
+}
+
+function HistorySection() {
+    const { message, modal } = App.useApp();
+    const queryClient = useQueryClient();
+    const ownerId = useUserStore((state) => state.user?.id || "");
+    const [keyword, setKeyword] = useState("");
+    const [kind, setKind] = useState<"all" | "image" | "video">("all");
+    const [status, setStatus] = useState<"all" | "成功" | "失败">("all");
+    const [page, setPage] = useState(1);
+    const [selected, setSelected] = useState<GenerationHistoryItem | null>(null);
+    const query = useQuery({
+        queryKey: ["generation-history", ownerId],
+        queryFn: () => readGenerationHistory(ownerId),
+        enabled: Boolean(ownerId),
+        staleTime: 0,
+    });
+    const deleteMutation = useMutation({
+        mutationFn: deleteGenerationHistory,
+        onSuccess: async () => {
+            setSelected(null);
+            await Promise.all([
+                queryClient.invalidateQueries({ queryKey: ["generation-history", ownerId] }),
+                queryClient.invalidateQueries({ queryKey: ["generation-history-count", ownerId] }),
+            ]);
+            message.success("生成记录已删除");
+        },
+        onError: (error) => message.error(error instanceof Error ? error.message : "删除失败"),
+    });
+    const filtered = useMemo(() => {
+        const normalizedKeyword = keyword.trim().toLowerCase();
+        return (query.data || []).filter((item) => {
+            if (kind !== "all" && item.kind !== kind) return false;
+            if (status !== "all" && item.status !== status) return false;
+            if (!normalizedKeyword) return true;
+            return [item.title, item.prompt, item.model].some((value) => value.toLowerCase().includes(normalizedKeyword));
+        });
+    }, [kind, keyword, query.data, status]);
+    const pageItems = filtered.slice((page - 1) * historyPageSize, page * historyPageSize);
+
+    useEffect(() => {
+        const lastPage = Math.max(1, Math.ceil(filtered.length / historyPageSize));
+        setPage((current) => Math.min(current, lastPage));
+    }, [filtered.length]);
+
+    const confirmDelete = (item: GenerationHistoryItem) => {
+        modal.confirm({
+            title: "删除生成记录",
+            content: "记录和对应的本地生成结果会一起删除，此操作无法撤销。",
+            okText: "删除",
+            cancelText: "取消",
+            okButtonProps: { danger: true },
+            onOk: () => deleteMutation.mutateAsync(item),
+        });
+    };
+
+    return (
+        <>
+            <Card>
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                        <h2 className="text-lg font-semibold">生成记录</h2>
+                        <p className="mt-1 text-sm text-muted-foreground">汇总当前账号在本机生图和视频工作台产生的结果；画布内容仍随画布项目保存。</p>
+                    </div>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                        <Input
+                            allowClear
+                            prefix={<Search className="size-4 text-muted-foreground" />}
+                            placeholder="搜索提示词或模型"
+                            value={keyword}
+                            onChange={(event) => { setKeyword(event.target.value); setPage(1); }}
+                            className="sm:w-64"
+                        />
+                        <Select
+                            value={kind}
+                            onChange={(value) => { setKind(value); setPage(1); }}
+                            className="sm:w-32"
+                            options={[{ label: "全部类型", value: "all" }, { label: "图片", value: "image" }, { label: "视频", value: "video" }]}
+                        />
+                        <Select
+                            value={status}
+                            onChange={(value) => { setStatus(value); setPage(1); }}
+                            className="sm:w-32"
+                            options={[{ label: "全部状态", value: "all" }, { label: "成功", value: "成功" }, { label: "失败", value: "失败" }]}
+                        />
+                        <Button
+                            icon={<RefreshCw className="size-4" />}
+                            onClick={() => void Promise.all([query.refetch(), queryClient.invalidateQueries({ queryKey: ["generation-history-count", ownerId] })])}
+                        >
+                            刷新
+                        </Button>
+                    </div>
+                </div>
+            </Card>
+
+            <div className="mt-5">
+                {query.isLoading ? (
+                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"><SkeletonHistoryCards /></div>
+                ) : pageItems.length ? (
+                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                        {pageItems.map((item) => <HistoryCard key={`${item.kind}-${item.id}`} item={item} onOpen={() => setSelected(item)} onDelete={() => confirmDelete(item)} />)}
+                    </div>
+                ) : (
+                    <Card><Empty description={query.isError ? "读取本地生成记录失败" : keyword || kind !== "all" || status !== "all" ? "没有符合筛选条件的记录" : "暂无生成记录"} /></Card>
+                )}
+                {filtered.length > historyPageSize ? (
+                    <div className="mt-5 flex justify-center"><Pagination current={page} pageSize={historyPageSize} total={filtered.length} showSizeChanger={false} onChange={setPage} /></div>
+                ) : null}
+            </div>
+
+            <HistoryDetailModal item={selected} onClose={() => setSelected(null)} onDelete={selected ? () => confirmDelete(selected) : undefined} />
+        </>
+    );
+}
+
+function HistoryCard({ item, onOpen, onDelete }: { item: GenerationHistoryItem; onOpen: () => void; onDelete: () => void }) {
+    const previewQuery = useQuery({
+        queryKey: ["generation-history-preview", item.ownerId, item.kind, item.id],
+        queryFn: () => resolveGenerationHistoryPreview(item),
+        enabled: Boolean(item.storageKeys.length),
+        staleTime: Infinity,
+    });
+    const preview = previewQuery.data || item.previewUrls[0];
+    const mediaUrl = previewQuery.data || item.mediaUrl;
+    return (
+        <article className="group overflow-hidden rounded-2xl border border-border bg-card transition hover:-translate-y-0.5 hover:border-foreground/25" style={{ contentVisibility: "auto", containIntrinsicSize: "0 360px" }}>
+            <button type="button" onClick={onOpen} className="relative block aspect-[16/10] w-full overflow-hidden bg-muted text-left">
+                {item.kind === "image" && preview ? <img src={preview} alt={item.title} className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.025]" /> : null}
+                {item.kind === "video" && mediaUrl ? <video src={mediaUrl} muted preload="metadata" className="h-full w-full object-cover" /> : null}
+                {!preview && !mediaUrl ? <span className="flex h-full items-center justify-center text-muted-foreground">{item.kind === "image" ? <ImageIcon className="size-8" /> : <Film className="size-8" />}</span> : null}
+                <span className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-md bg-background/90 px-2 py-1 text-xs font-medium text-foreground backdrop-blur">
+                    {item.kind === "image" ? <ImageIcon className="size-3.5" /> : <Film className="size-3.5" />}{item.kind === "image" ? "图片" : "视频"}
+                </span>
+                {item.resultCount > 1 ? <span className="absolute right-3 top-3 rounded-md bg-black/65 px-2 py-1 text-xs text-white">{item.resultCount} 个结果</span> : null}
+            </button>
+            <div className="p-4">
+                <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                        <h3 className="truncate font-medium">{item.title}</h3>
+                        <p className="mt-1 line-clamp-2 min-h-10 text-sm leading-5 text-muted-foreground">{item.prompt || "未填写提示词"}</p>
+                    </div>
+                    <Tag className="m-0 shrink-0" color={item.status === "成功" ? "green" : "red"}>{item.status}</Tag>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-1.5 text-xs text-muted-foreground">
+                    {item.model ? <span className="max-w-full truncate rounded-md bg-muted px-2 py-1">{item.model}</span> : null}
+                    {item.detail ? <span className="rounded-md bg-muted px-2 py-1">{item.detail}</span> : null}
+                    <span className="rounded-md bg-muted px-2 py-1">{dayjs(item.createdAt).format("MM-DD HH:mm")}</span>
+                </div>
+                <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
+                    <span className="text-xs text-muted-foreground">耗时 {formatDuration(item.durationMs)}</span>
+                    <div className="flex items-center gap-1">
+                        <Button type="text" size="small" onClick={onOpen}>查看</Button>
+                        <Button href={item.href} type="text" size="small" icon={<ExternalLink className="size-3.5" />}>工作台</Button>
+                        <Button danger type="text" size="small" icon={<Trash2 className="size-3.5" />} aria-label="删除记录" onClick={onDelete} />
+                    </div>
+                </div>
+            </div>
+        </article>
+    );
+}
+
+function HistoryDetailModal({ item, onClose, onDelete }: { item: GenerationHistoryItem | null; onClose: () => void; onDelete?: () => void }) {
+    const mediaQuery = useQuery({
+        queryKey: ["generation-history-media", item?.ownerId, item?.kind, item?.id],
+        queryFn: () => resolveGenerationHistoryMedia(item!),
+        enabled: Boolean(item),
+        staleTime: Infinity,
+    });
+    const mediaUrls = mediaQuery.data || (item?.kind === "image" ? item.previewUrls : item?.mediaUrl ? [item.mediaUrl] : []);
+    const videoUrl = mediaUrls[0] || "";
+
+    return (
+        <Modal
+            title={item?.title || "生成记录"}
+            open={Boolean(item)}
+            onCancel={onClose}
+            width={920}
+            destroyOnHidden
+            footer={item ? [
+                <Button key="delete" danger icon={<Trash2 className="size-4" />} onClick={onDelete}>删除记录</Button>,
+                <Button key="workbench" href={item.href} type="primary" icon={<ExternalLink className="size-4" />}>前往工作台</Button>,
+            ] : null}
+        >
+            {item ? (
+                <div className="space-y-5">
+                    {mediaQuery.isLoading ? <Skeleton active /> : item.kind === "image" ? (
+                        mediaUrls.length ? (
+                            <AntImage.PreviewGroup>
+                                <div className="grid max-h-[52vh] grid-cols-2 gap-3 overflow-y-auto sm:grid-cols-3">
+                                    {mediaUrls.map((url, index) => (
+                                        <div key={`${item.id}-${index}`} className="relative overflow-hidden rounded-xl bg-muted">
+                                            <AntImage src={url} alt={`${item.title} ${index + 1}`} className="!aspect-square !w-full !object-cover" />
+                                            <Button size="small" className="!absolute bottom-2 right-2" onClick={(event) => { event.stopPropagation(); saveAs(url, `${item.title || "image"}-${index + 1}.png`); }}>下载</Button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </AntImage.PreviewGroup>
+                        ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="本地结果文件不存在" />
+                    ) : videoUrl ? (
+                        <div className="overflow-hidden rounded-xl bg-black"><video src={videoUrl} controls className="max-h-[52vh] w-full" /></div>
+                    ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="本地结果文件不存在" />}
+                    <Descriptions
+                        size="small"
+                        column={{ xs: 1, sm: 2 }}
+                        items={[
+                            { key: "type", label: "类型", children: item.kind === "image" ? "图片生成" : "视频生成" },
+                            { key: "status", label: "状态", children: <Tag className="m-0" color={item.status === "成功" ? "green" : "red"}>{item.status}</Tag> },
+                            { key: "model", label: "模型", children: item.model || "—" },
+                            { key: "time", label: "生成时间", children: dayjs(item.createdAt).format("YYYY-MM-DD HH:mm:ss") },
+                            { key: "detail", label: "参数", children: item.detail || "—" },
+                            { key: "duration", label: "耗时", children: formatDuration(item.durationMs) },
+                        ]}
+                    />
+                    <div>
+                        <div className="mb-2 text-sm font-medium">提示词</div>
+                        <Typography.Paragraph copyable className="!mb-0 rounded-xl bg-muted p-3 !text-sm !leading-6">{item.prompt || "未填写提示词"}</Typography.Paragraph>
+                    </div>
+                    {item.error ? <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">{item.error}</div> : null}
+                    {item.kind === "video" && videoUrl ? <Button onClick={() => saveAs(videoUrl, `${item.title || "video"}.mp4`)}>下载视频</Button> : null}
+                </div>
+            ) : null}
+        </Modal>
+    );
+}
+
+function CreditsSection() {
+    const token = useUserStore((state) => state.token);
+    const credits = useUserStore((state) => state.user?.credits || 0);
+    const [keywordText, setKeywordText] = useState("");
+    const [keyword, setKeyword] = useState("");
+    const [type, setType] = useState("");
+    const [page, setPage] = useState(1);
+    const query = useQuery({
+        queryKey: ["credit-logs", token, keyword, type, page],
+        queryFn: () => fetchCreditLogs(token, { keyword, type, page, pageSize: creditPageSize }),
+        enabled: Boolean(token),
+    });
+    const columns = useMemo<TableColumnsType<CreditLog>>(() => [
+        { title: "时间", dataIndex: "createdAt", width: 170, render: (value: string) => <span className="text-muted-foreground">{dayjs(value).format("YYYY-MM-DD HH:mm")}</span> },
+        { title: "类型", dataIndex: "type", width: 130, render: (value: string) => <CreditTypeTag type={value} /> },
+        { title: "说明", dataIndex: "remark", render: (_: string, item) => { const extra = creditExtra(item.extra); return <div><div>{item.remark || "—"}</div>{extra.model ? <div className="mt-1 text-xs text-muted-foreground">{extra.model}</div> : null}</div>; } },
+        { title: "变动", dataIndex: "amount", width: 110, align: "right", render: (value: number) => <Typography.Text strong type={value >= 0 ? "success" : "danger"}>{value > 0 ? "+" : ""}{value.toLocaleString()}</Typography.Text> },
+        { title: "余额", dataIndex: "balance", width: 110, align: "right", render: (value: number) => value.toLocaleString() },
+    ], []);
+    const items = query.data?.items || [];
+    const total = query.data?.total || 0;
+
+    return (
+        <Card>
+            <div className="flex flex-col gap-4 border-b border-border pb-5 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                    <h2 className="text-lg font-semibold">算力明细</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">服务端保存的账户变动流水，仅显示当前登录账号。</p>
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                    <Input.Search
+                        allowClear
+                        value={keywordText}
+                        placeholder="搜索说明或关联 ID"
+                        enterButton
+                        onChange={(event) => setKeywordText(event.target.value)}
+                        onSearch={(value) => { setKeyword(value); setPage(1); }}
+                        className="sm:w-72"
+                    />
+                    <Select
+                        value={type}
+                        onChange={(value) => { setType(value); setPage(1); }}
+                        className="sm:w-40"
+                        options={[{ label: "全部类型", value: "" }, ...Object.entries(creditTypeMeta).map(([value, meta]) => ({ label: meta.label, value }))]}
+                    />
+                </div>
+            </div>
+
+            <div className="my-5 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-muted px-4 py-3">
+                <span className="text-sm text-muted-foreground">共 {total.toLocaleString()} 条账户流水</span>
+                <span className="inline-flex items-center gap-1.5 font-semibold tabular-nums"><CreditSymbol />{credits.toLocaleString()}<span className="text-xs font-normal text-muted-foreground">当前余额</span></span>
+            </div>
+
+            <div className="hidden md:block">
+                <Table<CreditLog> rowKey="id" columns={columns} dataSource={items} loading={query.isFetching} pagination={false} scroll={{ x: 760 }} locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={query.isError ? "读取算力明细失败" : "暂无算力明细"} /> }} />
+            </div>
+            <div className="space-y-2 md:hidden">
+                {query.isFetching ? <Skeleton active /> : items.length ? items.map((item) => <CreditLogCard key={item.id} item={item} />) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={query.isError ? "读取算力明细失败" : "暂无算力明细"} />}
+            </div>
+            {total > creditPageSize ? <div className="mt-5 flex justify-end"><Pagination current={page} pageSize={creditPageSize} total={total} showSizeChanger={false} onChange={setPage} /></div> : null}
+        </Card>
+    );
+}
+
+function CreditLogCard({ item }: { item: CreditLog }) {
+    const extra = creditExtra(item.extra);
+    return (
+        <article className="rounded-xl border border-border p-3" style={{ contentVisibility: "auto", containIntrinsicSize: "0 120px" }}>
+            <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0"><CreditTypeTag type={item.type} /><div className="mt-2 truncate text-sm font-medium">{item.remark || "—"}</div></div>
+                <Typography.Text strong type={item.amount >= 0 ? "success" : "danger"}>{item.amount > 0 ? "+" : ""}{item.amount.toLocaleString()}</Typography.Text>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                <span>{dayjs(item.createdAt).format("YYYY-MM-DD HH:mm")}</span>
+                <span className="text-right">余额 {item.balance.toLocaleString()}</span>
+                {extra.model ? <span className="col-span-2 truncate">模型 {extra.model}</span> : null}
+            </div>
+        </article>
+    );
+}
+
+function CreditTypeTag({ type }: { type: string }) {
+    const meta = creditTypeMeta[type] || { label: type || "未知类型" };
+    return <Tag className="m-0" color={meta.color}>{meta.label}</Tag>;
+}
+
+function creditExtra(value: string) {
+    try {
+        const parsed = JSON.parse(value || "{}") as { model?: string; path?: string };
+        return { model: parsed.model || "", path: parsed.path || "" };
+    } catch {
+        return { model: "", path: "" };
+    }
+}
+
+function SkeletonHistoryCards() {
+    return Array.from({ length: 6 }, (_, index) => <Card key={index}><Skeleton active paragraph={{ rows: 4 }} /></Card>);
+}
+
+function AccountPageSkeleton() {
+    return <main className="h-full overflow-y-auto bg-background"><div className="mx-auto max-w-7xl px-6 py-8"><Card><Skeleton active avatar paragraph={{ rows: 4 }} /></Card></div></main>;
+}

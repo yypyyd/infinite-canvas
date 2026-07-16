@@ -74,8 +74,8 @@ func TestNormalizeSettingsPublishesEnabledChannelModelsAndRepairsDefaults(t *tes
 		},
 		Private: model.PrivateSetting{
 			Channels: []model.ModelChannel{
-				{Enabled: true, Models: []string{"gpt-5.5", "doubao-seedream-5.0-lite", "doubao-seedance-2.0-fast", "gpt-5.5"}},
-				{Enabled: false, Models: []string{"disabled-model"}},
+				{Enabled: true, Models: channelModels("gpt-5.5", "doubao-seedream-5.0-lite", "doubao-seedance-2.0-fast", "gpt-5.5")},
+				{Enabled: false, Models: channelModels("disabled-model")},
 			},
 		},
 	})
@@ -105,12 +105,12 @@ func TestNormalizeSettingsAddsNewChannelModelsToExistingCatalog(t *testing.T) {
 			{ID: "gpt-5.5", Name: "GPT 5.5", Modality: "text", Enabled: false},
 		}}},
 		Private: model.PrivateSetting{Channels: []model.ModelChannel{
-			{Enabled: true, Models: []string{"gpt-5.5", "gpt-image-2", "firefly-video"}},
+			{Enabled: true, Models: channelModels("gpt-5.5", "gpt-image-2", "firefly-video")},
 		}},
 	})
 
 	models := settings.Public.ModelChannel.Models
-	if len(models) != 3 || models[0].ID != "gpt-5.5" || models[0].Enabled || models[1].ID != "gpt-image-2" || !models[1].Enabled || models[2].ID != "firefly-video" || len(models[2].ResolutionTiers) != 0 {
+	if len(models) != 3 || models[0].ID != "gpt-5.5" || models[0].Enabled || models[1].ID != "gpt-image-2" || !models[1].Enabled || models[2].ID != "firefly-video" || !reflect.DeepEqual(models[2].ResolutionTiers, []string{"720p"}) {
 		t.Fatalf("model catalog = %#v", models)
 	}
 	if want := []string{"gpt-image-2", "firefly-video"}; !reflect.DeepEqual(settings.Public.ModelChannel.AvailableModels, want) {
@@ -239,4 +239,12 @@ func assertNoPricingRule(t *testing.T, rules []model.PricingRule, modelName stri
 			t.Fatalf("unexpected pricing rule model=%s modality=%s operation=%s unit=%s resolution=%s", modelName, modality, operation, unit, resolutionTier)
 		}
 	}
+}
+
+func channelModels(names ...string) []model.ChannelModel {
+	result := make([]model.ChannelModel, 0, len(names))
+	for _, name := range names {
+		result = append(result, model.ChannelModel{Model: name, UpstreamModel: name})
+	}
+	return result
 }

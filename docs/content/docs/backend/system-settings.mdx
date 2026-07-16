@@ -69,7 +69,7 @@ description: settings 表中 public 和 private 配置结构说明
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `availableModels` | string[] | 系统可用模型，由模型中心中已启用的模型生成 |
-| `models` | object[] | 模型中心配置，包含模型名称、类型、支持操作、启用状态、排序、宽高比和分辨率档；已启用渠道的新模型会自动补入 |
+| `models` | object[] | 模型中心配置，包含模型名称、类型、支持操作、启用状态、排序、宽高比和分辨率档；已启用渠道的新模型会自动补入，图片默认 1K、视频默认 720P |
 | `pricingRules` | object[] | 模型算力点配置，后端模型接口调用前按模型预扣，上游失败时返还；新增模型会按模型能力自动生成默认规则 |
 | `groupRatios` | object | 用户分组倍率，例如 `default`、`vip`、`svip` |
 | `defaultModel` | string | 默认模型，从 `availableModels` 中选择；为空或失效时优先选择文本模型 |
@@ -96,7 +96,7 @@ description: settings 表中 public 和 private 配置结构说明
 
 | 模式 | 说明 |
 | --- | --- |
-| 云端渠道 | 使用后端 `/api/v1/*` 代理接口，请求会按模型名匹配 `private.value.channels` 中的可用渠道 |
+| 云端渠道 | 使用后端 `/api/v1/*` 代理接口，请求会按模型名、操作和分辨率档匹配 `private.value.channels` 中的可用渠道 |
 | 本地直连 | 默认可选；`allowCustomChannel` 关闭后不可选，用户在浏览器本地配置 `baseUrl`、`apiKey` 和模型列表后直接请求模型接口 |
 
 `auth` 字段：
@@ -135,10 +135,25 @@ description: settings 表中 public 和 private 配置结构说明
       "name": "默认渠道",
       "baseUrl": "https://api.example.com",
       "apiKey": "sk-xxx",
-      "models": ["gpt-5.5", "gpt-image-2"],
+      "models": [
+        { "model": "gpt-5.5", "upstreamModel": "gpt-5.5", "operations": ["completion"], "resolutionTiers": [] },
+        { "model": "gpt-image-2", "upstreamModel": "gpt-image-2", "operations": ["generation", "edit"], "resolutionTiers": ["1k"] }
+      ],
       "weight": 1,
       "enabled": true,
-      "remark": ""
+      "remark": "仅处理 1K 图片"
+    },
+    {
+      "protocol": "openai",
+      "name": "高清渠道",
+      "baseUrl": "https://hd-api.example.com",
+      "apiKey": "sk-yyy",
+      "models": [
+        { "model": "gpt-image-2", "upstreamModel": "gpt-image-2", "operations": ["generation", "edit"], "resolutionTiers": ["1k", "2k", "4k"] }
+      ],
+      "weight": 1,
+      "enabled": true,
+      "remark": "支持完整图片分辨率"
     }
   ],
   "promptSync": {
@@ -172,12 +187,21 @@ description: settings 表中 public 和 private 配置结构说明
 | `name` | string | 渠道名称 |
 | `baseUrl` | string | OpenAI 兼容接口地址 |
 | `apiKey` | string | 渠道密钥 |
-| `models` | string[] | 该渠道可用模型 |
-| `weight` | number | 渠道权重；同一模型有多个可用渠道时按权重随机 |
+| `models` | object[] | 该渠道的模型映射与实际能力列表 |
+| `weight` | number | 渠道权重；同一请求命中多个能力相符的渠道时按权重随机 |
 | `enabled` | boolean | 是否启用 |
 | `remark` | string | 备注 |
 
-后端调用模型时，会从已启用、已配置 `baseUrl` 和 `apiKey`、且 `models` 包含目标模型的渠道中选择一个。
+`channels.models` 每项字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `model` | string | 前端和计费规则使用的对外模型名 |
+| `upstreamModel` | string | 发往当前渠道的真实模型名；为空时使用 `model` |
+| `operations` | string[] | 当前渠道支持的操作，例如 `generation`、`edit`、`completion`、`speech` |
+| `resolutionTiers` | string[] | 当前渠道支持的分辨率档，例如图片的 `1k`、`2k`、`4k` 或视频的 `480p`、`720p`、`1080p`；文本、音频等无分辨率模型为空 |
+
+后端调用模型时，会先按对外模型名、操作和分辨率档筛选已启用且密钥完整的渠道，再在能力相符的渠道中按 `weight` 加权随机选择。用户价格始终读取公开模型的 `pricingRules`，不会因随机命中不同上游渠道而变化；请求发送前会把 `model` 替换为所选渠道的 `upstreamModel`。
 
 `promptSync` 字段：
 

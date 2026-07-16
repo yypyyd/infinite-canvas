@@ -96,3 +96,57 @@ func TestSelectPricingRuleSkipsDisabledAndMismatchedRules(t *testing.T) {
 		t.Fatal("expected no matching enabled rule")
 	}
 }
+
+func TestModelChannelSelectionsFilterOperationAndResolution(t *testing.T) {
+	channels := normalizePrivateSetting(model.PrivateSetting{Channels: []model.ModelChannel{
+		{
+			Name: "1k-only", BaseURL: "https://one.example", APIKey: "key", Enabled: true,
+			Models: []model.ChannelModel{{Model: "gpt-image-2", UpstreamModel: "image-basic", Operations: []string{"generation"}, ResolutionTiers: []string{"1k"}}},
+		},
+		{
+			Name: "full", BaseURL: "https://full.example", APIKey: "key", Enabled: true,
+			Models: []model.ChannelModel{{Model: "gpt-image-2", UpstreamModel: "image-full", Operations: []string{"generation", "edit"}, ResolutionTiers: []string{"1k", "2k", "4k"}}},
+		},
+	}}).Channels
+
+	fourK := normalizePricingRequest(PricingRequest{Model: "gpt-image-2", Modality: "image", Operation: "generation", Unit: "image", ResolutionTier: "4k"})
+	fourKSelections := modelChannelSelectionsForRequest(channels, fourK)
+	if len(fourKSelections) != 1 || fourKSelections[0].Channel.Name != "full" || fourKSelections[0].Model.UpstreamModel != "image-full" {
+		t.Fatalf("4k selections = %#v, want full channel", fourKSelections)
+	}
+
+	oneK := normalizePricingRequest(PricingRequest{Model: "gpt-image-2", Modality: "image", Operation: "generation", Unit: "image", ResolutionTier: "1k"})
+	if selections := modelChannelSelectionsForRequest(channels, oneK); len(selections) != 2 {
+		t.Fatalf("1k selection count = %d, want 2", len(selections))
+	}
+
+	edit := normalizePricingRequest(PricingRequest{Model: "gpt-image-2", Modality: "image", Operation: "edit", Unit: "image", ResolutionTier: "1k"})
+	editSelections := modelChannelSelectionsForRequest(channels, edit)
+	if len(editSelections) != 1 || editSelections[0].Channel.Name != "full" {
+		t.Fatalf("edit selections = %#v, want full channel", editSelections)
+	}
+}
+
+func TestVideoModelChannelSelectionsFilterResolution(t *testing.T) {
+	channels := normalizePrivateSetting(model.PrivateSetting{Channels: []model.ModelChannel{
+		{
+			Name: "standard-video", BaseURL: "https://standard.example", APIKey: "key", Enabled: true,
+			Models: []model.ChannelModel{{Model: "video-model", UpstreamModel: "video-standard", Operations: []string{"generation"}, ResolutionTiers: []string{"480p", "720p"}}},
+		},
+		{
+			Name: "hd-video", BaseURL: "https://hd.example", APIKey: "key", Enabled: true,
+			Models: []model.ChannelModel{{Model: "video-model", UpstreamModel: "video-hd", Operations: []string{"generation"}, ResolutionTiers: []string{"480p", "720p", "1080p"}}},
+		},
+	}}).Channels
+
+	fullHD := normalizePricingRequest(PricingRequest{Model: "video-model", Modality: "video", Operation: "generation", Unit: "second", Resolution: "1080p", Quantity: 10})
+	fullHDSelections := modelChannelSelectionsForRequest(channels, fullHD)
+	if len(fullHDSelections) != 1 || fullHDSelections[0].Channel.Name != "hd-video" || fullHDSelections[0].Model.UpstreamModel != "video-hd" {
+		t.Fatalf("1080p selections = %#v, want hd-video channel", fullHDSelections)
+	}
+
+	hd := normalizePricingRequest(PricingRequest{Model: "video-model", Modality: "video", Operation: "generation", Unit: "second", Resolution: "720p", Quantity: 5})
+	if selections := modelChannelSelectionsForRequest(channels, hd); len(selections) != 2 {
+		t.Fatalf("720p selection count = %d, want 2", len(selections))
+	}
+}

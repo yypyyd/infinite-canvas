@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -73,24 +74,26 @@ func proxyAIGetRequest(w http.ResponseWriter, r *http.Request, path string) {
 			return
 		}
 	}
-	channel, err := service.SelectModelChannel(modelName)
+	selection, err := service.SelectModelChannel(service.PricingRequest{Model: modelName})
 	if err != nil {
 		log.Printf("AI proxy select channel failed: model=%s err=%v", modelName, err)
-		Fail(w, "AI 接口请求失败")
+		FailError(w, err)
 		return
 	}
-	path = resolveAIProxyPath(channel.BaseURL, modelName, path)
+	channel := selection.Channel
+	upstreamModel := selection.Model.UpstreamModel
+	path = resolveAIProxyPath(channel.BaseURL, upstreamModel, path)
 	request, err := http.NewRequest(http.MethodGet, service.BuildModelChannelURL(channel, path), nil)
 	if err != nil {
 		Fail(w, "AI 接口请求失败")
 		return
 	}
 	request.Header.Set("Authorization", "Bearer "+channel.APIKey)
-	if isVideoGenerationsAPI(channel.BaseURL, modelName) && strings.HasSuffix(originalPath, "/content") {
+	if isVideoGenerationsAPI(channel.BaseURL, upstreamModel) && strings.HasSuffix(originalPath, "/content") {
 		copyVideoGenerationsContent(w, request)
 		return
 	}
-	copyAIResponse(w, request, nil, aiResponseAdapter(channel.BaseURL, modelName, originalPath), nil)
+	copyAIResponse(w, request, nil, aiResponseAdapter(channel.BaseURL, upstreamModel, originalPath), nil)
 }
 
 func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
@@ -106,20 +109,29 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		Fail(w, "未登录或权限不足")
 		return
 	}
-	credits, err := service.CalculateRequestCreditsForGroup(pricingRequestForAIPath(path, requestMeta), user.Group)
+	pricingRequest := pricingRequestForAIPath(path, requestMeta)
+	selection, err := service.SelectModelChannel(pricingRequest)
+	if err != nil {
+		log.Printf("AI proxy select channel failed: model=%s operation=%s resolution=%s err=%v", requestMeta.ModelName, pricingRequest.Operation, pricingRequest.ResolutionTier, err)
+		FailError(w, err)
+		return
+	}
+	credits, err := service.CalculateRequestCreditsForGroup(pricingRequest, user.Group)
 	if err != nil {
 		log.Printf("AI proxy calculate credits failed: model=%s path=%s err=%v", requestMeta.ModelName, path, err)
 		FailError(w, err)
 		return
 	}
-	channel, err := service.SelectModelChannel(requestMeta.ModelName)
+	channel := selection.Channel
+	upstreamModel := selection.Model.UpstreamModel
+	body, contentType, err = replaceAIRequestModel(body, contentType, upstreamModel)
 	if err != nil {
-		log.Printf("AI proxy select channel failed: model=%s err=%v", requestMeta.ModelName, err)
+		log.Printf("AI proxy replace upstream model failed: model=%s upstream=%s err=%v", requestMeta.ModelName, upstreamModel, err)
 		Fail(w, "AI 接口请求失败")
 		return
 	}
-	path = resolveAIProxyPath(channel.BaseURL, requestMeta.ModelName, path)
-	body, contentType = adaptAIRequestBody(channel.BaseURL, requestMeta.ModelName, originalPath, body, contentType)
+	path = resolveAIProxyPath(channel.BaseURL, upstreamModel, path)
+	body, contentType = adaptAIRequestBody(channel.BaseURL, upstreamModel, originalPath, body, contentType)
 	request, err := http.NewRequest(http.MethodPost, service.BuildModelChannelURL(channel, path), bytes.NewReader(body))
 	if err != nil {
 		log.Printf("AI proxy build request failed: url=%s err=%v", service.BuildModelChannelURL(channel, path), err)
@@ -143,7 +155,7 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		copyChatGPT2APIImageTaskResponse(w, channel.BaseURL, channel.APIKey, body, onFailure)
 		return
 	}
-	copyAIResponse(w, request, onFailure, aiResponseAdapter(channel.BaseURL, requestMeta.ModelName, originalPath), aiRetryPolicyForRequest(channel.BaseURL, requestMeta.ModelName, originalPath))
+	copyAIResponse(w, request, onFailure, aiResponseAdapter(channel.BaseURL, upstreamModel, originalPath), aiRetryPolicyForRequest(channel.BaseURL, upstreamModel, originalPath))
 }
 
 type chatGPT2APIImageTask struct {
@@ -570,6 +582,71 @@ func readAIRequest(r *http.Request) ([]byte, string, aiRequestMeta, error) {
 		return nil, "", aiRequestMeta{}, errMissingModel
 	}
 	return body, contentType, requestMeta, nil
+}
+
+func replaceAIRequestModel(body []byte, contentType string, modelName string) ([]byte, string, error) {
+	modelName = strings.TrimSpace(modelName)
+	if modelName == "" {
+		return nil, "", errors.New("缺少上游模型名称")
+	}
+	if strings.HasPrefix(contentType, "multipart/form-data") {
+		return replaceMultipartAIRequestModel(body, contentType, modelName)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return body, contentType, nil
+	}
+	payload["model"] = modelName
+	encoded, err := json.Marshal(payload)
+	return encoded, contentType, err
+}
+
+func replaceMultipartAIRequestModel(body []byte, contentType string, modelName string) ([]byte, string, error) {
+	_, params, err := mime.ParseMediaType(contentType)
+	if err != nil || params["boundary"] == "" {
+		return nil, "", errors.New("multipart 请求格式无效")
+	}
+	reader := multipart.NewReader(bytes.NewReader(body), params["boundary"])
+	var buffer bytes.Buffer
+	writer := multipart.NewWriter(&buffer)
+	foundModel := false
+	for {
+		part, nextErr := reader.NextPart()
+		if nextErr == io.EOF {
+			break
+		}
+		if nextErr != nil {
+			return nil, "", nextErr
+		}
+		target, createErr := writer.CreatePart(part.Header)
+		if createErr != nil {
+			_ = part.Close()
+			return nil, "", createErr
+		}
+		if part.FormName() == "model" {
+			foundModel = true
+			_, err = io.WriteString(target, modelName)
+		} else {
+			_, err = io.Copy(target, part)
+		}
+		_ = part.Close()
+		if err != nil {
+			return nil, "", err
+		}
+	}
+	if !foundModel {
+		field, createErr := writer.CreateFormField("model")
+		if createErr != nil {
+			return nil, "", createErr
+		}
+		if _, err = io.WriteString(field, modelName); err != nil {
+			return nil, "", err
+		}
+	}
+	if err = writer.Close(); err != nil {
+		return nil, "", err
+	}
+	return buffer.Bytes(), writer.FormDataContentType(), nil
 }
 
 func readMultipartAIRequest(body []byte, contentType string) aiRequestMeta {

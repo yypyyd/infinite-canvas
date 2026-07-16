@@ -11,14 +11,22 @@ const (
 
 // ModelChannel stores a private upstream channel.
 type ModelChannel struct {
-	Protocol string   `json:"protocol"`
-	Name     string   `json:"name"`
-	BaseURL  string   `json:"baseUrl"`
-	APIKey   string   `json:"apiKey"`
-	Models   []string `json:"models"`
-	Weight   int      `json:"weight"`
-	Enabled  bool     `json:"enabled"`
-	Remark   string   `json:"remark"`
+	Protocol string         `json:"protocol"`
+	Name     string         `json:"name"`
+	BaseURL  string         `json:"baseUrl"`
+	APIKey   string         `json:"apiKey"`
+	Models   []ChannelModel `json:"models"`
+	Weight   int            `json:"weight"`
+	Enabled  bool           `json:"enabled"`
+	Remark   string         `json:"remark"`
+}
+
+// ChannelModel stores one public model's upstream mapping and channel-specific capabilities.
+type ChannelModel struct {
+	Model           string   `json:"model"`
+	UpstreamModel   string   `json:"upstreamModel"`
+	Operations      []string `json:"operations"`
+	ResolutionTiers []string `json:"resolutionTiers"`
 }
 
 // ModelDefinition stores public model management metadata.

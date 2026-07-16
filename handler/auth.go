@@ -41,6 +41,16 @@ type adjustUserCreditsRequest struct {
 	Credits int `json:"credits"`
 }
 
+type updateProfileRequest struct {
+	DisplayName string `json:"displayName"`
+	AvatarURL   string `json:"avatarUrl"`
+}
+
+type changePasswordRequest struct {
+	CurrentPassword string `json:"currentPassword"`
+	NewPassword     string `json:"newPassword"`
+}
+
 func Register(w http.ResponseWriter, r *http.Request) {
 	var request registerRequest
 	_ = json.NewDecoder(r.Body).Decode(&request)
@@ -115,6 +125,51 @@ func CurrentUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	OK(w, service.GuestUser())
+}
+
+func UpdateProfile(w http.ResponseWriter, r *http.Request) {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok {
+		Fail(w, "请先登录")
+		return
+	}
+	var request updateProfileRequest
+	_ = json.NewDecoder(r.Body).Decode(&request)
+	updated, err := service.UpdateProfile(user.ID, request.DisplayName, request.AvatarURL)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, updated)
+}
+
+func ChangePassword(w http.ResponseWriter, r *http.Request) {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok {
+		Fail(w, "请先登录")
+		return
+	}
+	var request changePasswordRequest
+	_ = json.NewDecoder(r.Body).Decode(&request)
+	if err := service.ChangePassword(user.ID, request.CurrentPassword, request.NewPassword); err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, true)
+}
+
+func UserCreditLogs(w http.ResponseWriter, r *http.Request) {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok {
+		Fail(w, "请先登录")
+		return
+	}
+	logs, err := service.ListUserCreditLogs(user.ID, parseQuery(r))
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, logs)
 }
 
 func AdminUsers(w http.ResponseWriter, r *http.Request) {

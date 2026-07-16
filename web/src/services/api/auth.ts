@@ -1,4 +1,4 @@
-import { apiGet, apiPost } from "@/services/api/request";
+import { apiGet, apiPost, compactApiParams } from "@/services/api/request";
 
 export const AUTH_TOKEN_KEY = "infinite-canvas-auth-token-v1";
 
@@ -7,6 +7,7 @@ export type UserRole = "guest" | "user" | "admin";
 export type AuthUser = {
     id: string;
     username: string;
+    email: string;
     displayName: string;
     avatarUrl: string;
     role: UserRole;
@@ -45,6 +46,23 @@ export type CheckInResult = {
     user: AuthUser;
 };
 
+export type CreditLog = {
+    id: string;
+    userId: string;
+    type: string;
+    amount: number;
+    balance: number;
+    relatedId: string;
+    remark: string;
+    extra: string;
+    createdAt: string;
+};
+
+export type CreditLogListResponse = {
+    items: CreditLog[];
+    total: number;
+};
+
 export async function login(payload: LoginPayload) {
     return apiPost<AuthSession>("/api/auth/login", payload);
 }
@@ -59,6 +77,18 @@ export async function sendRegistrationEmailCode(email: string) {
 
 export async function fetchCurrentUser(token?: string) {
     return apiGet<AuthUser>("/api/auth/me", undefined, token);
+}
+
+export async function updateProfile(token: string, payload: Pick<AuthUser, "displayName" | "avatarUrl">) {
+    return apiPost<AuthUser>("/api/auth/profile", payload, token);
+}
+
+export async function changePassword(token: string, payload: { currentPassword: string; newPassword: string }) {
+    return apiPost<boolean>("/api/auth/password", payload, token);
+}
+
+export async function fetchCreditLogs(token: string, query: { keyword?: string; type?: string; page?: number; pageSize?: number } = {}) {
+    return apiGet<CreditLogListResponse>("/api/credit-logs", compactApiParams(query), token);
 }
 
 export async function redeemCode(token: string, code: string) {

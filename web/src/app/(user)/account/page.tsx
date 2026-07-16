@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { App, Avatar, Button, Card, Descriptions, Empty, Form, Image as AntImage, Input, Modal, Pagination, Select, Skeleton, Table, Tabs, Tag, Typography, type TableColumnsType } from "antd";
 import dayjs from "dayjs";
 import { saveAs } from "file-saver";
-import { CircleUserRound, Clock3, Coins, ExternalLink, Film, History, ImageIcon, KeyRound, ListChecks, PencilLine, ReceiptText, RefreshCw, Search, ShieldCheck, Trash2, WalletCards } from "lucide-react";
+import { CircleUserRound, Clock3, Cloud, Coins, ExternalLink, Film, History, ImageIcon, KeyRound, ListChecks, PencilLine, ReceiptText, RefreshCw, Search, ShieldCheck, Trash2, WalletCards } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
@@ -14,6 +14,7 @@ import { formatDuration } from "@/lib/image-utils";
 import { changePassword, fetchCreditLogs, fetchGenerationTasks, updateProfile as updateUserProfile, type CreditLog, type GenerationTask } from "@/services/api/auth";
 import { countGenerationHistory, deleteGenerationHistory, readGenerationHistory, resolveGenerationHistoryMedia, resolveGenerationHistoryPreview, type GenerationHistoryItem } from "@/services/generation-history";
 import { useUserStore } from "@/stores/use-user-store";
+import { useCloudSyncStore } from "@/stores/use-cloud-sync-store";
 
 type AccountTab = "profile" | "tasks" | "history" | "credits";
 type ProfileFormValues = { displayName: string; avatarUrl: string };
@@ -140,6 +141,9 @@ function ProfileSection() {
     const token = useUserStore((state) => state.token);
     const user = useUserStore((state) => state.user);
     const setSession = useUserStore((state) => state.setSession);
+    const cloudStatus = useCloudSyncStore((state) => state.status);
+    const usedBytes = useCloudSyncStore((state) => state.usedBytes);
+    const quotaBytes = useCloudSyncStore((state) => state.quotaBytes);
     const updateMutation = useMutation({
         mutationFn: (values: ProfileFormValues) => updateUserProfile(token, values),
         onSuccess: (nextUser) => {
@@ -191,8 +195,12 @@ function ProfileSection() {
                             <Button onClick={() => setPasswordOpen(true)}>修改</Button>
                         </div>
                     </Card>
-                    <Card title="数据存储">
-                        <p className="text-sm leading-7 text-muted-foreground">生成结果默认保存在当前浏览器，可通过配置中的 WebDAV 手动同步。算力流水保存在服务端并跟随账号。</p>
+                    <Card title={<span className="inline-flex items-center gap-2"><Cloud className="size-4" />账号云端数据</span>}>
+                        <p className="text-sm leading-7 text-muted-foreground">画布、我的素材及关联媒体会在登录后自动保存到当前账号；算力流水和任务记录同样保存在服务端。</p>
+                        <div className="mt-3 rounded-lg bg-muted px-3 py-2 text-sm">
+                            <div className="flex items-center justify-between gap-3"><span>媒体文件用量</span><span className="font-medium tabular-nums">{formatFileSize(usedBytes)} / {formatFileSize(quotaBytes)}</span></div>
+                            <div className="mt-1 text-xs text-muted-foreground">{cloudStatus === "saved" ? "已保存到账号" : cloudStatus === "syncing" ? "正在同步" : cloudStatus === "offline" ? "当前离线，联网后自动同步" : cloudStatus === "error" ? "同步失败，将自动重试" : "本地保存"}</div>
+                        </div>
                         <Link href="/account?tab=history" className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-foreground hover:underline">
                             查看本机生成记录 <ExternalLink className="size-3.5" />
                         </Link>
@@ -234,6 +242,12 @@ function ProfileSection() {
             </Modal>
         </>
     );
+}
+
+function formatFileSize(bytes: number) {
+    if (!bytes) return "0 MB";
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+    return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
 
 function TaskSection() {

@@ -20,6 +20,7 @@ type Config struct {
 	StorageDriver       string `env:"STORAGE_DRIVER" envDefault:"sqlite"`
 	DatabaseDSN         string `env:"DATABASE_DSN" envDefault:"data/infinite-canvas.db"`
 	PublicBaseURL       string `env:"PUBLIC_BASE_URL"`
+	UserStorageQuotaMB  int64  `env:"USER_STORAGE_QUOTA_MB" envDefault:"5120"`
 }
 
 var Cfg Config

@@ -4,6 +4,7 @@ import { persist, type PersistStorage, type StorageValue } from "zustand/middlew
 import { nanoid } from "nanoid";
 import { localForageStorage } from "@/lib/localforage-storage";
 import type { CanvasBackgroundMode } from "@/lib/canvas-theme";
+import { queueCloudDelete, queueCloudRecord } from "@/services/cloud-sync-queue";
 import type { CanvasAssistantSession, CanvasConnection, CanvasNodeData, ViewportTransform } from "../types";
 
 export type CanvasProject = {
@@ -18,11 +19,16 @@ export type CanvasProject = {
     backgroundMode: CanvasBackgroundMode;
     showImageInfo: boolean;
     viewport: ViewportTransform;
+    cloudRevision?: number;
 };
 
 type CanvasStore = {
     hydrated: boolean;
+    ownerId: string;
     projects: CanvasProject[];
+    projectsByOwner: Record<string, CanvasProject[]>;
+    switchOwner: (ownerId: string) => void;
+    replaceOwnerProjects: (ownerId: string, projects: CanvasProject[]) => void;
     createProject: (title?: string) => string;
     importProject: (project: Partial<CanvasProject>) => string;
     openProject: (id: string) => CanvasProject | null;
@@ -35,7 +41,7 @@ type CanvasStore = {
 const initialViewport: ViewportTransform = { x: 0, y: 0, k: 1 };
 const CANVAS_STORE_KEY = "infinite-canvas:canvas_store";
 export const CANVAS_PROJECTS_REPLACED_EVENT = "infinite-canvas:projects-replaced";
-type PersistedCanvasState = Pick<CanvasStore, "projects">;
+type PersistedCanvasState = Pick<CanvasStore, "projectsByOwner">;
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let queuedPersistState: PersistedCanvasState | null = null;
 
@@ -44,12 +50,16 @@ const canvasStorage: PersistStorage<CanvasStore> = {
         const value = await localForageStorage.getItem(name);
         if (!value) return null;
         const parsed = JSON.parse(value) as StorageValue<CanvasStore>;
+        const legacyProjects = (parsed.state as Partial<CanvasStore>).projects || [];
+        if (!(parsed.state as Partial<CanvasStore>).projectsByOwner) {
+            parsed.state = { ...parsed.state, projectsByOwner: { guest: legacyProjects }, projects: legacyProjects };
+        }
         queuedPersistState = parsed.state as PersistedCanvasState;
         return parsed;
     },
     setItem: (name, value) => {
         const nextState = value.state as PersistedCanvasState;
-        if (queuedPersistState && queuedPersistState.projects === nextState.projects) return;
+        if (queuedPersistState && queuedPersistState.projectsByOwner === nextState.projectsByOwner) return;
         queuedPersistState = nextState;
         if (saveTimer) clearTimeout(saveTimer);
         saveTimer = setTimeout(() => {
@@ -64,7 +74,21 @@ export const useCanvasStore = create<CanvasStore>()(
     persist(
         (set, get) => ({
             hydrated: false,
+            ownerId: "guest",
             projects: [],
+            projectsByOwner: { guest: [] },
+            switchOwner: (ownerId) => {
+                const normalizedOwnerId = ownerId || "guest";
+                set((state) => ({ ownerId: normalizedOwnerId, projects: state.projectsByOwner[normalizedOwnerId] || [] }));
+                if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(CANVAS_PROJECTS_REPLACED_EVENT));
+            },
+            replaceOwnerProjects: (ownerId, projects) => {
+                set((state) => ({
+                    projectsByOwner: { ...state.projectsByOwner, [ownerId]: projects },
+                    ...(state.ownerId === ownerId ? { projects } : {}),
+                }));
+                if (get().ownerId === ownerId && typeof window !== "undefined") window.dispatchEvent(new CustomEvent(CANVAS_PROJECTS_REPLACED_EVENT));
+            },
             createProject: (title = "未命名画布") => {
                 const now = new Date().toISOString();
                 const id = nanoid();
@@ -81,7 +105,8 @@ export const useCanvasStore = create<CanvasStore>()(
                     showImageInfo: false,
                     viewport: initialViewport,
                 };
-                set((state) => ({ projects: [project, ...state.projects] }));
+                set((state) => ownerProjectsState(state, [project, ...state.projects]));
+                void queueCloudRecord(get().ownerId, "canvas_project", project.id, cloudProjectData(project));
                 return id;
             },
             importProject: (source) => {
@@ -99,40 +124,54 @@ export const useCanvasStore = create<CanvasStore>()(
                     showImageInfo: source.showImageInfo || false,
                     viewport: source.viewport || initialViewport,
                 };
-                set((state) => ({ projects: [project, ...state.projects] }));
+                set((state) => ownerProjectsState(state, [project, ...state.projects]));
+                void queueCloudRecord(get().ownerId, "canvas_project", project.id, cloudProjectData(project));
                 return project.id;
             },
             openProject: (id) => {
                 return get().projects.find((item) => item.id === id) || null;
             },
-            renameProject: (id, title) =>
-                set((state) => ({
-                    projects: state.projects.map((project) => (project.id === id ? { ...project, title: title.trim() || project.title, updatedAt: new Date().toISOString() } : project)),
-                })),
-            deleteProjects: (ids) =>
-                set((state) => {
-                    const projects = state.projects.filter((project) => !ids.includes(project.id));
-                    return { projects };
-                }),
+            renameProject: (id, title) => {
+                set((state) => ownerProjectsState(state, state.projects.map((project) => (project.id === id ? { ...project, title: title.trim() || project.title, updatedAt: new Date().toISOString() } : project))));
+                const project = get().projects.find((item) => item.id === id);
+                if (project) void queueCloudRecord(get().ownerId, "canvas_project", id, cloudProjectData(project), project.cloudRevision || 0);
+            },
+            deleteProjects: (ids) => {
+                const deleted = get().projects.filter((project) => ids.includes(project.id));
+                set((state) => ownerProjectsState(state, state.projects.filter((project) => !ids.includes(project.id))));
+                deleted.forEach((project) => void queueCloudDelete(get().ownerId, "canvas_project", project.id, project.cloudRevision || 0));
+            },
             replaceProjects: (projects) => {
-                set({ projects });
+                set((state) => ownerProjectsState(state, projects));
                 if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(CANVAS_PROJECTS_REPLACED_EVENT));
             },
-            updateProject: (id, patch) =>
-                set((state) => ({
-                    projects: state.projects.map((project) => (project.id === id ? { ...project, ...patch, updatedAt: new Date().toISOString() } : project)),
-                })),
+            updateProject: (id, patch) => {
+                set((state) => ownerProjectsState(state, state.projects.map((project) => (project.id === id ? { ...project, ...patch, updatedAt: new Date().toISOString() } : project))));
+                const project = get().projects.find((item) => item.id === id);
+                if (project) void queueCloudRecord(get().ownerId, "canvas_project", id, cloudProjectData(project), project.cloudRevision || 0);
+            },
         }),
         {
             name: CANVAS_STORE_KEY,
             storage: canvasStorage,
-            partialize: (state) =>
-                ({
-                    projects: state.projects,
-                }) as StorageValue<CanvasStore>["state"],
+            partialize: (state) => ({ projectsByOwner: state.projectsByOwner }) as StorageValue<CanvasStore>["state"],
+            merge: (persisted, current) => {
+                const stored = (persisted || {}) as Partial<CanvasStore>;
+                const projectsByOwner = stored.projectsByOwner || { guest: stored.projects || [] };
+                return { ...current, projectsByOwner, projects: projectsByOwner.guest || [] };
+            },
             onRehydrateStorage: () => () => {
                 useCanvasStore.setState({ hydrated: true });
             },
         },
     ),
 );
+
+function ownerProjectsState(state: CanvasStore, projects: CanvasProject[]) {
+    return { projects, projectsByOwner: { ...state.projectsByOwner, [state.ownerId]: projects } };
+}
+
+function cloudProjectData(project: CanvasProject) {
+    const { cloudRevision: _cloudRevision, ...data } = project;
+    return data as unknown as Record<string, unknown>;
+}

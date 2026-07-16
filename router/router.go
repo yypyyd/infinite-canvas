@@ -24,6 +24,17 @@ func New() *gin.Engine {
 	api.POST("/auth/password", middleware.UserAuth, gin.WrapF(handler.ChangePassword))
 	api.GET("/credit-logs", middleware.UserAuth, gin.WrapF(handler.UserCreditLogs))
 	api.GET("/generation-tasks", middleware.UserAuth, gin.WrapF(handler.UserGenerationTasks))
+	api.GET("/sync/bootstrap", middleware.UserAuth, gin.WrapF(handler.SyncBootstrap))
+	api.GET("/sync/changes", middleware.UserAuth, gin.WrapF(handler.SyncChanges))
+	api.POST("/sync/changes", middleware.UserAuth, gin.WrapF(handler.ApplySyncChanges))
+	api.POST("/sync/files", middleware.UserAuth, gin.WrapF(handler.UploadUserCloudFile))
+	api.GET("/sync/files/:storageKey", middleware.UserAuth, func(c *gin.Context) {
+		handler.UserCloudFile(c.Writer, c.Request, c.Param("storageKey"))
+	})
+	api.HEAD("/sync/files/:storageKey", middleware.UserAuth, func(c *gin.Context) {
+		handler.UserCloudFile(c.Writer, c.Request, c.Param("storageKey"))
+	})
+	api.GET("/sync/status", middleware.UserAuth, gin.WrapF(handler.UserStorageStatus))
 	api.GET("/settings", gin.WrapF(handler.Settings))
 	api.GET("/check-in", middleware.UserAuth, gin.WrapF(handler.CheckInStatus))
 	api.POST("/check-in", middleware.UserAuth, gin.WrapF(handler.CheckIn))

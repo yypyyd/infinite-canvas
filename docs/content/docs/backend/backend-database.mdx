@@ -24,6 +24,9 @@ description: 当前后端主要数据表与字段说明
 - `credit_logs`
 - `check_ins`
 - `generation_tasks`
+- `user_sync_records`
+- `user_sync_states`
+- `user_files`
 - `prompts`
 - `assets`
 - `settings`
@@ -289,6 +292,51 @@ description: 当前后端主要数据表与字段说明
 | `updated_at` | string | 更新时间 |
 
 当前任务表记录后端代理请求本身的状态；视频类异步上游的后续轮询结果仍由前端和上游任务接口决定，后续如需要完整任务生命周期，可继续扩展为服务端轮询和结果文件归档。
+
+### user_sync_records
+
+账号云端同步记录表。画布项目和“我的素材”分别以 `canvas_project`、`asset` 作为数据域，每个对象保存一份 JSON 文档；`user_id + domain + object_id` 是联合唯一索引。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 主键 |
+| `user_id` | string | 所属用户 ID |
+| `domain` | string | 数据域：`canvas_project`、`asset` |
+| `object_id` | string | 画布或素材自身 ID |
+| `data` | text/json | 业务 JSON，媒体只保存 `storageKey` 引用，不保存 Blob/Base64 |
+| `revision` | number | 当前对象版本，用于检测多设备写入冲突 |
+| `change_seq` | number | 账号内增量游标 |
+| `deleted_at` | string | 删除标记；空值表示有效记录 |
+| `created_at` | string | 创建时间 |
+| `updated_at` | string | 更新时间 |
+
+### user_sync_states
+
+账号同步游标表。每批成功写入会把当前用户的 `cursor` 增加一次，客户端据此只拉取上次同步后的变化。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `user_id` | string | 用户 ID，主键 |
+| `cursor` | number | 当前账号最新同步游标 |
+| `updated_at` | string | 最近成功写入时间 |
+
+### user_files
+
+账号云端媒体文件表。文件本体保存在数据库目录旁的 `user-files/{userId}/{hash前两位}/{hash第3-4位}/`，数据库只保存鉴权、去重和读取所需的元数据。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 主键 |
+| `user_id` | string | 所属用户 ID |
+| `storage_key` | string | 前端媒体存储编号；与 `user_id` 组成联合唯一索引 |
+| `sha256` | string | 文件内容哈希，同账号相同内容复用物理文件 |
+| `mime_type` | string | 媒体 MIME 类型 |
+| `size` | number | 文件字节数 |
+| `path` | string | 服务端物理路径，不通过接口返回 |
+| `created_at` | string | 创建时间 |
+| `updated_at` | string | 更新时间 |
+
+单文件上限为 80MB；账号默认额度由 `USER_STORAGE_QUOTA_MB` 配置，默认 5120MB。下载接口必须通过当前登录用户鉴权，不能跨账号读取文件。已超过 24 小时且不再被任何有效画布或素材引用的文件元数据会在后续同步时清理；相同哈希仍有其他引用时不会删除物理文件。
 
 ### 服务器素材文件
 

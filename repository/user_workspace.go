@@ -48,13 +48,24 @@ func ListUserAssets(userID string) ([]model.UserAsset, error) {
 	return items, err
 }
 
-func ApplyUserWorkspaceMutations(userID string, mutations []model.UserWorkspaceMutation, updatedAt string) ([]model.UserProject, []model.UserAsset, error) {
+func ListUserGenerationRecords(userID string) ([]model.UserGenerationRecord, error) {
 	db, err := DB()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
+	}
+	var items []model.UserGenerationRecord
+	err = db.Where("user_id = ?", userID).Order("updated_at desc").Find(&items).Error
+	return items, err
+}
+
+func ApplyUserWorkspaceMutations(userID string, mutations []model.UserWorkspaceMutation, updatedAt string) ([]model.UserProject, []model.UserAsset, []model.UserGenerationRecord, error) {
+	db, err := DB()
+	if err != nil {
+		return nil, nil, nil, err
 	}
 	projects := make([]model.UserProject, 0, len(mutations))
 	assets := make([]model.UserAsset, 0, len(mutations))
+	records := make([]model.UserGenerationRecord, 0, len(mutations))
 	err = db.Transaction(func(tx *gorm.DB) error {
 		for _, mutation := range mutations {
 			if mutation.Domain == "canvas_project" {
@@ -65,6 +76,14 @@ func ApplyUserWorkspaceMutations(userID string, mutations []model.UserWorkspaceM
 				projects = append(projects, item)
 				continue
 			}
+			if mutation.Domain == "generation_record" {
+				item, err := saveUserGenerationRecord(tx, userID, mutation, updatedAt)
+				if err != nil {
+					return err
+				}
+				records = append(records, item)
+				continue
+			}
 			item, err := saveUserAsset(tx, userID, mutation, updatedAt)
 			if err != nil {
 				return err
@@ -73,7 +92,7 @@ func ApplyUserWorkspaceMutations(userID string, mutations []model.UserWorkspaceM
 		}
 		return nil
 	})
-	return projects, assets, err
+	return projects, assets, records, err
 }
 
 func saveUserProject(tx *gorm.DB, userID string, mutation model.UserWorkspaceMutation, updatedAt string) (model.UserProject, error) {
@@ -128,6 +147,30 @@ func saveUserAsset(tx *gorm.DB, userID string, mutation model.UserWorkspaceMutat
 		item = model.UserAsset{ID: mutation.ObjectID, UserID: userID, CreatedAt: updatedAt}
 	}
 	item.Title = mutation.Title
+	item.Kind = mutation.Kind
+	item.Data = mutation.Data
+	item.Version++
+	item.UpdatedAt = updatedAt
+	if mutation.Deleted {
+		item.DeletedAt = updatedAt
+	} else {
+		item.DeletedAt = ""
+	}
+	return item, tx.Save(&item).Error
+}
+
+func saveUserGenerationRecord(tx *gorm.DB, userID string, mutation model.UserWorkspaceMutation, updatedAt string) (model.UserGenerationRecord, error) {
+	var item model.UserGenerationRecord
+	result := tx.Where("user_id = ? AND id = ?", userID, mutation.ObjectID).First(&item)
+	if result.Error != nil && !errors.Is(result.Error, gorm.ErrRecordNotFound) {
+		return item, result.Error
+	}
+	if result.Error == nil && item.Data == mutation.Data && (item.DeletedAt != "") == mutation.Deleted {
+		return item, nil
+	}
+	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+		item = model.UserGenerationRecord{ID: mutation.ObjectID, UserID: userID, CreatedAt: updatedAt}
+	}
 	item.Kind = mutation.Kind
 	item.Data = mutation.Data
 	item.Version++

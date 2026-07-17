@@ -7,6 +7,7 @@ import { useEffect, useRef } from "react";
 import type { CanvasProject } from "@/app/(user)/canvas/stores/use-canvas-store";
 import { useCanvasStore } from "@/app/(user)/canvas/stores/use-canvas-store";
 import { getMediaBlob, resolveMediaUrl } from "@/services/file-storage";
+import { applyGenerationRecordSnapshot, queueMissingLocalGenerationRecords } from "@/services/generation-history";
 import { getImageBlob, resolveImageUrl } from "@/services/image-storage";
 import { fetchWorkspace, fetchWorkspaceStorageStatus, saveWorkspaceChanges, uploadWorkspaceFile, workspaceFileExists, type WorkspaceRecord } from "@/services/api/workspace";
 import { readWorkspaceChanges, removeWorkspaceChanges, WORKSPACE_OUTBOX_CHANGED_EVENT, type PendingWorkspaceChange } from "@/services/workspace-outbox";
@@ -50,16 +51,19 @@ export function WorkspaceProvider() {
                 useAssetStore.getState().switchOwner(userId);
 
                 if (bootstrap) {
-                    const [workspace, pending] = await Promise.all([fetchWorkspace(token), readWorkspaceChanges(userId)]);
+                    const workspace = await fetchWorkspace(token);
+                    const existingPending = await readWorkspaceChanges(userId);
+                    await queueMissingLocalGenerationRecords(userId, workspace.records, existingPending);
+                    const pending = await readWorkspaceChanges(userId);
                     applyWorkspaceSnapshot(userId, workspace.records, pending, true);
-                    await hydrateOwnerAssets(userId);
+                    await Promise.all([hydrateOwnerAssets(userId), applyGenerationRecordSnapshot(userId, workspace.records, pending)]);
                     promptGuestImport(userId, modal, (content) => message.success(content));
                 }
 
                 await flushPendingChanges(token, userId);
                 const [workspace, usage, pending] = await Promise.all([fetchWorkspace(token), fetchWorkspaceStorageStatus(token), readWorkspaceChanges(userId)]);
                 applyWorkspaceSnapshot(userId, workspace.records, pending, false);
-                await hydrateOwnerAssets(userId);
+                await Promise.all([hydrateOwnerAssets(userId), applyGenerationRecordSnapshot(userId, workspace.records, pending)]);
                 statusStore.setUsage(usage.usedBytes, usage.quotaBytes, usage.projectCount, usage.assetCount, usage.fileCount);
                 statusStore.markSaved();
             } catch (error) {

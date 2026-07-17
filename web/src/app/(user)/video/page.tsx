@@ -15,6 +15,7 @@ import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { boolConfig, isSeedanceVideoConfig, normalizeSeedanceRatio, seedanceReferenceLabel, seedanceVideoReferenceError, seedanceVideoReferenceHint, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
 import { deleteStoredMedia, resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
+import { deleteStoredGenerationRecord, GENERATION_HISTORY_CHANGED_EVENT, saveGenerationRecord } from "@/services/generation-history";
 import { resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { requestVideoGeneration, storeGeneratedVideo } from "@/services/api/video";
 import { useAssetStore } from "@/stores/use-asset-store";
@@ -111,6 +112,12 @@ export default function VideoPage() {
         setPreviewLog(null);
         setResults([]);
         void refreshLogs();
+    }, [historyOwnerId]);
+
+    useEffect(() => {
+        const refresh = () => void readStoredLogs(historyOwnerId).then(setLogs);
+        window.addEventListener(GENERATION_HISTORY_CHANGED_EVENT, refresh);
+        return () => window.removeEventListener(GENERATION_HISTORY_CHANGED_EVENT, refresh);
     }, [historyOwnerId]);
 
     const addReferences = async (files?: FileList | null) => {
@@ -273,7 +280,7 @@ export default function VideoPage() {
             .filter((log) => selectedLogIds.includes(log.id))
             .map((log) => log.video?.storageKey)
             .filter((key): key is string => Boolean(key));
-        void Promise.all([deleteStoredMedia(mediaKeys), ...selectedLogIds.map((id) => logStore.removeItem(id))]).then(refreshLogs);
+        void Promise.all([deleteStoredMedia(mediaKeys), ...selectedLogIds.map((id) => deleteStoredGenerationRecord(historyOwnerId, "video", id))]).then(refreshLogs);
         if (previewLog && selectedLogIds.includes(previewLog.id)) {
             setPreviewLog(null);
             setResults([]);
@@ -283,7 +290,7 @@ export default function VideoPage() {
     };
 
     const saveLog = (log: GenerationLog) => {
-        void logStore.setItem(log.id, serializeLog(log)).then(refreshLogs);
+        void saveGenerationRecord(historyOwnerId, "video", serializeLog(log) as unknown as Record<string, unknown>).then(refreshLogs);
     };
 
     const refreshLogs = async () => setLogs(await readStoredLogs(historyOwnerId));

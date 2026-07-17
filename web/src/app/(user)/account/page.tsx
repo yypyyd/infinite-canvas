@@ -12,7 +12,7 @@ import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
 import { CREDIT_PURCHASE_URL, CreditSymbol } from "@/constant/credits";
 import { formatDuration } from "@/lib/image-utils";
 import { changePassword, fetchCreditLogs, fetchGenerationTasks, updateProfile as updateUserProfile, type CreditLog, type GenerationTask } from "@/services/api/auth";
-import { countGenerationHistory, deleteGenerationHistory, readGenerationHistory, resolveGenerationHistoryMedia, resolveGenerationHistoryPreview, type GenerationHistoryItem } from "@/services/generation-history";
+import { countGenerationHistory, deleteGenerationHistory, GENERATION_HISTORY_CHANGED_EVENT, readGenerationHistory, resolveGenerationHistoryMedia, resolveGenerationHistoryPreview, type GenerationHistoryItem } from "@/services/generation-history";
 import { useUserStore } from "@/stores/use-user-store";
 import { useWorkspaceStatusStore } from "@/stores/use-workspace-status-store";
 
@@ -49,6 +49,7 @@ export default function AccountPage() {
 function AccountContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
+    const queryClient = useQueryClient();
     const user = useUserStore((state) => state.user);
     const isReady = useUserStore((state) => state.isReady);
     const requestedTab = searchParams.get("tab");
@@ -64,6 +65,15 @@ function AccountContent() {
     useEffect(() => {
         if (isReady && !user?.id) router.replace(`/login?redirect=${encodeURIComponent(accountHref)}`);
     }, [accountHref, isReady, router, user?.id]);
+
+    useEffect(() => {
+        const refresh = () => void Promise.all([
+            queryClient.invalidateQueries({ queryKey: ["generation-history", user?.id] }),
+            queryClient.invalidateQueries({ queryKey: ["generation-history-count", user?.id] }),
+        ]);
+        window.addEventListener(GENERATION_HISTORY_CHANGED_EVENT, refresh);
+        return () => window.removeEventListener(GENERATION_HISTORY_CHANGED_EVENT, refresh);
+    }, [queryClient, user?.id]);
 
     if (!isReady || !user) return <AccountPageSkeleton />;
 
@@ -98,7 +108,7 @@ function AccountContent() {
                     </div>
                     <div className="relative grid grid-cols-1 border-t border-border sm:grid-cols-3 sm:divide-x sm:divide-border">
                         <AccountMetric icon={<Coins />} label="当前算力" value={user.credits.toLocaleString()} suffix="点" />
-                        <AccountMetric icon={<History />} label="本机生成记录" value={historyCountQuery.isLoading ? "—" : String(historyCountQuery.data || 0)} suffix="条" />
+                        <AccountMetric icon={<History />} label="生成记录" value={historyCountQuery.isLoading ? "—" : String(historyCountQuery.data || 0)} suffix="条" />
                         <AccountMetric icon={<Clock3 />} label="加入时间" value={user.createdAt ? dayjs(user.createdAt).format("YYYY.MM.DD") : "—"} />
                     </div>
                 </section>
@@ -199,7 +209,7 @@ function ProfileSection() {
                         </div>
                     </Card>
                     <Card title={<span className="inline-flex items-center gap-2"><Cloud className="size-4" />账号云端数据</span>}>
-                        <p className="text-sm leading-7 text-muted-foreground">画布、我的素材及关联媒体会在登录后自动保存到当前账号；算力流水和任务记录同样保存在服务端。</p>
+                        <p className="text-sm leading-7 text-muted-foreground">画布、我的素材、生成记录及关联媒体会在登录后自动保存到当前账号；算力流水和任务记录同样保存在服务端。</p>
                         <div className="mt-3 rounded-lg bg-muted px-3 py-2 text-sm">
                             <div className="grid grid-cols-3 gap-3 border-b border-border pb-2 text-center">
                                 <div><div className="font-medium tabular-nums">{projectCount}</div><div className="text-xs text-muted-foreground">画布</div></div>
@@ -210,7 +220,7 @@ function ProfileSection() {
                             <div className="mt-1 text-xs text-muted-foreground">{cloudStatus === "saved" ? "已保存到账号" : cloudStatus === "syncing" ? "正在同步" : cloudStatus === "offline" ? "当前离线，联网后自动同步" : cloudStatus === "error" ? "同步失败，将自动重试" : "本地保存"}</div>
                         </div>
                         <Link href="/account?tab=history" className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-foreground hover:underline">
-                            查看本机生成记录 <ExternalLink className="size-3.5" />
+                            查看生成记录 <ExternalLink className="size-3.5" />
                         </Link>
                     </Card>
                 </div>
@@ -400,7 +410,7 @@ function HistorySection() {
     const confirmDelete = (item: GenerationHistoryItem) => {
         modal.confirm({
             title: "删除生成记录",
-            content: "记录和对应的本地生成结果会一起删除，此操作无法撤销。",
+            content: "记录会从当前账号删除，对应媒体会在不再被其他数据引用后自动清理。",
             okText: "删除",
             cancelText: "取消",
             okButtonProps: { danger: true },
@@ -414,7 +424,7 @@ function HistorySection() {
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div>
                         <h2 className="text-lg font-semibold">生成记录</h2>
-                        <p className="mt-1 text-sm text-muted-foreground">汇总当前账号在本机生图和视频工作台产生的结果；画布内容仍随画布项目保存。</p>
+                        <p className="mt-1 text-sm text-muted-foreground">汇总当前账号在生图和视频工作台产生的结果，并在登录设备之间自动同步。</p>
                     </div>
                     <div className="flex flex-col gap-2 sm:flex-row">
                         <Input
@@ -455,7 +465,7 @@ function HistorySection() {
                         {pageItems.map((item) => <HistoryCard key={`${item.kind}-${item.id}`} item={item} onOpen={() => setSelected(item)} onDelete={() => confirmDelete(item)} />)}
                     </div>
                 ) : (
-                    <Card><Empty description={query.isError ? "读取本地生成记录失败" : keyword || kind !== "all" || status !== "all" ? "没有符合筛选条件的记录" : "暂无生成记录"} /></Card>
+                    <Card><Empty description={query.isError ? "读取生成记录失败" : keyword || kind !== "all" || status !== "all" ? "没有符合筛选条件的记录" : "暂无生成记录"} /></Card>
                 )}
                 {filtered.length > historyPageSize ? (
                     <div className="mt-5 flex justify-center"><Pagination current={page} pageSize={historyPageSize} total={filtered.length} showSizeChanger={false} onChange={setPage} /></div>

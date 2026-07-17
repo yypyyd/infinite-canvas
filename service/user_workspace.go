@@ -43,12 +43,19 @@ func UserWorkspace(userID string) (WorkspacePayload, error) {
 	if err != nil {
 		return WorkspacePayload{}, err
 	}
-	records := make([]WorkspaceRecord, 0, len(projects)+len(assets))
+	generationRecords, err := repository.ListUserGenerationRecords(userID)
+	if err != nil {
+		return WorkspacePayload{}, err
+	}
+	records := make([]WorkspaceRecord, 0, len(projects)+len(assets)+len(generationRecords))
 	for _, item := range projects {
 		records = append(records, workspaceProjectRecord(item))
 	}
 	for _, item := range assets {
 		records = append(records, workspaceAssetRecord(item))
+	}
+	for _, item := range generationRecords {
+		records = append(records, workspaceGenerationRecord(item))
 	}
 	return WorkspacePayload{Records: records}, nil
 }
@@ -74,9 +81,12 @@ func ApplyUserWorkspaceChanges(userID string, request WorkspaceChangeRequest) (W
 			Kind  string `json:"kind"`
 		}
 		_ = json.Unmarshal(data, &summary)
+		if change.Domain == "generation_record" && !change.Deleted && summary.Kind != "image" && summary.Kind != "video" {
+			return WorkspacePayload{}, safeMessageError{message: "生成记录类型无效"}
+		}
 		mutations = append(mutations, model.UserWorkspaceMutation{RecordID: newID("version"), Domain: change.Domain, ObjectID: change.ObjectID, Title: summary.Title, Kind: summary.Kind, Data: string(data), Deleted: change.Deleted})
 	}
-	projects, assets, err := repository.ApplyUserWorkspaceMutations(userID, mutations, now())
+	projects, assets, generationRecords, err := repository.ApplyUserWorkspaceMutations(userID, mutations, now())
 	if err == nil {
 		state, _, _ := repository.GetUserWorkspaceState(userID)
 		state.UserID = userID
@@ -86,12 +96,15 @@ func ApplyUserWorkspaceChanges(userID string, request WorkspaceChangeRequest) (W
 	if err == nil {
 		_ = cleanupUserWorkspaceFiles(userID)
 	}
-	records := make([]WorkspaceRecord, 0, len(projects)+len(assets))
+	records := make([]WorkspaceRecord, 0, len(projects)+len(assets)+len(generationRecords))
 	for _, item := range projects {
 		records = append(records, workspaceProjectRecord(item))
 	}
 	for _, item := range assets {
 		records = append(records, workspaceAssetRecord(item))
+	}
+	for _, item := range generationRecords {
+		records = append(records, workspaceGenerationRecord(item))
 	}
 	return WorkspacePayload{Records: records}, err
 }
@@ -101,11 +114,15 @@ func workspaceProjectRecord(item model.UserProject) WorkspaceRecord {
 }
 
 func validWorkspaceDomain(domain string) bool {
-	return domain == "canvas_project" || domain == "asset"
+	return domain == "canvas_project" || domain == "asset" || domain == "generation_record"
 }
 
 func workspaceAssetRecord(item model.UserAsset) WorkspaceRecord {
 	return WorkspaceRecord{Domain: "asset", ObjectID: item.ID, Data: validWorkspaceData(item.Data), Version: item.Version, Deleted: item.DeletedAt != "", UpdatedAt: item.UpdatedAt}
+}
+
+func workspaceGenerationRecord(item model.UserGenerationRecord) WorkspaceRecord {
+	return WorkspaceRecord{Domain: "generation_record", ObjectID: item.ID, Data: validWorkspaceData(item.Data), Version: item.Version, Deleted: item.DeletedAt != "", UpdatedAt: item.UpdatedAt}
 }
 
 func validWorkspaceData(data string) json.RawMessage {

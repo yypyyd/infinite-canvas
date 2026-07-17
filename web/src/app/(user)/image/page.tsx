@@ -18,6 +18,7 @@ import { useThemeStore } from "@/stores/use-theme-store";
 import { nanoid } from "nanoid";
 import { formatBytes, formatDuration, getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
 import { requestEdit, requestGeneration } from "@/services/api/image";
+import { deleteStoredGenerationRecord, GENERATION_HISTORY_CHANGED_EVENT, saveGenerationRecord } from "@/services/generation-history";
 import { deleteStoredImages, resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useUserStore } from "@/stores/use-user-store";
@@ -129,6 +130,12 @@ export default function ImagePage() {
         setPreviewLog(null);
         setResults([]);
         void refreshLogs();
+    }, [historyOwnerId]);
+
+    useEffect(() => {
+        const refresh = () => void readStoredLogs(historyOwnerId).then(setLogs);
+        window.addEventListener(GENERATION_HISTORY_CHANGED_EVENT, refresh);
+        return () => window.removeEventListener(GENERATION_HISTORY_CHANGED_EVENT, refresh);
     }, [historyOwnerId]);
 
     const addReferences = async (files?: FileList | null) => {
@@ -268,7 +275,7 @@ export default function ImagePage() {
 
     const deleteSelectedLogs = () => {
         const imageKeys = logs.filter((log) => selectedLogIds.includes(log.id)).flatMap((log) => log.images.map((image) => image.storageKey).filter((key): key is string => Boolean(key)));
-        void Promise.all([deleteStoredImages(imageKeys), ...selectedLogIds.map((id) => logStore.removeItem(id))]).then(refreshLogs);
+        void Promise.all([deleteStoredImages(imageKeys), ...selectedLogIds.map((id) => deleteStoredGenerationRecord(historyOwnerId, "image", id))]).then(refreshLogs);
         if (previewLog && selectedLogIds.includes(previewLog.id)) {
             setPreviewLog(null);
             setResults([]);
@@ -278,7 +285,7 @@ export default function ImagePage() {
     };
 
     const saveLog = (log: GenerationLog) => {
-        void logStore.setItem(log.id, serializeLog(log)).then(refreshLogs);
+        void saveGenerationRecord(historyOwnerId, "image", serializeLog(log) as unknown as Record<string, unknown>).then(refreshLogs);
     };
 
     const refreshLogs = async () => setLogs(await readStoredLogs(historyOwnerId));

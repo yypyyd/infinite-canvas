@@ -204,6 +204,15 @@ func cleanupUserWorkspaceFiles(userID string) error {
 	for _, asset := range assets {
 		collectUserStorageKeys(json.RawMessage(asset.Data), usedKeys)
 	}
+	records, err := repository.ListUserGenerationRecords(userID)
+	if err != nil {
+		return err
+	}
+	for _, record := range records {
+		if record.DeletedAt == "" {
+			collectUserStorageKeys(json.RawMessage(record.Data), usedKeys)
+		}
+	}
 	files, err := repository.ListUserFiles(userID)
 	if err != nil {
 		return err

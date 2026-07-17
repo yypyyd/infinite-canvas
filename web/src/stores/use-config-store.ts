@@ -8,9 +8,6 @@ import { apiGet } from "@/services/api/request";
 import type { AdminPublicSettings } from "@/services/api/admin";
 
 export type AiConfig = {
-    channelMode: "remote" | "local";
-    baseUrl: string;
-    apiKey: string;
     model: string;
     imageModel: string;
     videoModel: string;
@@ -40,9 +37,6 @@ export const CONFIG_STORE_KEY = "infinite-canvas:ai_config_store";
 export type ModelCapability = "image" | "video" | "text" | "audio";
 
 export const defaultConfig: AiConfig = {
-    channelMode: "remote",
-    baseUrl: "https://api.openai.com",
-    apiKey: "",
     model: "gpt-image-2",
     imageModel: "gpt-image-2",
     videoModel: "grok-imagine-video",
@@ -83,8 +77,7 @@ type ConfigStore = {
 };
 
 function resolveEffectiveConfig(config: AiConfig, modelChannel: AdminPublicSettings["modelChannel"] | null) {
-    const channelMode = "remote";
-    if (!modelChannel) return { ...config, channelMode };
+    if (!modelChannel) return config;
     const managedModels = enabledManagedModels(modelChannel);
     const models = managedModels.length ? managedModels.map((item) => item.id) : modelChannel.availableModels;
     const textModels = modelsByManagedCapability(managedModels, "text") || filterModelsByCapability(models, "text");
@@ -98,7 +91,6 @@ function resolveEffectiveConfig(config: AiConfig, modelChannel: AdminPublicSetti
     const fallbackAudioModel = preferredModel(audioModels, isAudioModelName);
     return {
         ...config,
-        channelMode,
         models,
         imageModels,
         videoModels,
@@ -170,8 +162,8 @@ function modelListKey(capability: ModelCapability) {
     return `${capability}Models` as "imageModels" | "videoModels" | "textModels" | "audioModels";
 }
 
-function isAiConfigReady(config: AiConfig, model: string) {
-    return Boolean(model.trim()) && (config.channelMode === "remote" || Boolean(config.baseUrl.trim() && config.apiKey.trim()));
+function isAiConfigReady(_config: AiConfig, model: string) {
+    return Boolean(model.trim());
 }
 
 export const useConfigStore = create<ConfigStore>()(
@@ -206,15 +198,21 @@ export const useConfigStore = create<ConfigStore>()(
         {
             name: CONFIG_STORE_KEY,
             partialize: (state) => ({ config: state.config }),
+            version: 2,
+            migrate: (persisted) => {
+                const state = persisted as Partial<ConfigStore>;
+                const stored = (state.config || {}) as Partial<AiConfig> & { channelMode?: unknown; baseUrl?: unknown; apiKey?: unknown };
+                const { channelMode: _channelMode, baseUrl: _baseUrl, apiKey: _apiKey, ...config } = stored;
+                return { ...state, config };
+            },
             merge: (persisted, current) => {
-                const storedConfig = ((persisted as Partial<ConfigStore>).config || {}) as Partial<AiConfig> & { webdavSync?: unknown };
-                const { webdavSync: _removedWebdav, ...persistedConfig } = storedConfig;
+                const storedConfig = ((persisted as Partial<ConfigStore>).config || {}) as Partial<AiConfig> & { webdavSync?: unknown; channelMode?: unknown; baseUrl?: unknown; apiKey?: unknown };
+                const { webdavSync: _removedWebdav, channelMode: _removedChannelMode, baseUrl: _removedBaseUrl, apiKey: _removedApiKey, ...persistedConfig } = storedConfig;
                 const config = { ...defaultConfig, ...persistedConfig };
                 return {
                     ...current,
                     config: {
                         ...config,
-                        channelMode: config.channelMode || "remote",
                         imageModel: config.imageModel || config.model,
                         videoModel: config.videoModel || "grok-imagine-video",
                         textModel: config.textModel || config.model,
@@ -247,30 +245,4 @@ export function useEffectiveConfig() {
     const config = useConfigStore((state) => state.config);
     const modelChannel = useConfigStore((state) => state.publicSettings?.modelChannel || null);
     return useMemo(() => resolveEffectiveConfig(config, modelChannel), [config, modelChannel]);
-}
-
-export function buildApiUrl(baseUrl: string, path: string) {
-    let normalizedBaseUrl = baseUrl.trim().replace(/\/+$/, "");
-    normalizedBaseUrl = normalizeArkPlanBaseUrl(normalizedBaseUrl);
-    const lowerBaseUrl = normalizedBaseUrl.toLowerCase();
-    const apiBaseUrl = lowerBaseUrl.endsWith("/v1") || lowerBaseUrl.endsWith("/api/v3") || lowerBaseUrl.endsWith("/api/plan/v3") ? normalizedBaseUrl : `${normalizedBaseUrl}/v1`;
-    return `${apiBaseUrl}${path}`;
-}
-
-function normalizeArkPlanBaseUrl(baseUrl: string) {
-    try {
-        const url = new URL(baseUrl);
-        const path = url.pathname.replace(/\/+$/, "");
-        const lowerPath = path.toLowerCase();
-        const arkPlanIndex = lowerPath.indexOf("/api/plan/v3");
-        if (arkPlanIndex < 0) return baseUrl;
-        const end = arkPlanIndex + "/api/plan/v3".length;
-        if (lowerPath.length !== end && lowerPath[end] !== "/") return baseUrl;
-        url.pathname = path.slice(0, end);
-        url.search = "";
-        url.hash = "";
-        return url.toString().replace(/\/+$/, "");
-    } catch {
-        return baseUrl;
-    }
 }

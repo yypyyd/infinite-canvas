@@ -71,7 +71,7 @@ const imageLogStore = localforage.createInstance({ name: "infinite-canvas", stor
 const videoLogStore = localforage.createInstance({ name: "infinite-canvas", storeName: "video_generation_logs" });
 
 export async function readGenerationHistory(ownerId: string) {
-    if (typeof window === "undefined" || !ownerId) return [];
+    if (typeof window === "undefined" || !ownerId || ownerId === "guest") return [];
     const [imageLogs, videoLogs] = await Promise.all([readOwnedLogs<StoredImageLog>(imageLogStore, ownerId), readOwnedLogs<StoredVideoLog>(videoLogStore, ownerId)]);
     const images = imageLogs.map(normalizeImageLog);
     const videos = videoLogs.map(normalizeVideoLog);
@@ -79,7 +79,7 @@ export async function readGenerationHistory(ownerId: string) {
 }
 
 export async function countGenerationHistory(ownerId: string) {
-    if (typeof window === "undefined" || !ownerId) return 0;
+    if (typeof window === "undefined" || !ownerId || ownerId === "guest") return 0;
     const [images, videos] = await Promise.all([readOwnedLogs<StoredImageLog>(imageLogStore, ownerId), readOwnedLogs<StoredVideoLog>(videoLogStore, ownerId)]);
     return images.length + videos.length;
 }
@@ -92,6 +92,7 @@ export async function deleteGenerationHistory(item: GenerationHistoryItem) {
 }
 
 export async function saveGenerationRecord(ownerId: string, kind: GenerationKind, log: RawGenerationLog) {
+    if (!ownerId || ownerId === "guest") return;
     const id = String(log.id || "");
     if (!id) return;
     const data = { ...log, id, ownerId, kind };
@@ -101,15 +102,9 @@ export async function saveGenerationRecord(ownerId: string, kind: GenerationKind
 }
 
 export async function deleteStoredGenerationRecord(ownerId: string, kind: GenerationKind, id: string) {
+    if (!ownerId || ownerId === "guest") return;
     await Promise.all([generationStore(kind).removeItem(id), queueWorkspaceDelete(ownerId, "generation_record", id)]);
     dispatchGenerationHistoryChanged();
-}
-
-export async function queueMissingLocalGenerationRecords(ownerId: string, records: WorkspaceRecord[], pending: PendingWorkspaceChange[]) {
-    const known = new Set(records.filter((item) => item.domain === "generation_record").map((item) => item.objectId));
-    pending.filter((item) => item.domain === "generation_record").forEach((item) => known.add(item.objectId));
-    const local = await readRawGenerationLogs(ownerId);
-    await Promise.all(local.filter((item) => item.id && !known.has(item.id)).map((item) => queueWorkspaceRecord(ownerId, "generation_record", item.id || "", item)));
 }
 
 export async function applyGenerationRecordSnapshot(ownerId: string, records: WorkspaceRecord[], pending: PendingWorkspaceChange[]) {

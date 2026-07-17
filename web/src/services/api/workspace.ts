@@ -1,6 +1,6 @@
 import axios from "axios";
 
-import { apiGet, apiPost } from "@/services/api/request";
+import { apiGet, apiPost, authorizationHeaders } from "@/services/api/request";
 
 export type WorkspaceDomain = "canvas_project" | "asset" | "generation_record";
 
@@ -75,7 +75,7 @@ export function workspaceFileUrl(storageKey: string, accountId = "") {
 
 export async function workspaceFileExists(token: string, storageKey: string) {
     try {
-        const response = await axios.head(workspaceFileUrl(storageKey), { headers: { Authorization: `Bearer ${token}` }, validateStatus: () => true });
+        const response = await axios.head(workspaceFileUrl(storageKey), { headers: authorizationHeaders(token), validateStatus: () => true });
         return response.status >= 200 && response.status < 300;
     } catch {
         return false;

@@ -26,7 +26,6 @@ export type PricingRule = {
 };
 
 export function requestCreditCost(options: {
-    channelMode: string;
     pricingRules?: PricingRule[];
     groupRatios?: Record<string, number>;
     userGroup?: string;
@@ -44,7 +43,6 @@ export function requestCreditCost(options: {
 }
 
 export function requestCreditQuote(options: {
-    channelMode: string;
     pricingRules?: PricingRule[];
     groupRatios?: Record<string, number>;
     userGroup?: string;
@@ -57,7 +55,6 @@ export function requestCreditQuote(options: {
     resolution?: string;
     resolutionTier?: string;
 }) {
-    if (options.channelMode !== "remote") return { credits: 0, matched: false };
     const request = normalizePricingRequest(options);
     const rule = selectPricingRule(options.pricingRules || [], request);
     if (!rule) return { credits: 0, matched: false };

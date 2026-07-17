@@ -1,13 +1,12 @@
 "use client";
 
 import localforage from "localforage";
-import { App } from "antd";
 import { useEffect, useRef } from "react";
 
 import type { CanvasProject } from "@/app/(user)/canvas/stores/use-canvas-store";
 import { useCanvasStore } from "@/app/(user)/canvas/stores/use-canvas-store";
 import { getMediaBlob, resolveMediaUrl } from "@/services/file-storage";
-import { applyGenerationRecordSnapshot, queueMissingLocalGenerationRecords } from "@/services/generation-history";
+import { applyGenerationRecordSnapshot } from "@/services/generation-history";
 import { getImageBlob, resolveImageUrl } from "@/services/image-storage";
 import { fetchWorkspace, fetchWorkspaceStorageStatus, saveWorkspaceChanges, uploadWorkspaceFile, workspaceFileExists, type WorkspaceRecord } from "@/services/api/workspace";
 import { readWorkspaceChanges, removeWorkspaceChanges, WORKSPACE_OUTBOX_CHANGED_EVENT, type PendingWorkspaceChange } from "@/services/workspace-outbox";
@@ -21,7 +20,6 @@ const storageKeyPattern = /^(image|video|audio|file|video-reference|audio-refere
 const fileConcurrency = 3;
 
 export function WorkspaceProvider() {
-    const { modal, message } = App.useApp();
     const token = useUserStore((state) => state.token);
     const userId = useUserStore((state) => state.user?.id || "");
     const running = useRef(false);
@@ -52,12 +50,9 @@ export function WorkspaceProvider() {
 
                 if (bootstrap) {
                     const workspace = await fetchWorkspace(token);
-                    const existingPending = await readWorkspaceChanges(userId);
-                    await queueMissingLocalGenerationRecords(userId, workspace.records, existingPending);
                     const pending = await readWorkspaceChanges(userId);
                     applyWorkspaceSnapshot(userId, workspace.records, pending, true);
                     await Promise.all([hydrateOwnerAssets(userId), applyGenerationRecordSnapshot(userId, workspace.records, pending)]);
-                    promptGuestImport(userId, modal, (content) => message.success(content));
                 }
 
                 await flushPendingChanges(token, userId);
@@ -98,7 +93,7 @@ export function WorkspaceProvider() {
             window.removeEventListener("focus", saveWhenVisible);
             document.removeEventListener("visibilitychange", saveWhenVisible);
         };
-    }, [message, modal, token, userId]);
+    }, [token, userId]);
 
     return null;
 }
@@ -182,36 +177,6 @@ async function uploadReferencedFiles(token: string, userId: string, changes: Pen
 async function hydrateOwnerAssets(userId: string) {
     const assets = useAssetStore.getState().assetsByOwner[userId] || [];
     useAssetStore.getState().replaceOwnerAssets(userId, await Promise.all(assets.map(hydrateAsset)));
-}
-
-function promptGuestImport(userId: string, modal: ReturnType<typeof App.useApp>["modal"], success: (content: string) => void) {
-    const decisionKey = `workspace-import:${userId}`;
-    if (window.localStorage.getItem(decisionKey)) return;
-    const canvas = useCanvasStore.getState();
-    const assets = useAssetStore.getState();
-    const guestProjects = canvas.projectsByOwner.guest || [];
-    const guestAssets = assets.assetsByOwner.guest || [];
-    if (!guestProjects.length && !guestAssets.length) return;
-    modal.confirm({
-        title: "导入本机数据到当前账号？",
-        content: `发现 ${guestProjects.length} 个本机画布和 ${guestAssets.length} 个本机素材。导入后会保存为账号数据。`,
-        okText: "导入账号",
-        cancelText: "暂不导入",
-        onOk: async () => {
-            canvas.switchOwner(userId);
-            assets.switchOwner(userId);
-            guestProjects.forEach((project) => canvas.importProject({ ...project, title: project.title }));
-            guestAssets.forEach((asset) => {
-                const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, version: _version, ...data } = asset;
-                assets.addAsset(data as Omit<Asset, "id" | "createdAt" | "updatedAt">);
-            });
-            canvas.replaceOwnerProjects("guest", []);
-            assets.replaceOwnerAssets("guest", []);
-            window.localStorage.setItem(decisionKey, "imported");
-            success("本机画布和素材已加入当前账号，正在自动保存");
-        },
-        onCancel: () => window.localStorage.setItem(decisionKey, "skipped"),
-    });
 }
 
 async function hydrateAsset(asset: Asset): Promise<Asset> {

@@ -42,7 +42,6 @@ const emptySettings: AdminSettings = {
             defaultVideoModel: "",
             defaultTextModel: "",
             systemPrompt: "",
-            allowCustomChannel: true,
         },
         auth: { allowRegister: true, emailVerification: true, emailDomainRestriction: false, emailDomains: [], newUserReward: false, newUserRewardCredits: 0 },
         announcements: { enabled: false, items: [] },
@@ -479,11 +478,6 @@ export default function AdminSettingsPage() {
                                     <Col span={24}>
                                         <Form.Item name={["public", "modelChannel", "systemPrompt"]} label="系统提示词">
                                             <Input.TextArea rows={4} />
-                                        </Form.Item>
-                                    </Col>
-                                    <Col span={24}>
-                                        <Form.Item name={["public", "modelChannel", "allowCustomChannel"]} label="是否允许用户自定义渠道" extra="开启后，前端可提供后端渠道和用户自定义 baseUrl 直连两种模式" valuePropName="checked">
-                                            <Switch />
                                         </Form.Item>
                                     </Col>
                                     <Col span={24}><OperationSettingsEditor /></Col>

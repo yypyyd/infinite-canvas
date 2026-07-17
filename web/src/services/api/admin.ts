@@ -1,4 +1,4 @@
-import { apiDelete, apiGet, apiPost, compactApiParams } from "@/services/api/request";
+import { apiDelete, apiGet, apiPost, authorizationHeaders, compactApiParams } from "@/services/api/request";
 import type { Prompt, PromptListResponse } from "@/services/api/prompts";
 
 export type AdminPromptCategory = {
@@ -260,7 +260,7 @@ export async function uploadAdminAssetFile(token: string, file: File) {
     const response = await fetch("/api/admin/asset-files", {
         method: "POST",
         body,
-        headers: { Authorization: `Bearer ${token}` },
+        headers: authorizationHeaders(token),
     });
     const result = (await response.json()) as { code: number; data: UploadedAdminAssetFile; msg: string };
     if (!response.ok || result.code !== 0) throw new Error(result.msg || "上传失败");
@@ -296,7 +296,6 @@ export type AdminPublicModelChannelSettings = {
     defaultVideoModel: string;
     defaultTextModel: string;
     systemPrompt: string;
-    allowCustomChannel: boolean;
 };
 
 export type AdminManagedModel = {

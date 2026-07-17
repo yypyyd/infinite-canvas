@@ -12,18 +12,20 @@ const store = localforage.createInstance({ name: "infinite-canvas", storeName: "
 const objectUrls = new Map<string, string>();
 
 export async function uploadMediaFile(input: string | Blob, prefix = "file"): Promise<UploadedFile> {
+    const session = useUserStore.getState();
+    if (!session.user?.id) throw new Error("请先登录后再保存媒体文件");
     const blob = typeof input === "string" ? await (await fetch(input)).blob() : input;
     const storageKey = `${prefix}:${nanoid()}`;
     await store.setItem(storageKey, blob);
     const url = URL.createObjectURL(blob);
     objectUrls.set(storageKey, url);
     const meta = blob.type.startsWith("video/") ? await readVideoMeta(url) : blob.type.startsWith("audio/") ? await readAudioMeta(url) : {};
-    const token = useUserStore.getState().token;
+    const token = session.token;
     let persistedUrl = url;
     if (token && navigator.onLine) {
         try {
             await uploadWorkspaceFile(token, storageKey, blob);
-            persistedUrl = workspaceFileUrl(storageKey, useUserStore.getState().user?.id);
+            persistedUrl = workspaceFileUrl(storageKey, session.user.id);
         } catch {
             persistedUrl = url;
         }
@@ -36,7 +38,10 @@ export async function resolveMediaUrl(storageKey?: string, fallback = "") {
     const cached = objectUrls.get(storageKey);
     if (cached) return cached;
     const blob = await store.getItem<Blob>(storageKey);
-    if (!blob) return useUserStore.getState().token ? workspaceFileUrl(storageKey, useUserStore.getState().user?.id) : fallback;
+    if (!blob) {
+        const userId = useUserStore.getState().user?.id;
+        return userId ? workspaceFileUrl(storageKey, userId) : fallback;
+    }
     const url = URL.createObjectURL(blob);
     objectUrls.set(storageKey, url);
     return url;
@@ -44,8 +49,9 @@ export async function resolveMediaUrl(storageKey?: string, fallback = "") {
 
 export async function getMediaBlob(storageKey: string) {
     const local = await store.getItem<Blob>(storageKey);
-    if (local || !useUserStore.getState().token) return local;
-    const response = await fetch(workspaceFileUrl(storageKey, useUserStore.getState().user?.id));
+    const userId = useUserStore.getState().user?.id;
+    if (local || !userId) return local;
+    const response = await fetch(workspaceFileUrl(storageKey, userId));
     if (!response.ok) return null;
     const blob = await response.blob();
     await store.setItem(storageKey, blob);

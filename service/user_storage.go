@@ -19,98 +19,19 @@ import (
 )
 
 const maxUserFileSize = 80 << 20
-const maxSyncRecordBytes = 16 << 20
 
 var userStorageKeyPattern = regexp.MustCompile(`^(image|video|audio|file|video-reference|audio-reference):[A-Za-z0-9_-]+$`)
-
-type SyncRecord struct {
-	Domain     string          `json:"domain"`
-	ObjectID   string          `json:"objectId"`
-	Data       json.RawMessage `json:"data,omitempty"`
-	Revision   int64           `json:"revision"`
-	ChangeSeq  int64           `json:"changeSeq"`
-	Deleted    bool            `json:"deleted"`
-	UpdatedAt  string          `json:"updatedAt"`
-}
-
-type SyncPayload struct {
-	Records []SyncRecord `json:"records"`
-	Cursor  int64        `json:"cursor"`
-}
-
-type SyncChangeInput struct {
-	Domain       string          `json:"domain"`
-	ObjectID     string          `json:"objectId"`
-	Data         json.RawMessage `json:"data"`
-	BaseRevision int64           `json:"baseRevision"`
-	Deleted      bool            `json:"deleted"`
-}
-
-type SyncChangeRequest struct {
-	Changes []SyncChangeInput `json:"changes"`
-}
-
-type SyncChangeResult struct {
-	Records   []SyncRecord `json:"records"`
-	Conflicts []SyncRecord `json:"conflicts"`
-	Cursor    int64        `json:"cursor"`
-}
 
 type UserStorageStatus struct {
 	UsedBytes    int64  `json:"usedBytes"`
 	QuotaBytes   int64  `json:"quotaBytes"`
 	FileCount    int64  `json:"fileCount"`
-	LastSyncedAt string `json:"lastSyncedAt"`
+	ProjectCount int    `json:"projectCount"`
+	AssetCount   int    `json:"assetCount"`
+	LastSavedAt  string `json:"lastSavedAt"`
 }
 
-func SyncBootstrap(userID string) (SyncPayload, error) {
-	records, err := repository.ListUserSyncRecords(userID, 0, false)
-	if err != nil {
-		return SyncPayload{}, err
-	}
-	cursor, err := repository.UserSyncCursor(userID)
-	return SyncPayload{Records: syncRecords(records), Cursor: cursor}, err
-}
-
-func SyncChanges(userID string, cursor int64) (SyncPayload, error) {
-	records, err := repository.ListUserSyncRecords(userID, cursor, true)
-	if err != nil {
-		return SyncPayload{}, err
-	}
-	latest, err := repository.UserSyncCursor(userID)
-	return SyncPayload{Records: syncRecords(records), Cursor: latest}, err
-}
-
-func ApplySyncChanges(userID string, request SyncChangeRequest) (SyncChangeResult, error) {
-	if len(request.Changes) == 0 {
-		cursor, err := repository.UserSyncCursor(userID)
-		return SyncChangeResult{Records: []SyncRecord{}, Conflicts: []SyncRecord{}, Cursor: cursor}, err
-	}
-	if len(request.Changes) > 200 {
-		return SyncChangeResult{}, safeMessageError{message: "单次最多同步 200 条数据"}
-	}
-	mutations := make([]model.UserSyncMutation, 0, len(request.Changes))
-	for _, change := range request.Changes {
-		if !validSyncDomain(change.Domain) || strings.TrimSpace(change.ObjectID) == "" || len(change.ObjectID) > 160 {
-			return SyncChangeResult{}, safeMessageError{message: "同步数据类型或编号无效"}
-		}
-		if !change.Deleted && (len(change.Data) == 0 || len(change.Data) > maxSyncRecordBytes || !json.Valid(change.Data)) {
-			return SyncChangeResult{}, safeMessageError{message: "同步数据为空、过大或格式不正确"}
-		}
-		data := string(change.Data)
-		if change.Deleted && data == "" {
-			data = "{}"
-		}
-		mutations = append(mutations, model.UserSyncMutation{RecordID: newID("sync"), Domain: change.Domain, ObjectID: change.ObjectID, Data: data, BaseRevision: change.BaseRevision, Deleted: change.Deleted})
-	}
-	saved, conflicts, cursor, err := repository.ApplyUserSyncMutations(userID, mutations, now())
-	if err == nil {
-		_ = cleanupUserCloudFiles(userID)
-	}
-	return SyncChangeResult{Records: syncRecords(saved), Conflicts: syncRecords(conflicts), Cursor: cursor}, err
-}
-
-func SaveUserCloudFile(userID string, storageKey string, file multipart.File, header *multipart.FileHeader) (model.UserFile, error) {
+func SaveUserWorkspaceFile(userID string, storageKey string, file multipart.File, header *multipart.FileHeader) (model.UserFile, error) {
 	defer file.Close()
 	storageKey = strings.TrimSpace(storageKey)
 	if !userStorageKeyPattern.MatchString(storageKey) {
@@ -179,7 +100,7 @@ func SaveUserCloudFile(userID string, storageKey string, file multipart.File, he
 	return repository.SaveUserFile(item)
 }
 
-func UserCloudFilePath(userID string, storageKey string) (string, string, bool) {
+func UserWorkspaceFilePath(userID string, storageKey string) (string, string, bool) {
 	item, ok, err := repository.GetUserFile(userID, storageKey)
 	if err != nil || !ok {
 		return "", "", false
@@ -195,28 +116,20 @@ func GetUserStorageStatus(userID string) (UserStorageStatus, error) {
 	if err != nil {
 		return UserStorageStatus{}, err
 	}
-	state, _, err := repository.GetUserSyncState(userID)
-	status := UserStorageStatus{UsedBytes: used, QuotaBytes: userStorageQuotaBytes(), FileCount: count}
+	projects, err := repository.ListUserProjects(userID)
+	if err != nil {
+		return UserStorageStatus{}, err
+	}
+	assets, err := repository.ListUserAssets(userID)
+	if err != nil {
+		return UserStorageStatus{}, err
+	}
+	state, _, err := repository.GetUserWorkspaceState(userID)
+	status := UserStorageStatus{UsedBytes: used, QuotaBytes: userStorageQuotaBytes(), FileCount: count, ProjectCount: len(projects), AssetCount: len(assets)}
 	if err == nil {
-		status.LastSyncedAt = state.UpdatedAt
+		status.LastSavedAt = state.UpdatedAt
 	}
 	return status, err
-}
-
-func syncRecords(items []model.UserSyncRecord) []SyncRecord {
-	result := make([]SyncRecord, 0, len(items))
-	for _, item := range items {
-		data := json.RawMessage(item.Data)
-		if !json.Valid(data) {
-			data = json.RawMessage(`{}`)
-		}
-		result = append(result, SyncRecord{Domain: item.Domain, ObjectID: item.ObjectID, Data: data, Revision: item.Revision, ChangeSeq: item.ChangeSeq, Deleted: item.DeletedAt != "", UpdatedAt: item.UpdatedAt})
-	}
-	return result
-}
-
-func validSyncDomain(domain string) bool {
-	return domain == "canvas_project" || domain == "asset"
 }
 
 func userStorageQuotaBytes() int64 {
@@ -238,14 +151,21 @@ func userFileDir() string {
 	return filepath.Join(filepath.Dir(dsn), "user-files")
 }
 
-func cleanupUserCloudFiles(userID string) error {
-	records, err := repository.ListUserSyncRecords(userID, 0, false)
+func cleanupUserWorkspaceFiles(userID string) error {
+	projects, err := repository.ListUserProjects(userID)
 	if err != nil {
 		return err
 	}
 	usedKeys := make(map[string]bool)
-	for _, record := range records {
-		collectUserStorageKeys(json.RawMessage(record.Data), usedKeys)
+	for _, project := range projects {
+		collectUserStorageKeys(json.RawMessage(project.Data), usedKeys)
+	}
+	assets, err := repository.ListUserAssets(userID)
+	if err != nil {
+		return err
+	}
+	for _, asset := range assets {
+		collectUserStorageKeys(json.RawMessage(asset.Data), usedKeys)
 	}
 	files, err := repository.ListUserFiles(userID)
 	if err != nil {

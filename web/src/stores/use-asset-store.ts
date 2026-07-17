@@ -7,7 +7,7 @@ import { nanoid } from "nanoid";
 import { localForageStorage } from "@/lib/localforage-storage";
 import { cleanupUnusedImages, resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { cleanupUnusedMedia, resolveMediaUrl } from "@/services/file-storage";
-import { queueCloudDelete, queueCloudRecord } from "@/services/cloud-sync-queue";
+import { queueWorkspaceDelete, queueWorkspaceRecord } from "@/services/workspace-outbox";
 
 export type AssetKind = "text" | "image" | "video";
 export type TextAsset = AssetBase<"text"> & { data: { content: string } };
@@ -26,7 +26,7 @@ type AssetBase<T extends AssetKind> = {
     createdAt: string;
     updatedAt: string;
     metadata?: Record<string, unknown>;
-    cloudRevision?: number;
+    version?: number;
 };
 
 type AssetStore = {
@@ -51,7 +51,7 @@ const assetStorage: PersistStorage<AssetStore> = {
         if (!value) return null;
         const parsed = JSON.parse(value) as StorageValue<AssetStore>;
         const stored = parsed.state as Partial<AssetStore>;
-        const source = stored.assetsByOwner || { guest: stored.assets || [] };
+        const source = stored.assetsByOwner || { guest: [] };
         const assetsByOwner = Object.fromEntries(await Promise.all(Object.entries(source).map(async ([ownerId, assets]) => [ownerId, await Promise.all(assets.map(hydrateStoredAsset))]))) as Record<string, Asset[]>;
         parsed.state = { ...parsed.state, assetsByOwner, assets: assetsByOwner.guest || [] };
         return parsed;
@@ -80,13 +80,13 @@ export const useAssetStore = create<AssetStore>()(
                 const id = nanoid();
                 const next = { ...asset, id, createdAt: now, updatedAt: now } as Asset;
                 set((state) => ownerAssetsState(state, [next, ...state.assets]));
-                void queueCloudRecord(get().ownerId, "asset", id, cloudAssetData(next));
+                void queueWorkspaceRecord(get().ownerId, "asset", id, workspaceAssetData(next));
                 return id;
             },
             updateAsset: (id, patch) => {
                 set((state) => ownerAssetsState(state, state.assets.map((asset) => (asset.id === id ? ({ ...asset, ...patch, updatedAt: new Date().toISOString() } as Asset) : asset))));
                 const asset = get().assets.find((item) => item.id === id);
-                if (asset) void queueCloudRecord(get().ownerId, "asset", id, cloudAssetData(asset), asset.cloudRevision || 0);
+                if (asset) void queueWorkspaceRecord(get().ownerId, "asset", id, workspaceAssetData(asset));
             },
             removeAsset: (id) => {
                 const removed = get().assets.find((asset) => asset.id === id);
@@ -95,7 +95,7 @@ export const useAssetStore = create<AssetStore>()(
                     get().cleanupImages({ assets });
                     return ownerAssetsState(state, assets);
                 });
-                if (removed) void queueCloudDelete(get().ownerId, "asset", id, removed.cloudRevision || 0);
+                if (removed) void queueWorkspaceDelete(get().ownerId, "asset", id);
             },
             replaceAssets: (assets) => set((state) => ownerAssetsState(state, assets)),
             cleanupImages: (extra) => {
@@ -114,7 +114,7 @@ export const useAssetStore = create<AssetStore>()(
             partialize: (state) => ({ assetsByOwner: state.assetsByOwner }) as StorageValue<AssetStore>["state"],
             merge: (persisted, current) => {
                 const stored = (persisted || {}) as Partial<AssetStore>;
-                const assetsByOwner = stored.assetsByOwner || { guest: stored.assets || [] };
+                const assetsByOwner = stored.assetsByOwner || { guest: [] };
                 return { ...current, assetsByOwner, assets: assetsByOwner.guest || [] };
             },
             onRehydrateStorage: () => () => {
@@ -140,7 +140,7 @@ function ownerAssetsState(state: AssetStore, assets: Asset[]) {
     return { assets, assetsByOwner: { ...state.assetsByOwner, [state.ownerId]: assets } };
 }
 
-function cloudAssetData(asset: Asset) {
-    const { cloudRevision: _cloudRevision, ...data } = asset;
+function workspaceAssetData(asset: Asset) {
+    const { version: _version, ...data } = asset;
     return data as unknown as Record<string, unknown>;
 }

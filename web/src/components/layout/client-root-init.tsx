@@ -7,7 +7,7 @@ import { App } from "antd";
 
 import { useConfigStore } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
-import { CloudSyncProvider } from "@/components/layout/cloud-sync-provider";
+import { WorkspaceProvider } from "@/components/layout/workspace-provider";
 
 export function ClientRootInit({ children }: { children: ReactNode }) {
     const { message } = App.useApp();
@@ -52,5 +52,5 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
         openConfigDialog(false);
     }, [message, openConfigDialog, publicSettings, updateConfig]);
 
-    return <><CloudSyncProvider />{children}</>;
+    return <><WorkspaceProvider />{children}</>;
 }

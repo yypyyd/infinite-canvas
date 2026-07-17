@@ -3,6 +3,9 @@
 import localforage from "localforage";
 import { nanoid } from "nanoid";
 
+import { uploadWorkspaceFile, workspaceFileUrl } from "@/services/api/workspace";
+import { useUserStore } from "@/stores/use-user-store";
+
 export type UploadedFile = { url: string; storageKey: string; bytes: number; mimeType: string; width?: number; height?: number; durationMs?: number };
 
 const store = localforage.createInstance({ name: "infinite-canvas", storeName: "media_files" });
@@ -15,7 +18,17 @@ export async function uploadMediaFile(input: string | Blob, prefix = "file"): Pr
     const url = URL.createObjectURL(blob);
     objectUrls.set(storageKey, url);
     const meta = blob.type.startsWith("video/") ? await readVideoMeta(url) : blob.type.startsWith("audio/") ? await readAudioMeta(url) : {};
-    return { url, storageKey, bytes: blob.size, mimeType: blob.type || "application/octet-stream", ...meta };
+    const token = useUserStore.getState().token;
+    let persistedUrl = url;
+    if (token && navigator.onLine) {
+        try {
+            await uploadWorkspaceFile(token, storageKey, blob);
+            persistedUrl = workspaceFileUrl(storageKey, useUserStore.getState().user?.id);
+        } catch {
+            persistedUrl = url;
+        }
+    }
+    return { url: persistedUrl, storageKey, bytes: blob.size, mimeType: blob.type || "application/octet-stream", ...meta };
 }
 
 export async function resolveMediaUrl(storageKey?: string, fallback = "") {
@@ -23,14 +36,20 @@ export async function resolveMediaUrl(storageKey?: string, fallback = "") {
     const cached = objectUrls.get(storageKey);
     if (cached) return cached;
     const blob = await store.getItem<Blob>(storageKey);
-    if (!blob) return fallback;
+    if (!blob) return useUserStore.getState().token ? workspaceFileUrl(storageKey, useUserStore.getState().user?.id) : fallback;
     const url = URL.createObjectURL(blob);
     objectUrls.set(storageKey, url);
     return url;
 }
 
 export async function getMediaBlob(storageKey: string) {
-    return store.getItem<Blob>(storageKey);
+    const local = await store.getItem<Blob>(storageKey);
+    if (local || !useUserStore.getState().token) return local;
+    const response = await fetch(workspaceFileUrl(storageKey, useUserStore.getState().user?.id));
+    if (!response.ok) return null;
+    const blob = await response.blob();
+    await store.setItem(storageKey, blob);
+    return blob;
 }
 
 export async function setMediaBlob(storageKey: string, blob: Blob) {

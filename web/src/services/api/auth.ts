@@ -95,6 +95,10 @@ export async function register(payload: RegisterPayload) {
     return apiPost<AuthSession>("/api/auth/register", payload);
 }
 
+export async function logout() {
+    return apiPost<boolean>("/api/auth/logout");
+}
+
 export async function sendRegistrationEmailCode(email: string) {
     return apiPost<boolean>("/api/auth/email-code", { email });
 }

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/basketikun/infinite-canvas/config"
 	"github.com/basketikun/infinite-canvas/model"
 	"github.com/basketikun/infinite-canvas/service"
 )
@@ -59,6 +60,7 @@ func Register(w http.ResponseWriter, r *http.Request) {
 		FailError(w, err)
 		return
 	}
+	setUserSessionCookie(w, r, session.Token)
 	OK(w, session)
 }
 
@@ -101,7 +103,13 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		FailError(w, err)
 		return
 	}
+	setUserSessionCookie(w, r, session.Token)
 	OK(w, session)
+}
+
+func Logout(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{Name: "infinite_canvas_session", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: requestIsSecure(r), SameSite: http.SameSiteLaxMode})
+	OK(w, true)
 }
 
 func AdminLogin(w http.ResponseWriter, r *http.Request) {
@@ -116,7 +124,20 @@ func AdminLogin(w http.ResponseWriter, r *http.Request) {
 		Fail(w, "需要管理员权限")
 		return
 	}
+	setUserSessionCookie(w, r, session.Token)
 	OK(w, session)
+}
+
+func setUserSessionCookie(w http.ResponseWriter, r *http.Request, token string) {
+	maxAge := config.Cfg.JWTExpireHours * 3600
+	if maxAge <= 0 {
+		maxAge = 7 * 24 * 3600
+	}
+	http.SetCookie(w, &http.Cookie{Name: "infinite_canvas_session", Value: token, Path: "/", MaxAge: maxAge, HttpOnly: true, Secure: requestIsSecure(r), SameSite: http.SameSiteLaxMode})
+}
+
+func requestIsSecure(r *http.Request) bool {
+	return r.TLS != nil || strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https")
 }
 
 func CurrentUser(w http.ResponseWriter, r *http.Request) {

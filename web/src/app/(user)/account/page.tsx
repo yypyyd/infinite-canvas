@@ -14,7 +14,7 @@ import { formatDuration } from "@/lib/image-utils";
 import { changePassword, fetchCreditLogs, fetchGenerationTasks, updateProfile as updateUserProfile, type CreditLog, type GenerationTask } from "@/services/api/auth";
 import { countGenerationHistory, deleteGenerationHistory, readGenerationHistory, resolveGenerationHistoryMedia, resolveGenerationHistoryPreview, type GenerationHistoryItem } from "@/services/generation-history";
 import { useUserStore } from "@/stores/use-user-store";
-import { useCloudSyncStore } from "@/stores/use-cloud-sync-store";
+import { useWorkspaceStatusStore } from "@/stores/use-workspace-status-store";
 
 type AccountTab = "profile" | "tasks" | "history" | "credits";
 type ProfileFormValues = { displayName: string; avatarUrl: string };
@@ -141,9 +141,12 @@ function ProfileSection() {
     const token = useUserStore((state) => state.token);
     const user = useUserStore((state) => state.user);
     const setSession = useUserStore((state) => state.setSession);
-    const cloudStatus = useCloudSyncStore((state) => state.status);
-    const usedBytes = useCloudSyncStore((state) => state.usedBytes);
-    const quotaBytes = useCloudSyncStore((state) => state.quotaBytes);
+    const cloudStatus = useWorkspaceStatusStore((state) => state.status);
+    const usedBytes = useWorkspaceStatusStore((state) => state.usedBytes);
+    const quotaBytes = useWorkspaceStatusStore((state) => state.quotaBytes);
+    const projectCount = useWorkspaceStatusStore((state) => state.projectCount);
+    const assetCount = useWorkspaceStatusStore((state) => state.assetCount);
+    const fileCount = useWorkspaceStatusStore((state) => state.fileCount);
     const updateMutation = useMutation({
         mutationFn: (values: ProfileFormValues) => updateUserProfile(token, values),
         onSuccess: (nextUser) => {
@@ -198,7 +201,12 @@ function ProfileSection() {
                     <Card title={<span className="inline-flex items-center gap-2"><Cloud className="size-4" />账号云端数据</span>}>
                         <p className="text-sm leading-7 text-muted-foreground">画布、我的素材及关联媒体会在登录后自动保存到当前账号；算力流水和任务记录同样保存在服务端。</p>
                         <div className="mt-3 rounded-lg bg-muted px-3 py-2 text-sm">
-                            <div className="flex items-center justify-between gap-3"><span>媒体文件用量</span><span className="font-medium tabular-nums">{formatFileSize(usedBytes)} / {formatFileSize(quotaBytes)}</span></div>
+                            <div className="grid grid-cols-3 gap-3 border-b border-border pb-2 text-center">
+                                <div><div className="font-medium tabular-nums">{projectCount}</div><div className="text-xs text-muted-foreground">画布</div></div>
+                                <div><div className="font-medium tabular-nums">{assetCount}</div><div className="text-xs text-muted-foreground">素材</div></div>
+                                <div><div className="font-medium tabular-nums">{fileCount}</div><div className="text-xs text-muted-foreground">媒体</div></div>
+                            </div>
+                            <div className="mt-2 flex items-center justify-between gap-3"><span>媒体文件用量</span><span className="font-medium tabular-nums">{formatFileSize(usedBytes)} / {formatFileSize(quotaBytes)}</span></div>
                             <div className="mt-1 text-xs text-muted-foreground">{cloudStatus === "saved" ? "已保存到账号" : cloudStatus === "syncing" ? "正在同步" : cloudStatus === "offline" ? "当前离线，联网后自动同步" : cloudStatus === "error" ? "同步失败，将自动重试" : "本地保存"}</div>
                         </div>
                         <Link href="/account?tab=history" className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-foreground hover:underline">

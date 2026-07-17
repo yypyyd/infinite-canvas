@@ -434,6 +434,7 @@ function InfiniteCanvasPage() {
 
     useEffect(() => {
         const handleProjectsReplaced = () => {
+            if (generationRequestsRef.current.size) return;
             const project = useCanvasStore.getState().projects.find((item) => item.id === projectId);
             if (project) void restoreProjectState(project);
         };

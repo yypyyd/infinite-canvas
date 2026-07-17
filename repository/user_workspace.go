@@ -153,19 +153,6 @@ func GetUserFile(userID string, storageKey string) (model.UserFile, bool, error)
 	return item, err == nil, err
 }
 
-func GetUserFileByHash(userID string, hash string) (model.UserFile, bool, error) {
-	db, err := DB()
-	if err != nil {
-		return model.UserFile{}, false, err
-	}
-	var item model.UserFile
-	err = db.Where("user_id = ? AND sha256 = ?", userID, hash).First(&item).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return model.UserFile{}, false, nil
-	}
-	return item, err == nil, err
-}
-
 func SaveUserFile(item model.UserFile) (model.UserFile, error) {
 	db, err := DB()
 	if err != nil {
@@ -192,32 +179,14 @@ func DeleteUserFile(id string) error {
 	return db.Delete(&model.UserFile{}, "id = ?", id).Error
 }
 
-func CountUserFileHash(userID string, hash string) (int64, error) {
-	db, err := DB()
-	if err != nil {
-		return 0, err
-	}
-	var total int64
-	err = db.Model(&model.UserFile{}).Where("user_id = ? AND sha256 = ?", userID, hash).Count(&total).Error
-	return total, err
-}
-
 func UserStorageUsage(userID string) (int64, int64, error) {
 	db, err := DB()
 	if err != nil {
 		return 0, 0, err
 	}
-	type fileSize struct {
-		SHA256 string
-		Size   int64
-	}
-	var items []fileSize
-	if err := db.Model(&model.UserFile{}).Where("user_id = ?", userID).Select("sha256, MAX(size) AS size").Group("sha256").Scan(&items).Error; err != nil {
-		return 0, 0, err
-	}
 	var usage int64
-	for _, item := range items {
-		usage += item.Size
+	if err := db.Model(&model.UserFile{}).Where("user_id = ?", userID).Select("COALESCE(SUM(size), 0)").Scan(&usage).Error; err != nil {
+		return 0, 0, err
 	}
 	var count int64
 	err = db.Model(&model.UserFile{}).Where("user_id = ?", userID).Count(&count).Error

@@ -21,6 +21,11 @@ type Config struct {
 	DatabaseDSN         string `env:"DATABASE_DSN" envDefault:"data/infinite-canvas.db"`
 	PublicBaseURL       string `env:"PUBLIC_BASE_URL"`
 	UserStorageQuotaMB  int64  `env:"USER_STORAGE_QUOTA_MB" envDefault:"5120"`
+	QiniuAccessKey      string `env:"QINIU_ACCESS_KEY"`
+	QiniuSecretKey      string `env:"QINIU_SECRET_KEY"`
+	QiniuBucket         string `env:"QINIU_BUCKET"`
+	QiniuRegion         string `env:"QINIU_REGION" envDefault:"as0"`
+	QiniuDownloadDomain string `env:"QINIU_DOWNLOAD_DOMAIN"`
 }
 
 var Cfg Config

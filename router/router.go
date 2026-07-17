@@ -27,7 +27,8 @@ func New() *gin.Engine {
 	api.GET("/generation-tasks", middleware.UserAuth, gin.WrapF(handler.UserGenerationTasks))
 	api.GET("/workspace", middleware.UserAuth, gin.WrapF(handler.UserWorkspace))
 	api.POST("/workspace/changes", middleware.UserAuth, gin.WrapF(handler.SaveUserWorkspace))
-	api.POST("/workspace/files", middleware.UserAuth, gin.WrapF(handler.UploadUserWorkspaceFile))
+	api.POST("/workspace/files/upload-ticket", middleware.UserAuth, gin.WrapF(handler.PrepareUserWorkspaceFileUpload))
+	api.POST("/workspace/files/confirm", middleware.UserAuth, gin.WrapF(handler.ConfirmUserWorkspaceFileUpload))
 	api.GET("/workspace/files/:storageKey", middleware.UserAuth, func(c *gin.Context) {
 		handler.UserWorkspaceFile(c.Writer, c.Request, c.Param("storageKey"))
 	})

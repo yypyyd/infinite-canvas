@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 
-import { AUTH_TOKEN_KEY, fetchCurrentUser, login, logout, register, type AuthUser, type LoginPayload, type RegisterPayload } from "@/services/api/auth";
+import { fetchCurrentUser, login, logout, register, type AuthUser, type LoginPayload, type RegisterPayload } from "@/services/api/auth";
 import { COOKIE_SESSION_TOKEN } from "@/services/api/request";
 
 type UserStore = {
@@ -44,7 +44,6 @@ export const useUserStore = create<UserStore>()((set, get) => ({
         }
     },
     hydrateUser: async () => {
-        if (typeof window !== "undefined") window.localStorage.removeItem(AUTH_TOKEN_KEY);
         set({ isLoading: true });
         try {
             await get().refreshUser();

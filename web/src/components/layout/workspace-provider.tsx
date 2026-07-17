@@ -1,62 +1,59 @@
 "use client";
 
-import localforage from "localforage";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 
 import type { CanvasProject } from "@/app/(user)/canvas/stores/use-canvas-store";
 import { useCanvasStore } from "@/app/(user)/canvas/stores/use-canvas-store";
-import { getMediaBlob, resolveMediaUrl } from "@/services/file-storage";
-import { applyGenerationRecordSnapshot } from "@/services/generation-history";
-import { getImageBlob, resolveImageUrl } from "@/services/image-storage";
+import { clearMediaMemory, getMediaBlob, resolveMediaUrl } from "@/services/file-storage";
+import { applyGenerationRecordSnapshot, clearGenerationRecordMemory } from "@/services/generation-history";
+import { clearImageMemory, getImageBlob, resolveImageUrl } from "@/services/image-storage";
 import { fetchWorkspace, fetchWorkspaceStorageStatus, saveWorkspaceChanges, uploadWorkspaceFile, workspaceFileExists, type WorkspaceRecord } from "@/services/api/workspace";
-import { readWorkspaceChanges, removeWorkspaceChanges, WORKSPACE_OUTBOX_CHANGED_EVENT, type PendingWorkspaceChange } from "@/services/workspace-outbox";
+import { clearPendingWorkspaceChanges, commitWorkspaceChanges, readPendingWorkspaceChanges, WORKSPACE_CHANGES_UPDATED_EVENT, type PendingWorkspaceChange } from "@/services/workspace-changes";
 import type { Asset } from "@/stores/use-asset-store";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useWorkspaceStatusStore } from "@/stores/use-workspace-status-store";
 import { useUserStore } from "@/stores/use-user-store";
 
-const workspaceMetaStore = localforage.createInstance({ name: "infinite-canvas", storeName: "workspace_meta" });
 const storageKeyPattern = /^(image|video|audio|file|video-reference|audio-reference):/;
 const fileConcurrency = 3;
 
 export function WorkspaceProvider() {
     const token = useUserStore((state) => state.token);
     const userId = useUserStore((state) => state.user?.id || "");
-    const running = useRef(false);
-    const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
     useEffect(() => {
         let cancelled = false;
+        let running = false;
+        let timer: ReturnType<typeof setTimeout> | null = null;
         if (!token || !userId) {
             useCanvasStore.getState().switchOwner("guest");
             useAssetStore.getState().switchOwner("guest");
-            useWorkspaceStatusStore.getState().setStatus("local");
+            useWorkspaceStatusStore.getState().setStatus("idle");
             return;
         }
 
         const save = async (bootstrap = false) => {
-            if (running.current || cancelled) return;
-            running.current = true;
+            if (running || cancelled) return;
+            running = true;
             const statusStore = useWorkspaceStatusStore.getState();
             statusStore.setStatus(navigator.onLine ? "syncing" : "offline");
             if (!navigator.onLine) {
-                running.current = false;
+                running = false;
                 return;
             }
             try {
-                await waitForStores();
                 useCanvasStore.getState().switchOwner(userId);
                 useAssetStore.getState().switchOwner(userId);
 
                 if (bootstrap) {
                     const workspace = await fetchWorkspace(token);
-                    const pending = await readWorkspaceChanges(userId);
+                    const pending = readPendingWorkspaceChanges(userId);
                     applyWorkspaceSnapshot(userId, workspace.records, pending, true);
                     await Promise.all([hydrateOwnerAssets(userId), applyGenerationRecordSnapshot(userId, workspace.records, pending)]);
                 }
 
                 await flushPendingChanges(token, userId);
-                const [workspace, usage, pending] = await Promise.all([fetchWorkspace(token), fetchWorkspaceStorageStatus(token), readWorkspaceChanges(userId)]);
+                const [workspace, usage] = await Promise.all([fetchWorkspace(token), fetchWorkspaceStorageStatus(token)]);
+                const pending = readPendingWorkspaceChanges(userId);
                 applyWorkspaceSnapshot(userId, workspace.records, pending, false);
                 await Promise.all([hydrateOwnerAssets(userId), applyGenerationRecordSnapshot(userId, workspace.records, pending)]);
                 statusStore.setUsage(usage.usedBytes, usage.quotaBytes, usage.projectCount, usage.assetCount, usage.fileCount);
@@ -65,33 +62,39 @@ export function WorkspaceProvider() {
                 const text = error instanceof Error ? error.message : "账号数据保存失败";
                 statusStore.setStatus(navigator.onLine ? "error" : "offline", text);
             } finally {
-                running.current = false;
-                if (!cancelled && (await readWorkspaceChanges(userId)).length) schedule();
+                running = false;
+                if (!cancelled && readPendingWorkspaceChanges(userId).length) schedule();
             }
         };
 
         const schedule = () => {
-            if (timer.current) clearTimeout(timer.current);
-            timer.current = setTimeout(() => void save(false), 1200);
+            if (timer) clearTimeout(timer);
+            timer = setTimeout(() => void save(false), 1200);
         };
         const saveWhenVisible = () => {
             if (document.visibilityState === "visible") void save(false);
         };
 
         void save(true);
-        window.addEventListener(WORKSPACE_OUTBOX_CHANGED_EVENT, schedule);
+        window.addEventListener(WORKSPACE_CHANGES_UPDATED_EVENT, schedule);
         window.addEventListener("online", schedule);
         window.addEventListener("focus", saveWhenVisible);
         document.addEventListener("visibilitychange", saveWhenVisible);
         const polling = window.setInterval(saveWhenVisible, 30000);
         return () => {
             cancelled = true;
-            if (timer.current) clearTimeout(timer.current);
+            if (timer) clearTimeout(timer);
             window.clearInterval(polling);
-            window.removeEventListener(WORKSPACE_OUTBOX_CHANGED_EVENT, schedule);
+            window.removeEventListener(WORKSPACE_CHANGES_UPDATED_EVENT, schedule);
             window.removeEventListener("online", schedule);
             window.removeEventListener("focus", saveWhenVisible);
             document.removeEventListener("visibilitychange", saveWhenVisible);
+            clearPendingWorkspaceChanges(userId);
+            clearGenerationRecordMemory(userId);
+            clearImageMemory();
+            clearMediaMemory();
+            useCanvasStore.getState().replaceOwnerProjects(userId, []);
+            useAssetStore.getState().replaceOwnerAssets(userId, []);
         };
     }, [token, userId]);
 
@@ -99,11 +102,11 @@ export function WorkspaceProvider() {
 }
 
 async function flushPendingChanges(token: string, userId: string) {
-    const pending = await readWorkspaceChanges(userId);
+    const pending = readPendingWorkspaceChanges(userId);
     if (!pending.length) return;
-    await uploadReferencedFiles(token, userId, pending);
+    await uploadReferencedFiles(token, pending);
     const result = await saveWorkspaceChanges(token, pending.map(({ domain, objectId, data, deleted }) => ({ domain, objectId, data, deleted })));
-    await removeWorkspaceChanges(pending);
+    commitWorkspaceChanges(pending);
     applyWorkspaceVersions(userId, result.records);
 }
 
@@ -157,20 +160,13 @@ function applyWorkspaceVersions(userId: string, records: WorkspaceRecord[]) {
     }
 }
 
-async function uploadReferencedFiles(token: string, userId: string, changes: PendingWorkspaceChange[]) {
+async function uploadReferencedFiles(token: string, changes: PendingWorkspaceChange[]) {
     const keys = collectStorageKeys(changes.map((item) => item.data));
     await runWithConcurrency(keys, fileConcurrency, async (storageKey) => {
-        const marker = fileMarker(userId, storageKey);
-        const uploadedAt = await workspaceMetaStore.getItem<number>(marker);
-        if (typeof uploadedAt === "number" && uploadedAt > Date.now() - 6 * 60 * 60 * 1000) return;
-        if (await workspaceFileExists(token, storageKey)) {
-            await workspaceMetaStore.setItem(marker, Date.now());
-            return;
-        }
+        if (await workspaceFileExists(token, storageKey)) return;
         const blob = storageKey.startsWith("image:") ? await getImageBlob(storageKey) : await getMediaBlob(storageKey);
         if (!blob) throw new Error("本机媒体文件缺失，账号数据尚未保存");
         await uploadWorkspaceFile(token, storageKey, blob);
-        await workspaceMetaStore.setItem(marker, Date.now());
     });
 }
 
@@ -222,21 +218,6 @@ function collectStorageKeys(value: unknown, keys = new Set<string>()) {
     return [...keys];
 }
 
-function waitForStores() {
-    return Promise.all([waitForHydration(useCanvasStore), waitForHydration(useAssetStore)]);
-}
-
-function waitForHydration<T extends { hydrated: boolean }>(store: { getState: () => T; subscribe: (listener: (state: T) => void) => () => void }) {
-    if (store.getState().hydrated) return Promise.resolve();
-    return new Promise<void>((resolve) => {
-        const unsubscribe = store.subscribe((state) => {
-            if (!state.hydrated) return;
-            unsubscribe();
-            resolve();
-        });
-    });
-}
-
 async function runWithConcurrency<T>(items: T[], limit: number, worker: (item: T) => Promise<void>) {
     let index = 0;
     await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
@@ -245,8 +226,4 @@ async function runWithConcurrency<T>(items: T[], limit: number, worker: (item: T
             await worker(items[current]);
         }
     }));
-}
-
-function fileMarker(userId: string, storageKey: string) {
-    return `file:${userId}:${storageKey}`;
 }

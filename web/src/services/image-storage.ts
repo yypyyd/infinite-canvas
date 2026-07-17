@@ -1,7 +1,5 @@
 "use client";
 
-import localforage from "localforage";
-
 import { nanoid } from "nanoid";
 import { readImageMeta } from "@/lib/image-utils";
 import { uploadWorkspaceFile, workspaceFileUrl } from "@/services/api/workspace";
@@ -16,36 +14,28 @@ export type UploadedImage = {
     mimeType: string;
 };
 
-const store = localforage.createInstance({ name: "infinite-canvas", storeName: "image_files" });
+const blobs = new Map<string, Blob>();
 const objectUrls = new Map<string, string>();
 
 export async function uploadImage(input: string | Blob): Promise<UploadedImage> {
     const session = useUserStore.getState();
     if (!session.user?.id) throw new Error("请先登录后再保存图片");
+    if (!navigator.onLine) throw new Error("当前处于离线状态，无法保存图片");
     const blob = typeof input === "string" ? await (await fetch(input)).blob() : input;
     const storageKey = `image:${nanoid()}`;
-    await store.setItem(storageKey, blob);
+    await uploadWorkspaceFile(session.token, storageKey, blob);
+    blobs.set(storageKey, blob);
     const url = URL.createObjectURL(blob);
     objectUrls.set(storageKey, url);
     const meta = await readImageMeta(url);
-    const token = session.token;
-    let persistedUrl = url;
-    if (token && navigator.onLine) {
-        try {
-            await uploadWorkspaceFile(token, storageKey, blob);
-            persistedUrl = workspaceFileUrl(storageKey, session.user.id);
-        } catch {
-            persistedUrl = url;
-        }
-    }
-    return { url: persistedUrl, storageKey, width: meta.width, height: meta.height, bytes: blob.size, mimeType: blob.type || meta.mimeType };
+    return { url: workspaceFileUrl(storageKey, session.user.id), storageKey, width: meta.width, height: meta.height, bytes: blob.size, mimeType: blob.type || meta.mimeType };
 }
 
 export async function resolveImageUrl(storageKey?: string, fallback = "") {
     if (!storageKey) return fallback;
     const cached = objectUrls.get(storageKey);
     if (cached) return cached;
-    const blob = await store.getItem<Blob>(storageKey);
+    const blob = blobs.get(storageKey);
     if (!blob) {
         const userId = useUserStore.getState().user?.id;
         return userId ? workspaceFileUrl(storageKey, userId) : fallback;
@@ -56,18 +46,22 @@ export async function resolveImageUrl(storageKey?: string, fallback = "") {
 }
 
 export async function getImageBlob(storageKey: string) {
-    const local = await store.getItem<Blob>(storageKey);
+    const local = blobs.get(storageKey);
     const userId = useUserStore.getState().user?.id;
     if (local || !userId) return local;
     const response = await fetch(workspaceFileUrl(storageKey, userId));
     if (!response.ok) return null;
     const blob = await response.blob();
-    await store.setItem(storageKey, blob);
+    blobs.set(storageKey, blob);
     return blob;
 }
 
 export async function setImageBlob(storageKey: string, blob: Blob) {
-    await store.setItem(storageKey, blob);
+    const session = useUserStore.getState();
+    if (!session.user?.id) throw new Error("请先登录后再保存图片");
+    if (!navigator.onLine) throw new Error("当前处于离线状态，无法保存图片");
+    await uploadWorkspaceFile(session.token, storageKey, blob);
+    blobs.set(storageKey, blob);
     const url = URL.createObjectURL(blob);
     objectUrls.set(storageKey, url);
     return url;
@@ -85,7 +79,7 @@ export async function deleteStoredImages(keys: Iterable<string>) {
             const url = objectUrls.get(key);
             if (url) URL.revokeObjectURL(url);
             objectUrls.delete(key);
-            await store.removeItem(key);
+            blobs.delete(key);
         }),
     );
 }
@@ -93,10 +87,16 @@ export async function deleteStoredImages(keys: Iterable<string>) {
 export async function cleanupUnusedImages(usedData: unknown) {
     const usedKeys = collectImageStorageKeys(usedData);
     const unused: string[] = [];
-    await store.iterate((_value, key) => {
+    blobs.forEach((_value, key) => {
         if (!usedKeys.has(key)) unused.push(key);
     });
     await deleteStoredImages(unused);
+}
+
+export function clearImageMemory() {
+    objectUrls.forEach((url) => URL.revokeObjectURL(url));
+    objectUrls.clear();
+    blobs.clear();
 }
 
 export function collectImageStorageKeys(value: unknown, keys = new Set<string>()) {

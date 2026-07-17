@@ -217,7 +217,7 @@ function ProfileSection() {
                                 <div><div className="font-medium tabular-nums">{fileCount}</div><div className="text-xs text-muted-foreground">媒体</div></div>
                             </div>
                             <div className="mt-2 flex items-center justify-between gap-3"><span>媒体文件用量</span><span className="font-medium tabular-nums">{formatFileSize(usedBytes)} / {formatFileSize(quotaBytes)}</span></div>
-                            <div className="mt-1 text-xs text-muted-foreground">{cloudStatus === "saved" ? "已保存到账号" : cloudStatus === "syncing" ? "正在同步" : cloudStatus === "offline" ? "当前离线，联网后自动同步" : cloudStatus === "error" ? "同步失败，将自动重试" : "本地保存"}</div>
+                            <div className="mt-1 text-xs text-muted-foreground">{cloudStatus === "saved" ? "已保存到账号" : cloudStatus === "syncing" ? "正在保存到账号" : cloudStatus === "offline" ? "当前离线，修改不会保存" : cloudStatus === "error" ? "云端保存失败" : "等待云端数据"}</div>
                         </div>
                         <Link href="/account?tab=history" className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-foreground hover:underline">
                             查看生成记录 <ExternalLink className="size-3.5" />

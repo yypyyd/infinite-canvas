@@ -1,11 +1,9 @@
 "use client";
 
-import localforage from "localforage";
-
 import { deleteStoredMedia, resolveMediaUrl } from "@/services/file-storage";
 import { deleteStoredImages, resolveImageUrl } from "@/services/image-storage";
 import type { WorkspaceRecord } from "@/services/api/workspace";
-import { queueWorkspaceDelete, queueWorkspaceRecord, type PendingWorkspaceChange } from "@/services/workspace-outbox";
+import { stageWorkspaceDelete, stageWorkspaceRecord, type PendingWorkspaceChange } from "@/services/workspace-changes";
 
 export const GENERATION_HISTORY_CHANGED_EVENT = "infinite-canvas:generation-history-changed";
 
@@ -67,21 +65,19 @@ export type GenerationHistoryItem = {
     href: "/image" | "/video";
 };
 
-const imageLogStore = localforage.createInstance({ name: "infinite-canvas", storeName: "image_generation_logs" });
-const videoLogStore = localforage.createInstance({ name: "infinite-canvas", storeName: "video_generation_logs" });
+const imageLogs = new Map<string, RawGenerationLog>();
+const videoLogs = new Map<string, RawGenerationLog>();
 
 export async function readGenerationHistory(ownerId: string) {
     if (typeof window === "undefined" || !ownerId || ownerId === "guest") return [];
-    const [imageLogs, videoLogs] = await Promise.all([readOwnedLogs<StoredImageLog>(imageLogStore, ownerId), readOwnedLogs<StoredVideoLog>(videoLogStore, ownerId)]);
-    const images = imageLogs.map(normalizeImageLog);
-    const videos = videoLogs.map(normalizeVideoLog);
+    const images = readOwnedLogs<StoredImageLog>(imageLogs, ownerId).map(normalizeImageLog);
+    const videos = readOwnedLogs<StoredVideoLog>(videoLogs, ownerId).map(normalizeVideoLog);
     return [...images, ...videos].sort((a, b) => b.createdAt - a.createdAt);
 }
 
 export async function countGenerationHistory(ownerId: string) {
     if (typeof window === "undefined" || !ownerId || ownerId === "guest") return 0;
-    const [images, videos] = await Promise.all([readOwnedLogs<StoredImageLog>(imageLogStore, ownerId), readOwnedLogs<StoredVideoLog>(videoLogStore, ownerId)]);
-    return images.length + videos.length;
+    return readOwnedLogs(imageLogs, ownerId).length + readOwnedLogs(videoLogs, ownerId).length;
 }
 
 export async function deleteGenerationHistory(item: GenerationHistoryItem) {
@@ -96,14 +92,15 @@ export async function saveGenerationRecord(ownerId: string, kind: GenerationKind
     const id = String(log.id || "");
     if (!id) return;
     const data = { ...log, id, ownerId, kind };
-    await generationStore(kind).setItem(id, data);
-    await queueWorkspaceRecord(ownerId, "generation_record", id, data);
+    generationStore(kind).set(logKey(ownerId, id), data);
+    stageWorkspaceRecord(ownerId, "generation_record", id, data);
     dispatchGenerationHistoryChanged();
 }
 
 export async function deleteStoredGenerationRecord(ownerId: string, kind: GenerationKind, id: string) {
     if (!ownerId || ownerId === "guest") return;
-    await Promise.all([generationStore(kind).removeItem(id), queueWorkspaceDelete(ownerId, "generation_record", id)]);
+    generationStore(kind).delete(logKey(ownerId, id));
+    stageWorkspaceDelete(ownerId, "generation_record", id);
     dispatchGenerationHistoryChanged();
 }
 
@@ -118,11 +115,9 @@ export async function applyGenerationRecordSnapshot(ownerId: string, records: Wo
         if (change.deleted) target.delete(change.objectId);
         else target.set(change.objectId, { ...change.data, id: change.objectId, ownerId });
     });
-    const local = await readRawGenerationLogs(ownerId);
-    await Promise.all([
-        ...local.filter((item) => item.id && !target.has(item.id)).map((item) => generationStore(item.kind || "image").removeItem(item.id || "")),
-        ...Array.from(target.values()).map((item) => generationStore(item.kind || "image").setItem(item.id || "", item)),
-    ]);
+    const local = readRawGenerationLogs(ownerId);
+    local.filter((item) => item.id && !target.has(item.id)).forEach((item) => generationStore(item.kind || "image").delete(logKey(ownerId, item.id || "")));
+    target.forEach((item) => generationStore(item.kind || "image").set(logKey(ownerId, item.id || ""), item));
     dispatchGenerationHistoryChanged();
 }
 
@@ -138,16 +133,25 @@ export async function resolveGenerationHistoryMedia(item: GenerationHistoryItem)
     return urls.filter(Boolean);
 }
 
-async function readOwnedLogs<T extends { ownerId?: string }>(store: typeof imageLogStore, ownerId: string) {
-    const logs: T[] = [];
-    await store.iterate<T, void>((value) => {
-        if ((value.ownerId || "guest") === ownerId) logs.push(value);
-    });
-    return logs;
+export async function readStoredGenerationRecords<T extends { ownerId?: string }>(ownerId: string, kind: GenerationKind) {
+    return readOwnedLogs<T>(generationStore(kind), ownerId);
 }
 
-async function readRawGenerationLogs(ownerId: string) {
-    const [images, videos] = await Promise.all([readOwnedLogs<RawGenerationLog>(imageLogStore, ownerId), readOwnedLogs<RawGenerationLog>(videoLogStore, ownerId)]);
+export function clearGenerationRecordMemory(ownerId: string) {
+    [imageLogs, videoLogs].forEach((store) => {
+        store.forEach((item, key) => {
+            if (item.ownerId === ownerId) store.delete(key);
+        });
+    });
+}
+
+function readOwnedLogs<T extends { ownerId?: string }>(store: Map<string, RawGenerationLog>, ownerId: string) {
+    return [...store.values()].filter((value) => value.ownerId === ownerId) as T[];
+}
+
+function readRawGenerationLogs(ownerId: string) {
+    const images = readOwnedLogs<RawGenerationLog>(imageLogs, ownerId);
+    const videos = readOwnedLogs<RawGenerationLog>(videoLogs, ownerId);
     return [
         ...images.map((item) => ({ ...item, kind: "image" as const, ownerId })),
         ...videos.map((item) => ({ ...item, kind: "video" as const, ownerId })),
@@ -155,7 +159,11 @@ async function readRawGenerationLogs(ownerId: string) {
 }
 
 function generationStore(kind: GenerationKind) {
-    return kind === "image" ? imageLogStore : videoLogStore;
+    return kind === "image" ? imageLogs : videoLogs;
+}
+
+function logKey(ownerId: string, id: string) {
+    return `${ownerId}:${id}`;
 }
 
 function dispatchGenerationHistoryChanged() {

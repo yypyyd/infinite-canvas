@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 
-export type WorkspaceSaveStatus = "local" | "syncing" | "saved" | "offline" | "error";
+export type WorkspaceSaveStatus = "idle" | "syncing" | "saved" | "offline" | "error";
 
 type WorkspaceStatusStore = {
     status: WorkspaceSaveStatus;
@@ -19,7 +19,7 @@ type WorkspaceStatusStore = {
 };
 
 export const useWorkspaceStatusStore = create<WorkspaceStatusStore>((set) => ({
-    status: "local",
+    status: "idle",
     lastSavedAt: "",
     error: "",
     usedBytes: 0,

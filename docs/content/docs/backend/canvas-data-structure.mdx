@@ -1,11 +1,11 @@
 ---
 title: 画布数据结构
-description: 账号画布、浏览器缓存、节点结构与媒体文件机制
+description: 账号画布、云端存储、节点结构与媒体文件机制
 ---
 
 # 画布数据结构
 
-本文档说明账号画布的数据结构、服务端主存储、浏览器缓存和媒体文件机制。
+本文档说明账号画布的数据结构、服务端存储和媒体文件机制。
 
 ## 当前存储位置
 
@@ -15,7 +15,7 @@ description: 账号画布、浏览器缓存、节点结构与媒体文件机制
 - 我的素材元数据：服务端 `user_assets`。
 - 生成记录元数据：服务端 `user_generation_records`。
 - 图片、视频和音频文件：七牛云 Kodo 私有空间，数据库保存账号与对象元数据。
-- 浏览器 `localForage`：仅保存登录账号缓存、媒体缓存、离线 `workspace_outbox` 和 `workspace_meta` 上传状态。
+- 浏览器：只在当前页面运行期间保留 Zustand 状态、Blob 和待提交变更的内存对象，刷新即清空，不写入 LocalForage、IndexedDB 或账号 localStorage。
 
 游客不能进入画布、我的素材、生图和视频创作页，也不会持久化业务数据。画布 JSON 不保存大体积 base64；节点和素材只保存 `storageKey` 与元信息，文件按需从账号云端读取。
 
@@ -157,7 +157,7 @@ type CanvasAssistantMessage = {
 
 图片引用和助手生成图片也遵循同一套图片存储规则：
 
-- `dataUrl` 字段当前可能是 `blob:` URL，也可能是旧数据中的 `data:image/...`。
+- `dataUrl` 只用于当前页面运行期间的临时图片地址。
 - `storageKey` 存在时，以 `storageKey` 为准读取图片 Blob。
 - 发送到 AI 接口前，如果接口需要 base64，会通过 `imageToDataUrl` 临时把 Blob URL 转成 data URL。
 
@@ -168,9 +168,8 @@ type CanvasAssistantMessage = {
 1. 传入 `Blob` 或 data URL。
 2. 内部转成 `Blob`。
 3. 生成 `storageKey`，格式为 `image:<id>`。
-4. 把 Blob 写入登录账号的本地缓存，并优先直传账号云端。
-5. 离线或上传暂时失败时，由引用该文件的 outbox 在联网后补传。
-6. 创建 `blob:` URL、读取图片宽高并返回：
+4. 先把 Blob 直传账号云端；离线或上传失败时直接停止保存并提示错误。
+5. 当前页面可在内存中创建 `blob:` URL，读取图片宽高并返回：
 
 ```ts
 type UploadedImage = {
@@ -199,14 +198,14 @@ type UploadedImage = {
 
 因此，`content` 只适合当前浏览器会话展示，长期文件标识是账号隔离的 `storageKey`。
 
-## 图片读取和缓存补水
+## 图片读取和内存补水
 
 打开画布时会执行图片补水：
 
 - 如果图片节点有 `storageKey`，通过 `resolveImageUrl(storageKey, fallback)` 读取 Blob 并生成新的 `blob:` URL。
 - 助手消息里的引用图和生成图也会执行同类逻辑。
-- 本地缓存没有文件时，按 `storageKey` 请求同源文件接口，后端校验当前账号后返回私有文件。
-- 不再导入或迁移旧游客数据和无 `storageKey` 的旧 base64 业务数据。
+- 当前页面内存没有文件时，按 `storageKey` 请求同源文件接口，后端校验当前账号后返回私有文件；读取结果只放在内存中。
+- 只处理当前云端结构，不读取、导入、迁移或清理任何旧浏览器业务数据。
 
 ## 图片移除和清理
 
@@ -216,6 +215,6 @@ type UploadedImage = {
 2. `cleanupImages` 会收集当前仍被画布项目、素材和额外传入数据引用的所有 `storageKey`。
 3. `cleanupUnusedImages` 遍历 `image_files` 中的全部图片。
 4. 不在引用集合里的图片会被删除。
-5. 删除时会同时 `URL.revokeObjectURL`，并从内存缓存 `objectUrls` 移除。
+5. 删除时会同时 `URL.revokeObjectURL`，并从当前页面内存 `objectUrls` 移除。
 
 这套方式可以避免同一张图片被画布、素材或助手同时引用时误删。

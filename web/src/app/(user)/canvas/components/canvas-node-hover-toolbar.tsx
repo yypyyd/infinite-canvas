@@ -8,9 +8,10 @@ import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes, getDataUrlByteSize } from "@/lib/image-utils";
 import { useCopyText } from "@/hooks/use-copy-text";
 import { useThemeStore } from "@/stores/use-theme-store";
+import { getImageQuickToolsPreference, updateImageQuickToolsPreference, USER_PREFERENCES_APPLIED_EVENT } from "@/lib/user-preferences";
 import { CanvasNodeType, type CanvasNodeData, type ViewportTransform } from "../types";
 import { ImageToolSettingsModal, type ImageToolbarSettingsTool } from "./canvas-image-toolbar-settings-modal";
-import { IMAGE_QUICK_TOOLS_STORAGE_KEY, buildImageToolbarTools, defaultImageQuickToolIds, readImageQuickToolsConfig, type ImageQuickToolId } from "./canvas-image-toolbar-tools";
+import { buildImageToolbarTools, defaultImageQuickToolIds, readImageQuickToolsConfig, type ImageQuickToolId } from "./canvas-image-toolbar-tools";
 
 type CanvasNodeHoverToolbarProps = {
     node: CanvasNodeData | null;
@@ -84,16 +85,14 @@ export function CanvasNodeHoverToolbar({
     const copyText = useCopyText();
 
     useEffect(() => {
-        try {
-            const stored = window.localStorage.getItem(IMAGE_QUICK_TOOLS_STORAGE_KEY);
-            if (!stored) return;
-            const parsed = JSON.parse(stored) as unknown;
-            const config = readImageQuickToolsConfig(parsed);
+        const loadPreferences = () => {
+            const config = readImageQuickToolsConfig(getImageQuickToolsPreference());
             setQuickImageToolIds(config.ids);
             setShowImageToolLabels(config.showLabels);
-        } catch {
-            window.localStorage.removeItem(IMAGE_QUICK_TOOLS_STORAGE_KEY);
-        }
+        };
+        loadPreferences();
+        window.addEventListener(USER_PREFERENCES_APPLIED_EVENT, loadPreferences);
+        return () => window.removeEventListener(USER_PREFERENCES_APPLIED_EVENT, loadPreferences);
     }, []);
 
     useEffect(() => {
@@ -173,7 +172,7 @@ export function CanvasNodeHoverToolbar({
         const config = { ids: draftImageToolIds, showLabels: draftShowImageToolLabels };
         setQuickImageToolIds(config.ids);
         setShowImageToolLabels(config.showLabels);
-        window.localStorage.setItem(IMAGE_QUICK_TOOLS_STORAGE_KEY, JSON.stringify(config));
+        updateImageQuickToolsPreference(config);
         closeImageToolSettings();
     };
 

@@ -36,6 +36,8 @@ func New() *gin.Engine {
 		handler.UserWorkspaceFile(c.Writer, c.Request, c.Param("storageKey"))
 	})
 	api.GET("/workspace/status", middleware.UserAuth, gin.WrapF(handler.UserStorageStatus))
+	api.GET("/preferences", middleware.UserAuth, gin.WrapF(handler.UserPreferences))
+	api.POST("/preferences", middleware.UserAuth, gin.WrapF(handler.SaveUserPreferences))
 	api.GET("/settings", gin.WrapF(handler.Settings))
 	api.GET("/check-in", middleware.UserAuth, gin.WrapF(handler.CheckInStatus))
 	api.POST("/check-in", middleware.UserAuth, gin.WrapF(handler.CheckIn))

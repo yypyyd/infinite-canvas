@@ -67,8 +67,6 @@ export type GenerationTask = {
     id: string;
     userId: string;
     model: string;
-    upstreamModel: string;
-    channelName: string;
     path: string;
     modality: string;
     operation: string;

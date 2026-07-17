@@ -41,23 +41,39 @@ func SaveUserWorkspace(w http.ResponseWriter, r *http.Request) {
 	OK(w, result)
 }
 
-func UploadUserWorkspaceFile(w http.ResponseWriter, r *http.Request) {
+func PrepareUserWorkspaceFileUpload(w http.ResponseWriter, r *http.Request) {
 	user, ok := service.UserFromContext(r.Context())
 	if !ok {
 		Fail(w, "未登录或权限不足")
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 81<<20)
-	if err := r.ParseMultipartForm(80 << 20); err != nil {
-		Fail(w, "读取上传文件失败")
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	var request service.UserFileUploadRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		Fail(w, "文件上传信息格式不正确")
 		return
 	}
-	file, header, err := r.FormFile("file")
+	result, err := service.PrepareUserWorkspaceFileUpload(user.ID, request)
 	if err != nil {
-		Fail(w, "请选择要上传的文件")
+		FailError(w, err)
 		return
 	}
-	result, err := service.SaveUserWorkspaceFile(user.ID, r.FormValue("storageKey"), file, header)
+	OK(w, result)
+}
+
+func ConfirmUserWorkspaceFileUpload(w http.ResponseWriter, r *http.Request) {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok {
+		Fail(w, "未登录或权限不足")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	var request service.UserFileConfirmRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		Fail(w, "文件确认信息格式不正确")
+		return
+	}
+	result, err := service.ConfirmUserWorkspaceFileUpload(user.ID, request)
 	if err != nil {
 		FailError(w, err)
 		return
@@ -71,14 +87,21 @@ func UserWorkspaceFile(w http.ResponseWriter, r *http.Request, storageKey string
 		Fail(w, "未登录或权限不足")
 		return
 	}
-	path, mimeType, ok := service.UserWorkspaceFilePath(user.ID, storageKey)
+	if r.Method == http.MethodHead {
+		if !service.UserWorkspaceFileExists(user.ID, storageKey) {
+			http.NotFound(w, r)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	fileURL, ok := service.UserWorkspaceFileURL(user.ID, storageKey)
 	if !ok {
 		http.NotFound(w, r)
 		return
 	}
-	w.Header().Set("Content-Type", mimeType)
-	w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
-	http.ServeFile(w, r, path)
+	w.Header().Set("Cache-Control", "private, no-store")
+	http.Redirect(w, r, fileURL, http.StatusTemporaryRedirect)
 }
 
 func UserStorageStatus(w http.ResponseWriter, r *http.Request) {

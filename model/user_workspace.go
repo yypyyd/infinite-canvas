@@ -44,10 +44,10 @@ type UserFile struct {
 	ID         string `json:"id" gorm:"primaryKey"`
 	UserID     string `json:"userId" gorm:"uniqueIndex:idx_user_file_storage_key;index"`
 	StorageKey string `json:"storageKey" gorm:"uniqueIndex:idx_user_file_storage_key"`
-	SHA256     string `json:"sha256" gorm:"index"`
+	ObjectKey  string `json:"-" gorm:"uniqueIndex"`
+	Hash       string `json:"hash" gorm:"index"`
 	MimeType   string `json:"mimeType"`
 	Size       int64  `json:"size"`
-	Path       string `json:"-"`
 	CreatedAt  string `json:"createdAt"`
 	UpdatedAt  string `json:"updatedAt"`
 }

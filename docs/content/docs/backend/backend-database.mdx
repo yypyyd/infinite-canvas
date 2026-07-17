@@ -350,21 +350,23 @@ description: 当前后端主要数据表与字段说明
 
 ### user_files
 
-账号云端媒体文件表。文件本体保存在数据库目录旁的 `user-files/{userId}/{hash前两位}/{hash第3-4位}/`，数据库只保存鉴权、去重和读取所需的元数据。
+账号云端媒体文件表。文件本体保存在七牛云 Kodo 私有空间，数据库只保存账号鉴权、对象定位和读取所需的元数据。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `id` | string | 主键 |
 | `user_id` | string | 所属用户 ID |
 | `storage_key` | string | 前端媒体存储编号；与 `user_id` 组成联合唯一索引 |
-| `sha256` | string | 文件内容哈希，同账号相同内容复用物理文件 |
+| `object_key` | string | 七牛云私有空间内的对象键，不通过接口返回 |
+| `hash` | string | 七牛云返回的文件内容 ETag |
 | `mime_type` | string | 媒体 MIME 类型 |
 | `size` | number | 文件字节数 |
-| `path` | string | 服务端物理路径，不通过接口返回 |
 | `created_at` | string | 创建时间 |
 | `updated_at` | string | 更新时间 |
 
-单文件上限为 80MB；账号默认额度由 `USER_STORAGE_QUOTA_MB` 配置，默认 5120MB。文件可通过 Bearer Token 或同源 HttpOnly 会话 Cookie 鉴权读取，不能跨账号访问。前端上传媒体后立即写入账号文件存储，画布打开时按需读取，本地没有缓存时才下载。已超过 24 小时且不再被任何有效画布或素材引用的文件元数据会在后续保存时清理；相同哈希仍有其他引用时不会删除物理文件。
+单文件上限为 80MB；账号默认额度由 `USER_STORAGE_QUOTA_MB` 配置，默认 5120MB。前端先向后端申请 10 分钟有效的七牛上传凭证，再把文件直接上传到私有空间，上传完成后由后端读取对象元数据并确认入库；长期 Access Key 和 Secret Key 只保存在服务端。文件读取必须先通过 Bearer Token 或同源 HttpOnly 会话 Cookie 鉴权，后端再返回 10 分钟有效的私有下载地址，不能跨账号访问。已超过 24 小时且不再被任何有效画布或素材引用的文件，会在后续保存时同时从七牛空间和数据库清理。
+
+七牛云连接由 `QINIU_ACCESS_KEY`、`QINIU_SECRET_KEY`、`QINIU_BUCKET`、`QINIU_REGION` 和 `QINIU_DOWNLOAD_DOMAIN` 配置。
 
 ### 服务器素材文件
 

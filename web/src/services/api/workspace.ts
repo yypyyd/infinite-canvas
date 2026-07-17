@@ -1,6 +1,6 @@
 import axios from "axios";
 
-import { apiGet, apiPost, apiUpload } from "@/services/api/request";
+import { apiGet, apiPost } from "@/services/api/request";
 
 export type WorkspaceDomain = "canvas_project" | "asset";
 
@@ -19,11 +19,20 @@ export type WorkspaceChange = { domain: WorkspaceDomain; objectId: string; data:
 export type WorkspaceFile = {
     id: string;
     storageKey: string;
-    sha256: string;
+    hash: string;
     mimeType: string;
     size: number;
     createdAt: string;
     updatedAt: string;
+};
+
+type WorkspaceFileUploadTicket = {
+    uploadRequired: boolean;
+    uploadUrl?: string;
+    uploadToken?: string;
+    objectKey?: string;
+    expiresAt?: string;
+    file?: WorkspaceFile;
 };
 
 export type WorkspaceStorageStatus = {
@@ -47,11 +56,17 @@ export function fetchWorkspaceStorageStatus(token: string) {
     return apiGet<WorkspaceStorageStatus>("/api/workspace/status", undefined, token);
 }
 
-export function uploadWorkspaceFile(token: string, storageKey: string, file: Blob) {
+export async function uploadWorkspaceFile(token: string, storageKey: string, file: Blob) {
+    const mimeType = file.type || "application/octet-stream";
+    const ticket = await apiPost<WorkspaceFileUploadTicket>("/api/workspace/files/upload-ticket", { storageKey, mimeType, size: file.size }, token);
+    if (!ticket.uploadRequired && ticket.file) return ticket.file;
+    if (!ticket.uploadUrl || !ticket.uploadToken || !ticket.objectKey) throw new Error("云端上传凭证无效");
     const form = new FormData();
-    form.append("storageKey", storageKey);
-    form.append("file", file, workspaceFileName(storageKey, file.type));
-    return apiUpload<WorkspaceFile>("/api/workspace/files", form, token);
+    form.append("token", ticket.uploadToken);
+    form.append("key", ticket.objectKey);
+    form.append("file", file, workspaceFileName(storageKey, mimeType));
+    await axios.post(ticket.uploadUrl, form);
+    return apiPost<WorkspaceFile>("/api/workspace/files/confirm", { storageKey, objectKey: ticket.objectKey, mimeType, size: file.size }, token);
 }
 
 export function workspaceFileUrl(storageKey: string, accountId = "") {

@@ -2,7 +2,7 @@ import axios from "axios";
 
 import { apiGet, apiPost } from "@/services/api/request";
 
-export type WorkspaceDomain = "canvas_project" | "asset";
+export type WorkspaceDomain = "canvas_project" | "asset" | "generation_record";
 
 export type WorkspaceRecord = {
     domain: WorkspaceDomain;

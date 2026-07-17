@@ -26,6 +26,7 @@ description: 当前后端主要数据表与字段说明
 - `generation_tasks`
 - `user_projects`
 - `user_assets`
+- `user_generation_records`
 - `user_project_versions`
 - `user_workspace_states`
 - `user_files`
@@ -323,6 +324,21 @@ description: 当前后端主要数据表与字段说明
 | `data` | text/json | 素材业务 JSON，媒体保存 `storageKey` 引用 |
 | `version` | number | 服务端保存版本 |
 | `deleted_at` | string | 删除标记；空值表示有效素材 |
+| `created_at` | string | 创建时间 |
+| `updated_at` | string | 最近保存时间 |
+
+### user_generation_records
+
+账号级生图和视频生成记录表。记录元数据存入数据库，结果媒体通过 `storageKey` 关联七牛云私有对象，可在登录设备之间恢复。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 生成记录 ID，主键 |
+| `user_id` | string | 所属用户 ID；与 `id` 组成联合唯一索引 |
+| `kind` | string | `image` 或 `video` |
+| `data` | text/json | 提示词、模型、生成配置、状态及媒体 `storageKey` 引用 |
+| `version` | number | 服务端保存版本 |
+| `deleted_at` | string | 删除标记；空值表示有效记录 |
 | `created_at` | string | 创建时间 |
 | `updated_at` | string | 最近保存时间 |
 

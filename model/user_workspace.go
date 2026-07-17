@@ -25,6 +25,17 @@ type UserAsset struct {
 	UpdatedAt string `json:"updatedAt"`
 }
 
+type UserGenerationRecord struct {
+	ID        string `json:"id" gorm:"primaryKey"`
+	UserID    string `json:"userId" gorm:"uniqueIndex:idx_user_generation_record;index"`
+	Kind      string `json:"kind" gorm:"index"`
+	Data      string `json:"-" gorm:"type:text"`
+	Version   int64  `json:"version"`
+	DeletedAt string `json:"deletedAt" gorm:"index"`
+	CreatedAt string `json:"createdAt"`
+	UpdatedAt string `json:"updatedAt"`
+}
+
 // UserProjectVersion keeps recoverable snapshots before a project is overwritten.
 type UserProjectVersion struct {
 	ID        string `json:"id" gorm:"primaryKey"`

@@ -4,6 +4,13 @@ import localforage from "localforage";
 
 import { deleteStoredMedia, resolveMediaUrl } from "@/services/file-storage";
 import { deleteStoredImages, resolveImageUrl } from "@/services/image-storage";
+import type { WorkspaceRecord } from "@/services/api/workspace";
+import { queueWorkspaceDelete, queueWorkspaceRecord, type PendingWorkspaceChange } from "@/services/workspace-outbox";
+
+export const GENERATION_HISTORY_CHANGED_EVENT = "infinite-canvas:generation-history-changed";
+
+type GenerationKind = "image" | "video";
+type RawGenerationLog = Record<string, unknown> & { id?: string; ownerId?: string; createdAt?: number; kind?: GenerationKind };
 
 type StoredImage = { dataUrl?: string; storageKey?: string };
 type StoredVideo = { url?: string; storageKey?: string };
@@ -78,11 +85,50 @@ export async function countGenerationHistory(ownerId: string) {
 }
 
 export async function deleteGenerationHistory(item: GenerationHistoryItem) {
-    const store = item.kind === "image" ? imageLogStore : videoLogStore;
     await Promise.all([
-        store.removeItem(item.id),
+        deleteStoredGenerationRecord(item.ownerId, item.kind, item.id),
         item.kind === "image" ? deleteStoredImages(item.storageKeys) : deleteStoredMedia(item.storageKeys),
     ]);
+}
+
+export async function saveGenerationRecord(ownerId: string, kind: GenerationKind, log: RawGenerationLog) {
+    const id = String(log.id || "");
+    if (!id) return;
+    const data = { ...log, id, ownerId, kind };
+    await generationStore(kind).setItem(id, data);
+    await queueWorkspaceRecord(ownerId, "generation_record", id, data);
+    dispatchGenerationHistoryChanged();
+}
+
+export async function deleteStoredGenerationRecord(ownerId: string, kind: GenerationKind, id: string) {
+    await Promise.all([generationStore(kind).removeItem(id), queueWorkspaceDelete(ownerId, "generation_record", id)]);
+    dispatchGenerationHistoryChanged();
+}
+
+export async function queueMissingLocalGenerationRecords(ownerId: string, records: WorkspaceRecord[], pending: PendingWorkspaceChange[]) {
+    const known = new Set(records.filter((item) => item.domain === "generation_record").map((item) => item.objectId));
+    pending.filter((item) => item.domain === "generation_record").forEach((item) => known.add(item.objectId));
+    const local = await readRawGenerationLogs(ownerId);
+    await Promise.all(local.filter((item) => item.id && !known.has(item.id)).map((item) => queueWorkspaceRecord(ownerId, "generation_record", item.id || "", item)));
+}
+
+export async function applyGenerationRecordSnapshot(ownerId: string, records: WorkspaceRecord[], pending: PendingWorkspaceChange[]) {
+    const target = new Map<string, RawGenerationLog>();
+    records.forEach((record) => {
+        if (record.domain !== "generation_record" || record.deleted || !record.data) return;
+        target.set(record.objectId, { ...record.data, id: record.objectId, ownerId });
+    });
+    pending.forEach((change) => {
+        if (change.domain !== "generation_record") return;
+        if (change.deleted) target.delete(change.objectId);
+        else target.set(change.objectId, { ...change.data, id: change.objectId, ownerId });
+    });
+    const local = await readRawGenerationLogs(ownerId);
+    await Promise.all([
+        ...local.filter((item) => item.id && !target.has(item.id)).map((item) => generationStore(item.kind || "image").removeItem(item.id || "")),
+        ...Array.from(target.values()).map((item) => generationStore(item.kind || "image").setItem(item.id || "", item)),
+    ]);
+    dispatchGenerationHistoryChanged();
 }
 
 export async function resolveGenerationHistoryPreview(item: GenerationHistoryItem) {
@@ -103,6 +149,22 @@ async function readOwnedLogs<T extends { ownerId?: string }>(store: typeof image
         if ((value.ownerId || "guest") === ownerId) logs.push(value);
     });
     return logs;
+}
+
+async function readRawGenerationLogs(ownerId: string) {
+    const [images, videos] = await Promise.all([readOwnedLogs<RawGenerationLog>(imageLogStore, ownerId), readOwnedLogs<RawGenerationLog>(videoLogStore, ownerId)]);
+    return [
+        ...images.map((item) => ({ ...item, kind: "image" as const, ownerId })),
+        ...videos.map((item) => ({ ...item, kind: "video" as const, ownerId })),
+    ];
+}
+
+function generationStore(kind: GenerationKind) {
+    return kind === "image" ? imageLogStore : videoLogStore;
+}
+
+function dispatchGenerationHistoryChanged() {
+    if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(GENERATION_HISTORY_CHANGED_EVENT));
 }
 
 function normalizeImageLog(log: StoredImageLog): GenerationHistoryItem {

@@ -62,17 +62,6 @@ docker compose -f docker-compose.local.yml up -d --build
 
 如需要拉取提示词，可前往:`http://localhost:3000/admin/prompts`
 
-## New API 自动配置
-
-如果使用 New API，可在 `系统设置 -> 聊天方式 -> 添加聊天设置` 中填入：
-
-```text
-https://infinite-canvas-cpco.onrender.com?apiKey={key}&baseUrl={address}
-```
-
-跳转后会自动打开配置弹窗并填入 API Key 和 Base URL。
-如果自己部署了，可以把 `https://infinite-canvas-cpco.onrender.com` 替换成你部署的地址。
-
 ## 效果展示
 
 <table width="100%">

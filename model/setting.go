@@ -70,7 +70,6 @@ type PublicModelChannelSetting struct {
 	DefaultVideoModel  string              `json:"defaultVideoModel"`
 	DefaultTextModel   string              `json:"defaultTextModel"`
 	SystemPrompt       string              `json:"systemPrompt"`
-	AllowCustomChannel *bool               `json:"allowCustomChannel"`
 }
 
 // PublicSetting stores frontend-visible settings.

@@ -1,6 +1,7 @@
 import axios from "axios";
 
 export type ApiParams = Record<string, string | string[] | number | number[] | undefined>;
+export const COOKIE_SESSION_TOKEN = "cookie-session";
 
 type ApiResponse<T> = {
     code: number;
@@ -27,7 +28,7 @@ export async function apiGet<T>(url: string, params?: ApiParams, token?: string)
         url,
         method: "GET",
         params: params || undefined,
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        headers: authorizationHeaders(token),
     });
 }
 
@@ -38,7 +39,7 @@ export async function apiPost<T>(url: string, body?: unknown, token?: string) {
         data: body ?? {},
         headers: {
             "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            ...authorizationHeaders(token),
         },
     });
 }
@@ -48,7 +49,7 @@ export async function apiUpload<T>(url: string, form: FormData, token?: string) 
         url,
         method: "POST",
         data: form,
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        headers: authorizationHeaders(token),
     });
 }
 
@@ -56,8 +57,12 @@ export async function apiDelete<T>(url: string, token?: string) {
     return apiRequest<T>({
         url,
         method: "DELETE",
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        headers: authorizationHeaders(token),
     });
+}
+
+export function authorizationHeaders(token?: string) {
+    return token && token !== COOKIE_SESSION_TOKEN ? { Authorization: `Bearer ${token}` } : {};
 }
 
 async function apiRequest<T>(config: { url: string; method: "GET" | "POST" | "DELETE"; params?: ApiParams; data?: unknown; headers?: Record<string, string> }) {

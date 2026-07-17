@@ -1,9 +1,9 @@
 "use client";
 
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
 
 import { AUTH_TOKEN_KEY, fetchCurrentUser, login, logout, register, type AuthUser, type LoginPayload, type RegisterPayload } from "@/services/api/auth";
+import { COOKIE_SESSION_TOKEN } from "@/services/api/request";
 
 type UserStore = {
     token: string;
@@ -18,83 +18,60 @@ type UserStore = {
     register: (payload: RegisterPayload) => Promise<AuthUser>;
 };
 
-export const useUserStore = create<UserStore>()(
-    persist(
-        (set, get) => ({
-            token: "",
-            user: null,
-            isReady: false,
-            isLoading: false,
-            setSession: (token, user) => set({ token, user, isReady: true }),
-            clearSession: () => {
-                void logout().catch(() => undefined);
+export const useUserStore = create<UserStore>()((set, get) => ({
+    token: "",
+    user: null,
+    isReady: false,
+    isLoading: false,
+    setSession: (_token, user) => set({ token: COOKIE_SESSION_TOKEN, user, isReady: true }),
+    clearSession: () => {
+        void logout().catch(() => undefined);
+        set({ token: "", user: null, isReady: true });
+    },
+    refreshUser: async () => {
+        const token = get().token;
+        try {
+            const user = await fetchCurrentUser(token || undefined);
+            if (user.role === "guest") {
                 set({ token: "", user: null, isReady: true });
-            },
-            refreshUser: async () => {
-                const token = get().token;
-                if (!token) {
-                    set({ user: null, isReady: true });
-                    return null;
-                }
-                try {
-                    const user = await fetchCurrentUser(token);
-                    if (user.role === "guest") {
-                        set({ token: "", user: null, isReady: true });
-                        return null;
-                    }
-                    set({ user, isReady: true });
-                    return user;
-                } catch {
-                    set({ token: "", user: null, isReady: true });
-                    return null;
-                }
-            },
-            hydrateUser: async () => {
-                const token = get().token;
-                if (!token) {
-                    set({ user: null, isReady: true });
-                    return;
-                }
-                set({ isLoading: true });
-                try {
-                    await get().refreshUser();
-                } finally {
-                    set({ isLoading: false });
-                }
-            },
-            login: async (payload) => {
-                set({ isLoading: true });
-                try {
-                    const session = await login(payload);
-                    set({ token: session.token, user: session.user, isReady: true, isLoading: false });
-                    return session.user;
-                } catch (error) {
-                    set({ isLoading: false });
-                    throw error;
-                }
-            },
-            register: async (payload) => {
-                set({ isLoading: true });
-                try {
-                    const session = await register(payload);
-                    set({ token: session.token, user: session.user, isReady: true, isLoading: false });
-                    return session.user;
-                } catch (error) {
-                    set({ isLoading: false });
-                    throw error;
-                }
-            },
-        }),
-        {
-            name: AUTH_TOKEN_KEY,
-            partialize: (state) => ({ token: state.token }),
-            onRehydrateStorage: () => (state) => {
-                if (!state) return;
-                state.isReady = false;
-                queueMicrotask(() => {
-                    void state.hydrateUser();
-                });
-            },
-        },
-    ),
-);
+                return null;
+            }
+            set({ token: token || COOKIE_SESSION_TOKEN, user, isReady: true });
+            return user;
+        } catch {
+            set({ token: "", user: null, isReady: true });
+            return null;
+        }
+    },
+    hydrateUser: async () => {
+        if (typeof window !== "undefined") window.localStorage.removeItem(AUTH_TOKEN_KEY);
+        set({ isLoading: true });
+        try {
+            await get().refreshUser();
+        } finally {
+            set({ isLoading: false });
+        }
+    },
+    login: async (payload) => {
+        set({ isLoading: true });
+        try {
+            const session = await login(payload);
+            set({ token: COOKIE_SESSION_TOKEN, user: session.user, isReady: true, isLoading: false });
+            return session.user;
+        } catch (error) {
+            set({ isLoading: false });
+            throw error;
+        }
+    },
+    register: async (payload) => {
+        set({ isLoading: true });
+        try {
+            const session = await register(payload);
+            set({ token: COOKIE_SESSION_TOKEN, user: session.user, isReady: true, isLoading: false });
+            return session.user;
+        } catch (error) {
+            set({ isLoading: false });
+            throw error;
+        }
+    },
+}));

@@ -36,7 +36,6 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
     const config = buildNodeConfig(globalConfig, node, mode);
     const count = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const creditQuote = requestCreditQuote({
-        channelMode: config.channelMode,
         pricingRules,
         groupRatios,
         userGroup,

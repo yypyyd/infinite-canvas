@@ -32,8 +32,7 @@ description: settings 表中 public 和 private 配置结构说明
     "defaultModel": "gpt-image-2",
     "defaultImageModel": "gpt-image-2",
     "defaultTextModel": "gpt-5.5",
-    "systemPrompt": "",
-    "allowCustomChannel": true
+    "systemPrompt": ""
   },
   "auth": {
     "allowRegister": true,
@@ -77,7 +76,6 @@ description: settings 表中 public 和 private 配置结构说明
 | `defaultVideoModel` | string | 默认视频模型，从 `availableModels` 中选择；为空或失效时优先选择 `seedance`、`video` 模型 |
 | `defaultTextModel` | string | 默认文本模型，从 `availableModels` 中选择；为空或失效时优先选择非图片/视频模型 |
 | `systemPrompt` | string | 系统提示词 |
-| `allowCustomChannel` | boolean | 是否允许用户在配置弹窗中切换为本地直连渠道，默认允许 |
 
 `pricingRules` 每项字段：
 
@@ -92,12 +90,7 @@ description: settings 表中 public 和 private 配置结构说明
 | `modelRatio` | number | 倍率计费模式下的模型倍率 |
 | `completionRatio` | number | 补全倍率，预留给后续 token usage 结算 |
 
-用户侧请求模式：
-
-| 模式 | 说明 |
-| --- | --- |
-| 云端渠道 | 使用后端 `/api/v1/*` 代理接口，请求会按模型名、操作和分辨率档匹配 `private.value.channels` 中的可用渠道 |
-| 本地直连 | 默认可选；`allowCustomChannel` 关闭后不可选，用户在浏览器本地配置 `baseUrl`、`apiKey` 和模型列表后直接请求模型接口 |
+用户端统一请求同源后端 `/api/v1/*`，后端按模型名、操作和分辨率档匹配 `private.value.channels` 中的可用渠道。浏览器不保存上游 Base URL 或 API Key。
 
 `auth` 字段：
 

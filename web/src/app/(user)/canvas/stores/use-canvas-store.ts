@@ -51,7 +51,10 @@ const canvasStorage: PersistStorage<CanvasStore> = {
         const value = await localForageStorage.getItem(name);
         if (!value) return null;
         const parsed = JSON.parse(value) as StorageValue<CanvasStore>;
-        queuedPersistState = parsed.state as PersistedCanvasState;
+        const stored = parsed.state as PersistedCanvasState;
+        const projectsByOwner = withoutGuest(stored.projectsByOwner || {});
+        parsed.state = { ...parsed.state, projectsByOwner, projects: [] };
+        queuedPersistState = { projectsByOwner };
         return parsed;
     },
     setItem: (name, value) => {
@@ -155,11 +158,11 @@ export const useCanvasStore = create<CanvasStore>()(
         {
             name: CANVAS_STORE_KEY,
             storage: canvasStorage,
-            partialize: (state) => ({ projectsByOwner: state.projectsByOwner }) as StorageValue<CanvasStore>["state"],
+            partialize: (state) => ({ projectsByOwner: withoutGuest(state.projectsByOwner) }) as StorageValue<CanvasStore>["state"],
             merge: (persisted, current) => {
                 const stored = (persisted || {}) as Partial<CanvasStore>;
-                const projectsByOwner = stored.projectsByOwner || { guest: [] };
-                return { ...current, projectsByOwner, projects: projectsByOwner.guest || [] };
+                const projectsByOwner = withoutGuest(stored.projectsByOwner || {});
+                return { ...current, projectsByOwner, projects: [] };
             },
             onRehydrateStorage: () => () => {
                 useCanvasStore.setState({ hydrated: true });
@@ -170,6 +173,10 @@ export const useCanvasStore = create<CanvasStore>()(
 
 function ownerProjectsState(state: CanvasStore, projects: CanvasProject[]) {
     return { projects, projectsByOwner: { ...state.projectsByOwner, [state.ownerId]: projects } };
+}
+
+function withoutGuest(projectsByOwner: Record<string, CanvasProject[]>) {
+    return Object.fromEntries(Object.entries(projectsByOwner).filter(([ownerId]) => ownerId !== "guest"));
 }
 
 function workspaceProjectData(project: CanvasProject) {

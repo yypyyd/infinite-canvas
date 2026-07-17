@@ -404,7 +404,6 @@ function AssistantComposer({
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const activeModel = mode === "image" ? config.imageModel || config.model : config.textModel || config.model;
     const creditQuote = requestCreditQuote({
-        channelMode: config.channelMode,
         pricingRules,
         groupRatios,
         userGroup,

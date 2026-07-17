@@ -12,7 +12,7 @@ description: 当前项目已实现的主要功能
 - 支持创建多个画布项目。
 - 支持项目重命名、删除、批量选择和批量删除。
 - 支持单个画布项目导出为 JSON，也支持从 JSON 导入画布。
-- 画布项目保存在浏览器本地，登录账号后暂不会自动同步到服务器。
+- 画布项目以登录账号的服务端数据为准，浏览器仅保留缓存和离线待保存队列。
 
 ## 画布工作台
 
@@ -57,31 +57,21 @@ description: 当前项目已实现的主要功能
 
 ## AI 生成
 
-项目支持两种 AI 调用方式：
-
-- 本地直连：前端使用本地配置的 Base URL、API Key 和 Model 直接请求 OpenAI 兼容接口。
-- 后台渠道：前端请求本项目后端 `/api/v1/*` 代理接口，后端按模型选择管理后台配置的渠道。
+用户端统一请求本项目同源后端 `/api/v1/*`，后端按模型、操作和分辨率选择管理后台配置的上游渠道。上游 Base URL 和 API Key 只保存在服务端私有配置中。
 
 OpenAI 兼容图像和文本能力继续复用现有接口：
 
-- `/v1/images/generations`：文生图。
-- `/v1/images/edits`：图生图/参考图编辑。
-- `/v1/chat/completions`：文本问答和带图问答。
-- `/v1/models`：读取模型列表；火山方舟 Agent Plan 专属 `/api/plan/v3` 当前未提供 OpenAI `/models` 模型列表接口，需要手动填写模型名。
+- `/api/v1/images/generations`：文生图。
+- `/api/v1/images/edits`：图生图/参考图编辑。
+- `/api/v1/chat/completions`：文本问答和带图问答。
 
 视频能力支持两类接口：
 
-- OpenAI 风格视频：`POST /v1/videos`、`GET /v1/videos/{id}`、`GET /v1/videos/{id}/content`。
-- 火山方舟 Agent Plan / Seedance 2.0：Base URL 使用 `https://ark.cn-beijing.volces.com/api/plan/v3`，创建任务为 `POST /contents/generations/tasks`，查询任务为 `GET /contents/generations/tasks/{id}`，成功结果读取 `content.video_url`。
-
-Base URL 如果已经以 `/v1`、`/api/v3` 或 `/api/plan/v3` 结尾，系统不会再追加 `/v1`。因此 cpa 反代或火山方舟 Agent Plan 可以继续通过现有 Base URL + API Key + Model 方式配置，不需要新增火山生图 Provider。
-
-后台“拉取模型列表”会尝试真实请求 OpenAI `/models`，不会为 Agent Plan 伪造模型结果。如果火山方舟 Agent Plan 返回 404，请手动增加 `doubao-seedance-2.0` 或文档列出的其他模型名。
+- OpenAI 风格视频：`POST /api/v1/videos`、`GET /api/v1/videos/{id}`、`GET /api/v1/videos/{id}/content`。
+- Seedance 等特殊上游协议由后端渠道适配，前端仍只请求同源接口。
 
 可配置项：
 
-- Base URL。
-- API Key。
 - 默认模型。
 - 图片质量。
 - 图片比例。
@@ -133,7 +123,7 @@ Base URL 如果已经以 `/v1`、`/api/v3` 或 `/api/plan/v3` 结尾，系统不
 
 ## 素材
 
-“我的素材”是浏览器本地素材库，支持：
+“我的素材”是账号级云端素材库，浏览器保留离线缓存，支持：
 
 - 新增文本素材和图片素材。
 - 编辑素材标题、封面、标签、来源、备注和内容。
@@ -166,7 +156,7 @@ Base URL 如果已经以 `/v1`、`/api/v3` 或 `/api/plan/v3` 结尾，系统不
 
 - 注册功能暂时关闭。
 - 仅允许管理员账号登录。
-- 支持 JWT 会话。
+- 支持同源 HttpOnly Cookie 会话。
 - `/api/auth/me` 可读取当前用户，未登录时返回访客用户。
 - 首次启动时可根据环境变量创建默认管理员。
 - 管理员后台目前包含提示词管理和素材库管理。
@@ -183,8 +173,8 @@ Base URL 如果已经以 `/v1`、`/api/v3` 或 `/api/plan/v3` 结尾，系统不
 
 ## 当前限制
 
-- 画布项目和“我的素材”目前只保存在浏览器本地，不会随账号同步。
-- 本地直连模式下，AI API Key 保存在浏览器本地，并由浏览器直接请求配置的 OpenAI 兼容接口；只适合本地或个人使用，公网多人使用不安全。公网部署推荐使用后台渠道，把真实密钥保存在服务端配置中。
+- 画布、“我的素材”和生成记录要求登录；游客不持久化业务数据。
+- 浏览器缓存不是权威数据源，跨设备恢复以服务端账号数据为准；离线修改通过 outbox 在联网后补传。
 - 服务器素材库目前主要保存 URL 或文本，暂未提供文件上传接口。
 - Seedance 本地参考图/视频上传依赖 `PUBLIC_BASE_URL`，如果服务部署在 localhost、内网或不可被火山访问的地址，火山无法拉取参考素材。
 - Seedance 返回远程视频 URL 时，前端会尽量下载为本地 Blob 持久化；如果因 CORS 或网络限制无法下载，会保留远程 URL，后续是否可播放取决于上游 URL 的有效期。

@@ -107,7 +107,6 @@ export default function ImagePage() {
     const canGenerate = Boolean(prompt.trim());
     const generationCount = Math.max(1, Math.min(10, Number(config.count) || 1));
     const creditQuote = requestCreditQuote({
-        channelMode: effectiveConfig.channelMode,
         pricingRules,
         groupRatios,
         userGroup,

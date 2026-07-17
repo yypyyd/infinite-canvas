@@ -1,22 +1,23 @@
 ---
 title: 画布数据结构
-description: 画布本地存储、节点结构、媒体文件与清理机制
+description: 账号画布、浏览器缓存、节点结构与媒体文件机制
 ---
 
 # 画布数据结构
 
-本文档说明当前画布在前端本地保存的数据结构、图片文件的存储和清理方式，以及后续接入后端存储时建议保持的兼容边界。
+本文档说明账号画布的数据结构、服务端主存储、浏览器缓存和媒体文件机制。
 
 ## 当前存储位置
 
-当前画布项目主要保存在浏览器本地：
+登录账号的服务端数据是唯一主数据源：
 
-- 画布项目 JSON：`localForage`，数据库名 `infinite-canvas`，storeName `app_state`，key 为 `infinite-canvas:canvas_store`。
-- 我的素材 JSON：`localForage`，数据库名 `infinite-canvas`，storeName `app_state`，key 为 `infinite-canvas:asset_store`。
-- 图片 Blob：单独存到 `localForage` 实例，数据库名 `infinite-canvas`，storeName `image_files`。
-- 视频等媒体 Blob：单独存到 `localForage` 实例，数据库名 `infinite-canvas`，storeName `media_files`。
+- 画布项目元数据：服务端 `user_projects`。
+- 我的素材元数据：服务端 `user_assets`。
+- 生成记录元数据：服务端 `user_generation_records`。
+- 图片、视频和音频文件：七牛云 Kodo 私有空间，数据库保存账号与对象元数据。
+- 浏览器 `localForage`：仅保存登录账号缓存、媒体缓存、离线 `workspace_outbox` 和 `workspace_meta` 上传状态。
 
-画布 JSON 不直接长期保存大体积 base64 图片或视频。图片节点、视频节点、助手图片和素材媒体只保存展示 URL、`storageKey` 和元信息，真实 Blob 通过 `storageKey` 读取。
+游客不能进入画布、我的素材、生图和视频创作页，也不会持久化业务数据。画布 JSON 不保存大体积 base64；节点和素材只保存 `storageKey` 与元信息，文件按需从账号云端读取。
 
 ## 画布项目结构
 
@@ -167,9 +168,9 @@ type CanvasAssistantMessage = {
 1. 传入 `Blob` 或 data URL。
 2. 内部转成 `Blob`。
 3. 生成 `storageKey`，格式为 `image:<id>`。
-4. 把 Blob 写入 `image_files`。
-5. 创建 `blob:` URL，并缓存在内存 `objectUrls`。
-6. 读取图片宽高，返回：
+4. 把 Blob 写入登录账号的本地缓存，并优先直传账号云端。
+5. 离线或上传暂时失败时，由引用该文件的 outbox 在联网后补传。
+6. 创建 `blob:` URL、读取图片宽高并返回：
 
 ```ts
 type UploadedImage = {
@@ -196,20 +197,16 @@ type UploadedImage = {
 }
 ```
 
-因此，`content` 只适合当前浏览器会话展示，不能作为长期文件标识；长期标识是 `storageKey`。
+因此，`content` 只适合当前浏览器会话展示，长期文件标识是账号隔离的 `storageKey`。
 
-## 图片读取和旧数据迁移
+## 图片读取和缓存补水
 
 打开画布时会执行图片补水：
 
 - 如果图片节点有 `storageKey`，通过 `resolveImageUrl(storageKey, fallback)` 读取 Blob 并生成新的 `blob:` URL。
-- 如果图片节点没有 `storageKey`，但 `content` 是旧的 `data:image/...`，会调用 `uploadImage(content)` 迁移到 `image_files`，并补上 `storageKey`。
 - 助手消息里的引用图和生成图也会执行同类逻辑。
-
-我的素材读取时也会做迁移：
-
-- 有 `storageKey`：恢复 `coverUrl` 和 `data.dataUrl` 的可展示 URL。
-- 无 `storageKey` 且保存了 base64：写入 `image_files`，然后更新素材里的 `storageKey`。
+- 本地缓存没有文件时，按 `storageKey` 请求同源文件接口，后端校验当前账号后返回私有文件。
+- 不再导入或迁移旧游客数据和无 `storageKey` 的旧 base64 业务数据。
 
 ## 图片移除和清理
 

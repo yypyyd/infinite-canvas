@@ -5,7 +5,7 @@ import { persist, type PersistStorage, type StorageValue } from "zustand/middlew
 
 import { nanoid } from "nanoid";
 import { localForageStorage } from "@/lib/localforage-storage";
-import { cleanupUnusedImages, resolveImageUrl, uploadImage } from "@/services/image-storage";
+import { cleanupUnusedImages, resolveImageUrl } from "@/services/image-storage";
 import { cleanupUnusedMedia, resolveMediaUrl } from "@/services/file-storage";
 import { queueWorkspaceDelete, queueWorkspaceRecord } from "@/services/workspace-outbox";
 
@@ -51,9 +51,9 @@ const assetStorage: PersistStorage<AssetStore> = {
         if (!value) return null;
         const parsed = JSON.parse(value) as StorageValue<AssetStore>;
         const stored = parsed.state as Partial<AssetStore>;
-        const source = stored.assetsByOwner || { guest: [] };
+        const source = withoutGuest(stored.assetsByOwner || {});
         const assetsByOwner = Object.fromEntries(await Promise.all(Object.entries(source).map(async ([ownerId, assets]) => [ownerId, await Promise.all(assets.map(hydrateStoredAsset))]))) as Record<string, Asset[]>;
-        parsed.state = { ...parsed.state, assetsByOwner, assets: assetsByOwner.guest || [] };
+        parsed.state = { ...parsed.state, assetsByOwner, assets: [] };
         return parsed;
     },
     setItem: (name, value) => localForageStorage.setItem(name, JSON.stringify(value)),
@@ -111,11 +111,11 @@ export const useAssetStore = create<AssetStore>()(
         {
             name: ASSET_STORE_KEY,
             storage: assetStorage,
-            partialize: (state) => ({ assetsByOwner: state.assetsByOwner }) as StorageValue<AssetStore>["state"],
+            partialize: (state) => ({ assetsByOwner: withoutGuest(state.assetsByOwner) }) as StorageValue<AssetStore>["state"],
             merge: (persisted, current) => {
                 const stored = (persisted || {}) as Partial<AssetStore>;
-                const assetsByOwner = stored.assetsByOwner || { guest: [] };
-                return { ...current, assetsByOwner, assets: assetsByOwner.guest || [] };
+                const assetsByOwner = withoutGuest(stored.assetsByOwner || {});
+                return { ...current, assetsByOwner, assets: [] };
             },
             onRehydrateStorage: () => () => {
                 useAssetStore.setState({ hydrated: true });
@@ -131,13 +131,15 @@ async function hydrateStoredAsset(asset: Asset): Promise<Asset> {
         const dataUrl = await resolveImageUrl(asset.data.storageKey, asset.data.dataUrl);
         return { ...asset, coverUrl: asset.coverUrl.startsWith("blob:") ? dataUrl : asset.coverUrl, data: { ...asset.data, dataUrl } };
     }
-    if (!asset.data.dataUrl.startsWith("data:image/")) return asset;
-    const image = await uploadImage(asset.data.dataUrl);
-    return { ...asset, coverUrl: asset.coverUrl.startsWith("data:image/") ? image.url : asset.coverUrl, data: { ...asset.data, dataUrl: image.url, storageKey: image.storageKey, bytes: image.bytes, mimeType: image.mimeType } };
+    return asset;
 }
 
 function ownerAssetsState(state: AssetStore, assets: Asset[]) {
     return { assets, assetsByOwner: { ...state.assetsByOwner, [state.ownerId]: assets } };
+}
+
+function withoutGuest(assetsByOwner: Record<string, Asset[]>) {
+    return Object.fromEntries(Object.entries(assetsByOwner).filter(([ownerId]) => ownerId !== "guest"));
 }
 
 function workspaceAssetData(asset: Asset) {

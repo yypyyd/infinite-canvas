@@ -45,7 +45,6 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
     const isEditingExistingContent = hasTextContent || hasImageContent;
     const [prompt, setPrompt] = useState(isEditingExistingContent ? "" : node.metadata?.prompt || "");
     const creditQuote = requestCreditQuote({
-        channelMode: config.channelMode,
         pricingRules,
         groupRatios,
         userGroup,

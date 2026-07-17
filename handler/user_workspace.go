@@ -3,18 +3,17 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
-	"strconv"
 
 	"github.com/basketikun/infinite-canvas/service"
 )
 
-func SyncBootstrap(w http.ResponseWriter, r *http.Request) {
+func UserWorkspace(w http.ResponseWriter, r *http.Request) {
 	user, ok := service.UserFromContext(r.Context())
 	if !ok {
 		Fail(w, "未登录或权限不足")
 		return
 	}
-	result, err := service.SyncBootstrap(user.ID)
+	result, err := service.UserWorkspace(user.ID)
 	if err != nil {
 		FailError(w, err)
 		return
@@ -22,34 +21,19 @@ func SyncBootstrap(w http.ResponseWriter, r *http.Request) {
 	OK(w, result)
 }
 
-func SyncChanges(w http.ResponseWriter, r *http.Request) {
-	user, ok := service.UserFromContext(r.Context())
-	if !ok {
-		Fail(w, "未登录或权限不足")
-		return
-	}
-	cursor, _ := strconv.ParseInt(r.URL.Query().Get("cursor"), 10, 64)
-	result, err := service.SyncChanges(user.ID, cursor)
-	if err != nil {
-		FailError(w, err)
-		return
-	}
-	OK(w, result)
-}
-
-func ApplySyncChanges(w http.ResponseWriter, r *http.Request) {
+func SaveUserWorkspace(w http.ResponseWriter, r *http.Request) {
 	user, ok := service.UserFromContext(r.Context())
 	if !ok {
 		Fail(w, "未登录或权限不足")
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 32<<20)
-	var request service.SyncChangeRequest
+	var request service.WorkspaceChangeRequest
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		Fail(w, "同步数据格式不正确")
+		Fail(w, "账号数据格式不正确")
 		return
 	}
-	result, err := service.ApplySyncChanges(user.ID, request)
+	result, err := service.ApplyUserWorkspaceChanges(user.ID, request)
 	if err != nil {
 		FailError(w, err)
 		return
@@ -57,7 +41,7 @@ func ApplySyncChanges(w http.ResponseWriter, r *http.Request) {
 	OK(w, result)
 }
 
-func UploadUserCloudFile(w http.ResponseWriter, r *http.Request) {
+func UploadUserWorkspaceFile(w http.ResponseWriter, r *http.Request) {
 	user, ok := service.UserFromContext(r.Context())
 	if !ok {
 		Fail(w, "未登录或权限不足")
@@ -73,7 +57,7 @@ func UploadUserCloudFile(w http.ResponseWriter, r *http.Request) {
 		Fail(w, "请选择要上传的文件")
 		return
 	}
-	result, err := service.SaveUserCloudFile(user.ID, r.FormValue("storageKey"), file, header)
+	result, err := service.SaveUserWorkspaceFile(user.ID, r.FormValue("storageKey"), file, header)
 	if err != nil {
 		FailError(w, err)
 		return
@@ -81,13 +65,13 @@ func UploadUserCloudFile(w http.ResponseWriter, r *http.Request) {
 	OK(w, result)
 }
 
-func UserCloudFile(w http.ResponseWriter, r *http.Request, storageKey string) {
+func UserWorkspaceFile(w http.ResponseWriter, r *http.Request, storageKey string) {
 	user, ok := service.UserFromContext(r.Context())
 	if !ok {
 		Fail(w, "未登录或权限不足")
 		return
 	}
-	path, mimeType, ok := service.UserCloudFilePath(user.ID, storageKey)
+	path, mimeType, ok := service.UserWorkspaceFilePath(user.ID, storageKey)
 	if !ok {
 		http.NotFound(w, r)
 		return

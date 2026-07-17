@@ -24,8 +24,10 @@ description: 当前后端主要数据表与字段说明
 - `credit_logs`
 - `check_ins`
 - `generation_tasks`
-- `user_sync_records`
-- `user_sync_states`
+- `user_projects`
+- `user_assets`
+- `user_project_versions`
+- `user_workspace_states`
 - `user_files`
 - `prompts`
 - `assets`
@@ -293,32 +295,58 @@ description: 当前后端主要数据表与字段说明
 
 当前任务表记录后端代理请求本身的状态；视频类异步上游的后续轮询结果仍由前端和上游任务接口决定，后续如需要完整任务生命周期，可继续扩展为服务端轮询和结果文件归档。
 
-### user_sync_records
+### user_projects
 
-账号云端同步记录表。画布项目和“我的素材”分别以 `canvas_project`、`asset` 作为数据域，每个对象保存一份 JSON 文档；`user_id + domain + object_id` 是联合唯一索引。
+登录用户的画布主表。服务端是账号画布的权威数据源，浏览器 LocalForage 仅作为缓存和离线待保存区。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `id` | string | 主键 |
+| `id` | string | 画布 ID，主键 |
 | `user_id` | string | 所属用户 ID |
-| `domain` | string | 数据域：`canvas_project`、`asset` |
-| `object_id` | string | 画布或素材自身 ID |
-| `data` | text/json | 业务 JSON，媒体只保存 `storageKey` 引用，不保存 Blob/Base64 |
-| `revision` | number | 当前对象版本，用于检测多设备写入冲突 |
-| `change_seq` | number | 账号内增量游标 |
-| `deleted_at` | string | 删除标记；空值表示有效记录 |
+| `title` | string | 画布标题 |
+| `data` | text/json | 完整画布 JSON，媒体保存 `storageKey` 引用 |
+| `version` | number | 服务端保存版本 |
+| `deleted_at` | string | 删除标记；空值表示有效画布 |
 | `created_at` | string | 创建时间 |
-| `updated_at` | string | 更新时间 |
+| `updated_at` | string | 最近保存时间 |
 
-### user_sync_states
+### user_assets
 
-账号同步游标表。每批成功写入会把当前用户的 `cursor` 增加一次，客户端据此只拉取上次同步后的变化。
+登录用户“我的素材”主表，按账号隔离保存素材 JSON 和版本。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 素材 ID，主键 |
+| `user_id` | string | 所属用户 ID |
+| `kind` | string | `text`、`image`、`video` |
+| `title` | string | 素材标题 |
+| `data` | text/json | 素材业务 JSON，媒体保存 `storageKey` 引用 |
+| `version` | number | 服务端保存版本 |
+| `deleted_at` | string | 删除标记；空值表示有效素材 |
+| `created_at` | string | 创建时间 |
+| `updated_at` | string | 最近保存时间 |
+
+### user_project_versions
+
+画布被新内容覆盖前保存的历史快照，每个画布最多保留最近 50 个版本，用于误覆盖后的恢复能力。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 历史版本 ID，主键 |
+| `user_id` | string | 所属用户 ID |
+| `project_id` | string | 画布 ID |
+| `version` | number | 被覆盖前的版本号 |
+| `data` | text/json | 被覆盖前的完整画布 JSON |
+| `created_at` | string | 快照时间 |
+
+### user_workspace_states
+
+记录账号最近一次成功保存时间。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `user_id` | string | 用户 ID，主键 |
-| `cursor` | number | 当前账号最新同步游标 |
-| `updated_at` | string | 最近成功写入时间 |
+| `updated_at` | string | 最近一次账号数据保存时间 |
 
 ### user_files
 
@@ -336,7 +364,7 @@ description: 当前后端主要数据表与字段说明
 | `created_at` | string | 创建时间 |
 | `updated_at` | string | 更新时间 |
 
-单文件上限为 80MB；账号默认额度由 `USER_STORAGE_QUOTA_MB` 配置，默认 5120MB。下载接口必须通过当前登录用户鉴权，不能跨账号读取文件。已超过 24 小时且不再被任何有效画布或素材引用的文件元数据会在后续同步时清理；相同哈希仍有其他引用时不会删除物理文件。
+单文件上限为 80MB；账号默认额度由 `USER_STORAGE_QUOTA_MB` 配置，默认 5120MB。文件可通过 Bearer Token 或同源 HttpOnly 会话 Cookie 鉴权读取，不能跨账号访问。前端上传媒体后立即写入账号文件存储，画布打开时按需读取，本地没有缓存时才下载。已超过 24 小时且不再被任何有效画布或素材引用的文件元数据会在后续保存时清理；相同哈希仍有其他引用时不会删除物理文件。
 
 ### 服务器素材文件
 

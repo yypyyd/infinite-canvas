@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/basketikun/infinite-canvas/config"
 	"github.com/basketikun/infinite-canvas/handler"
 	"github.com/basketikun/infinite-canvas/model"
 	"github.com/basketikun/infinite-canvas/service"
@@ -46,7 +47,19 @@ func NotFoundJSON(c *gin.Context) {
 func authUser(c *gin.Context) (model.AuthUser, bool) {
 	token := strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer ")
 	if strings.TrimSpace(token) == "" {
+		token, _ = c.Cookie("infinite_canvas_session")
+	}
+	if strings.TrimSpace(token) == "" {
 		return model.AuthUser{}, false
 	}
-	return service.CurrentAuthUser(token)
+	user, ok := service.CurrentAuthUser(token)
+	if ok && strings.TrimSpace(c.GetHeader("Authorization")) != "" {
+		maxAge := config.Cfg.JWTExpireHours * 3600
+		if maxAge <= 0 {
+			maxAge = 7 * 24 * 3600
+		}
+		c.SetSameSite(http.SameSiteLaxMode)
+		c.SetCookie("infinite_canvas_session", token, maxAge, "/", "", c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https", true)
+	}
+	return user, ok
 }

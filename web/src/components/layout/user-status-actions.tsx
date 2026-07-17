@@ -13,7 +13,7 @@ import { CREDIT_PURCHASE_URL, CreditSymbol } from "@/constant/credits";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { redeemCode } from "@/services/api/auth";
 import { useConfigStore } from "@/stores/use-config-store";
-import { useCloudSyncStore, type CloudSyncStatus } from "@/stores/use-cloud-sync-store";
+import { useWorkspaceStatusStore, type WorkspaceSaveStatus } from "@/stores/use-workspace-status-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useUserStore } from "@/stores/use-user-store";
 
@@ -40,8 +40,8 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
     const refreshUser = useUserStore((state) => state.refreshUser);
     const logout = useUserStore((state) => state.clearSession);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
-    const syncStatus = useCloudSyncStore((state) => state.status);
-    const syncError = useCloudSyncStore((state) => state.error);
+    const syncStatus = useWorkspaceStatusStore((state) => state.status);
+    const syncError = useWorkspaceStatusStore((state) => state.error);
     const canvasTheme = canvasThemes[theme];
     const userName = user?.displayName || user?.username || "";
     const credits = user?.credits ?? 0;
@@ -191,7 +191,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
     );
 }
 
-function cloudStatusText(status: CloudSyncStatus, error: string) {
+function cloudStatusText(status: WorkspaceSaveStatus, error: string) {
     if (status === "syncing") return "正在保存到账号";
     if (status === "saved") return "已保存到账号";
     if (status === "offline") return "当前离线，联网后自动保存";

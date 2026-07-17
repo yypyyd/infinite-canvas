@@ -4,6 +4,8 @@ import localforage from "localforage";
 
 import { nanoid } from "nanoid";
 import { readImageMeta } from "@/lib/image-utils";
+import { uploadWorkspaceFile, workspaceFileUrl } from "@/services/api/workspace";
+import { useUserStore } from "@/stores/use-user-store";
 
 export type UploadedImage = {
     url: string;
@@ -24,7 +26,17 @@ export async function uploadImage(input: string | Blob): Promise<UploadedImage> 
     const url = URL.createObjectURL(blob);
     objectUrls.set(storageKey, url);
     const meta = await readImageMeta(url);
-    return { url, storageKey, width: meta.width, height: meta.height, bytes: blob.size, mimeType: blob.type || meta.mimeType };
+    const token = useUserStore.getState().token;
+    let persistedUrl = url;
+    if (token && navigator.onLine) {
+        try {
+            await uploadWorkspaceFile(token, storageKey, blob);
+            persistedUrl = workspaceFileUrl(storageKey, useUserStore.getState().user?.id);
+        } catch {
+            persistedUrl = url;
+        }
+    }
+    return { url: persistedUrl, storageKey, width: meta.width, height: meta.height, bytes: blob.size, mimeType: blob.type || meta.mimeType };
 }
 
 export async function resolveImageUrl(storageKey?: string, fallback = "") {
@@ -32,14 +44,20 @@ export async function resolveImageUrl(storageKey?: string, fallback = "") {
     const cached = objectUrls.get(storageKey);
     if (cached) return cached;
     const blob = await store.getItem<Blob>(storageKey);
-    if (!blob) return fallback;
+    if (!blob) return useUserStore.getState().token ? workspaceFileUrl(storageKey, useUserStore.getState().user?.id) : fallback;
     const url = URL.createObjectURL(blob);
     objectUrls.set(storageKey, url);
     return url;
 }
 
 export async function getImageBlob(storageKey: string) {
-    return store.getItem<Blob>(storageKey);
+    const local = await store.getItem<Blob>(storageKey);
+    if (local || !useUserStore.getState().token) return local;
+    const response = await fetch(workspaceFileUrl(storageKey, useUserStore.getState().user?.id));
+    if (!response.ok) return null;
+    const blob = await response.blob();
+    await store.setItem(storageKey, blob);
+    return blob;
 }
 
 export async function setImageBlob(storageKey: string, blob: Blob) {

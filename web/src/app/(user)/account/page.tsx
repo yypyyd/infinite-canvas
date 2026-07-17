@@ -273,7 +273,7 @@ function TaskSection() {
     });
     const columns = useMemo<TableColumnsType<GenerationTask>>(() => [
         { title: "时间", dataIndex: "createdAt", width: 170, render: (value: string) => <span className="text-muted-foreground">{dayjs(value).format("YYYY-MM-DD HH:mm")}</span> },
-        { title: "模型", dataIndex: "model", render: (value: string, item) => <div><div className="font-medium">{value || "—"}</div>{item.channelName ? <div className="text-xs text-muted-foreground">{item.channelName}</div> : null}</div> },
+        { title: "模型", dataIndex: "model", render: (value: string) => <span className="font-medium">{value || "—"}</span> },
         { title: "类型", dataIndex: "modality", width: 110, render: (value: string) => <Tag className="m-0">{modalityLabel(value)}</Tag> },
         { title: "消耗", dataIndex: "credits", width: 90, align: "right", render: (value: number) => value.toLocaleString() },
         { title: "状态", dataIndex: "status", width: 100, render: (value: GenerationTask["status"]) => <TaskStatusTag status={value} /> },
@@ -286,13 +286,13 @@ function TaskSection() {
             <div className="flex flex-col gap-4 border-b border-border pb-5 lg:flex-row lg:items-end lg:justify-between">
                 <div>
                     <h2 className="text-lg font-semibold">任务中心</h2>
-                    <p className="mt-1 text-sm text-muted-foreground">记录当前账号通过后端渠道发起的模型请求，方便查看状态、扣费和失败原因。</p>
+                    <p className="mt-1 text-sm text-muted-foreground">记录当前账号发起的模型请求，方便查看状态、扣费和失败原因。</p>
                 </div>
                 <div className="flex flex-col gap-2 sm:flex-row">
                     <Input.Search
                         allowClear
                         value={keywordText}
-                        placeholder="搜索模型、渠道或错误"
+                        placeholder="搜索模型或错误"
                         enterButton
                         onChange={(event) => setKeywordText(event.target.value)}
                         onSearch={(value) => { setKeyword(value); setPage(1); }}
@@ -339,7 +339,6 @@ function TaskCard({ item }: { item: GenerationTask }) {
             <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                 <span>{modalityLabel(item.modality)}</span>
                 <span className="text-right">消耗 {item.credits.toLocaleString()} 点</span>
-                {item.channelName ? <span className="col-span-2 truncate">渠道 {item.channelName}</span> : null}
                 {item.errorMessage ? <span className="col-span-2 text-red-500">{item.errorMessage}</span> : null}
             </div>
         </article>

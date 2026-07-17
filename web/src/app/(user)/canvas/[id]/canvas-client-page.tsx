@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent as ReactChangeEvent, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Home, ImageIcon, Images, List, Menu, MessageSquare, Music2, Plus, Redo2, Settings2, Trash2, Undo2, Upload, Video } from "lucide-react";
+import { Home, ImageIcon, Images, List, Menu, MessageSquare, Music2, Plus, Redo2, Save, Settings2, Trash2, Undo2, Upload, Video } from "lucide-react";
 import { saveAs } from "file-saver";
 
 import { requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
@@ -20,7 +20,7 @@ import { useAssetStore } from "@/stores/use-asset-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { cropDataUrl, splitDataUrl, upscaleDataUrl } from "../utils/canvas-image-data";
 import { fitNodeSize, nodeSizeFromRatio } from "../utils/canvas-node-size";
-import { App, Button, Dropdown, Modal } from "antd";
+import { App, Button, Dropdown, Modal, Switch } from "antd";
 import { NODE_DEFAULT_SIZE, getNodeSpec } from "../constants";
 import { ActiveConnectionPath, ConnectionPath } from "../components/canvas-connections";
 import { CanvasConfigComposer } from "../components/canvas-config-composer";
@@ -81,6 +81,8 @@ type CanvasHistoryEntry = Pick<CanvasClipboard, "nodes" | "connections"> & {
     backgroundMode: CanvasBackgroundMode;
     showImageInfo: boolean;
 };
+
+type CanvasSaveSnapshot = Pick<CanvasProject, "nodes" | "connections" | "chatSessions" | "activeChatId" | "backgroundMode" | "showImageInfo" | "viewport">;
 
 type CanvasGenerationRequest = {
     targetNodeId: string;
@@ -223,8 +225,9 @@ function InfiniteCanvasPage() {
     const clipboardRef = useRef<CanvasClipboard | null>(null);
     const historyRef = useRef<{ past: CanvasHistoryEntry[]; future: CanvasHistoryEntry[] }>({ past: [], future: [] });
     const lastHistoryRef = useRef<CanvasHistoryEntry | null>(null);
+    const lastSavedProjectRef = useRef<CanvasSaveSnapshot | null>(null);
     const historyCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const viewportSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const canvasSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const applyingHistoryRef = useRef(false);
     const historyPausedRef = useRef(false);
     const didInitialCenterRef = useRef(false);
@@ -278,6 +281,8 @@ function InfiniteCanvasPage() {
     const [isMiniMapOpen, setIsMiniMapOpen] = useState(false);
     const [backgroundMode, setBackgroundMode] = useState<CanvasBackgroundMode>("lines");
     const [showImageInfo, setShowImageInfo] = useState(false);
+    const [autoSaveEnabled, setAutoSaveEnabled] = useState(true);
+    const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
     const [assetPickerOpen, setAssetPickerOpen] = useState(false);
     const [assetPickerTab, setAssetPickerTab] = useState<AssetPickerTab>("my-assets");
@@ -313,6 +318,7 @@ function InfiniteCanvasPage() {
     const selectionBoxRef = useRef(selectionBox);
     const pendingConnectionCreateRef = useRef(pendingConnectionCreate);
     const generationRequestsRef = useRef(new Map<string, CanvasGenerationRequest>());
+    const hasUnsavedChangesRef = useRef(false);
 
     const createHistoryEntry = useCallback(
         (): CanvasHistoryEntry => ({
@@ -324,6 +330,43 @@ function InfiniteCanvasPage() {
             showImageInfo,
         }),
         [activeChatId, backgroundMode, chatSessions, showImageInfo],
+    );
+
+    const createSaveSnapshot = useCallback(
+        (): CanvasSaveSnapshot => ({
+            nodes: nodesRef.current,
+            connections: connectionsRef.current,
+            chatSessions,
+            activeChatId,
+            backgroundMode,
+            showImageInfo,
+            viewport: viewportRef.current,
+        }),
+        [activeChatId, backgroundMode, chatSessions, showImageInfo],
+    );
+
+    const saveCanvas = useCallback(
+        (successText = "画布已保存", nextAutoSaveEnabled = autoSaveEnabled) => {
+            if (canvasSaveTimerRef.current) {
+                clearTimeout(canvasSaveTimerRef.current);
+                canvasSaveTimerRef.current = null;
+            }
+            const snapshot = createSaveSnapshot();
+            updateProject(projectId, { ...snapshot, autoSaveEnabled: nextAutoSaveEnabled });
+            lastSavedProjectRef.current = snapshot;
+            hasUnsavedChangesRef.current = false;
+            setHasUnsavedChanges(false);
+            if (successText) message.success(successText);
+        },
+        [autoSaveEnabled, createSaveSnapshot, message, projectId, updateProject],
+    );
+
+    const handleAutoSaveChange = useCallback(
+        (checked: boolean) => {
+            setAutoSaveEnabled(checked);
+            saveCanvas(checked ? "已开启自动保存并保存当前画布" : "已关闭自动保存，当前画布已保存", checked);
+        },
+        [saveCanvas],
     );
 
     const cleanupCanvasFiles = useCallback(
@@ -394,6 +437,7 @@ function InfiniteCanvasPage() {
     );
 
     const restoreProjectState = useCallback(async (project: CanvasProject) => {
+        const hadInterruptedGeneration = project.nodes.some((node) => node.metadata?.status === NODE_STATUS_LOADING);
         const restoredNodes = await hydrateCanvasImages(resetInterruptedGeneration(project.nodes));
         const restoredSessions = await hydrateAssistantImages(project.chatSessions || []);
         setNodes(restoredNodes);
@@ -402,11 +446,18 @@ function InfiniteCanvasPage() {
         setActiveChatId(project.activeChatId || null);
         setBackgroundMode(project.backgroundMode);
         setShowImageInfo(project.showImageInfo || false);
+        setAutoSaveEnabled(project.autoSaveEnabled ?? true);
+        hasUnsavedChangesRef.current = false;
+        setHasUnsavedChanges(false);
         setViewport(project.viewport);
         historyRef.current = { past: [], future: [] };
         if (historyCommitTimerRef.current) {
             clearTimeout(historyCommitTimerRef.current);
             historyCommitTimerRef.current = null;
+        }
+        if (canvasSaveTimerRef.current) {
+            clearTimeout(canvasSaveTimerRef.current);
+            canvasSaveTimerRef.current = null;
         }
         lastHistoryRef.current = {
             nodes: restoredNodes,
@@ -415,6 +466,15 @@ function InfiniteCanvasPage() {
             activeChatId: project.activeChatId || null,
             backgroundMode: project.backgroundMode,
             showImageInfo: project.showImageInfo || false,
+        };
+        lastSavedProjectRef.current = {
+            nodes: hadInterruptedGeneration ? project.nodes : restoredNodes,
+            connections: project.connections,
+            chatSessions: restoredSessions,
+            activeChatId: project.activeChatId || null,
+            backgroundMode: project.backgroundMode,
+            showImageInfo: project.showImageInfo || false,
+            viewport: project.viewport,
         };
         setHistoryState({ canUndo: false, canRedo: false });
         setProjectLoaded(true);
@@ -434,7 +494,7 @@ function InfiniteCanvasPage() {
 
     useEffect(() => {
         const handleProjectsReplaced = () => {
-            if (generationRequestsRef.current.size) return;
+            if (generationRequestsRef.current.size || hasUnsavedChangesRef.current) return;
             const project = useCanvasStore.getState().projects.find((item) => item.id === projectId);
             if (project) void restoreProjectState(project);
         };
@@ -470,24 +530,40 @@ function InfiniteCanvasPage() {
 
     useEffect(() => {
         if (!projectLoaded || historyPausedRef.current) return;
-        updateProject(projectId, { nodes, connections, chatSessions, activeChatId, backgroundMode, showImageInfo });
-    }, [activeChatId, backgroundMode, chatSessions, connections, nodes, projectId, projectLoaded, showImageInfo, updateProject]);
+        const next = createSaveSnapshot();
+        const previous = lastSavedProjectRef.current;
+        if (previous && isSameSaveSnapshot(previous, next)) return;
+
+        if (canvasSaveTimerRef.current) {
+            clearTimeout(canvasSaveTimerRef.current);
+            canvasSaveTimerRef.current = null;
+        }
+
+        if (!autoSaveEnabled) {
+            hasUnsavedChangesRef.current = true;
+            setHasUnsavedChanges(true);
+            return;
+        }
+
+        canvasSaveTimerRef.current = setTimeout(() => {
+            updateProject(projectId, { ...next, autoSaveEnabled });
+            lastSavedProjectRef.current = next;
+            hasUnsavedChangesRef.current = false;
+            setHasUnsavedChanges(false);
+            canvasSaveTimerRef.current = null;
+        }, 500);
+
+        return () => {
+            if (canvasSaveTimerRef.current) {
+                clearTimeout(canvasSaveTimerRef.current);
+                canvasSaveTimerRef.current = null;
+            }
+        };
+    }, [activeChatId, autoSaveEnabled, backgroundMode, chatSessions, connections, createSaveSnapshot, nodes, projectId, projectLoaded, showImageInfo, updateProject, viewport]);
 
     useEffect(() => {
         if (!dialogNodeId) setNodeImageSettingsOpen(false);
     }, [dialogNodeId]);
-
-    useEffect(() => {
-        if (!projectLoaded) return;
-        if (viewportSaveTimerRef.current) clearTimeout(viewportSaveTimerRef.current);
-        viewportSaveTimerRef.current = setTimeout(() => {
-            updateProject(projectId, { viewport: viewportRef.current });
-            viewportSaveTimerRef.current = null;
-        }, 500);
-        return () => {
-            if (viewportSaveTimerRef.current) clearTimeout(viewportSaveTimerRef.current);
-        };
-    }, [projectId, projectLoaded, updateProject, viewport]);
 
     useLayoutEffect(() => {
         nodesRef.current = nodes;
@@ -1315,10 +1391,16 @@ function InfiniteCanvasPage() {
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
             const target = event.target instanceof Element ? event.target : null;
-            if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement || target?.closest("[contenteditable='true'],[data-canvas-no-zoom]")) return;
-
             const key = event.key.toLowerCase();
             const isModifierShortcut = event.metaKey || event.ctrlKey;
+
+            if (isModifierShortcut && !event.altKey && key === "s") {
+                event.preventDefault();
+                saveCanvas();
+                return;
+            }
+
+            if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement || target?.closest("[contenteditable='true'],[data-canvas-no-zoom]")) return;
 
             if (isModifierShortcut && !event.altKey && key === "z") {
                 event.preventDefault();
@@ -1382,7 +1464,7 @@ function InfiniteCanvasPage() {
 
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [copySelectedNodes, deleteConnection, deleteNodes, pasteCopiedNodes, pasteSystemClipboard, redoCanvas, selectedConnectionId, setConnecting, undoCanvas]);
+    }, [copySelectedNodes, deleteConnection, deleteNodes, pasteCopiedNodes, pasteSystemClipboard, redoCanvas, saveCanvas, selectedConnectionId, setConnecting, undoCanvas]);
 
     const handleConnectStart = useCallback(
         (event: ReactMouseEvent, nodeId: string, handleType: "source" | "target") => {
@@ -2448,6 +2530,10 @@ function InfiniteCanvasPage() {
                     onImportImage={() => handleUploadRequest()}
                     onUndo={undoCanvas}
                     onRedo={redoCanvas}
+                    autoSaveEnabled={autoSaveEnabled}
+                    hasUnsavedChanges={hasUnsavedChanges}
+                    onAutoSaveChange={handleAutoSaveChange}
+                    onSaveCanvas={() => saveCanvas()}
                     assistantCollapsed={assistantCollapsed}
                     onExpandAssistant={() => {
                         setAssistantMounted(true);
@@ -2775,6 +2861,10 @@ function CanvasTopBar({
     onImportImage,
     onUndo,
     onRedo,
+    autoSaveEnabled,
+    hasUnsavedChanges,
+    onAutoSaveChange,
+    onSaveCanvas,
     assistantCollapsed,
     onExpandAssistant,
 }: {
@@ -2794,6 +2884,10 @@ function CanvasTopBar({
     onImportImage: () => void;
     onUndo: () => void;
     onRedo: () => void;
+    autoSaveEnabled: boolean;
+    hasUnsavedChanges: boolean;
+    onAutoSaveChange: (checked: boolean) => void;
+    onSaveCanvas: () => void;
     assistantCollapsed: boolean;
     onExpandAssistant: () => void;
 }) {
@@ -2876,6 +2970,15 @@ function CanvasTopBar({
                 </div>
 
                 <div className="pointer-events-auto flex items-center gap-1.5">
+                    <div className="flex h-10 items-center gap-2 rounded-xl px-2" style={{ background: theme.toolbar.panel, color: theme.node.text, boxShadow: "0 10px 30px rgba(28,25,23,.10)" }}>
+                        <Button type="text" shape="circle" className="!h-8 !w-8 !min-w-8 !p-0" style={{ color: theme.node.text }} icon={<Save className="size-4" />} onClick={onSaveCanvas} title="保存画布 Ctrl+S" aria-label="保存画布" />
+                        <span className="relative hidden text-xs font-medium opacity-75 sm:inline">
+                            自动保存
+                            {hasUnsavedChanges ? <span className="absolute -right-2 -top-1 size-1.5 rounded-full bg-amber-400" /> : null}
+                        </span>
+                        {hasUnsavedChanges ? <span className="size-1.5 rounded-full bg-amber-400 sm:hidden" /> : null}
+                        <Switch size="small" checked={autoSaveEnabled} onChange={onAutoSaveChange} aria-label="自动保存" />
+                    </div>
                     <UserStatusActions
                         variant="canvas"
                         accountOpen={accountOpen}
@@ -2912,6 +3015,7 @@ function CanvasTopBar({
                     <Shortcut keys={["Shift / Ctrl / Cmd", "点击"]} value="追加选择节点" />
                     <Shortcut keys={["Ctrl / Cmd", "A"]} value="全选节点" />
                     <Shortcut keys={["Ctrl / Cmd", "C / V"]} value="复制 / 粘贴节点，或粘贴剪切板文本/图片" />
+                    <Shortcut keys={["Ctrl / Cmd", "S"]} value="保存画布" />
                     <Shortcut keys={["Ctrl / Cmd", "Z"]} value="撤销" />
                     <Shortcut keys={["Ctrl / Cmd", "Shift", "Z"]} value="重做" />
                     <Shortcut keys={["Ctrl / Cmd", "Y"]} value="重做" />
@@ -3062,6 +3166,10 @@ async function hydrateAssistantImages(sessions: CanvasAssistantSession[]) {
 
 function getGenerationCount(count: string) {
     return Math.max(1, Math.min(15, Math.floor(Math.abs(Number(count)) || 1)));
+}
+
+function isSameSaveSnapshot(first: CanvasSaveSnapshot, second: CanvasSaveSnapshot) {
+    return first.nodes === second.nodes && first.connections === second.connections && first.chatSessions === second.chatSessions && first.activeChatId === second.activeChatId && first.backgroundMode === second.backgroundMode && first.showImageInfo === second.showImageInfo && first.viewport === second.viewport;
 }
 
 function isGenerationCanceled(error: unknown) {

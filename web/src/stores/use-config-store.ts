@@ -2,7 +2,6 @@
 
 import { useMemo } from "react";
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
 
 import { apiGet } from "@/services/api/request";
 import type { AdminPublicSettings } from "@/services/api/admin";
@@ -33,7 +32,10 @@ export type AiConfig = {
     canvasImageCount: string;
 };
 
-export const CONFIG_STORE_KEY = "infinite-canvas:ai_config_store";
+const AI_PREFERENCE_KEYS = ["model", "imageModel", "videoModel", "textModel", "audioModel", "audioVoice", "audioFormat", "audioSpeed", "audioInstructions", "videoSeconds", "vquality", "videoGenerateAudio", "videoWatermark", "quality", "size", "count", "canvasImageCount"] as const;
+type AiPreferenceKey = (typeof AI_PREFERENCE_KEYS)[number];
+export type AiPreferences = Pick<AiConfig, AiPreferenceKey>;
+
 export type ModelCapability = "image" | "video" | "text" | "audio";
 
 export const defaultConfig: AiConfig = {
@@ -69,6 +71,7 @@ type ConfigStore = {
     isConfigOpen: boolean;
     shouldPromptContinue: boolean;
     updateConfig: <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void;
+    applyAiPreferences: (preferences: unknown) => void;
     loadPublicSettings: () => Promise<void>;
     isAiConfigReady: (config: AiConfig, model: string) => boolean;
     openConfigDialog: (shouldPromptContinue?: boolean) => void;
@@ -166,9 +169,7 @@ function isAiConfigReady(_config: AiConfig, model: string) {
     return Boolean(model.trim());
 }
 
-export const useConfigStore = create<ConfigStore>()(
-    persist(
-        (set, get) => ({
+export const useConfigStore = create<ConfigStore>()((set, get) => ({
             config: defaultConfig,
             publicSettings: null,
             isPublicSettingsLoading: false,
@@ -181,6 +182,7 @@ export const useConfigStore = create<ConfigStore>()(
                         [key]: value,
                     },
                 })),
+            applyAiPreferences: (preferences) => set((state) => ({ config: { ...state.config, ...normalizeAiPreferences(preferences) } })),
             loadPublicSettings: async () => {
                 if (get().isPublicSettingsLoading) return;
                 set({ isPublicSettingsLoading: true });
@@ -194,55 +196,25 @@ export const useConfigStore = create<ConfigStore>()(
             openConfigDialog: (shouldPromptContinue = false) => set({ isConfigOpen: true, shouldPromptContinue }),
             setConfigDialogOpen: (isConfigOpen) => set({ isConfigOpen }),
             clearPromptContinue: () => set({ shouldPromptContinue: false }),
-        }),
-        {
-            name: CONFIG_STORE_KEY,
-            partialize: (state) => ({ config: state.config }),
-            version: 2,
-            migrate: (persisted) => {
-                const state = persisted as Partial<ConfigStore>;
-                const stored = (state.config || {}) as Partial<AiConfig> & { channelMode?: unknown; baseUrl?: unknown; apiKey?: unknown };
-                const { channelMode: _channelMode, baseUrl: _baseUrl, apiKey: _apiKey, ...config } = stored;
-                return { ...state, config };
-            },
-            merge: (persisted, current) => {
-                const storedConfig = ((persisted as Partial<ConfigStore>).config || {}) as Partial<AiConfig> & { webdavSync?: unknown; channelMode?: unknown; baseUrl?: unknown; apiKey?: unknown };
-                const { webdavSync: _removedWebdav, channelMode: _removedChannelMode, baseUrl: _removedBaseUrl, apiKey: _removedApiKey, ...persistedConfig } = storedConfig;
-                const config = { ...defaultConfig, ...persistedConfig };
-                return {
-                    ...current,
-                    config: {
-                        ...config,
-                        imageModel: config.imageModel || config.model,
-                        videoModel: config.videoModel || "grok-imagine-video",
-                        textModel: config.textModel || config.model,
-                        audioModel: config.audioModel || defaultConfig.audioModel,
-                        audioVoice: config.audioVoice || defaultConfig.audioVoice,
-                        audioFormat: config.audioFormat || defaultConfig.audioFormat,
-                        audioSpeed: config.audioSpeed || defaultConfig.audioSpeed,
-                        audioInstructions: config.audioInstructions || "",
-                        videoSeconds: config.videoSeconds || "6",
-                        vquality: config.vquality || "720",
-                        videoGenerateAudio: config.videoGenerateAudio || "true",
-                        videoWatermark: config.videoWatermark || "false",
-                        canvasImageCount: config.canvasImageCount || "3",
-                        imageModels: Array.isArray(persistedConfig.imageModels) ? normalizeModelList(config.imageModels) : filterModelsByCapability(config.models, "image"),
-                        videoModels: Array.isArray(persistedConfig.videoModels) ? normalizeModelList(config.videoModels) : filterModelsByCapability(config.models, "video"),
-                        textModels: Array.isArray(persistedConfig.textModels) ? normalizeModelList(config.textModels) : filterModelsByCapability(config.models, "text"),
-                        audioModels: Array.isArray(persistedConfig.audioModels) ? normalizeModelList(config.audioModels) : filterModelsByCapability(config.models, "audio"),
-                    },
-                };
-            },
-        },
-    ),
-);
-
-function normalizeModelList(models: string[]) {
-    return Array.from(new Set((models || []).map((model) => model.trim()).filter(Boolean)));
-}
+        }));
 
 export function useEffectiveConfig() {
     const config = useConfigStore((state) => state.config);
     const modelChannel = useConfigStore((state) => state.publicSettings?.modelChannel || null);
     return useMemo(() => resolveEffectiveConfig(config, modelChannel), [config, modelChannel]);
+}
+
+export function aiPreferencesFromConfig(config: AiConfig): AiPreferences {
+    return Object.fromEntries(AI_PREFERENCE_KEYS.map((key) => [key, config[key]])) as AiPreferences;
+}
+
+function normalizeAiPreferences(value: unknown): Partial<AiPreferences> {
+    if (!value || typeof value !== "object") return {};
+    const source = value as Record<string, unknown>;
+    const preferences: Partial<Record<AiPreferenceKey, string>> = {};
+    AI_PREFERENCE_KEYS.forEach((key) => {
+        const item = source[key];
+        if (typeof item === "string") preferences[key] = item;
+    });
+    return preferences as Partial<AiPreferences>;
 }

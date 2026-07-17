@@ -76,6 +76,7 @@ func DB() (*gorm.DB, error) {
 			&model.UserGenerationRecord{},
 			&model.UserProjectVersion{},
 			&model.UserWorkspaceState{},
+			&model.UserPreference{},
 			&model.Prompt{},
 			&model.Asset{},
 			&model.Setting{},

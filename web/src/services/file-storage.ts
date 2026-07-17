@@ -1,6 +1,5 @@
 "use client";
 
-import localforage from "localforage";
 import { nanoid } from "nanoid";
 
 import { uploadWorkspaceFile, workspaceFileUrl } from "@/services/api/workspace";
@@ -8,36 +7,28 @@ import { useUserStore } from "@/stores/use-user-store";
 
 export type UploadedFile = { url: string; storageKey: string; bytes: number; mimeType: string; width?: number; height?: number; durationMs?: number };
 
-const store = localforage.createInstance({ name: "infinite-canvas", storeName: "media_files" });
+const blobs = new Map<string, Blob>();
 const objectUrls = new Map<string, string>();
 
 export async function uploadMediaFile(input: string | Blob, prefix = "file"): Promise<UploadedFile> {
     const session = useUserStore.getState();
     if (!session.user?.id) throw new Error("请先登录后再保存媒体文件");
+    if (!navigator.onLine) throw new Error("当前处于离线状态，无法保存媒体文件");
     const blob = typeof input === "string" ? await (await fetch(input)).blob() : input;
     const storageKey = `${prefix}:${nanoid()}`;
-    await store.setItem(storageKey, blob);
+    await uploadWorkspaceFile(session.token, storageKey, blob);
+    blobs.set(storageKey, blob);
     const url = URL.createObjectURL(blob);
     objectUrls.set(storageKey, url);
     const meta = blob.type.startsWith("video/") ? await readVideoMeta(url) : blob.type.startsWith("audio/") ? await readAudioMeta(url) : {};
-    const token = session.token;
-    let persistedUrl = url;
-    if (token && navigator.onLine) {
-        try {
-            await uploadWorkspaceFile(token, storageKey, blob);
-            persistedUrl = workspaceFileUrl(storageKey, session.user.id);
-        } catch {
-            persistedUrl = url;
-        }
-    }
-    return { url: persistedUrl, storageKey, bytes: blob.size, mimeType: blob.type || "application/octet-stream", ...meta };
+    return { url: workspaceFileUrl(storageKey, session.user.id), storageKey, bytes: blob.size, mimeType: blob.type || "application/octet-stream", ...meta };
 }
 
 export async function resolveMediaUrl(storageKey?: string, fallback = "") {
     if (!storageKey) return fallback;
     const cached = objectUrls.get(storageKey);
     if (cached) return cached;
-    const blob = await store.getItem<Blob>(storageKey);
+    const blob = blobs.get(storageKey);
     if (!blob) {
         const userId = useUserStore.getState().user?.id;
         return userId ? workspaceFileUrl(storageKey, userId) : fallback;
@@ -48,18 +39,22 @@ export async function resolveMediaUrl(storageKey?: string, fallback = "") {
 }
 
 export async function getMediaBlob(storageKey: string) {
-    const local = await store.getItem<Blob>(storageKey);
+    const local = blobs.get(storageKey);
     const userId = useUserStore.getState().user?.id;
     if (local || !userId) return local;
     const response = await fetch(workspaceFileUrl(storageKey, userId));
     if (!response.ok) return null;
     const blob = await response.blob();
-    await store.setItem(storageKey, blob);
+    blobs.set(storageKey, blob);
     return blob;
 }
 
 export async function setMediaBlob(storageKey: string, blob: Blob) {
-    await store.setItem(storageKey, blob);
+    const session = useUserStore.getState();
+    if (!session.user?.id) throw new Error("请先登录后再保存媒体文件");
+    if (!navigator.onLine) throw new Error("当前处于离线状态，无法保存媒体文件");
+    await uploadWorkspaceFile(session.token, storageKey, blob);
+    blobs.set(storageKey, blob);
     const url = URL.createObjectURL(blob);
     objectUrls.set(storageKey, url);
     return url;
@@ -71,7 +66,7 @@ export async function deleteStoredMedia(keys: Iterable<string>) {
             const url = objectUrls.get(key);
             if (url) URL.revokeObjectURL(url);
             objectUrls.delete(key);
-            await store.removeItem(key);
+            blobs.delete(key);
         }),
     );
 }
@@ -79,10 +74,16 @@ export async function deleteStoredMedia(keys: Iterable<string>) {
 export async function cleanupUnusedMedia(usedData: unknown) {
     const usedKeys = collectMediaStorageKeys(usedData);
     const unused: string[] = [];
-    await store.iterate((_value, key) => {
+    blobs.forEach((_value, key) => {
         if (!usedKeys.has(key)) unused.push(key);
     });
-    await Promise.all(unused.map((key) => store.removeItem(key)));
+    unused.forEach((key) => blobs.delete(key));
+}
+
+export function clearMediaMemory() {
+    objectUrls.forEach((url) => URL.revokeObjectURL(url));
+    objectUrls.clear();
+    blobs.clear();
 }
 
 export function collectMediaStorageKeys(value: unknown, keys = new Set<string>()) {

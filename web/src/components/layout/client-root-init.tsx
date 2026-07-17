@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import { useConfigStore } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { WorkspaceProvider } from "@/components/layout/workspace-provider";
+import { UserPreferencesProvider } from "@/components/layout/user-preferences-provider";
 
 export function ClientRootInit({ children }: { children: ReactNode }) {
     const pathname = usePathname();
@@ -22,5 +23,5 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
         if (!isLoginPage) void hydrateUser();
     }, [hydrateUser, isLoginPage]);
 
-    return <><WorkspaceProvider />{children}</>;
+    return <><WorkspaceProvider /><UserPreferencesProvider />{children}</>;
 }

@@ -297,7 +297,7 @@ description: 当前后端主要数据表与字段说明
 
 ### user_projects
 
-登录用户的画布主表。服务端是账号画布的权威数据源，浏览器 LocalForage 仅作为缓存和离线待保存区。
+登录用户的画布主表。服务端是账号画布的唯一持久化数据源，浏览器不保存离线副本。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
@@ -382,6 +382,18 @@ description: 当前后端主要数据表与字段说明
 单文件上限为 80MB；账号默认额度由 `USER_STORAGE_QUOTA_MB` 配置，默认 5120MB。前端先向后端申请 10 分钟有效的七牛上传凭证，再把文件直接上传到私有空间，上传完成后由后端读取对象元数据并确认入库；长期 Access Key 和 Secret Key 只保存在服务端。文件读取必须先通过 Bearer Token 或同源 HttpOnly 会话 Cookie 鉴权，后端再返回 10 分钟有效的私有下载地址，不能跨账号访问。已超过 24 小时且不再被任何有效画布或素材引用的文件，会在后续保存时同时从七牛空间和数据库清理。
 
 七牛云连接由 `QINIU_ACCESS_KEY`、`QINIU_SECRET_KEY`、`QINIU_BUCKET`、`QINIU_REGION` 和 `QINIU_DOWNLOAD_DOMAIN` 配置。
+
+### user_preferences
+
+账号级用户偏好表。每个账号一行，用于跨设备恢复小型界面和创作偏好，不保存业务数据、缓存或任何密钥。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `user_id` | string | 用户 ID，主键 |
+| `data` | text/json | 主题、默认模型、生成参数和图片快捷工具栏配置，最大 64KB |
+| `updated_at` | string | 最近保存时间 |
+
+接口只接受 `theme`、`aiConfig`、`imageQuickTools` 三个顶层字段；用户登录后通过 `/api/preferences` 读取和保存，账号之间相互隔离。
 
 ### 服务器素材文件
 

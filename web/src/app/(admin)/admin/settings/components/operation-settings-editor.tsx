@@ -13,52 +13,9 @@ const announcementTypes = [
 
 export function OperationSettingsEditor() {
     const checkInReward = Form.useWatch(["public", "checkIn", "reward"]) === true;
-    const newUserReward = Form.useWatch(["public", "auth", "newUserReward"]) === true;
-    const emailDomainRestriction = Form.useWatch(["public", "auth", "emailDomainRestriction"]) === true;
 
     return (
         <Flex vertical gap={16}>
-            <Card size="small" title={<Space><ShieldBan className="size-4" />访问限制</Space>}>
-                <Form.Item name={["public", "access", "blockChina"]} label="限制中国大陆访问" extra="开启后，中国大陆 IP 访问页面和接口时会返回访问受限提示；关闭后正常放行" valuePropName="checked" style={{ marginBottom: 0 }}>
-                    <Switch checkedChildren="已限制" unCheckedChildren="已放行" />
-                </Form.Item>
-            </Card>
-
-            <Card size="small" title={<Space><UserPlus className="size-4" />用户注册与初始额度</Space>}>
-                <Row gutter={16}>
-                    <Col xs={24} md={8}>
-                        <Form.Item name={["public", "auth", "allowRegister"]} label="允许用户注册" extra="关闭后前台隐藏注册入口，注册接口也会拒绝创建用户" valuePropName="checked">
-                            <Switch />
-                        </Form.Item>
-                    </Col>
-                    <Col xs={24} md={8}>
-                        <Form.Item name={["public", "auth", "emailDomainRestriction"]} label="限制注册邮箱类型" extra="开启后只允许下方配置的邮箱域名注册" valuePropName="checked">
-                            <Switch />
-                        </Form.Item>
-                    </Col>
-                    <Col xs={24} md={8}>
-                        <Form.Item name={["public", "auth", "newUserReward"]} label="赠送新用户额度" extra="仅本地注册成功时发放一次" valuePropName="checked">
-                            <Switch />
-                        </Form.Item>
-                    </Col>
-                    <Col xs={24} md={8}>
-                        <Form.Item name={["public", "auth", "newUserRewardCredits"]} label="新用户赠送额度">
-                            <InputNumber min={0} precision={0} className="!w-full" disabled={!newUserReward} addonAfter="点" />
-                        </Form.Item>
-                    </Col>
-                </Row>
-                <Alert className="mb-4" type="info" showIcon message="注册必须完成邮箱验证；邮件服务器账号和密码请在“私有配置”中设置。" />
-                <Form.Item
-                    name={["public", "auth", "emailDomains"]}
-                    label="允许注册的邮箱域名"
-                    extra={emailDomainRestriction ? "输入域名后按回车，例如 qq.com、gmail.com" : "当前未启用域名限制，允许所有有效邮箱"}
-                    rules={emailDomainRestriction ? [{ required: true, message: "请至少配置一个邮箱域名" }] : undefined}
-                >
-                    <Select mode="tags" tokenSeparators={[",", "，", " "]} placeholder="qq.com" open={false} />
-                </Form.Item>
-                <Form.Item name={["public", "auth", "emailVerification"]} hidden valuePropName="checked"><Switch /></Form.Item>
-            </Card>
-
             <Card size="small" title={<Space><CalendarCheck2 className="size-4" />每日签到</Space>}>
                 <Row gutter={16}>
                     <Col xs={24} md={8}>
@@ -134,6 +91,56 @@ export function OperationSettingsEditor() {
                         </Flex>
                     )}
                 </Form.List>
+            </Card>
+        </Flex>
+    );
+}
+
+export function AccessAndRegistrationSettingsEditor() {
+    const newUserReward = Form.useWatch(["public", "auth", "newUserReward"]) === true;
+    const emailDomainRestriction = Form.useWatch(["public", "auth", "emailDomainRestriction"]) === true;
+
+    return (
+        <Flex vertical gap={16}>
+            <Card size="small" title={<Space><ShieldBan className="size-4" />访问限制</Space>}>
+                <Form.Item name={["public", "access", "blockChina"]} label="限制中国大陆访问" extra="开启后，中国大陆 IP 访问页面和接口时会返回访问受限提示；关闭后正常放行" valuePropName="checked" style={{ marginBottom: 0 }}>
+                    <Switch checkedChildren="已限制" unCheckedChildren="已放行" />
+                </Form.Item>
+            </Card>
+
+            <Card size="small" title={<Space><UserPlus className="size-4" />用户注册与初始额度</Space>}>
+                <Row gutter={16}>
+                    <Col xs={24} md={8}>
+                        <Form.Item name={["public", "auth", "allowRegister"]} label="允许用户注册" extra="关闭后前台隐藏注册入口，注册接口也会拒绝创建用户" valuePropName="checked">
+                            <Switch />
+                        </Form.Item>
+                    </Col>
+                    <Col xs={24} md={8}>
+                        <Form.Item name={["public", "auth", "emailDomainRestriction"]} label="限制注册邮箱类型" extra="开启后只允许下方配置的邮箱域名注册" valuePropName="checked">
+                            <Switch />
+                        </Form.Item>
+                    </Col>
+                    <Col xs={24} md={8}>
+                        <Form.Item name={["public", "auth", "newUserReward"]} label="赠送新用户额度" extra="仅本地注册成功时发放一次" valuePropName="checked">
+                            <Switch />
+                        </Form.Item>
+                    </Col>
+                    <Col xs={24} md={8}>
+                        <Form.Item name={["public", "auth", "newUserRewardCredits"]} label="新用户赠送额度">
+                            <InputNumber min={0} precision={0} className="!w-full" disabled={!newUserReward} addonAfter="点" />
+                        </Form.Item>
+                    </Col>
+                </Row>
+                <Alert className="mb-4" type="info" showIcon message="注册必须完成邮箱验证；邮件服务器账号和密码请在“邮件服务”中设置。" />
+                <Form.Item
+                    name={["public", "auth", "emailDomains"]}
+                    label="允许注册的邮箱域名"
+                    extra={emailDomainRestriction ? "输入域名后按回车，例如 qq.com、gmail.com" : "当前未启用域名限制，允许所有有效邮箱"}
+                    rules={emailDomainRestriction ? [{ required: true, message: "请至少配置一个邮箱域名" }] : undefined}
+                >
+                    <Select mode="tags" tokenSeparators={[",", "，", " "]} placeholder="qq.com" open={false} />
+                </Form.Item>
+                <Form.Item name={["public", "auth", "emailVerification"]} hidden valuePropName="checked"><Switch /></Form.Item>
             </Card>
         </Flex>
     );

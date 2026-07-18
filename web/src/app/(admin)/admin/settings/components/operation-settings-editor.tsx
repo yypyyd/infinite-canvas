@@ -1,6 +1,6 @@
 "use client";
 
-import { BellRing, CalendarCheck2, UserPlus } from "lucide-react";
+import { BellRing, CalendarCheck2, ShieldBan, UserPlus } from "lucide-react";
 import dayjs from "dayjs";
 import { Alert, Button, Card, Col, DatePicker, Empty, Flex, Form, Input, InputNumber, Row, Select, Space, Switch, Tag, Typography } from "antd";
 
@@ -18,6 +18,12 @@ export function OperationSettingsEditor() {
 
     return (
         <Flex vertical gap={16}>
+            <Card size="small" title={<Space><ShieldBan className="size-4" />访问限制</Space>}>
+                <Form.Item name={["public", "access", "blockChina"]} label="限制中国大陆访问" extra="开启后，中国大陆 IP 访问页面和接口时会返回访问受限提示；关闭后正常放行" valuePropName="checked" style={{ marginBottom: 0 }}>
+                    <Switch checkedChildren="已限制" unCheckedChildren="已放行" />
+                </Form.Item>
+            </Card>
+
             <Card size="small" title={<Space><UserPlus className="size-4" />用户注册与初始额度</Space>}>
                 <Row gutter={16}>
                     <Col xs={24} md={8}>

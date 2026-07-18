@@ -3,10 +3,13 @@ import { NextResponse, type NextRequest } from "next/server";
 import { CN_IPV4_RANGES, CN_IPV6_RANGES } from "@/lib/china-ip-ranges";
 
 const countryHeaders = ["cf-ipcountry", "x-vercel-ip-country", "cloudfront-viewer-country", "x-country-code", "x-geo-country"];
+const accessPolicyCacheMs = 5000;
 const directAccessBlockedHtml = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>访问受限</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#111;color:#f5f5f5;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.box{max-width:420px;padding:28px;text-align:center}.title{font-size:22px;font-weight:700}.text{margin-top:12px;color:#b8b8b8;line-height:1.7}</style></head><body><main class="box"><div class="title">当前地区暂不支持直接访问</div><div class="text">请联系管理员获取可用访问方式。</div></main></body></html>`;
+let accessPolicy = { blockChina: false, expiresAt: 0 };
+let accessPolicyRequest: Promise<boolean> | null = null;
 
-export function middleware(request: NextRequest) {
-    if (!isBlockedChinaRequest(request)) return NextResponse.next();
+export async function middleware(request: NextRequest) {
+    if (!isChinaRequest(request) || !(await blockChinaAccess())) return NextResponse.next();
     return new NextResponse(directAccessBlockedHtml, {
         status: 451,
         headers: {
@@ -20,13 +23,33 @@ export const config = {
     matcher: ["/((?!_next/static|_next/image|favicon.ico|logo.png).*)"],
 };
 
-function isBlockedChinaRequest(request: NextRequest) {
+function isChinaRequest(request: NextRequest) {
     const country = countryHeaders.map((name) => request.headers.get(name)?.trim().toUpperCase()).find(Boolean);
     if (country === "CN") return true;
     if (country && country !== "CN") return false;
 
     const ip = clientIp(request);
     return Boolean(ip && isChinaIp(ip));
+}
+
+async function blockChinaAccess() {
+    if (accessPolicy.expiresAt > Date.now()) return accessPolicy.blockChina;
+    if (!accessPolicyRequest) accessPolicyRequest = loadAccessPolicy().finally(() => (accessPolicyRequest = null));
+    return accessPolicyRequest;
+}
+
+async function loadAccessPolicy() {
+    try {
+        const apiBaseUrl = process.env.API_BASE_URL || "http://127.0.0.1:8080";
+        const response = await fetch(`${apiBaseUrl.replace(/\/$/, "")}/api/settings`, { cache: "no-store", headers: { accept: "application/json" } });
+        const result = (await response.json()) as { code?: number; data?: { access?: { blockChina?: boolean } } };
+        if (!response.ok || result.code !== 0) throw new Error("读取访问限制配置失败");
+        accessPolicy.blockChina = result.data?.access?.blockChina === true;
+    } catch (error) {
+        console.error("Failed to load access policy", error);
+    }
+    accessPolicy.expiresAt = Date.now() + accessPolicyCacheMs;
+    return accessPolicy.blockChina;
 }
 
 function clientIp(request: NextRequest) {

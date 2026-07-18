@@ -335,6 +335,9 @@ export type AdminPublicSettings = {
         newUserReward: boolean;
         newUserRewardCredits: number;
     };
+    access: {
+        blockChina: boolean;
+    };
     announcements: {
         enabled: boolean;
         items: AdminAnnouncement[];

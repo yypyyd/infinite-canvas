@@ -42,6 +42,9 @@ description: settings 表中 public 和 private 配置结构说明
     "newUserReward": true,
     "newUserRewardCredits": 20
   },
+  "access": {
+    "blockChina": false
+  },
   "announcements": {
     "enabled": true,
     "items": [
@@ -60,6 +63,7 @@ description: settings 表中 public 和 private 配置结构说明
 | --- | --- | --- |
 | `modelChannel` | object | 模型渠道公开配置组 |
 | `auth` | object | 认证相关公开配置 |
+| `access` | object | 站点访问限制配置 |
 | `announcements` | object | 平台公告配置 |
 | `checkIn` | object | 每日签到配置 |
 
@@ -102,6 +106,12 @@ description: settings 表中 public 和 private 配置结构说明
 | `emailDomains` | string[] | 允许注册的邮箱域名；未开启限制时可为空 |
 | `newUserReward` | boolean | 是否在本地注册成功时赠送一次额度 |
 | `newUserRewardCredits` | number | 新用户赠送额度，最小为 0 |
+
+`access` 字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `blockChina` | boolean | 是否限制中国大陆访问，默认关闭；开启后入口层会根据国家码请求头或 APNIC IP 段返回 451 访问受限页 |
 
 `announcements` 字段：
 

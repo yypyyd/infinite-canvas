@@ -44,6 +44,7 @@ const emptySettings: AdminSettings = {
             systemPrompt: "",
         },
         auth: { allowRegister: true, emailVerification: true, emailDomainRestriction: false, emailDomains: [], newUserReward: false, newUserRewardCredits: 0 },
+        access: { blockChina: false },
         announcements: { enabled: false, items: [] },
         checkIn: { enabled: false, reward: false, rewardCredits: 0 },
     },
@@ -849,6 +850,9 @@ function normalizePublicSetting(setting: Partial<AdminSettings["public"]> = {}):
             emailDomains: Array.from(new Set((setting.auth?.emailDomains || []).map(normalizeEmailDomain).filter(Boolean))),
             newUserReward: setting.auth?.newUserReward === true,
             newUserRewardCredits: Math.max(0, Number(setting.auth?.newUserRewardCredits) || 0),
+        },
+        access: {
+            blockChina: setting.access?.blockChina === true,
         },
         announcements: {
             enabled: setting.announcements?.enabled === true,

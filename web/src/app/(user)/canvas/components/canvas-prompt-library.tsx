@@ -14,14 +14,14 @@ export function CanvasPromptLibrary({ onSelect }: { onSelect: (prompt: string) =
 
     return (
         <>
-            <Tooltip title="提示词库">
+            <Tooltip title="灵感模板">
                 <Button
                     type="text"
                     className="!h-8 !w-8 !min-w-8 shrink-0 !rounded-full !bg-transparent !p-0"
                     style={{ color: theme.node.text }}
                     icon={<BookOpen className="size-3.5" />}
                     onClick={() => setOpen(true)}
-                    aria-label="提示词库"
+                    aria-label="灵感模板"
                 />
             </Tooltip>
             <PromptSelectDialog open={open} onOpenChange={setOpen} onSelect={onSelect} />

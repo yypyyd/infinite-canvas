@@ -5,27 +5,27 @@ import { CREDIT_PURCHASE_URL } from "@/constant/credits";
 export const navigationTools = [
     {
         slug: "canvas",
-        label: "我的画布",
+        label: "商品画布",
         icon: Maximize2,
     },
     {
         slug: "image",
-        label: "生图工作台",
+        label: "商品图生成",
         icon: ImagePlus,
     },
     {
         slug: "video",
-        label: "视频创作台",
+        label: "营销视频",
         icon: Video,
     },
     {
         slug: "prompts",
-        label: "提示词库",
+        label: "灵感模板",
         icon: FileText,
     },
     {
         slug: "assets",
-        label: "我的素材",
+        label: "商品素材",
         icon: Images,
     },
     {

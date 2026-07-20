@@ -5,7 +5,7 @@ import { App, AutoComplete, Button, Card, Col, Drawer, Empty, Flex, Form, Input,
 import { useMemo, useState } from "react";
 
 import type { AdminManagedModel, AdminPricingRule } from "@/services/api/admin";
-import { allowedModelOperations, inferModelModality, inferModelOperations, normalizeModelOperations } from "../model-capabilities";
+import { allowedModelOperations, inferModelModality, inferModelOperations, normalizeModelOperations } from "../../model-capabilities";
 
 const modalityOptions = [
     { label: "图片", value: "image" },

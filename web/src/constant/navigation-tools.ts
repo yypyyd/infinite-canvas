@@ -1,6 +1,4 @@
-import { FileText, ImagePlus, Images, Maximize2, ShoppingCart, Video } from "lucide-react";
-
-import { CREDIT_PURCHASE_URL } from "@/constant/credits";
+import { FileText, ImagePlus, Images, Maximize2, Video } from "lucide-react";
 
 export const navigationTools = [
     {
@@ -27,13 +25,6 @@ export const navigationTools = [
         slug: "assets",
         label: "商品素材",
         icon: Images,
-    },
-    {
-        slug: "credit-purchase",
-        label: "算力购买",
-        icon: ShoppingCart,
-        href: CREDIT_PURCHASE_URL,
-        external: true,
     },
 ] as const;
 

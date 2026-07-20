@@ -76,8 +76,13 @@ type PublicModelChannelSetting struct {
 type PublicSetting struct {
 	ModelChannel  PublicModelChannelSetting `json:"modelChannel"`
 	Auth          PublicAuthSetting         `json:"auth"`
+	Access        PublicAccessSetting       `json:"access"`
 	Announcements AnnouncementSetting       `json:"announcements"`
 	CheckIn       CheckInSetting            `json:"checkIn"`
+}
+
+type PublicAccessSetting struct {
+	BlockChina bool `json:"blockChina"`
 }
 
 type PublicAuthSetting struct {

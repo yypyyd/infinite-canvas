@@ -1,12 +1,13 @@
 "use client";
 
 import { ApiOutlined, BarChartOutlined, CloudServerOutlined, FileTextOutlined, HomeOutlined, KeyOutlined, LogoutOutlined, PictureOutlined, SettingOutlined, TransactionOutlined, UserOutlined } from "@ant-design/icons";
-import { Button, Flex, Layout, Menu, Spin, Typography, theme } from "antd";
+import { App, Button, Flex, Layout, Menu, Spin, Typography, theme } from "antd";
 import { usePathname, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useEffect } from "react";
 
 import { UserStatusActions } from "@/components/layout/user-status-actions";
+import { flushActiveWorkspaceChanges } from "@/components/layout/workspace-provider";
 import { adminLayoutStyle } from "@/lib/app-theme";
 import { useUserStore } from "@/stores/use-user-store";
 
@@ -47,6 +48,7 @@ function currentAdminKey(pathname: string) {
 }
 
 export function AdminLayoutClient({ children }: { children: ReactNode }) {
+	const { message } = App.useApp();
     const { token: antToken } = theme.useToken();
     const router = useRouter();
     const pathname = usePathname();
@@ -57,6 +59,14 @@ export function AdminLayoutClient({ children }: { children: ReactNode }) {
     const hydrateUser = useUserStore((state) => state.hydrateUser);
     const activeKey = currentAdminKey(pathname);
     const pageTitle = pageTitles[activeKey] || "用户管理";
+	const submitLogout = async () => {
+		try {
+			await flushActiveWorkspaceChanges();
+			logout();
+		} catch (error) {
+			message.error(error instanceof Error ? error.message : "当前数据尚未保存，无法退出登录");
+		}
+	};
 
     useEffect(() => {
         if (!isReady) {
@@ -114,7 +124,7 @@ export function AdminLayoutClient({ children }: { children: ReactNode }) {
                     <Button block icon={<HomeOutlined />} href="/canvas" target="_blank" rel="noreferrer">
                         前往画布
                     </Button>
-                    <Button block icon={<LogoutOutlined />} onClick={logout}>
+					<Button block icon={<LogoutOutlined />} onClick={() => void submitLogout()}>
                         退出登录
                     </Button>
                 </Flex>

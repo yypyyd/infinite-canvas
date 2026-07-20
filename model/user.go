@@ -24,6 +24,7 @@ type User struct {
 	EmailKey    *string    `json:"-" gorm:"uniqueIndex"`
 	DisplayName string     `json:"displayName"`
 	AvatarURL   string     `json:"avatarUrl"`
+	OrganizationID string  `json:"organizationId" gorm:"index"`
 	Role        UserRole   `json:"role"`
 	Group       string     `json:"group"`
 	Credits     int        `json:"credits"`
@@ -53,6 +54,7 @@ type AuthUser struct {
 	Email       string   `json:"email"`
 	DisplayName string   `json:"displayName"`
 	AvatarURL   string   `json:"avatarUrl"`
+	OrganizationID string `json:"organizationId"`
 	Role        UserRole `json:"role"`
 	Group       string   `json:"group"`
 	Credits     int      `json:"credits"`
@@ -73,6 +75,7 @@ func PublicUser(user User) AuthUser {
 		Email:       user.Email,
 		DisplayName: user.DisplayName,
 		AvatarURL:   user.AvatarURL,
+		OrganizationID: user.OrganizationID,
 		Role:        user.Role,
 		Group:       user.Group,
 		Credits:     user.Credits,

@@ -2,6 +2,11 @@ import axios from "axios";
 
 export type ApiParams = Record<string, string | string[] | number | number[] | undefined>;
 export const COOKIE_SESSION_TOKEN = "cookie-session";
+let activeOrganizationId = "";
+
+export function setActiveOrganizationId(organizationId: string) {
+    activeOrganizationId = organizationId.trim();
+}
 
 type ApiResponse<T> = {
     code: number;
@@ -74,7 +79,7 @@ async function apiRequest<T>(config: { url: string; method: "GET" | "POST" | "DE
             params: config.params,
             paramsSerializer: { serialize: (params) => serializeApiParams(params as ApiParams).toString() },
             data: config.data,
-            headers: config.headers,
+            headers: { ...config.headers, ...(activeOrganizationId ? { "X-Organization-ID": activeOrganizationId } : {}) },
             validateStatus: () => true,
         });
     } catch {

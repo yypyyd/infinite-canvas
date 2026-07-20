@@ -161,6 +161,7 @@ func UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		FailError(w, err)
 		return
 	}
+	updated.OrganizationID = user.OrganizationID
 	OK(w, updated)
 }
 

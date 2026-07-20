@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 
 	"github.com/basketikun/infinite-canvas/model"
@@ -28,22 +29,26 @@ type WorkspaceChangeInput struct {
 	ObjectID string          `json:"objectId"`
 	Data     json.RawMessage `json:"data"`
 	Deleted  bool            `json:"deleted"`
+	Version  int64           `json:"version"`
 }
 
 type WorkspaceChangeRequest struct {
 	Changes []WorkspaceChangeInput `json:"changes"`
 }
 
-func UserWorkspace(userID string) (WorkspacePayload, error) {
-	projects, err := repository.ListUserProjects(userID)
+func UserWorkspace(user model.AuthUser) (WorkspacePayload, error) {
+	organization, _, err := EnsureOrganization(user)
+	if err != nil { return WorkspacePayload{}, err }
+	organizationID := organization.ID
+	projects, err := repository.ListUserProjects(organizationID)
 	if err != nil {
 		return WorkspacePayload{}, err
 	}
-	assets, err := repository.ListUserAssets(userID)
+	assets, err := repository.ListUserAssets(organizationID)
 	if err != nil {
 		return WorkspacePayload{}, err
 	}
-	generationRecords, err := repository.ListUserGenerationRecords(userID)
+	generationRecords, err := repository.ListUserGenerationRecords(organizationID)
 	if err != nil {
 		return WorkspacePayload{}, err
 	}
@@ -60,13 +65,15 @@ func UserWorkspace(userID string) (WorkspacePayload, error) {
 	return WorkspacePayload{Records: records}, nil
 }
 
-func ApplyUserWorkspaceChanges(userID string, request WorkspaceChangeRequest) (WorkspacePayload, error) {
+func ApplyUserWorkspaceChanges(user model.AuthUser, request WorkspaceChangeRequest) (WorkspacePayload, error) {
+	if err := RequireOrganizationWrite(user); err != nil { return WorkspacePayload{}, err }
+	organizationID := user.OrganizationID
 	if len(request.Changes) > 200 {
 		return WorkspacePayload{}, safeMessageError{message: "单次最多保存 200 条数据"}
 	}
 	mutations := make([]model.UserWorkspaceMutation, 0, len(request.Changes))
 	for _, change := range request.Changes {
-		if !validWorkspaceDomain(change.Domain) || strings.TrimSpace(change.ObjectID) == "" || len(change.ObjectID) > 160 {
+		if !validWorkspaceDomain(change.Domain) || strings.TrimSpace(change.ObjectID) == "" || len(change.ObjectID) > 160 || change.Version < 0 {
 			return WorkspacePayload{}, safeMessageError{message: "账号数据类型或编号无效"}
 		}
 		if !change.Deleted && (len(change.Data) == 0 || len(change.Data) > maxWorkspaceRecordBytes || !json.Valid(change.Data)) {
@@ -84,17 +91,18 @@ func ApplyUserWorkspaceChanges(userID string, request WorkspaceChangeRequest) (W
 		if change.Domain == "generation_record" && !change.Deleted && summary.Kind != "image" && summary.Kind != "video" {
 			return WorkspacePayload{}, safeMessageError{message: "生成记录类型无效"}
 		}
-		mutations = append(mutations, model.UserWorkspaceMutation{RecordID: newID("version"), Domain: change.Domain, ObjectID: change.ObjectID, Title: summary.Title, Kind: summary.Kind, Data: string(data), Deleted: change.Deleted})
+		storageKeys := make(map[string]bool)
+		if !change.Deleted { collectUserStorageKeys(data, storageKeys) }
+		keys := make([]string, 0, len(storageKeys))
+		for key := range storageKeys { keys = append(keys, key) }
+		mutations = append(mutations, model.UserWorkspaceMutation{RecordID: newID("version"), Domain: change.Domain, ObjectID: change.ObjectID, Title: summary.Title, Kind: summary.Kind, Data: string(data), Deleted: change.Deleted, ExpectedVersion: change.Version, StorageKeys: keys})
 	}
-	projects, assets, generationRecords, err := repository.ApplyUserWorkspaceMutations(userID, mutations, now())
+	timestamp := now()
+	projects, assets, generationRecords, err := repository.ApplyUserWorkspaceMutations(organizationID, user.ID, mutations, timestamp, newAuditLog(user.ID, organizationID, "workspace.save", "workspace", organizationID, len(request.Changes), timestamp))
+	if errors.Is(err, repository.ErrWorkspaceVersionConflict) { return WorkspacePayload{}, safeMessageError{message: "企业数据已被其他成员更新，请刷新后重新编辑"} }
+	if errors.Is(err, repository.ErrWorkspaceFileMissing) { return WorkspacePayload{}, safeMessageError{message: "企业媒体文件不存在，请重新上传后保存"} }
 	if err == nil {
-		state, _, _ := repository.GetUserWorkspaceState(userID)
-		state.UserID = userID
-		state.UpdatedAt = now()
-		err = repository.SaveUserWorkspaceState(state)
-	}
-	if err == nil {
-		_ = cleanupUserWorkspaceFiles(userID)
+		_ = cleanupUserWorkspaceFiles(organizationID)
 	}
 	records := make([]WorkspaceRecord, 0, len(projects)+len(assets)+len(generationRecords))
 	for _, item := range projects {

@@ -14,7 +14,7 @@ export type WorkspaceRecord = {
 };
 
 export type WorkspacePayload = { records: WorkspaceRecord[] };
-export type WorkspaceChange = { domain: WorkspaceDomain; objectId: string; data: Record<string, unknown>; deleted: boolean };
+export type WorkspaceChange = { domain: WorkspaceDomain; objectId: string; data: Record<string, unknown>; deleted: boolean; version: number };
 
 export type WorkspaceFile = {
     id: string;
@@ -28,6 +28,7 @@ export type WorkspaceFile = {
 
 type WorkspaceFileUploadTicket = {
     uploadRequired: boolean;
+	uploadId?: string;
     uploadUrl?: string;
     uploadToken?: string;
     objectKey?: string;
@@ -60,13 +61,13 @@ export async function uploadWorkspaceFile(token: string, storageKey: string, fil
     const mimeType = file.type || "application/octet-stream";
     const ticket = await apiPost<WorkspaceFileUploadTicket>("/api/workspace/files/upload-ticket", { storageKey, mimeType, size: file.size }, token);
     if (!ticket.uploadRequired && ticket.file) return ticket.file;
-    if (!ticket.uploadUrl || !ticket.uploadToken || !ticket.objectKey) throw new Error("云端上传凭证无效");
+	if (!ticket.uploadId || !ticket.uploadUrl || !ticket.uploadToken || !ticket.objectKey) throw new Error("云端上传凭证无效");
     const form = new FormData();
     form.append("token", ticket.uploadToken);
     form.append("key", ticket.objectKey);
     form.append("file", file, workspaceFileName(storageKey, mimeType));
     await axios.post(ticket.uploadUrl, form);
-    return apiPost<WorkspaceFile>("/api/workspace/files/confirm", { storageKey, objectKey: ticket.objectKey, mimeType, size: file.size }, token);
+	return apiPost<WorkspaceFile>("/api/workspace/files/confirm", { uploadId: ticket.uploadId, storageKey, objectKey: ticket.objectKey, mimeType, size: file.size }, token);
 }
 
 export function workspaceFileUrl(storageKey: string, accountId = "") {

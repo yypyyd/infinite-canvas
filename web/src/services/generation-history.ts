@@ -8,7 +8,7 @@ import { stageWorkspaceDelete, stageWorkspaceRecord, type PendingWorkspaceChange
 export const GENERATION_HISTORY_CHANGED_EVENT = "infinite-canvas:generation-history-changed";
 
 type GenerationKind = "image" | "video";
-type RawGenerationLog = Record<string, unknown> & { id?: string; ownerId?: string; createdAt?: number; kind?: GenerationKind };
+type RawGenerationLog = Record<string, unknown> & { id?: string; ownerId?: string; createdAt?: number; kind?: GenerationKind; version?: number };
 
 type StoredImage = { dataUrl?: string; storageKey?: string };
 type StoredVideo = { url?: string; storageKey?: string };
@@ -91,16 +91,19 @@ export async function saveGenerationRecord(ownerId: string, kind: GenerationKind
     if (!ownerId || ownerId === "guest") return;
     const id = String(log.id || "");
     if (!id) return;
-    const data = { ...log, id, ownerId, kind };
-    generationStore(kind).set(logKey(ownerId, id), data);
-    stageWorkspaceRecord(ownerId, "generation_record", id, data);
+	const version = generationStore(kind).get(logKey(ownerId, id))?.version || log.version || 0;
+	const data = { ...log, id, ownerId, kind, version };
+	generationStore(kind).set(logKey(ownerId, id), data);
+	const { version: _version, ...workspaceData } = data;
+	stageWorkspaceRecord(ownerId, "generation_record", id, workspaceData, version);
     dispatchGenerationHistoryChanged();
 }
 
 export async function deleteStoredGenerationRecord(ownerId: string, kind: GenerationKind, id: string) {
     if (!ownerId || ownerId === "guest") return;
-    generationStore(kind).delete(logKey(ownerId, id));
-    stageWorkspaceDelete(ownerId, "generation_record", id);
+	const version = generationStore(kind).get(logKey(ownerId, id))?.version || 0;
+	generationStore(kind).delete(logKey(ownerId, id));
+	stageWorkspaceDelete(ownerId, "generation_record", id, version);
     dispatchGenerationHistoryChanged();
 }
 
@@ -108,12 +111,12 @@ export async function applyGenerationRecordSnapshot(ownerId: string, records: Wo
     const target = new Map<string, RawGenerationLog>();
     records.forEach((record) => {
         if (record.domain !== "generation_record" || record.deleted || !record.data) return;
-        target.set(record.objectId, { ...record.data, id: record.objectId, ownerId });
+		target.set(record.objectId, { ...record.data, id: record.objectId, ownerId, version: record.version });
     });
     pending.forEach((change) => {
         if (change.domain !== "generation_record") return;
         if (change.deleted) target.delete(change.objectId);
-        else target.set(change.objectId, { ...change.data, id: change.objectId, ownerId });
+		else target.set(change.objectId, { ...change.data, id: change.objectId, ownerId, version: change.version });
     });
     const local = readRawGenerationLogs(ownerId);
     local.filter((item) => item.id && !target.has(item.id)).forEach((item) => generationStore(item.kind || "image").delete(logKey(ownerId, item.id || "")));

@@ -9,6 +9,7 @@ import Link from "next/link";
 
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { UserOperationActions } from "@/components/layout/user-operation-actions";
+import { flushActiveWorkspaceChanges } from "@/components/layout/workspace-provider";
 import { CREDIT_PURCHASE_URL, CreditSymbol } from "@/constant/credits";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { redeemCode } from "@/services/api/auth";
@@ -37,7 +38,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
     const user = useUserStore((state) => state.user);
     const setSession = useUserStore((state) => state.setSession);
     const refreshUser = useUserStore((state) => state.refreshUser);
-    const logout = useUserStore((state) => state.clearSession);
+	const logout = useUserStore((state) => state.clearSession);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const canvasTheme = canvasThemes[theme];
     const userName = user?.displayName || user?.username || "";
@@ -75,7 +76,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
         };
     }, [refreshUser, token, user?.id]);
 
-    const submitRedeemCode = async () => {
+	const submitRedeemCode = async () => {
         if (!token) return;
         const value = await redeemForm.validateFields();
         setRedeeming(true);
@@ -90,7 +91,16 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
         } finally {
             setRedeeming(false);
         }
-    };
+	};
+
+	const submitLogout = async () => {
+		try {
+			await flushActiveWorkspaceChanges();
+			logout();
+		} catch (error) {
+			message.error(error instanceof Error ? error.message : "当前数据尚未保存，无法退出登录");
+		}
+	};
 
     const menuItems: ItemType[] = [
         {
@@ -113,7 +123,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
         { key: "redeem", icon: <Gift className="size-4" />, label: "兑换码", onClick: () => setRedeemOpen(true) },
         ...(onOpenShortcuts ? [{ key: "shortcuts", icon: <Keyboard className="size-4" />, label: "快捷键", onClick: onOpenShortcuts }] : []),
         { type: "divider" },
-        { key: "logout", icon: <LogOut className="size-4" />, label: "退出登录", onClick: logout },
+		{ key: "logout", icon: <LogOut className="size-4" />, label: "退出登录", onClick: () => void submitLogout() },
     ];
 
     return (

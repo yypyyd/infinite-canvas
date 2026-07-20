@@ -22,8 +22,9 @@ COPY model ./model
 COPY repository ./repository
 COPY router ./router
 COPY service ./service
+COPY cmd ./cmd
 COPY main.go ./
-RUN go build -o /server .
+RUN go build -o /server . && go build -o /batch-worker ./cmd/batch-worker
 
 # 运行镜像：Next.js 对外监听 3000，Go 只在容器内部监听 8080。
 FROM node:22-bookworm-slim
@@ -32,6 +33,7 @@ WORKDIR /app
 COPY VERSION /app/VERSION
 COPY CHANGELOG.md /app/CHANGELOG.md
 COPY --from=api-build /server /app/server
+COPY --from=api-build /batch-worker /app/batch-worker
 COPY --from=web-build /app/web/public /app/web/public
 COPY --from=web-build /app/web/.next/standalone /app/web
 COPY --from=web-build /app/web/.next/static /app/web/.next/static

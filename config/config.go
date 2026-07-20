@@ -26,6 +26,9 @@ type Config struct {
 	QiniuBucket         string `env:"QINIU_BUCKET"`
 	QiniuRegion         string `env:"QINIU_REGION" envDefault:"as0"`
 	QiniuDownloadDomain string `env:"QINIU_DOWNLOAD_DOMAIN"`
+	BatchWorkerExecutorURL string `env:"BATCH_WORKER_EXECUTOR_URL"`
+	BatchWorkerToken       string `env:"BATCH_WORKER_TOKEN"`
+	BatchWorkerConcurrency int    `env:"BATCH_WORKER_CONCURRENCY" envDefault:"4"`
 }
 
 var Cfg Config

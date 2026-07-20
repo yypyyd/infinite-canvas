@@ -9,6 +9,7 @@ import (
 
 type GenerationTaskInput struct {
 	UserID         string
+	OrganizationID string
 	Model          string
 	UpstreamModel  string
 	ChannelName    string
@@ -28,8 +29,8 @@ func ListGenerationTasks(q model.Query) (model.GenerationTaskList, error) {
 	return model.GenerationTaskList{Items: items, Total: int(total)}, nil
 }
 
-func ListUserGenerationTasks(userID string, q model.Query) (model.GenerationTaskList, error) {
-	items, total, err := repository.ListUserGenerationTasks(userID, q)
+func ListUserGenerationTasks(organizationID string, userID string, q model.Query) (model.GenerationTaskList, error) {
+	items, total, err := repository.ListUserGenerationTasks(organizationID, userID, q)
 	if err != nil {
 		return model.GenerationTaskList{}, err
 	}
@@ -41,6 +42,7 @@ func BeginGenerationTask(input GenerationTaskInput) (model.GenerationTask, error
 	task := model.GenerationTask{
 		ID:             newID("task"),
 		UserID:         input.UserID,
+		OrganizationID: input.OrganizationID,
 		Model:          input.Model,
 		UpstreamModel:  input.UpstreamModel,
 		ChannelName:    input.ChannelName,

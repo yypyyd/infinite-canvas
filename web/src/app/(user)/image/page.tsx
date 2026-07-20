@@ -20,6 +20,7 @@ import { formatBytes, formatDuration, getDataUrlByteSize, readImageMeta } from "
 import { requestEdit, requestGeneration } from "@/services/api/image";
 import { deleteStoredGenerationRecord, GENERATION_HISTORY_CHANGED_EVENT, readStoredGenerationRecords, saveGenerationRecord } from "@/services/generation-history";
 import { deleteStoredImages, resolveImageUrl, uploadImage } from "@/services/image-storage";
+import { workspaceOwnerId } from "@/services/workspace-changes";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useUserStore } from "@/stores/use-user-store";
 import type { ReferenceImage } from "@/types/image";
@@ -82,7 +83,7 @@ export default function ImagePage() {
     const managedModels = useConfigStore((state) => state.publicSettings?.modelChannel.models);
     const modelAspectRatios = useConfigStore((state) => state.publicSettings?.modelChannel.modelAspectRatios);
     const userGroup = useUserStore((state) => state.user?.group || "default");
-    const historyOwnerId = useUserStore((state) => state.user?.id || "guest");
+	const historyOwnerId = useUserStore((state) => state.user ? workspaceOwnerId(state.user.id, state.user.organizationId) : "guest");
     const addAsset = useAssetStore((state) => state.addAsset);
     const [prompt, setPrompt] = useState("");
     const [references, setReferences] = useState<ReferenceImage[]>([]);

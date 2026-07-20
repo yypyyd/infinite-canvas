@@ -11,3 +11,12 @@ services:
     ports:
       - "3000:3000"
     restart: unless-stopped
+  batch-worker:
+    image: infinite-canvas:local
+    profiles: ["worker"]
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    command: ["/app/batch-worker"]
+    restart: unless-stopped

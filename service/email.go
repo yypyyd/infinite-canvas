@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"fmt"
+	"html"
 	"log"
 	"math/big"
 	"mime"
@@ -171,6 +172,25 @@ func verifyEmailCodeHash(expected string, actual string) bool {
 }
 
 func sendRegistrationCodeEmail(setting model.EmailSetting, receiver string, code string) error {
+	subject := "道生画境注册验证码"
+	body := fmt.Sprintf("<div style=\"font-family:Arial,sans-serif;line-height:1.7;color:#1f2937\"><h2 style=\"margin:0 0 16px\">注册验证码</h2><p>你的验证码是：</p><p style=\"font-size:30px;font-weight:700;letter-spacing:8px;margin:18px 0\">%s</p><p>验证码 10 分钟内有效，请勿转发给他人。</p></div>", code)
+	return sendHTMLEmail(setting, receiver, subject, body)
+}
+
+func SendOrganizationInvitationEmail(receiver string, organizationName string, role model.OrganizationRole) error {
+	settings, err := repository.GetSettings()
+	if err != nil { return err }
+	roleName := map[model.OrganizationRole]string{model.OrganizationRoleAdmin: "管理员", model.OrganizationRoleMember: "成员", model.OrganizationRoleReviewer: "审核人"}[role]
+	organizationName = html.EscapeString(organizationName)
+	action := ""
+	if baseURL := strings.TrimRight(strings.TrimSpace(config.Cfg.PublicBaseURL), "/"); baseURL != "" {
+		action = fmt.Sprintf("<p><a href=\"%s/commerce\" style=\"display:inline-block;padding:10px 18px;background:#111827;color:#fff;text-decoration:none\">打开企业中心</a></p>", html.EscapeString(baseURL))
+	}
+	body := fmt.Sprintf("<div style=\"font-family:Arial,sans-serif;line-height:1.7;color:#1f2937\"><h2 style=\"margin:0 0 16px\">企业协作邀请</h2><p>你已被邀请加入企业 <strong>%s</strong>，角色为 <strong>%s</strong>。</p><p>请使用当前邮箱登录后，在企业中心接受邀请。邀请 7 天内有效。</p>%s</div>", organizationName, roleName, action)
+	return sendHTMLEmail(settings.Private.Email, receiver, "道生画境企业协作邀请", body)
+}
+
+func sendHTMLEmail(setting model.EmailSetting, receiver string, subject string, body string) error {
 	setting = normalizeEmailSetting(setting)
 	if setting.SMTPHost == "" || setting.SMTPPort <= 0 || setting.SMTPFromEmail == "" {
 		return fmt.Errorf("SMTP is not configured")
@@ -193,8 +213,6 @@ func sendRegistrationCodeEmail(setting model.EmailSetting, receiver string, code
 		return fmt.Errorf("invalid SMTP sender name")
 	}
 	from := (&netmail.Address{Name: fromName, Address: setting.SMTPFromEmail}).String()
-	subject := "道生画境注册验证码"
-	body := fmt.Sprintf("<div style=\"font-family:Arial,sans-serif;line-height:1.7;color:#1f2937\"><h2 style=\"margin:0 0 16px\">注册验证码</h2><p>你的验证码是：</p><p style=\"font-size:30px;font-weight:700;letter-spacing:8px;margin:18px 0\">%s</p><p>验证码 10 分钟内有效，请勿转发给他人。</p></div>", code)
 	message := strings.Join([]string{
 		"From: " + from,
 		"To: " + receiver,

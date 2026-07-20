@@ -9,7 +9,7 @@ import (
 
 var ErrEmailVerificationUnavailable = errors.New("email verification is unavailable")
 
-func CreateVerifiedUserWithCreditLog(user model.User, log *model.CreditLog, verificationID string, codeHash string, now string, maxAttempts int) (model.User, error) {
+func CreateVerifiedUserWithCreditLog(user model.User, organization model.Organization, membership model.OrganizationMember, audit model.OrganizationAuditLog, log *model.CreditLog, verificationID string, codeHash string, now string, maxAttempts int) (model.User, error) {
 	db, err := DB()
 	if err != nil {
 		return user, err
@@ -25,6 +25,15 @@ func CreateVerifiedUserWithCreditLog(user model.User, log *model.CreditLog, veri
 			return ErrEmailVerificationUnavailable
 		}
 		if err := tx.Create(&user).Error; err != nil {
+			return err
+		}
+		if err := tx.Create(&organization).Error; err != nil {
+			return err
+		}
+		if err := tx.Create(&membership).Error; err != nil {
+			return err
+		}
+		if err := tx.Create(&audit).Error; err != nil {
 			return err
 		}
 		if log == nil {

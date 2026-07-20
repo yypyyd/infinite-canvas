@@ -8,6 +8,7 @@ import { navigationTools, type NavigationToolSlug } from "@/constant/navigation-
 import { AppConfigModal } from "@/components/layout/app-config-modal";
 import { MobileNavDrawer } from "@/components/layout/mobile-nav-drawer";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
+import { OrganizationSwitcher } from "@/components/layout/organization-switcher";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 
@@ -28,6 +29,8 @@ export function AppTopNav() {
                                 <img src="/logo.png" alt="" className="size-7 shrink-0 rounded-full object-cover" />
                                 <span className="text-base font-medium">道生画境</span>
                             </Link>
+
+                            <OrganizationSwitcher />
 
                             <button
                                 type="button"

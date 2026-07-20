@@ -23,13 +23,13 @@ func ListGenerationTasks(q model.Query) ([]model.GenerationTask, int64, error) {
 	return items, total, err
 }
 
-func ListUserGenerationTasks(userID string, q model.Query) ([]model.GenerationTask, int64, error) {
+func ListUserGenerationTasks(organizationID string, userID string, q model.Query) ([]model.GenerationTask, int64, error) {
 	db, err := DB()
 	if err != nil {
 		return nil, 0, err
 	}
 	q.Normalize()
-	tx := applyGenerationTaskFilters(db.Model(&model.GenerationTask{}).Where("user_id = ?", userID), q)
+	tx := applyGenerationTaskFilters(db.Model(&model.GenerationTask{}).Where("organization_id = ? AND user_id = ?", organizationID, userID), q)
 	var total int64
 	if err := tx.Count(&total).Error; err != nil {
 		return nil, 0, err

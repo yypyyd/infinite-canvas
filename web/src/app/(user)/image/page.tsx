@@ -10,6 +10,7 @@ import { ModelPicker } from "@/components/model-picker";
 import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
 import { AssetPickerModal, type InsertAssetPayload } from "@/app/(user)/canvas/components/asset-picker-modal";
 import { CreditSymbol, requestCreditQuote, type PricingRule } from "@/constant/credits";
+import { commercePresets, findCommercePreset } from "@/constant/commerce-presets";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { imageReferenceLabel } from "@/lib/image-reference-prompt";
 import { useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
@@ -120,6 +121,11 @@ export default function ImagePage() {
         const timer = window.setInterval(() => setElapsedMs(performance.now() - startedAt), 1000);
         return () => window.clearInterval(timer);
     }, [running, startedAt]);
+
+    useEffect(() => {
+        const preset = findCommercePreset(new URLSearchParams(window.location.search).get("preset"));
+        if (preset) setPrompt(preset.prompt);
+    }, []);
 
     useEffect(() => {
         setSelectedLogIds([]);
@@ -240,11 +246,11 @@ export default function ImagePage() {
             title: `生成结果 ${index + 1}`,
             coverUrl: stored.url,
             tags: [],
-            source: "生图工作台",
+            source: "商品图生成",
             data: { dataUrl: stored.url, storageKey: stored.storageKey, width: stored.width, height: stored.height, bytes: stored.bytes, mimeType: stored.mimeType },
             metadata: { source: "image-page", prompt },
         });
-        message.success("已加入我的素材");
+        message.success("已加入商品素材");
     };
 
     const insertPickedAsset = async (payload: InsertAssetPayload) => {
@@ -254,7 +260,7 @@ export default function ImagePage() {
             const stored = await uploadImage(payload.dataUrl);
             setReferences((value) => [...value, { id: nanoid(), name: payload.title, type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey }]);
         } else {
-            message.warning("生图工作台只能使用文本或图片素材");
+            message.warning("商品图生成只能使用文本或图片素材");
         }
         setAssetPickerOpen(false);
     };
@@ -356,7 +362,8 @@ export default function ImagePage() {
                         <div>
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
-                                    <h1 className="text-2xl font-semibold text-stone-950 dark:text-stone-100">生图工作台</h1>
+                                    <h1 className="text-2xl font-semibold text-stone-950 dark:text-stone-100">商品图生成</h1>
+                                    <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">上传商品参考图，快速制作可直接用于上新的视觉素材。</p>
                                 </div>
                                 <div className="flex shrink-0 gap-2 lg:hidden">
                                     <Button icon={<History className="size-4" />} onClick={() => setLogsOpen(true)}>
@@ -371,18 +378,38 @@ export default function ImagePage() {
 
                         <div className="mt-6 space-y-5">
                             <div>
+                                <div className="mb-2 text-xs font-medium tracking-[.12em] text-stone-500">电商任务模板</div>
+                                <div className="flex flex-wrap gap-2">
+                                    {commercePresets.map((preset) => {
+                                        const Icon = preset.icon;
+                                        return (
+                                            <button
+                                                key={preset.id}
+                                                type="button"
+                                                className="inline-flex h-8 items-center gap-1.5 rounded-full border border-stone-300 px-3 text-xs transition hover:border-stone-950 hover:text-stone-950 dark:border-stone-700 dark:hover:border-stone-200 dark:hover:text-stone-100"
+                                                onClick={() => setPrompt(preset.prompt)}
+                                                title={preset.description}
+                                            >
+                                                <Icon className="size-3.5" />
+                                                {preset.title}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                            <div>
                                 <div className="mb-2 flex items-center justify-between gap-3">
                                     <span className="text-base font-semibold">提示词</span>
                                     <div className="flex gap-2">
                                         <Button size="small" icon={<BookOpen className="size-3.5" />} onClick={() => setPromptDialogOpen(true)}>
-                                            查看提示词库
+                                            查看灵感模板
                                         </Button>
                                         <Button size="small" icon={<FolderPlus className="size-3.5" />} onClick={() => setAssetPickerOpen(true)}>
-                                            查看我的素材
+                                            查看商品素材
                                         </Button>
                                     </div>
                                 </div>
-                                <Input.TextArea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={7} placeholder="描述画面主体、风格、构图、光线和用途" />
+                                <Input.TextArea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={7} placeholder="描述商品、目标人群、使用场景、核心卖点与投放平台" />
                             </div>
 
                             <div className="min-w-0">
@@ -457,7 +484,7 @@ export default function ImagePage() {
                     <div className="thin-scrollbar rounded-lg border border-stone-200 bg-card p-4 shadow-sm dark:border-stone-800 lg:min-h-0 lg:overflow-y-auto lg:p-5">
                         <div className="mb-4 flex items-center justify-between gap-3">
                             <div>
-                                <h2 className="text-xl font-semibold">生成结果</h2>
+                                <h2 className="text-xl font-semibold">商品视觉结果</h2>
                             </div>
                             {running ? <Tag className="m-0 px-2 py-1">等待 {formatDuration(elapsedMs)}</Tag> : null}
                         </div>

@@ -34,7 +34,7 @@ export function PromptSelectDialog({ open, onOpenChange, onSelect }: { open: boo
     };
 
     return (
-        <Modal title="提示词库" open={open} onCancel={() => onOpenChange(false)} footer={null} width={1040} centered>
+        <Modal title="灵感模板" open={open} onCancel={() => onOpenChange(false)} footer={null} width={1040} centered>
             <div data-canvas-no-zoom onWheelCapture={(event) => event.stopPropagation()}>
                 <div className="mx-auto max-w-2xl">
                     <Input size="large" prefix={<Search className="size-4 text-stone-400" />} value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="按标题查询" />

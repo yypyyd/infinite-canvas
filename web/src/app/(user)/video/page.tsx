@@ -241,11 +241,11 @@ export default function VideoPage() {
             title: "生成视频",
             coverUrl: "",
             tags: [],
-            source: "视频创作台",
+            source: "营销视频",
             data: { url: video.url, storageKey: video.storageKey, width: video.width, height: video.height, bytes: video.bytes, mimeType: video.mimeType },
             metadata: { source: "video-page", prompt },
         });
-        message.success("已加入我的素材");
+        message.success("已加入商品素材");
     };
 
     const insertPickedAsset = async (payload: InsertAssetPayload) => {
@@ -318,7 +318,10 @@ export default function VideoPage() {
                 <section className="grid gap-3 lg:min-h-0 lg:overflow-hidden xl:grid-cols-[420px_minmax(0,1fr)]">
                     <div className="thin-scrollbar flex flex-col rounded-lg border border-stone-200 bg-card p-4 shadow-sm dark:border-stone-800 lg:min-h-0 lg:overflow-y-auto">
                         <div className="flex items-start justify-between gap-3">
-                            <h1 className="text-2xl font-semibold text-stone-950 dark:text-stone-100">视频创作台</h1>
+                            <div>
+                                <h1 className="text-2xl font-semibold text-stone-950 dark:text-stone-100">营销视频</h1>
+                                <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">用商品参考图制作上新短片、展示动画与社媒内容。</p>
+                            </div>
                             <div className="flex shrink-0 gap-2 lg:hidden">
                                 <Button icon={<History className="size-4" />} onClick={() => setLogsOpen(true)}>
                                     记录
@@ -335,10 +338,10 @@ export default function VideoPage() {
                                     <span className="text-base font-semibold">提示词</span>
                                     <div className="flex gap-2">
                                         <Button size="small" icon={<BookOpen className="size-3.5" />} onClick={() => setPromptDialogOpen(true)}>
-                                            查看提示词库
+                                            查看灵感模板
                                         </Button>
                                         <Button size="small" icon={<FolderPlus className="size-3.5" />} onClick={() => setAssetPickerOpen(true)}>
-                                            查看我的素材
+                                            查看商品素材
                                         </Button>
                                     </div>
                                 </div>

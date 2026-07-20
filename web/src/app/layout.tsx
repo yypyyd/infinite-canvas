@@ -6,8 +6,8 @@ import "./globals.css";
 import React from "react";
 
 export const metadata: Metadata = {
-    title: "道生画境",
-    description: "一个 AI 图片创作工作台",
+    title: "道生画境 - AI 电商视觉工作台",
+    description: "面向电商上新的 AI 商品图、详情页视觉与营销视频工作台",
 };
 
 export default function RootLayout({

@@ -99,7 +99,7 @@ export function CanvasToolbar({
                 <ToolbarButton id="tool-library" label="素材库" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onOpenAssetLibrary}>
                     <Library className="size-4.5" />
                 </ToolbarButton>
-                <ToolbarButton id="tool-assets" label="我的素材" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onOpenMyAssets}>
+                <ToolbarButton id="tool-assets" label="商品素材" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onOpenMyAssets}>
                     <FolderOpen className="size-4.5" />
                 </ToolbarButton>
                 <ToolbarButton
@@ -288,7 +288,7 @@ function toolLabel(id: string) {
     if (id === "tool-config") return "生成配置";
     if (id === "tool-upload") return "上传素材";
     if (id === "tool-library") return "素材库";
-    if (id === "tool-assets") return "我的素材";
+    if (id === "tool-assets") return "商品素材";
     if (id === "tool-style") return "画布外观";
     if (id === "tool-delete") return "删除选中";
     if (id === "tool-clear") return "清空画布";

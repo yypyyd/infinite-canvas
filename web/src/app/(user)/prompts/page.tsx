@@ -35,7 +35,7 @@ export default function PromptsPage() {
 
     const savePromptAsset = (item: Prompt) => {
         addAsset({ kind: "text", title: item.title, coverUrl: item.coverUrl, tags: item.tags, source: item.category, data: { content: item.prompt }, metadata: { source: "prompt-library", promptId: item.id, githubUrl: item.githubUrl } });
-        message.success("已加入我的素材");
+        message.success("已加入商品素材");
     };
 
     const handleListScroll = (event: UIEvent<HTMLDivElement>) => {
@@ -53,8 +53,8 @@ export default function PromptsPage() {
             >
                 <div className="pb-8">
                     <div className="mx-auto max-w-5xl text-center">
-                        <h1 className="text-4xl font-semibold tracking-tight text-stone-950 dark:text-stone-100">提示词中心</h1>
-                        <p className="mt-3 text-sm text-stone-500 dark:text-stone-400">共 {totalPrompts} 条提示词，按标题、标签与分类快速查找灵感。</p>
+                        <h1 className="text-4xl font-semibold tracking-tight text-stone-950 dark:text-stone-100">电商灵感模板</h1>
+                        <p className="mt-3 text-sm text-stone-500 dark:text-stone-400">共 {totalPrompts} 条视觉模板，按标题、标签与分类查找适合商品的创作方向。</p>
                     </div>
                     {query.isLoading ? (
                         <div className="flex h-60 items-center justify-center">
@@ -108,7 +108,7 @@ export default function PromptsPage() {
                                     onCopy={() => copyText(item.prompt, "提示词已复制")}
                                     extraAction={
                                         <Button size="small" icon={<FolderPlus className="size-3.5" />} onClick={() => savePromptAsset(item)}>
-                                            加入我的素材
+                                            加入商品素材
                                         </Button>
                                     }
                                 />

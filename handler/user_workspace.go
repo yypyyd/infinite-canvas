@@ -13,7 +13,7 @@ func UserWorkspace(w http.ResponseWriter, r *http.Request) {
 		Fail(w, "未登录或权限不足")
 		return
 	}
-	result, err := service.UserWorkspace(user.ID)
+	result, err := service.UserWorkspace(user)
 	if err != nil {
 		FailError(w, err)
 		return
@@ -33,7 +33,7 @@ func SaveUserWorkspace(w http.ResponseWriter, r *http.Request) {
 		Fail(w, "账号数据格式不正确")
 		return
 	}
-	result, err := service.ApplyUserWorkspaceChanges(user.ID, request)
+	result, err := service.ApplyUserWorkspaceChanges(user, request)
 	if err != nil {
 		FailError(w, err)
 		return
@@ -53,7 +53,7 @@ func PrepareUserWorkspaceFileUpload(w http.ResponseWriter, r *http.Request) {
 		Fail(w, "文件上传信息格式不正确")
 		return
 	}
-	result, err := service.PrepareUserWorkspaceFileUpload(user.ID, request)
+	result, err := service.PrepareUserWorkspaceFileUpload(user, request)
 	if err != nil {
 		FailError(w, err)
 		return
@@ -73,7 +73,7 @@ func ConfirmUserWorkspaceFileUpload(w http.ResponseWriter, r *http.Request) {
 		Fail(w, "文件确认信息格式不正确")
 		return
 	}
-	result, err := service.ConfirmUserWorkspaceFileUpload(user.ID, request)
+	result, err := service.ConfirmUserWorkspaceFileUpload(user, request)
 	if err != nil {
 		FailError(w, err)
 		return
@@ -88,14 +88,14 @@ func UserWorkspaceFile(w http.ResponseWriter, r *http.Request, storageKey string
 		return
 	}
 	if r.Method == http.MethodHead {
-		if !service.UserWorkspaceFileExists(user.ID, storageKey) {
+		if !service.UserWorkspaceFileExists(user, storageKey) {
 			http.NotFound(w, r)
 			return
 		}
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	fileURL, ok := service.UserWorkspaceFileURL(user.ID, storageKey)
+	fileURL, ok := service.UserWorkspaceFileURL(user, storageKey)
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -110,7 +110,7 @@ func UserStorageStatus(w http.ResponseWriter, r *http.Request) {
 		Fail(w, "未登录或权限不足")
 		return
 	}
-	result, err := service.GetUserStorageStatus(user.ID)
+	result, err := service.GetUserStorageStatus(user)
 	if err != nil {
 		FailError(w, err)
 		return

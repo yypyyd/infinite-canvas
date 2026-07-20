@@ -29,5 +29,5 @@ export default function UserLayout({ children }: { children: ReactNode }) {
 }
 
 function isProtectedPath(pathname: string) {
-    return ["/canvas", "/assets", "/image", "/video"].some((path) => pathname === path || pathname.startsWith(`${path}/`));
+    return ["/commerce", "/canvas", "/assets", "/image", "/video"].some((path) => pathname === path || pathname.startsWith(`${path}/`));
 }

@@ -16,5 +16,7 @@ func main() {
 		log.Fatal(err)
 	}
 	service.StartPromptSyncScheduler()
+	service.StartOrganizationEmailOutboxWorker()
+	service.StartUserFileMaintenanceWorker()
 	log.Fatal(router.New().Run(":" + config.Cfg.Port))
 }

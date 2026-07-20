@@ -3,7 +3,8 @@
 import { create } from "zustand";
 
 import { fetchCurrentUser, login, logout, register, type AuthUser, type LoginPayload, type RegisterPayload } from "@/services/api/auth";
-import { COOKIE_SESSION_TOKEN } from "@/services/api/request";
+import { COOKIE_SESSION_TOKEN, setActiveOrganizationId } from "@/services/api/request";
+import { setWorkspaceActorId } from "@/services/workspace-changes";
 
 type UserStore = {
     token: string;
@@ -11,6 +12,7 @@ type UserStore = {
     isReady: boolean;
     isLoading: boolean;
     setSession: (token: string, user: AuthUser) => void;
+	setOrganizationId: (organizationId: string) => void;
     clearSession: () => void;
     refreshUser: () => Promise<AuthUser | null>;
     hydrateUser: () => Promise<void>;
@@ -23,9 +25,19 @@ export const useUserStore = create<UserStore>()((set, get) => ({
     user: null,
     isReady: false,
     isLoading: false,
-    setSession: (_token, user) => set({ token: COOKIE_SESSION_TOKEN, user, isReady: true }),
+    setSession: (_token, user) => {
+        setActiveOrganizationId(user.organizationId);
+		setWorkspaceActorId(user.id);
+        set({ token: COOKIE_SESSION_TOKEN, user, isReady: true });
+    },
+	setOrganizationId: (organizationId) => {
+		setActiveOrganizationId(organizationId);
+		set((state) => ({ user: state.user ? { ...state.user, organizationId } : null }));
+	},
     clearSession: () => {
         void logout().catch(() => undefined);
+        setActiveOrganizationId("");
+		setWorkspaceActorId("");
         set({ token: "", user: null, isReady: true });
     },
     refreshUser: async () => {
@@ -33,14 +45,18 @@ export const useUserStore = create<UserStore>()((set, get) => ({
         try {
             const user = await fetchCurrentUser(token || undefined);
             if (user.role === "guest") {
+                setActiveOrganizationId("");
+				setWorkspaceActorId("");
                 set({ token: "", user: null, isReady: true });
                 return null;
             }
+            setActiveOrganizationId(user.organizationId);
+			setWorkspaceActorId(user.id);
             set({ token: token || COOKIE_SESSION_TOKEN, user, isReady: true });
             return user;
         } catch {
-            set({ token: "", user: null, isReady: true });
-            return null;
+			set({ isReady: true });
+			return get().user;
         }
     },
     hydrateUser: async () => {
@@ -55,6 +71,8 @@ export const useUserStore = create<UserStore>()((set, get) => ({
         set({ isLoading: true });
         try {
             const session = await login(payload);
+            setActiveOrganizationId(session.user.organizationId);
+			setWorkspaceActorId(session.user.id);
             set({ token: COOKIE_SESSION_TOKEN, user: session.user, isReady: true, isLoading: false });
             return session.user;
         } catch (error) {
@@ -66,6 +84,8 @@ export const useUserStore = create<UserStore>()((set, get) => ({
         set({ isLoading: true });
         try {
             const session = await register(payload);
+            setActiveOrganizationId(session.user.organizationId);
+			setWorkspaceActorId(session.user.id);
             set({ token: COOKIE_SESSION_TOKEN, user: session.user, isReady: true, isLoading: false });
             return session.user;
         } catch (error) {

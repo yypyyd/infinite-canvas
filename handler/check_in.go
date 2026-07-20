@@ -31,5 +31,6 @@ func CheckIn(w http.ResponseWriter, r *http.Request) {
 		FailError(w, err)
 		return
 	}
+	result.User.OrganizationID = user.OrganizationID
 	OK(w, result)
 }

@@ -138,8 +138,16 @@ func createRegisteredUser(user model.User, settings model.Settings, verification
 		reward = settings.Public.Auth.NewUserRewardCredits
 	}
 	user.Credits = reward
+	organizationID := newID("org")
+	memberID := newID("member")
+	organizationName := strings.TrimSpace(user.DisplayName)
+	if organizationName == "" { organizationName = user.Username }
+	user.OrganizationID = organizationID
+	organization := model.Organization{ID: organizationID, Name: organizationName + "的企业", Slug: organizationID, Status: "active", CreatedBy: user.ID, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt}
+	membership := model.OrganizationMember{ID: memberID, OrganizationID: organizationID, UserID: user.ID, Role: model.OrganizationRoleOwner, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt}
+	audit := newAuditLog(user.ID, organizationID, "organization.create", "organization", organizationID, organization.Name, user.CreatedAt)
 	if reward <= 0 {
-		return repository.CreateVerifiedUserWithCreditLog(user, nil, verificationID, codeHash, now(), emailMaxAttempts)
+		return repository.CreateVerifiedUserWithCreditLog(user, organization, membership, audit, nil, verificationID, codeHash, now(), emailMaxAttempts)
 	}
 	log := &model.CreditLog{
 		ID:        newID("credit"),
@@ -149,7 +157,7 @@ func createRegisteredUser(user model.User, settings model.Settings, verification
 		Remark:    "新用户注册奖励",
 		CreatedAt: user.CreatedAt,
 	}
-	return repository.CreateVerifiedUserWithCreditLog(user, log, verificationID, codeHash, now(), emailMaxAttempts)
+	return repository.CreateVerifiedUserWithCreditLog(user, organization, membership, audit, log, verificationID, codeHash, now(), emailMaxAttempts)
 }
 
 func Login(identifier string, password string) (model.AuthSession, error) {
@@ -207,7 +215,13 @@ func CurrentAuthUser(tokenText string) (model.AuthUser, bool) {
 		return model.AuthUser{}, false
 	}
 	normalizeUserDefaults(&user)
-	return model.PublicUser(user), true
+	authUser := model.PublicUser(user)
+	organization, _, ensureErr := EnsureSessionOrganization(authUser)
+	if ensureErr != nil {
+		return model.AuthUser{}, false
+	}
+	authUser.OrganizationID = organization.ID
+	return authUser, true
 }
 
 func ListUsers(q model.Query) (model.UserList, error) {
@@ -483,6 +497,11 @@ func GuestUser() model.AuthUser {
 }
 
 func newSession(user model.User) (model.AuthSession, error) {
+	organization, _, err := EnsureSessionOrganization(model.PublicUser(user))
+	if err != nil {
+		return model.AuthSession{}, err
+	}
+	user.OrganizationID = organization.ID
 	token, err := newToken(user)
 	if err != nil {
 		return model.AuthSession{}, err
@@ -513,9 +532,9 @@ func hashPassword(password string) (string, error) {
 	return string(hash), err
 }
 
-func now() string {
-	return time.Now().Format(time.RFC3339)
-}
+const timestampLayout = "2006-01-02T15:04:05.000000000Z"
+
+func now() string { return time.Now().UTC().Format(timestampLayout) }
 
 func newID(prefix string) string {
 	return prefix + "-" + uuid.NewString()

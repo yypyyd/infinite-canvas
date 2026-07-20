@@ -11,6 +11,7 @@ const (
 // GenerationTask records backend model requests for user task center and admin operations.
 type GenerationTask struct {
 	ID             string               `json:"id" gorm:"primaryKey"`
+	OrganizationID string               `json:"organizationId" gorm:"index"`
 	UserID         string               `json:"userId" gorm:"index"`
 	Model          string               `json:"model" gorm:"index"`
 	UpstreamModel  string               `json:"upstreamModel"`

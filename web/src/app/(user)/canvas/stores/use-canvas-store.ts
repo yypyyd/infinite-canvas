@@ -79,7 +79,7 @@ export const useCanvasStore = create<CanvasStore>()((set, get) => ({
             viewport: initialViewport,
         };
         set((state) => ownerProjectsState(state, [project, ...state.projects]));
-        stageWorkspaceRecord(get().ownerId, "canvas_project", project.id, workspaceProjectData(project));
+		stageWorkspaceRecord(get().ownerId, "canvas_project", project.id, workspaceProjectData(project), project.version || 0);
         return id;
     },
     importProject: (source) => {
@@ -98,7 +98,7 @@ export const useCanvasStore = create<CanvasStore>()((set, get) => ({
             viewport: source.viewport || initialViewport,
         };
         set((state) => ownerProjectsState(state, [project, ...state.projects]));
-        stageWorkspaceRecord(get().ownerId, "canvas_project", project.id, workspaceProjectData(project));
+		stageWorkspaceRecord(get().ownerId, "canvas_project", project.id, workspaceProjectData(project), project.version || 0);
         return project.id;
     },
     openProject: (id) => {
@@ -107,12 +107,12 @@ export const useCanvasStore = create<CanvasStore>()((set, get) => ({
     renameProject: (id, title) => {
         set((state) => ownerProjectsState(state, state.projects.map((project) => (project.id === id ? { ...project, title: title.trim() || project.title, updatedAt: new Date().toISOString() } : project))));
         const project = get().projects.find((item) => item.id === id);
-        if (project) stageWorkspaceRecord(get().ownerId, "canvas_project", id, workspaceProjectData(project));
+		if (project) stageWorkspaceRecord(get().ownerId, "canvas_project", id, workspaceProjectData(project), project.version || 0);
     },
     deleteProjects: (ids) => {
         const deleted = get().projects.filter((project) => ids.includes(project.id));
         set((state) => ownerProjectsState(state, state.projects.filter((project) => !ids.includes(project.id))));
-        deleted.forEach((project) => stageWorkspaceDelete(get().ownerId, "canvas_project", project.id));
+		deleted.forEach((project) => stageWorkspaceDelete(get().ownerId, "canvas_project", project.id, project.version || 0));
     },
     replaceProjects: (projects) => {
         set((state) => ownerProjectsState(state, projects));
@@ -121,7 +121,7 @@ export const useCanvasStore = create<CanvasStore>()((set, get) => ({
     updateProject: (id, patch) => {
         set((state) => ownerProjectsState(state, state.projects.map((project) => (project.id === id ? { ...project, ...patch, updatedAt: new Date().toISOString() } : project))));
         const project = get().projects.find((item) => item.id === id);
-        if (project) stageWorkspaceRecord(get().ownerId, "canvas_project", id, workspaceProjectData(project));
+		if (project) stageWorkspaceRecord(get().ownerId, "canvas_project", id, workspaceProjectData(project), project.version || 0);
     },
 }));
 

@@ -75,5 +75,6 @@ func RedeemCode(w http.ResponseWriter, r *http.Request) {
 		FailError(w, err)
 		return
 	}
+	result.OrganizationID = user.OrganizationID
 	OK(w, result)
 }

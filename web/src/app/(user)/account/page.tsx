@@ -13,6 +13,7 @@ import { CREDIT_PURCHASE_URL, CreditSymbol } from "@/constant/credits";
 import { formatDuration } from "@/lib/image-utils";
 import { changePassword, fetchCreditLogs, fetchGenerationTasks, updateProfile as updateUserProfile, type CreditLog, type GenerationTask } from "@/services/api/auth";
 import { countGenerationHistory, deleteGenerationHistory, GENERATION_HISTORY_CHANGED_EVENT, readGenerationHistory, resolveGenerationHistoryMedia, resolveGenerationHistoryPreview, type GenerationHistoryItem } from "@/services/generation-history";
+import { workspaceOwnerId } from "@/services/workspace-changes";
 import { useUserStore } from "@/stores/use-user-store";
 import { useWorkspaceStatusStore } from "@/stores/use-workspace-status-store";
 
@@ -55,10 +56,11 @@ function AccountContent() {
     const requestedTab = searchParams.get("tab");
     const activeTab: AccountTab = requestedTab === "tasks" || requestedTab === "history" || requestedTab === "credits" ? requestedTab : "profile";
     const accountHref = activeTab === "profile" ? "/account" : `/account?tab=${activeTab}`;
+	const historyOwnerId = workspaceOwnerId(user?.id || "", user?.organizationId || "");
     const historyCountQuery = useQuery({
-        queryKey: ["generation-history-count", user?.id],
-        queryFn: () => countGenerationHistory(user?.id || ""),
-        enabled: Boolean(user?.id),
+		queryKey: ["generation-history-count", historyOwnerId],
+		queryFn: () => countGenerationHistory(historyOwnerId),
+		enabled: historyOwnerId !== "guest",
         staleTime: 0,
     });
 
@@ -68,12 +70,12 @@ function AccountContent() {
 
     useEffect(() => {
         const refresh = () => void Promise.all([
-            queryClient.invalidateQueries({ queryKey: ["generation-history", user?.id] }),
-            queryClient.invalidateQueries({ queryKey: ["generation-history-count", user?.id] }),
+			queryClient.invalidateQueries({ queryKey: ["generation-history", historyOwnerId] }),
+			queryClient.invalidateQueries({ queryKey: ["generation-history-count", historyOwnerId] }),
         ]);
         window.addEventListener(GENERATION_HISTORY_CHANGED_EVENT, refresh);
         return () => window.removeEventListener(GENERATION_HISTORY_CHANGED_EVENT, refresh);
-    }, [queryClient, user?.id]);
+	}, [historyOwnerId, queryClient]);
 
     if (!isReady || !user) return <AccountPageSkeleton />;
 
@@ -367,7 +369,7 @@ function modalityLabel(value: string) {
 function HistorySection() {
     const { message, modal } = App.useApp();
     const queryClient = useQueryClient();
-    const ownerId = useUserStore((state) => state.user?.id || "");
+	const ownerId = useUserStore((state) => state.user ? workspaceOwnerId(state.user.id, state.user.organizationId) : "guest");
     const [keyword, setKeyword] = useState("");
     const [kind, setKind] = useState<"all" | "image" | "video">("all");
     const [status, setStatus] = useState<"all" | "成功" | "失败">("all");
@@ -376,7 +378,7 @@ function HistorySection() {
     const query = useQuery({
         queryKey: ["generation-history", ownerId],
         queryFn: () => readGenerationHistory(ownerId),
-        enabled: Boolean(ownerId),
+		enabled: ownerId !== "guest",
         staleTime: 0,
     });
     const deleteMutation = useMutation({

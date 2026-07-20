@@ -20,6 +20,17 @@ description: 当前后端主要数据表与字段说明
 当前启动时执行 `AutoMigrate`，自动维护以下表：
 
 - `users`
+- `organizations`
+- `organization_members`
+- `organization_invitations`
+- `organization_email_outboxes`
+- `organization_audit_logs`
+- `brands`
+- `products`
+- `product_skus`
+- `batch_production_jobs`
+- `batch_production_items`
+- `batch_production_snapshots`
 - `email_verifications`
 - `credit_logs`
 - `check_ins`
@@ -30,11 +41,38 @@ description: 当前后端主要数据表与字段说明
 - `user_project_versions`
 - `user_workspace_states`
 - `user_files`
+- `user_file_references`
+- `user_file_upload_reservations`
+- `user_object_deletions`
 - `prompts`
 - `assets`
 - `settings`
 
 后续新增表时再同步补充本文档，未实际使用的规划表不提前写入。
+
+### organizations / organization_members
+
+企业租户和成员关系表。一个用户可以加入多个企业，`users.organization_id` 只保存新会话默认/最近使用的企业。登录后的企业业务请求必须携带 `X-Organization-ID`，后端中间件会逐请求校验企业状态和成员关系，再把企业上下文传给画布、媒体、模型任务和电商业务，多个浏览器标签页可各自保持独立企业上下文。
+
+`organizations` 保存企业名称、唯一标识、状态、创建人和创建时间。`organization_members` 通过 `organization_id + user_id` 联合唯一索引关联成员，角色包括 `owner`、`admin`、`member`、`reviewer`。企业所有者可以转移所有权，管理员不能修改或移除所有者。
+
+### organization_invitations / organization_email_outboxes / organization_audit_logs
+
+企业邀请保存受邀邮箱、角色、状态、邀请人和过期时间；状态包括 `pending`、`accepted`、`revoked`、`expired`，查询和再次邀请时会先把过期记录原子标记为 `expired`。邀请与 `organization_email_outboxes` 邮件事件在同一事务创建，后台 Worker 通过租约原子领取并使用 SMTP 发送，失败后指数退避，进程退出或租约过期后可重新接管；接受、撤销或过期的邀请会取消尚未发送的事件。邀请接受时以待接受状态和过期时间为条件原子更新，再创建成员关系并切换默认企业，避免撤销与接受并发穿透。审计日志按企业记录成员、品牌、商品、SKU、批量任务和画布保存等操作，并与对应业务写入处于同一数据库事务，普通成员不可读取。
+
+### brands
+
+企业品牌规范表，按 `organization_id` 隔离，保存 Logo、品牌色、字体、品牌语气、视觉规范和禁用词。企业内品牌名称使用联合唯一索引。
+
+### products / product_skus
+
+企业商品主数据表。`products` 保存 SPU 编码、品牌、类目、卖点、目标人群和状态；`product_skus` 保存 SKU 编码、规格属性、参考图和状态。SPU、SKU 编码均在企业内唯一，SKU 创建后不能变更所属商品。品牌、商品或 SKU 已被商品主数据或批量生产历史引用时拒绝删除；写入、任务创建和删除会锁定相同父级记录，避免并发产生悬空引用。
+
+### batch_production_jobs / batch_production_items / batch_production_snapshots
+
+企业批量生产任务及任务项。创建任务时按所选商品展开 SKU；没有 SKU 的商品按 SPU 创建任务项。`batch_production_snapshots` 按任务分别保存一份品牌快照、每个商品快照和每个 SKU 快照，任务项只保存三个快照 ID，避免为每个生产项重复存储整包输入；单任务去重后的快照总量限制为 16MB。后续主数据修改不会改变已经提交的生产输入。任务项支持 `queued`、`running`、`completed`、`failed`、`cancelled` 状态、不可伪造的 `lease_token`、`lease_expires_at`、尝试次数、结果地址和错误信息。
+
+独立 `batch-worker` 进程通过数据库条件更新原子领取，每 2 分钟续租，并把输入快照、模板和任务项发送给 `BATCH_WORKER_EXECUTOR_URL`。领取、取消、完成和超时归档统一按任务行再任务项行加锁，避免相反锁序导致死锁。执行请求使用“任务项 ID + `run_number`”作为 `Idempotency-Key`，同一轮租约接管保持幂等，人工重试递增轮次后允许真正重跑；执行器必须据此幂等处理。系统只接受执行器返回的 HTTP/HTTPS 持久化结果地址，错误信息会清理控制字符并限制长度。连续 5 次租约超时会自动失败，人工重试会开启新的尝试周期；取消会清空租约并保持任务终态。可通过 Docker Compose `worker` profile 启动，`BATCH_WORKER_TOKEN` 用于执行器鉴权，`BATCH_WORKER_CONCURRENCY` 控制并发数。正式环境应让 API 与 Worker 共用 MySQL 或 PostgreSQL，不使用 SQLite 承载多进程生产队列；租约和业务时间统一保存为固定九位小数的 UTC RFC3339，保证字符串条件比较与时间先后一致。
 
 ### users
 
@@ -49,6 +87,7 @@ description: 当前后端主要数据表与字段说明
 | `email_key` | nullable string | 规范化邮箱唯一键；历史空值为 `NULL`，新注册用户用于防止并发重复注册 |
 | `display_name` | string | 昵称 |
 | `avatar_url` | string | 头像地址 |
+| `organization_id` | string | 新会话默认/最近使用的企业 ID，不作为业务请求的唯一租户上下文 |
 | `role` | string | 角色：`user`、`admin` |
 | `group` | string | 用户计费分组，默认 `default` |
 | `credits` | number | 算力点余额 |
@@ -229,7 +268,7 @@ description: 当前后端主要数据表与字段说明
 | `created_at` | string | 首次创建时间 |
 | `updated_at` | string | 最近更新时间 |
 
-注册成功时，`used_at` 更新、用户创建和新用户额度流水写入同一数据库事务；并发请求只有一次可以消费成功。
+注册成功时，`used_at` 更新、用户创建、默认企业、所有者成员关系和新用户额度流水写入同一数据库事务；并发请求只有一次可以消费成功。
 
 ### check_ins
 
@@ -277,6 +316,7 @@ description: 当前后端主要数据表与字段说明
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `id` | string | 主键 |
+| `organization_id` | string | 当前企业 ID |
 | `user_id` | string | 发起任务的用户 ID |
 | `model` | string | 前台请求的对外模型 |
 | `upstream_model` | string | 实际发送给上游的模型 |
@@ -297,12 +337,13 @@ description: 当前后端主要数据表与字段说明
 
 ### user_projects
 
-登录用户的画布主表。服务端是账号画布的唯一持久化数据源，浏览器不保存离线副本。
+企业画布主表。服务端是企业画布的唯一持久化数据源，浏览器不保存离线副本。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `id` | string | 画布 ID，主键 |
-| `user_id` | string | 所属用户 ID |
+| `id` | string | 画布 ID，与企业 ID 组成复合主键 |
+| `organization_id` | string | 所属企业 ID，与画布 ID 组成复合主键 |
+| `user_id` | string | 最近创建该记录的用户 ID |
 | `title` | string | 画布标题 |
 | `data` | text/json | 完整画布 JSON，媒体保存 `storageKey` 引用 |
 | `version` | number | 服务端保存版本 |
@@ -310,14 +351,17 @@ description: 当前后端主要数据表与字段说明
 | `created_at` | string | 创建时间 |
 | `updated_at` | string | 最近保存时间 |
 
+工作区变更接口必须提交读取时的 `version`。后端使用 `organization_id + id + version` 条件更新并检查影响行数；其他成员已经写入新版本时拒绝覆盖。当前页面保存期间产生的后续修改会在前端自动前移 expected version，断网修改只保留在页面内存并阻止切换企业或退出登录。
+
 ### user_assets
 
-登录用户“我的素材”主表，按账号隔离保存素材 JSON 和版本。
+企业商品素材主表，按企业隔离保存素材 JSON 和版本。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `id` | string | 素材 ID，主键 |
-| `user_id` | string | 所属用户 ID |
+| `id` | string | 素材 ID，与企业 ID 组成复合主键 |
+| `organization_id` | string | 所属企业 ID，与素材 ID 组成复合主键 |
+| `user_id` | string | 创建记录的用户 ID |
 | `kind` | string | `text`、`image`、`video` |
 | `title` | string | 素材标题 |
 | `data` | text/json | 素材业务 JSON，媒体保存 `storageKey` 引用 |
@@ -328,12 +372,13 @@ description: 当前后端主要数据表与字段说明
 
 ### user_generation_records
 
-账号级生图和视频生成记录表。记录元数据存入数据库，结果媒体通过 `storageKey` 关联七牛云私有对象，可在登录设备之间恢复。
+企业级生图和视频生成记录表。记录元数据存入数据库，结果媒体通过 `storageKey` 关联企业七牛云私有对象，可在企业成员之间恢复。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `id` | string | 生成记录 ID，主键 |
-| `user_id` | string | 所属用户 ID；与 `id` 组成联合唯一索引 |
+| `id` | string | 生成记录 ID，与企业 ID 组成复合主键 |
+| `organization_id` | string | 所属企业 ID，与生成记录 ID 组成复合主键 |
+| `user_id` | string | 发起生成的用户 ID |
 | `kind` | string | `image` 或 `video` |
 | `data` | text/json | 提示词、模型、生成配置、状态及媒体 `storageKey` 引用 |
 | `version` | number | 服务端保存版本 |
@@ -348,6 +393,7 @@ description: 当前后端主要数据表与字段说明
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `id` | string | 历史版本 ID，主键 |
+| `organization_id` | string | 所属企业 ID |
 | `user_id` | string | 所属用户 ID |
 | `project_id` | string | 画布 ID |
 | `version` | number | 被覆盖前的版本号 |
@@ -356,30 +402,34 @@ description: 当前后端主要数据表与字段说明
 
 ### user_workspace_states
 
-记录账号最近一次成功保存时间。
+记录企业工作区最近一次成功保存时间。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `user_id` | string | 用户 ID，主键 |
-| `updated_at` | string | 最近一次账号数据保存时间 |
+| `organization_id` | string | 企业 ID，主键 |
+| `updated_at` | string | 最近一次企业数据保存时间 |
 
-### user_files
+### user_files / user_file_upload_reservations / user_file_references / user_object_deletions
 
-账号云端媒体文件表。文件本体保存在七牛云 Kodo 私有空间，数据库只保存账号鉴权、对象定位和读取所需的元数据。
+企业云端媒体文件及其上传、引用和回收状态。文件本体保存在七牛云 Kodo 私有空间，数据库只保存企业鉴权、对象定位和读取所需的元数据。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `id` | string | 主键 |
-| `user_id` | string | 所属用户 ID |
-| `storage_key` | string | 前端媒体存储编号；与 `user_id` 组成联合唯一索引 |
+| `organization_id` | string | 所属企业 ID |
+| `user_id` | string | 上传用户 ID |
+| `storage_key` | string | 前端媒体存储编号；与 `organization_id` 组成联合唯一索引 |
 | `object_key` | string | 七牛云私有空间内的对象键，不通过接口返回 |
 | `hash` | string | 七牛云返回的文件内容 ETag |
 | `mime_type` | string | 媒体 MIME 类型 |
 | `size` | number | 文件字节数 |
+| `unreferenced_at` | string | 首次确认没有业务对象引用的时间；重新被引用时清空 |
 | `created_at` | string | 创建时间 |
 | `updated_at` | string | 更新时间 |
 
-单文件上限为 80MB；账号默认额度由 `USER_STORAGE_QUOTA_MB` 配置，默认 5120MB。前端先向后端申请 10 分钟有效的七牛上传凭证，再把文件直接上传到私有空间，上传完成后由后端读取对象元数据并确认入库；长期 Access Key 和 Secret Key 只保存在服务端。文件读取必须先通过 Bearer Token 或同源 HttpOnly 会话 Cookie 鉴权，后端再返回 10 分钟有效的私有下载地址，不能跨账号访问。已超过 24 小时且不再被任何有效画布或素材引用的文件，会在后续保存时同时从七牛空间和数据库清理。
+单文件上限为 80MB；企业默认额度由 `USER_STORAGE_QUOTA_MB` 配置，默认 5120MB。申请上传时，后端锁定企业记录，在 `user_file_upload_reservations` 中原子预留新增空间并同时计算其他待上传预留，防止多成员并发突破企业额度。每次上传使用 `organizations/{organizationId}/uploads/{uploadId}` 下的唯一临时对象键；替换失败不会覆盖原对象，被后一次申请取代的凭证要等到过期后才清理。上传完成后由后端读取对象元数据，在同一企业锁事务中确认 `user_files`、释放预留并把旧对象写入删除队列；长期 Access Key 和 Secret Key 只保存在服务端。
+
+`user_file_references` 在画布、素材和生成记录保存事务中按业务对象替换 `storage_key` 引用，并在写入前验证文件已确认存在。垃圾回收与工作区保存使用同一企业行锁：首次无引用只记录 `unreferenced_at`，持续 24 小时无引用后才删除文件记录并写入 `user_object_deletions`。对象删除由后台 Worker 使用租约领取、指数退避和幂等“对象不存在即成功”语义执行，避免数据库事务中调用外部存储，也避免多实例重复处理。文件读取必须先通过当前企业成员鉴权，后端再返回 10 分钟有效的私有下载地址，不能跨企业访问。
 
 七牛云连接由 `QINIU_ACCESS_KEY`、`QINIU_SECRET_KEY`、`QINIU_BUCKET`、`QINIU_REGION` 和 `QINIU_DOWNLOAD_DOMAIN` 配置。
 

@@ -59,13 +59,13 @@ export const useAssetStore = create<AssetStore>()((set, get) => ({
                 const id = nanoid();
                 const next = { ...asset, id, createdAt: now, updatedAt: now } as Asset;
                 set((state) => ownerAssetsState(state, [next, ...state.assets]));
-                stageWorkspaceRecord(get().ownerId, "asset", id, workspaceAssetData(next));
+				stageWorkspaceRecord(get().ownerId, "asset", id, workspaceAssetData(next), next.version || 0);
                 return id;
             },
             updateAsset: (id, patch) => {
                 set((state) => ownerAssetsState(state, state.assets.map((asset) => (asset.id === id ? ({ ...asset, ...patch, updatedAt: new Date().toISOString() } as Asset) : asset))));
                 const asset = get().assets.find((item) => item.id === id);
-                if (asset) stageWorkspaceRecord(get().ownerId, "asset", id, workspaceAssetData(asset));
+				if (asset) stageWorkspaceRecord(get().ownerId, "asset", id, workspaceAssetData(asset), asset.version || 0);
             },
             removeAsset: (id) => {
                 const removed = get().assets.find((asset) => asset.id === id);
@@ -74,7 +74,7 @@ export const useAssetStore = create<AssetStore>()((set, get) => ({
                     get().cleanupImages({ assets });
                     return ownerAssetsState(state, assets);
                 });
-                if (removed) stageWorkspaceDelete(get().ownerId, "asset", id);
+				if (removed) stageWorkspaceDelete(get().ownerId, "asset", id, removed.version || 0);
             },
             replaceAssets: (assets) => set((state) => ownerAssetsState(state, assets)),
             cleanupImages: (extra) => {

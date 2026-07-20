@@ -8,7 +8,7 @@ import { clearMediaMemory, getMediaBlob, resolveMediaUrl } from "@/services/file
 import { applyGenerationRecordSnapshot, clearGenerationRecordMemory } from "@/services/generation-history";
 import { clearImageMemory, getImageBlob, resolveImageUrl } from "@/services/image-storage";
 import { fetchWorkspace, fetchWorkspaceStorageStatus, saveWorkspaceChanges, uploadWorkspaceFile, workspaceFileExists, type WorkspaceRecord } from "@/services/api/workspace";
-import { clearPendingWorkspaceChanges, commitWorkspaceChanges, readPendingWorkspaceChanges, WORKSPACE_CHANGES_UPDATED_EVENT, type PendingWorkspaceChange } from "@/services/workspace-changes";
+import { commitWorkspaceChanges, hasPendingWorkspaceChanges, readPendingWorkspaceChanges, workspaceOwnerId, WORKSPACE_CHANGES_UPDATED_EVENT, type PendingWorkspaceChange } from "@/services/workspace-changes";
 import type { Asset } from "@/stores/use-asset-store";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useWorkspaceStatusStore } from "@/stores/use-workspace-status-store";
@@ -16,15 +16,24 @@ import { useUserStore } from "@/stores/use-user-store";
 
 const storageKeyPattern = /^(image|video|audio|file|video-reference|audio-reference):/;
 const fileConcurrency = 3;
+let activeWorkspaceFlush: (() => Promise<void>) | null = null;
+
+export async function flushActiveWorkspaceChanges() {
+	if (activeWorkspaceFlush) return activeWorkspaceFlush();
+	if (hasPendingWorkspaceChanges()) throw new Error("当前账号仍有页面内数据未保存，请返回工作台联网同步后再继续");
+}
 
 export function WorkspaceProvider() {
     const token = useUserStore((state) => state.token);
     const userId = useUserStore((state) => state.user?.id || "");
+    const organizationId = useUserStore((state) => state.user?.organizationId || "");
+	const ownerId = workspaceOwnerId(userId, organizationId);
     useEffect(() => {
         let cancelled = false;
         let running = false;
+        let saveWaiters: Array<() => void> = [];
         let timer: ReturnType<typeof setTimeout> | null = null;
-        if (!token || !userId) {
+        if (!token || !userId || !organizationId) {
             useCanvasStore.getState().switchOwner("guest");
             useAssetStore.getState().switchOwner("guest");
             useWorkspaceStatusStore.getState().setStatus("idle");
@@ -32,7 +41,8 @@ export function WorkspaceProvider() {
         }
 
         const save = async (bootstrap = false) => {
-            if (running || cancelled) return;
+            if (cancelled) return;
+            if (running) return new Promise<void>((resolve) => saveWaiters.push(resolve));
             running = true;
             const statusStore = useWorkspaceStatusStore.getState();
             statusStore.setStatus(navigator.onLine ? "syncing" : "offline");
@@ -41,21 +51,21 @@ export function WorkspaceProvider() {
                 return;
             }
             try {
-                useCanvasStore.getState().switchOwner(userId);
-                useAssetStore.getState().switchOwner(userId);
+                useCanvasStore.getState().switchOwner(ownerId);
+                useAssetStore.getState().switchOwner(ownerId);
 
                 if (bootstrap) {
                     const workspace = await fetchWorkspace(token);
-                    const pending = readPendingWorkspaceChanges(userId);
-                    applyWorkspaceSnapshot(userId, workspace.records, pending, true);
-                    await Promise.all([hydrateOwnerAssets(userId), applyGenerationRecordSnapshot(userId, workspace.records, pending)]);
+                    const pending = readPendingWorkspaceChanges(ownerId);
+                    applyWorkspaceSnapshot(ownerId, workspace.records, pending, true);
+                    await Promise.all([hydrateOwnerAssets(ownerId), applyGenerationRecordSnapshot(ownerId, workspace.records, pending)]);
                 }
 
-                await flushPendingChanges(token, userId);
+                await flushPendingChanges(token, ownerId);
                 const [workspace, usage] = await Promise.all([fetchWorkspace(token), fetchWorkspaceStorageStatus(token)]);
-                const pending = readPendingWorkspaceChanges(userId);
-                applyWorkspaceSnapshot(userId, workspace.records, pending, false);
-                await Promise.all([hydrateOwnerAssets(userId), applyGenerationRecordSnapshot(userId, workspace.records, pending)]);
+                const pending = readPendingWorkspaceChanges(ownerId);
+                applyWorkspaceSnapshot(ownerId, workspace.records, pending, false);
+                await Promise.all([hydrateOwnerAssets(ownerId), applyGenerationRecordSnapshot(ownerId, workspace.records, pending)]);
                 statusStore.setUsage(usage.usedBytes, usage.quotaBytes, usage.projectCount, usage.assetCount, usage.fileCount);
                 statusStore.markSaved();
             } catch (error) {
@@ -63,9 +73,21 @@ export function WorkspaceProvider() {
                 statusStore.setStatus(navigator.onLine ? "error" : "offline", text);
             } finally {
                 running = false;
-                if (!cancelled && readPendingWorkspaceChanges(userId).length) schedule();
+                saveWaiters.splice(0).forEach((resolve) => resolve());
+                if (!cancelled && readPendingWorkspaceChanges(ownerId).length) schedule();
             }
         };
+
+		const flush = async () => {
+			if (!readPendingWorkspaceChanges(ownerId).length) return;
+			if (!navigator.onLine) throw new Error("当前离线，无法切换企业");
+            for (let attempt = 0; attempt < 3; attempt++) {
+                await save(false);
+                if (!readPendingWorkspaceChanges(ownerId).length) return;
+            }
+            throw new Error("当前企业仍有数据未保存，请稍后重试");
+        };
+        activeWorkspaceFlush = flush;
 
         const schedule = () => {
             if (timer) clearTimeout(timer);
@@ -87,16 +109,18 @@ export function WorkspaceProvider() {
             window.clearInterval(polling);
             window.removeEventListener(WORKSPACE_CHANGES_UPDATED_EVENT, schedule);
             window.removeEventListener("online", schedule);
-            window.removeEventListener("focus", saveWhenVisible);
-            document.removeEventListener("visibilitychange", saveWhenVisible);
-            clearPendingWorkspaceChanges(userId);
-            clearGenerationRecordMemory(userId);
-            clearImageMemory();
-            clearMediaMemory();
-            useCanvasStore.getState().replaceOwnerProjects(userId, []);
-            useAssetStore.getState().replaceOwnerAssets(userId, []);
+			window.removeEventListener("focus", saveWhenVisible);
+			document.removeEventListener("visibilitychange", saveWhenVisible);
+			if (activeWorkspaceFlush === flush) activeWorkspaceFlush = null;
+			if (!readPendingWorkspaceChanges(ownerId, userId).length) {
+				clearGenerationRecordMemory(ownerId);
+				clearImageMemory();
+				clearMediaMemory();
+				useCanvasStore.getState().replaceOwnerProjects(ownerId, []);
+				useAssetStore.getState().replaceOwnerAssets(ownerId, []);
+			}
         };
-    }, [token, userId]);
+    }, [organizationId, ownerId, token, userId]);
 
     return null;
 }
@@ -105,8 +129,8 @@ async function flushPendingChanges(token: string, userId: string) {
     const pending = readPendingWorkspaceChanges(userId);
     if (!pending.length) return;
     await uploadReferencedFiles(token, pending);
-    const result = await saveWorkspaceChanges(token, pending.map(({ domain, objectId, data, deleted }) => ({ domain, objectId, data, deleted })));
-    commitWorkspaceChanges(pending);
+	const result = await saveWorkspaceChanges(token, pending.map(({ domain, objectId, data, deleted, version }) => ({ domain, objectId, data, deleted, version })));
+	commitWorkspaceChanges(pending, result.records);
     applyWorkspaceVersions(userId, result.records);
 }
 
@@ -125,7 +149,7 @@ function overlayPending<T extends { id: string }>(remote: T[], pending: Map<stri
     pending.forEach((change) => {
         if (change.domain !== domain) return;
         if (change.deleted) items.delete(change.objectId);
-        else items.set(change.objectId, fromData(change.data));
+		else items.set(change.objectId, { ...fromData(change.data), version: change.version });
     });
     return [...items.values()];
 }

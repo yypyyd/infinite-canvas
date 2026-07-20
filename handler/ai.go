@@ -109,6 +109,10 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		Fail(w, "未登录或权限不足")
 		return
 	}
+	if err := service.RequireOrganizationWrite(user); err != nil {
+		FailError(w, err)
+		return
+	}
 	pricingRequest := pricingRequestForAIPath(path, requestMeta)
 	selection, err := service.SelectModelChannel(pricingRequest)
 	if err != nil {
@@ -148,6 +152,7 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 	}
 	task, taskErr := service.BeginGenerationTask(service.GenerationTaskInput{
 		UserID:         user.ID,
+		OrganizationID: user.OrganizationID,
 		Model:          requestMeta.ModelName,
 		UpstreamModel:  upstreamModel,
 		ChannelName:    channel.Name,

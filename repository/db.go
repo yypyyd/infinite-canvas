@@ -65,12 +65,26 @@ func DB() (*gorm.DB, error) {
 		}
 		dbErr = db.AutoMigrate(
 			&model.User{},
+			&model.Organization{},
+			&model.OrganizationMember{},
+			&model.OrganizationInvitation{},
+			&model.OrganizationAuditLog{},
+			&model.OrganizationEmailOutbox{},
+			&model.Brand{},
+			&model.Product{},
+			&model.ProductSKU{},
+			&model.BatchProductionJob{},
+			&model.BatchProductionItem{},
+			&model.BatchProductionSnapshot{},
 			&model.EmailVerification{},
 			&model.CreditLog{},
 			&model.CheckIn{},
 			&model.RedemptionCode{},
 			&model.GenerationTask{},
 			&model.UserFile{},
+			&model.UserFileReference{},
+			&model.UserFileUploadReservation{},
+			&model.UserObjectDeletion{},
 			&model.UserProject{},
 			&model.UserAsset{},
 			&model.UserGenerationRecord{},
@@ -183,6 +197,12 @@ func isMySQLError(err error, number uint16) bool {
 func isPostgresError(err error, code string) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == code
+}
+
+func isDuplicateKeyError(err error) bool {
+	if errors.Is(err, gorm.ErrDuplicatedKey) || isMySQLError(err, 1062) || isPostgresError(err, "23505") { return true }
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "unique constraint failed") || strings.Contains(message, "constraint failed: unique")
 }
 
 func quoteMySQLIdentifier(name string) string {

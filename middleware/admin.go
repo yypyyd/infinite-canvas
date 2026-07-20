@@ -29,12 +29,30 @@ func UserAuth(c *gin.Context) {
 		c.Abort()
 		return
 	}
+	if organizationID := strings.TrimSpace(c.GetHeader("X-Organization-ID")); organizationID != "" {
+		organization, _, err := service.ResolveOrganizationAccess(user, organizationID)
+		if err != nil {
+			handler.FailError(c.Writer, err)
+			c.Abort()
+			return
+		}
+		user.OrganizationID = organization.ID
+	}
 	c.Request = c.Request.WithContext(service.WithUser(c.Request.Context(), user))
 	c.Next()
 }
 
 func OptionalAuth(c *gin.Context) {
 	if user, ok := authUser(c); ok {
+		if organizationID := strings.TrimSpace(c.GetHeader("X-Organization-ID")); organizationID != "" {
+			organization, _, err := service.ResolveOrganizationAccess(user, organizationID)
+			if err != nil {
+				handler.FailError(c.Writer, err)
+				c.Abort()
+				return
+			}
+			user.OrganizationID = organization.ID
+		}
 		c.Request = c.Request.WithContext(service.WithUser(c.Request.Context(), user))
 	}
 	c.Next()
@@ -62,4 +80,27 @@ func authUser(c *gin.Context) (model.AuthUser, bool) {
 		c.SetCookie("infinite_canvas_session", token, maxAge, "/", "", c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https", true)
 	}
 	return user, ok
+}
+
+func OrganizationAuth(c *gin.Context) {
+	user, ok := service.UserFromContext(c.Request.Context())
+	if !ok {
+		handler.Fail(c.Writer, "未登录或权限不足")
+		c.Abort()
+		return
+	}
+	organizationID := strings.TrimSpace(c.GetHeader("X-Organization-ID"))
+	if organizationID != "" && user.OrganizationID == organizationID {
+		c.Next()
+		return
+	}
+	organization, _, err := service.ResolveOrganizationAccess(user, organizationID)
+	if err != nil {
+		handler.FailError(c.Writer, err)
+		c.Abort()
+		return
+	}
+	user.OrganizationID = organization.ID
+	c.Request = c.Request.WithContext(service.WithUser(c.Request.Context(), user))
+	c.Next()
 }

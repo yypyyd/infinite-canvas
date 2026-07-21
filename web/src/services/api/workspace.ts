@@ -1,6 +1,6 @@
 import axios from "axios";
 
-import { apiGet, apiPost, authorizationHeaders } from "@/services/api/request";
+import { apiGet, apiPost, authorizationHeaders, getActiveOrganizationId } from "@/services/api/request";
 
 export type WorkspaceDomain = "canvas_project" | "asset" | "generation_record";
 
@@ -57,21 +57,34 @@ export function fetchWorkspaceStorageStatus(token: string) {
     return apiGet<WorkspaceStorageStatus>("/api/workspace/status", undefined, token);
 }
 
-export async function uploadWorkspaceFile(token: string, storageKey: string, file: Blob) {
+export async function uploadWorkspaceFile(token: string, storageKey: string, file: Blob, signal?: AbortSignal) {
+	if (signal?.aborted) throw new Error("上传已取消");
     const mimeType = file.type || "application/octet-stream";
-    const ticket = await apiPost<WorkspaceFileUploadTicket>("/api/workspace/files/upload-ticket", { storageKey, mimeType, size: file.size }, token);
+	const organizationId = getActiveOrganizationId();
+	const ticket = await apiPost<WorkspaceFileUploadTicket>("/api/workspace/files/upload-ticket", { storageKey, mimeType, size: file.size }, token, { signal, timeout: 30_000, organizationId });
     if (!ticket.uploadRequired && ticket.file) return ticket.file;
-	if (!ticket.uploadId || !ticket.uploadUrl || !ticket.uploadToken || !ticket.objectKey) throw new Error("云端上传凭证无效");
-    const form = new FormData();
-    form.append("token", ticket.uploadToken);
-    form.append("key", ticket.objectKey);
-    form.append("file", file, workspaceFileName(storageKey, mimeType));
-    await axios.post(ticket.uploadUrl, form);
-	return apiPost<WorkspaceFile>("/api/workspace/files/confirm", { uploadId: ticket.uploadId, storageKey, objectKey: ticket.objectKey, mimeType, size: file.size }, token);
+	const { uploadId, uploadUrl, uploadToken, objectKey } = ticket;
+	if (!uploadId || !uploadUrl || !uploadToken || !objectKey) throw new Error("云端上传凭证无效");
+	try {
+		const form = new FormData();
+		form.append("token", uploadToken);
+		form.append("key", objectKey);
+		form.append("file", file, workspaceFileName(storageKey, mimeType));
+		await axios.post(uploadUrl, form, { signal, timeout: 15 * 60_000 });
+		if (signal?.aborted) throw new Error("上传已取消");
+		return await apiPost<WorkspaceFile>("/api/workspace/files/confirm", { uploadId, storageKey, objectKey, mimeType, size: file.size }, token, { signal, timeout: 30_000, organizationId });
+	} catch (error) {
+		try { await apiPost<boolean>(`/api/workspace/files/${encodeURIComponent(uploadId)}/cancel`, {}, token, { timeout: 10_000, organizationId }); } catch {}
+		throw error;
+	}
 }
 
-export function workspaceFileUrl(storageKey: string, accountId = "") {
-    return `/api/workspace/files/${encodeURIComponent(storageKey)}${accountId ? `?account=${encodeURIComponent(accountId)}` : ""}`;
+export function workspaceFileUrl(storageKey: string, accountId = "", organizationId = getActiveOrganizationId()) {
+	const params = new URLSearchParams();
+	if (accountId) params.set("account", accountId);
+	if (organizationId) params.set("organization", organizationId);
+	const query = params.toString();
+	return `/api/workspace/files/${encodeURIComponent(storageKey)}${query ? `?${query}` : ""}`;
 }
 
 export async function workspaceFileExists(token: string, storageKey: string) {

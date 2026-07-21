@@ -81,6 +81,19 @@ func ConfirmUserWorkspaceFileUpload(w http.ResponseWriter, r *http.Request) {
 	OK(w, result)
 }
 
+func CancelUserWorkspaceFileUpload(w http.ResponseWriter, r *http.Request, uploadID string) {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok {
+		Fail(w, "未登录或权限不足")
+		return
+	}
+	if err := service.CancelUserWorkspaceFileUpload(user, uploadID); err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, true)
+}
+
 func UserWorkspaceFile(w http.ResponseWriter, r *http.Request, storageKey string) {
 	user, ok := service.UserFromContext(r.Context())
 	if !ok {

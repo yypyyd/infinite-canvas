@@ -29,6 +29,7 @@ type Config struct {
 	BatchWorkerExecutorURL string `env:"BATCH_WORKER_EXECUTOR_URL"`
 	BatchWorkerToken       string `env:"BATCH_WORKER_TOKEN"`
 	BatchWorkerConcurrency int    `env:"BATCH_WORKER_CONCURRENCY" envDefault:"4"`
+	BatchWorkerTenantConcurrency int `env:"BATCH_WORKER_TENANT_CONCURRENCY" envDefault:"2"`
 }
 
 var Cfg Config

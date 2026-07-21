@@ -143,8 +143,8 @@ func createRegisteredUser(user model.User, settings model.Settings, verification
 	organizationName := strings.TrimSpace(user.DisplayName)
 	if organizationName == "" { organizationName = user.Username }
 	user.OrganizationID = organizationID
-	organization := model.Organization{ID: organizationID, Name: organizationName + "的企业", Slug: organizationID, Status: "active", CreatedBy: user.ID, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt}
-	membership := model.OrganizationMember{ID: memberID, OrganizationID: organizationID, UserID: user.ID, Role: model.OrganizationRoleOwner, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt}
+	organization := model.Organization{ID: organizationID, Name: organizationName + "的企业", Slug: organizationID, Status: "active", Version: 1, CreatedBy: user.ID, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt}
+	membership := model.OrganizationMember{ID: memberID, OrganizationID: organizationID, UserID: user.ID, Role: model.OrganizationRoleOwner, Version: 1, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt}
 	audit := newAuditLog(user.ID, organizationID, "organization.create", "organization", organizationID, organization.Name, user.CreatedAt)
 	if reward <= 0 {
 		return repository.CreateVerifiedUserWithCreditLog(user, organization, membership, audit, nil, verificationID, codeHash, now(), emailMaxAttempts)

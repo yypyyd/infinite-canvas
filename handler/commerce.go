@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/basketikun/infinite-canvas/model"
 	"github.com/basketikun/infinite-canvas/service"
@@ -26,9 +28,9 @@ func SwitchOrganization(w http.ResponseWriter, r *http.Request) {
 }
 
 func UpdateOrganization(w http.ResponseWriter, r *http.Request) {
-	var input struct { Name string `json:"name"` }
+	var input struct { Name string `json:"name"`; Version int64 `json:"version"` }
 	if !decodeCommerceJSON(w, r, &input) { return }
-	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return service.UpdateOrganization(user, input.Name) })
+	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return service.UpdateOrganization(user, input.Name, input.Version) })
 }
 
 func InviteOrganizationMember(w http.ResponseWriter, r *http.Request) {
@@ -54,9 +56,9 @@ func RevokeOrganizationInvitation(w http.ResponseWriter, r *http.Request, id str
 }
 
 func UpdateOrganizationMember(w http.ResponseWriter, r *http.Request, id string) {
-	var input struct { Role model.OrganizationRole `json:"role"` }
+	var input struct { Role model.OrganizationRole `json:"role"`; Version int64 `json:"version"` }
 	if !decodeCommerceJSON(w, r, &input) { return }
-	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return service.UpdateOrganizationMember(user, id, input.Role) })
+	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return service.UpdateOrganizationMember(user, id, input.Role, input.Version) })
 }
 
 func CommerceOrganizationMembers(w http.ResponseWriter, r *http.Request) {
@@ -64,11 +66,15 @@ func CommerceOrganizationMembers(w http.ResponseWriter, r *http.Request) {
 }
 
 func RemoveOrganizationMember(w http.ResponseWriter, r *http.Request, id string) {
-	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return true, service.RemoveOrganizationMember(user, id) })
+	version, ok := commerceExpectedVersion(w, r)
+	if !ok { return }
+	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return true, service.RemoveOrganizationMember(user, id, version) })
 }
 
 func TransferOrganizationOwnership(w http.ResponseWriter, r *http.Request, id string) {
-	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return true, service.TransferOrganizationOwnership(user, id) })
+	version, ok := commerceExpectedVersion(w, r)
+	if !ok { return }
+	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return true, service.TransferOrganizationOwnership(user, id, version) })
 }
 
 func CommerceBrands(w http.ResponseWriter, r *http.Request) {
@@ -82,7 +88,9 @@ func SaveCommerceBrand(w http.ResponseWriter, r *http.Request) {
 }
 
 func DeleteCommerceBrand(w http.ResponseWriter, r *http.Request, id string) {
-	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return true, service.DeleteBrand(user, id) })
+	version, ok := commerceExpectedVersion(w, r)
+	if !ok { return }
+	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return true, service.DeleteBrand(user, id, version) })
 }
 
 func CommerceProducts(w http.ResponseWriter, r *http.Request) {
@@ -96,7 +104,9 @@ func SaveCommerceProduct(w http.ResponseWriter, r *http.Request) {
 }
 
 func DeleteCommerceProduct(w http.ResponseWriter, r *http.Request, id string) {
-	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return true, service.DeleteProduct(user, id) })
+	version, ok := commerceExpectedVersion(w, r)
+	if !ok { return }
+	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return true, service.DeleteProduct(user, id, version) })
 }
 
 func CommerceProductSKUs(w http.ResponseWriter, r *http.Request, productID string) {
@@ -110,7 +120,9 @@ func SaveCommerceProductSKU(w http.ResponseWriter, r *http.Request) {
 }
 
 func DeleteCommerceProductSKU(w http.ResponseWriter, r *http.Request, id string) {
-	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return true, service.DeleteProductSKU(user, id) })
+	version, ok := commerceExpectedVersion(w, r)
+	if !ok { return }
+	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return true, service.DeleteProductSKU(user, id, version) })
 }
 
 func CommerceBatchJobs(w http.ResponseWriter, r *http.Request) {
@@ -156,4 +168,10 @@ func decodeCommerceJSON(w http.ResponseWriter, r *http.Request, target any) bool
 	if err := decoder.Decode(target); err != nil { Fail(w, "请求参数无效"); return false }
 	if err := decoder.Decode(&struct{}{}); err != io.EOF { Fail(w, "请求参数无效"); return false }
 	return true
+}
+
+func commerceExpectedVersion(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	version, err := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("expectedVersion")), 10, 64)
+	if err != nil || version <= 0 { Fail(w, "数据版本无效，请刷新后重试"); return 0, false }
+	return version, true
 }

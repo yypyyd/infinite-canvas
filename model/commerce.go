@@ -10,10 +10,12 @@ const (
 )
 
 type Organization struct {
-	ID        string `json:"id" gorm:"primaryKey"`
+	ID        string `json:"id" gorm:"primaryKey;index:idx_batch_claim_organizations,priority:3"`
 	Name      string `json:"name"`
 	Slug      string `json:"slug" gorm:"uniqueIndex"`
-	Status    string `json:"status" gorm:"index"`
+	Status    string `json:"status" gorm:"index;index:idx_batch_claim_organizations,priority:1"`
+	Version   int64  `json:"version"`
+	BatchClaimCursor string `json:"-" gorm:"size:128;index;not null;default:'';index:idx_batch_claim_organizations,priority:2"`
 	CreatedBy string `json:"createdBy" gorm:"index"`
 	CreatedAt string `json:"createdAt"`
 	UpdatedAt string `json:"updatedAt"`
@@ -24,6 +26,7 @@ type OrganizationMember struct {
 	OrganizationID string           `json:"organizationId" gorm:"uniqueIndex:idx_organization_user;index"`
 	UserID         string           `json:"userId" gorm:"uniqueIndex:idx_organization_user;index"`
 	Role           OrganizationRole `json:"role" gorm:"index"`
+	Version        int64            `json:"version"`
 	CreatedAt      string           `json:"createdAt"`
 	UpdatedAt      string           `json:"updatedAt"`
 }
@@ -36,6 +39,7 @@ type OrganizationMemberView struct {
 	Email       string           `json:"email"`
 	AvatarURL   string           `json:"avatarUrl"`
 	Role        OrganizationRole `json:"role"`
+	Version     int64            `json:"version"`
 	CreatedAt   string           `json:"createdAt"`
 }
 
@@ -125,12 +129,13 @@ type Brand struct {
 	ID              string   `json:"id" gorm:"primaryKey"`
 	OrganizationID  string   `json:"organizationId" gorm:"index;uniqueIndex:idx_organization_brand_name"`
 	Name            string   `json:"name" gorm:"index;uniqueIndex:idx_organization_brand_name"`
-	LogoURL         string   `json:"logoUrl"`
+	LogoStorageKey  string   `json:"logoStorageKey"`
 	Colors          []string `json:"colors" gorm:"serializer:json"`
 	Fonts           []string `json:"fonts" gorm:"serializer:json"`
 	Tone            string   `json:"tone" gorm:"type:text"`
 	Guidelines      string   `json:"guidelines" gorm:"type:text"`
 	ProhibitedTerms []string `json:"prohibitedTerms" gorm:"serializer:json"`
+	Version         int64    `json:"version"`
 	CreatedBy       string   `json:"createdBy" gorm:"index"`
 	CreatedAt       string   `json:"createdAt"`
 	UpdatedAt       string   `json:"updatedAt"`
@@ -160,6 +165,7 @@ type Product struct {
 	SellingPoints  []string      `json:"sellingPoints" gorm:"serializer:json"`
 	TargetAudience string        `json:"targetAudience"`
 	Status         ProductStatus `json:"status" gorm:"index"`
+	Version        int64         `json:"version"`
 	CreatedBy      string        `json:"createdBy" gorm:"index"`
 	CreatedAt      string        `json:"createdAt"`
 	UpdatedAt      string        `json:"updatedAt"`
@@ -179,8 +185,9 @@ type ProductSKU struct {
 	Code           string            `json:"code" gorm:"index;uniqueIndex:idx_organization_sku_code"`
 	Name           string            `json:"name"`
 	Attributes     map[string]string `json:"attributes" gorm:"serializer:json"`
-	ImageURLs      []string          `json:"imageUrls" gorm:"serializer:json"`
+	ImageStorageKeys []string        `json:"imageStorageKeys" gorm:"serializer:json"`
 	Status         ProductStatus     `json:"status" gorm:"index"`
+	Version        int64             `json:"version"`
 	CreatedBy      string            `json:"createdBy" gorm:"index"`
 	CreatedAt      string            `json:"createdAt"`
 	UpdatedAt      string            `json:"updatedAt"`
@@ -203,7 +210,10 @@ const (
 
 type BatchProductionJob struct {
 	ID             string                `json:"id" gorm:"primaryKey"`
-	OrganizationID string                `json:"organizationId" gorm:"index"`
+	OrganizationID string                `json:"organizationId" gorm:"index;uniqueIndex:idx_organization_batch_request"`
+	RequestID      string                `json:"requestId" gorm:"uniqueIndex:idx_organization_batch_request"`
+	RequestHash    string                `json:"-" gorm:"size:64"`
+	ArchiveToken   string                `json:"-" gorm:"size:64"`
 	BrandID        string                `json:"brandId" gorm:"index"`
 	Name           string                `json:"name"`
 	PresetID       string                `json:"presetId" gorm:"index"`
@@ -229,25 +239,25 @@ type BatchProductionSnapshot struct {
 }
 
 type BatchProductionItem struct {
-	ID             string                `json:"id" gorm:"primaryKey"`
-	OrganizationID string                `json:"organizationId" gorm:"index"`
+	ID             string                `json:"id" gorm:"primaryKey;index:idx_batch_ready,priority:4"`
+	OrganizationID string                `json:"organizationId" gorm:"index;index:idx_batch_ready,priority:1;index:idx_batch_retry,priority:1;index:idx_batch_running,priority:1;index:idx_batch_expired,priority:4"`
 	JobID          string                `json:"jobId" gorm:"index"`
 	ProductID      string                `json:"productId" gorm:"index"`
 	SKUID          string                `json:"skuId" gorm:"index"`
-	Status         BatchProductionStatus `json:"status" gorm:"index"`
-	ResultURL      string                `json:"resultUrl"`
+	Status         BatchProductionStatus `json:"status" gorm:"index;index:idx_batch_ready,priority:2;index:idx_batch_retry,priority:2;index:idx_batch_running,priority:2;index:idx_batch_expired,priority:1"`
+	ResultStorageKey string              `json:"resultStorageKey" gorm:"size:191"`
 	ErrorMessage   string                `json:"errorMessage" gorm:"type:text"`
 	BrandSnapshotID string               `json:"-"`
 	ProductSnapshotID string             `json:"-"`
 	SKUSnapshotID string                 `json:"-"`
 	RunNumber      int                   `json:"runNumber"`
-	Attempts       int                   `json:"attempts"`
+	Attempts       int                   `json:"attempts" gorm:"index:idx_batch_retry,priority:4;index:idx_batch_expired,priority:3"`
 	LockedAt       string                `json:"lockedAt" gorm:"index"`
 	LeaseToken     string                `json:"-" gorm:"index"`
-	LeaseExpiresAt string                `json:"leaseExpiresAt" gorm:"index"`
+	LeaseExpiresAt string                `json:"leaseExpiresAt" gorm:"index;index:idx_batch_retry,priority:3;index:idx_batch_running,priority:3;index:idx_batch_expired,priority:2"`
 	StartedAt      string                `json:"startedAt"`
 	FinishedAt     string                `json:"finishedAt"`
-	CreatedAt      string                `json:"createdAt"`
+	CreatedAt      string                `json:"createdAt" gorm:"index:idx_batch_ready,priority:3"`
 	UpdatedAt      string                `json:"updatedAt"`
 }
 
@@ -262,6 +272,7 @@ type BatchProductionJobList struct {
 }
 
 type CreateBatchProductionJobInput struct {
+	RequestID  string   `json:"requestId"`
 	Name       string   `json:"name"`
 	BrandID    string   `json:"brandId"`
 	PresetID   string   `json:"presetId"`

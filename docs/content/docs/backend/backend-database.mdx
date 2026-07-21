@@ -43,6 +43,7 @@ description: 当前后端主要数据表与字段说明
 - `user_files`
 - `user_file_references`
 - `user_file_upload_reservations`
+- `user_file_upload_rate_limits`
 - `user_object_deletions`
 - `prompts`
 - `assets`
@@ -52,9 +53,9 @@ description: 当前后端主要数据表与字段说明
 
 ### organizations / organization_members
 
-企业租户和成员关系表。一个用户可以加入多个企业，`users.organization_id` 只保存新会话默认/最近使用的企业。登录后的企业业务请求必须携带 `X-Organization-ID`，后端中间件会逐请求校验企业状态和成员关系，再把企业上下文传给画布、媒体、模型任务和电商业务，多个浏览器标签页可各自保持独立企业上下文。
+企业租户和成员关系表。一个用户可以加入多个企业，`users.organization_id` 只保存新会话默认/最近使用的企业。登录后的企业 API 请求携带 `X-Organization-ID`；浏览器原生图片、视频和下载请求无法自定义 Header，因此媒体 URL 使用 `organization` 查询参数携带企业 ID。后端中间件会逐请求校验企业状态和成员关系，再把企业上下文传给画布、媒体、模型任务和电商业务，多个浏览器标签页可各自保持独立企业上下文。
 
-`organizations` 保存企业名称、唯一标识、状态、创建人和创建时间。`organization_members` 通过 `organization_id + user_id` 联合唯一索引关联成员，角色包括 `owner`、`admin`、`member`、`reviewer`。企业所有者可以转移所有权，管理员不能修改或移除所有者。
+`organizations` 保存企业名称、唯一标识、状态、创建人和创建时间；仅服务端使用的 `batch_claim_cursor` 记录该企业最近一次领取批量生产项的顺序游标。`organization_members` 通过 `organization_id + user_id` 联合唯一索引关联成员，角色包括 `owner`、`admin`、`member`、`reviewer`。企业与成员关系均保存 `version` 乐观版本号；企业设置、成员角色、成员移除和所有权转移必须提交读取时版本，拒绝多个管理员基于旧页面静默覆盖。企业所有者可以转移所有权，管理员不能修改或移除所有者。
 
 ### organization_invitations / organization_email_outboxes / organization_audit_logs
 
@@ -62,17 +63,17 @@ description: 当前后端主要数据表与字段说明
 
 ### brands
 
-企业品牌规范表，按 `organization_id` 隔离，保存 Logo、品牌色、字体、品牌语气、视觉规范和禁用词。企业内品牌名称使用联合唯一索引。
+企业品牌规范表，按 `organization_id` 隔离，保存 Logo 的企业私有 `storageKey`、品牌色、字体、品牌语气、视觉规范和禁用词。企业内品牌名称使用联合唯一索引；Logo 文件引用与品牌保存处于同一事务。品牌使用 `version` 乐观版本号，保存和删除必须提交读取时版本，其他成员已保存新版本时拒绝静默覆盖或误删。
 
 ### products / product_skus
 
-企业商品主数据表。`products` 保存 SPU 编码、品牌、类目、卖点、目标人群和状态；`product_skus` 保存 SKU 编码、规格属性、参考图和状态。SPU、SKU 编码均在企业内唯一，SKU 创建后不能变更所属商品。品牌、商品或 SKU 已被商品主数据或批量生产历史引用时拒绝删除；写入、任务创建和删除会锁定相同父级记录，避免并发产生悬空引用。
+企业商品主数据表。`products` 保存 SPU 编码、品牌、类目、卖点、目标人群和状态；`product_skus` 保存 SKU 编码、规格属性、企业私有参考图 `storageKey` 和状态。SPU、SKU 编码均在企业内唯一，SKU 创建后不能变更所属商品；两张表均使用 `version` 乐观版本号和条件更新，保存和删除都必须提交读取时版本，拒绝基于旧版本的并发覆盖或误删。商品作为 SKU 聚合根，SKU 创建、更新或删除会在同一事务递增所属商品版本，因此旧商品列表不能级联删除其他成员刚变更的 SKU。品牌、商品或 SKU 已被商品主数据或批量生产历史引用时拒绝删除；写入、任务创建和删除会锁定相同父级记录，避免并发产生悬空引用。SKU 参考图引用与 SKU 保存处于同一事务，删除 SKU 或包含它的商品时同步释放引用，并从实际删除时间开始计算 24 小时文件回收宽限期。
 
 ### batch_production_jobs / batch_production_items / batch_production_snapshots
 
-企业批量生产任务及任务项。创建任务时按所选商品展开 SKU；没有 SKU 的商品按 SPU 创建任务项。`batch_production_snapshots` 按任务分别保存一份品牌快照、每个商品快照和每个 SKU 快照，任务项只保存三个快照 ID，避免为每个生产项重复存储整包输入；单任务去重后的快照总量限制为 16MB。后续主数据修改不会改变已经提交的生产输入。任务项支持 `queued`、`running`、`completed`、`failed`、`cancelled` 状态、不可伪造的 `lease_token`、`lease_expires_at`、尝试次数、结果地址和错误信息。
+企业批量生产任务及任务项。创建接口要求客户端生成 `request_id`，并通过 `organization_id + request_id` 联合唯一索引保证超时重试、双击和代理重放只创建一次任务；`request_hash` 保存规范化名称、品牌、模板和商品集合的 SHA-256 摘要，同请求号只有摘要一致时才返回已有任务，不同内容会返回冲突。每个任务还保存仅服务端可见的随机 `archive_token`，用于隔离 Worker 归档文件命名空间。幂等查询在商品和 SKU 展开前完成，成功响应丢失后的重试不会受后续主数据变化影响。首次创建会先锁定企业和所选商品，再在同一事务读取并展开完整 SKU 集合；没有 SKU 的商品按 SPU 创建任务项，因此并发新增 SKU 不会落在事务读取与任务写入之间。`batch_production_snapshots` 按任务分别保存一份品牌快照、每个商品快照和每个 SKU 快照，任务项只保存三个快照 ID，避免为每个生产项重复存储整包输入；单任务最多 5000 个生产项，单企业处于 `queued` 或 `running` 的生产项合计最多 10000 个，创建和人工重试均在企业锁内检查上限。去重后的快照总量限制为 16MB，后续主数据修改不会改变已经提交的生产输入。任务项支持 `queued`、`running`、`completed`、`failed`、`cancelled` 状态、不可伪造的 `lease_token`、`lease_expires_at`、尝试次数、结果地址和错误信息。
 
-独立 `batch-worker` 进程通过数据库条件更新原子领取，每 2 分钟续租，并把输入快照、模板和任务项发送给 `BATCH_WORKER_EXECUTOR_URL`。领取、取消、完成和超时归档统一按任务行再任务项行加锁，避免相反锁序导致死锁。执行请求使用“任务项 ID + `run_number`”作为 `Idempotency-Key`，同一轮租约接管保持幂等，人工重试递增轮次后允许真正重跑；执行器必须据此幂等处理。系统只接受执行器返回的 HTTP/HTTPS 持久化结果地址，错误信息会清理控制字符并限制长度。连续 5 次租约超时会自动失败，人工重试会开启新的尝试周期；取消会清空租约并保持任务终态。可通过 Docker Compose `worker` profile 启动，`BATCH_WORKER_TOKEN` 用于执行器鉴权，`BATCH_WORKER_CONCURRENCY` 控制并发数。正式环境应让 API 与 Worker 共用 MySQL 或 PostgreSQL，不使用 SQLite 承载多进程生产队列；租约和业务时间统一保存为固定九位小数的 UTC RFC3339，保证字符串条件比较与时间先后一致。
+独立 `batch-worker` 进程通过数据库条件更新原子领取，每 2 分钟续租，并把输入快照、模板、任务项以及快照引用媒体的 30 分钟私有地址发送给 `BATCH_WORKER_EXECUTOR_URL`。领取按企业最近领取游标轮转，再在企业内按创建顺序领取，避免单个大租户长期占满全局 FIFO；候选企业使用索引顺序和相关 `EXISTS` 判断，不再为每个生产项聚合、排序全局队列。领取、续租、取消、完成和超时归档统一先锁企业；`BATCH_WORKER_TENANT_CONCURRENCY` 限制单企业同时运行数量，默认 2 且不会超过 `BATCH_WORKER_CONCURRENCY`。执行器地址、执行器返回地址及结果重定向只允许 HTTPS，携带 Bearer Token 的执行请求完全禁止跟随重定向。执行请求使用“任务项 ID + `run_number`”作为 `Idempotency-Key`，同一轮租约接管保持幂等，人工重试递增轮次后允许真正重跑；执行器必须据此幂等处理，并返回 `resultUrl`、`mimeType` 和 `size`。Worker 在归档前同步确认租约，通过拒绝私网解析、限制重定向和任务 Context 控制的 HTTP 流式读取获取结果，七牛上传凭证同时强制精确大小、媒体类型和对象键，实际读取最多为声明大小加 1 字节；归档文件使用“任务随机 `archive_token` + 任务项 ID + `run_number`”确定的稳定 `storageKey`，`batch-result-` 前缀禁止从用户上传入口创建，进程在文件确认后、任务完成前退出时，租约重投递会复用已校验结果而不是重复占用企业额度。校验成功后结果写入 `organizations/{organizationId}/batch-results/`，在企业额度事务中确认文件，并让任务项保存 `result_storage_key` 和事务型文件引用。任务项只持久化固定安全错误文案，服务日志只记录任务项和错误类型，不保存外部 URL、签名参数、内部地址或上游错误原文。连续 5 次租约超时会自动失败，人工重试会开启新的尝试周期；取消会清空租约并中止仍在进行的结果读取或上传。可通过 Docker Compose `worker` profile 启动，`BATCH_WORKER_TOKEN` 用于执行器鉴权。正式环境应让 API 与 Worker 共用 MySQL 或 PostgreSQL，不使用 SQLite 承载多进程生产队列；租约和业务时间统一保存为固定九位小数的 UTC RFC3339，保证字符串条件比较与时间先后一致。
 
 ### users
 
@@ -409,7 +410,7 @@ description: 当前后端主要数据表与字段说明
 | `organization_id` | string | 企业 ID，主键 |
 | `updated_at` | string | 最近一次企业数据保存时间 |
 
-### user_files / user_file_upload_reservations / user_file_references / user_object_deletions
+### user_files / user_file_upload_reservations / user_file_upload_rate_limits / user_file_references / user_object_deletions
 
 企业云端媒体文件及其上传、引用和回收状态。文件本体保存在七牛云 Kodo 私有空间，数据库只保存企业鉴权、对象定位和读取所需的元数据。
 
@@ -427,11 +428,13 @@ description: 当前后端主要数据表与字段说明
 | `created_at` | string | 创建时间 |
 | `updated_at` | string | 更新时间 |
 
-单文件上限为 80MB；企业默认额度由 `USER_STORAGE_QUOTA_MB` 配置，默认 5120MB。申请上传时，后端锁定企业记录，在 `user_file_upload_reservations` 中原子预留新增空间并同时计算其他待上传预留，防止多成员并发突破企业额度。每次上传使用 `organizations/{organizationId}/uploads/{uploadId}` 下的唯一临时对象键；替换失败不会覆盖原对象，被后一次申请取代的凭证要等到过期后才清理。上传完成后由后端读取对象元数据，在同一企业锁事务中确认 `user_files`、释放预留并把旧对象写入删除队列；长期 Access Key 和 Secret Key 只保存在服务端。
+单文件上限为 80MB，`storageKey` 最长 191 字节；企业默认额度由 `USER_STORAGE_QUOTA_MB` 配置，默认 5120MB。申请上传时，后端锁定企业记录，在 `user_file_upload_reservations` 中原子预留新增空间并同时计算其他待上传预留，防止多成员并发突破企业额度。企业最多保存 100000 个正式文件、同时持有 512 个有效上传预留和 10000 个“有效预留 + 待删除对象”，单用户最多同时持有 64 个有效预留和 1000 个临时对象，避免小文件绕过字节额度放大数据库记录。预留的 `cleanup_reserved_bytes` 按“本次对象大小”和“可能被替换的旧对象大小”取较大值；`user_object_deletions` 同时保存企业、用户及对象字节数。有效预留的潜在清理字节与待删除对象字节合计不得超过同一企业额度，从而把仍有效但已取消或被取代的上传凭证也纳入物理临时空间上限。过期预留和正式文件 GC 每次最多处理 500 条，并使用企业、到期时间及无引用时间复合索引。浏览器上传凭证和预留有效期为 20 分钟，覆盖 15 分钟客户端上传上限及确认余量；用户中止或上传失败后会通过鉴权取消接口立即释放逻辑预留。未确认临时对象不会立即删除，而是在凭证过期后再保留 15 分钟在途上传宽限，避免删除任务先收到“对象不存在”、随后上传完成而形成孤儿对象。每次上传都使用 `organizations/{organizationId}/uploads/{uploadId}` 下的唯一临时对象键；相同 `storageKey` 不会跳过本次内容校验，确认时以后端读取的七牛 ETag 和实际大小判定是否复用旧文件，内容不同会清理临时对象并返回编号冲突。只有旧对象确实缺失或权威元数据与数据库不一致时才允许修复替换，预留同时绑定被修复的原对象键，避免并发修复覆盖其他成员刚确认的新文件。有效预留会阻止同一 `storageKey` 的旧文件被 GC；上传凭证按声明媒体大类限制 MIME，确认阶段再次核对对象实际媒体大类与存储编号，避免图片编号挂接视频或音频。HEAD 健康检查同时核对数据库 ETag、七牛 ETag、大小和媒体大类，同大小的错误内容不会被视为健康文件。上传确认还会在企业锁内按当前文件、其他预留和实际大小重新计算额度，避免旧文件回收后差额预留失真。上传完成后由后端读取对象元数据，在同一事务中确认 `user_files`、释放预留并把待清理对象写入删除队列；长期 Access Key 和 Secret Key 只保存在服务端。
 
-`user_file_references` 在画布、素材和生成记录保存事务中按业务对象替换 `storage_key` 引用，并在写入前验证文件已确认存在。垃圾回收与工作区保存使用同一企业行锁：首次无引用只记录 `unreferenced_at`，持续 24 小时无引用后才删除文件记录并写入 `user_object_deletions`。对象删除由后台 Worker 使用租约领取、指数退避和幂等“对象不存在即成功”语义执行，避免数据库事务中调用外部存储，也避免多实例重复处理。文件读取必须先通过当前企业成员鉴权，后端再返回 10 分钟有效的私有下载地址，不能跨企业访问。
+`user_file_references` 在画布、素材、生成记录、品牌、SKU、批量输入快照和批量结果保存事务中按业务对象替换 `storage_key` 引用，并在写入前验证文件已确认存在。文件确认、引用替换、上传预留创建、取消和过期都会在同一企业锁事务中即时写入或清空 `unreferenced_at`；后台只按索引扫描已到期记录，不再周期性反查全部正常文件。持续 24 小时无引用后才删除文件记录并写入 `user_object_deletions`。业务请求只提交删除事件，不调用七牛删除；对象删除完全由后台 Worker 使用租约领取、指数退避和幂等“对象不存在即成功”语义执行，避免数据库事务或用户请求等待外部存储，也避免多实例重复处理。浏览器直传具有 15 分钟上限并可由上传组件取消；文件读取必须先通过当前企业成员鉴权，后端再返回 10 分钟有效的私有下载地址，不能跨企业访问。
 
-七牛云连接由 `QINIU_ACCESS_KEY`、`QINIU_SECRET_KEY`、`QINIU_BUCKET`、`QINIU_REGION` 和 `QINIU_DOWNLOAD_DOMAIN` 配置。
+`user_file_upload_rate_limits` 按企业和用户分别保存当前分钟窗口计数；企业每分钟最多申请 600 个上传凭证，单用户每分钟最多申请 120 个。计数与企业行锁配合，在多 API 实例下保持一致；达到上限后的请求不会继续执行对象状态检查和上传预留事务。
+
+七牛云连接由 `QINIU_ACCESS_KEY`、`QINIU_SECRET_KEY`、`QINIU_BUCKET`、`QINIU_REGION` 和 `QINIU_DOWNLOAD_DOMAIN` 配置；私有下载域名必须是无用户信息的完整 HTTPS URL。
 
 ### user_preferences
 

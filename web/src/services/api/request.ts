@@ -8,6 +8,10 @@ export function setActiveOrganizationId(organizationId: string) {
     activeOrganizationId = organizationId.trim();
 }
 
+export function getActiveOrganizationId() {
+    return activeOrganizationId;
+}
+
 type ApiResponse<T> = {
     code: number;
     data: T;
@@ -37,7 +41,7 @@ export async function apiGet<T>(url: string, params?: ApiParams, token?: string)
     });
 }
 
-export async function apiPost<T>(url: string, body?: unknown, token?: string) {
+export async function apiPost<T>(url: string, body?: unknown, token?: string, options?: { signal?: AbortSignal; timeout?: number; organizationId?: string }) {
     return apiRequest<T>({
         url,
         method: "POST",
@@ -46,6 +50,9 @@ export async function apiPost<T>(url: string, body?: unknown, token?: string) {
             "Content-Type": "application/json",
             ...authorizationHeaders(token),
         },
+		signal: options?.signal,
+		timeout: options?.timeout,
+		organizationId: options?.organizationId,
     });
 }
 
@@ -70,16 +77,19 @@ export function authorizationHeaders(token?: string) {
     return token && token !== COOKIE_SESSION_TOKEN ? { Authorization: `Bearer ${token}` } : {};
 }
 
-async function apiRequest<T>(config: { url: string; method: "GET" | "POST" | "DELETE"; params?: ApiParams; data?: unknown; headers?: Record<string, string> }) {
-    let response;
-    try {
-        response = await axios.request<ApiResponse<T>>({
+async function apiRequest<T>(config: { url: string; method: "GET" | "POST" | "DELETE"; params?: ApiParams; data?: unknown; headers?: Record<string, string>; signal?: AbortSignal; timeout?: number; organizationId?: string }) {
+	let response;
+	try {
+		const organizationId = config.organizationId === undefined ? activeOrganizationId : config.organizationId.trim();
+		response = await axios.request<ApiResponse<T>>({
             url: config.url,
             method: config.method,
             params: config.params,
             paramsSerializer: { serialize: (params) => serializeApiParams(params as ApiParams).toString() },
             data: config.data,
-            headers: { ...config.headers, ...(activeOrganizationId ? { "X-Organization-ID": activeOrganizationId } : {}) },
+			headers: { ...config.headers, ...(organizationId ? { "X-Organization-ID": organizationId } : {}) },
+			signal: config.signal,
+			timeout: config.timeout,
             validateStatus: () => true,
         });
     } catch {

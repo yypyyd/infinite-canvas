@@ -84,6 +84,7 @@ func DB() (*gorm.DB, error) {
 			&model.UserFile{},
 			&model.UserFileReference{},
 			&model.UserFileUploadReservation{},
+			&model.UserFileUploadRateLimit{},
 			&model.UserObjectDeletion{},
 			&model.UserProject{},
 			&model.UserAsset{},

@@ -1,9 +1,9 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { App, Avatar, Button, Card, Descriptions, Drawer, Empty, Form, Input, Modal, Pagination, Popconfirm, Progress, Select, Statistic, Table, Tabs, Tag } from "antd";
+import { App, Avatar, Button, Card, Descriptions, Drawer, Empty, Form, Input, Modal, Pagination, Popconfirm, Progress, Select, Statistic, Table, Tabs, Tag, Upload } from "antd";
 import { Boxes, Building2, ClipboardList, History, PackagePlus, Palette, Plus, RefreshCw, Settings2, Trash2, UserPlus, Users } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { commercePresets } from "@/constant/commerce-presets";
 import {
@@ -44,6 +44,7 @@ import {
 } from "@/services/api/commerce";
 import { useUserStore } from "@/stores/use-user-store";
 import { flushActiveWorkspaceChanges } from "@/components/layout/workspace-provider";
+import { uploadWorkspaceFile, workspaceFileUrl } from "@/services/api/workspace";
 
 const roleOptions = [
     { value: "admin", label: "管理员" },
@@ -60,6 +61,7 @@ export default function CommercePage() {
     const { message } = App.useApp();
     const queryClient = useQueryClient();
     const refreshUser = useUserStore((state) => state.refreshUser);
+	const token = useUserStore((state) => state.token);
 	const userId = useUserStore((state) => state.user?.id || "");
 	const setOrganizationId = useUserStore((state) => state.setOrganizationId);
     const organizationId = useUserStore((state) => state.user?.organizationId || "");
@@ -88,6 +90,19 @@ export default function CommercePage() {
     const [productForm] = Form.useForm<Partial<Product>>();
     const [skuForm] = Form.useForm<Partial<ProductSKU> & { attributesText?: string }>();
     const [batchForm] = Form.useForm<{ name: string; brandId?: string; presetId: string; productIds: string[] }>();
+	const brandLogoUploadInFlight = useRef(false);
+	const brandLogoUploadSession = useRef(0);
+	const brandLogoUploadAbort = useRef<AbortController | null>(null);
+	const brandUploadFileSessions = useRef(new WeakMap<object, number>());
+	const skuUploadsInFlightRef = useRef(0);
+	const skuUploadSession = useRef(0);
+	const skuUploadControllers = useRef(new Set<AbortController>());
+	const skuUploadFileSessions = useRef(new WeakMap<object, number>());
+	const batchRequestId = useRef("");
+	const [brandLogoUploading, setBrandLogoUploading] = useState(false);
+	const [skuUploadsInFlight, setSKUUploadsInFlight] = useState(0);
+	const brandLogoStorageKey = Form.useWatch("logoStorageKey", brandForm);
+	const skuImageStorageKeys = Form.useWatch("imageStorageKeys", skuForm) || [];
 
     useEffect(() => {
         setMemberListQuery(initialListQuery);
@@ -99,6 +114,20 @@ export default function CommercePage() {
         setItemListQuery(initialListQuery);
         setSelectedProduct(null);
         setSelectedBatch(null);
+		brandLogoUploadAbort.current?.abort();
+		brandLogoUploadSession.current += 1;
+		brandLogoUploadAbort.current = null;
+		brandLogoUploadInFlight.current = false;
+		setBrandLogoUploading(false);
+		skuUploadSession.current += 1;
+		skuUploadControllers.current.forEach((controller) => controller.abort());
+		skuUploadControllers.current.clear();
+		skuUploadsInFlightRef.current = 0;
+		setSKUUploadsInFlight(0);
+		setBrandDraft(null);
+		setProductDraft(null);
+		setSkuDraft(null);
+		setBatchOpen(false);
     }, [organizationId]);
 
     const workspaceQuery = useQuery({ queryKey: ["commerce-workspace", organizationId], queryFn: fetchCommerceWorkspace, enabled: Boolean(organizationId) });
@@ -138,18 +167,62 @@ export default function CommercePage() {
     };
 
     const openBrand = (item: Partial<Brand>) => {
+		brandLogoUploadAbort.current?.abort();
+		brandLogoUploadSession.current += 1;
+		brandLogoUploadAbort.current = null;
+		brandLogoUploadInFlight.current = false;
+		setBrandLogoUploading(false);
+		brandForm.resetFields();
         setBrandDraft(item);
         brandForm.setFieldsValue({ ...item, colors: item.colors || [], fonts: item.fonts || [], prohibitedTerms: item.prohibitedTerms || [] });
     };
     const openProduct = (item: Partial<Product>) => {
+		productForm.resetFields();
         setProductDraft(item);
         productForm.setFieldsValue({ status: "draft", sellingPoints: [], ...item });
     };
-    const openSKU = (item: Partial<ProductSKU>) => {
-        const next = { productId: selectedProduct?.id, status: "active" as const, imageUrls: [], ...item };
-        setSkuDraft(next);
-        skuForm.setFieldsValue({ ...next, attributesText: JSON.stringify(next.attributes || {}, null, 2) });
-    };
+	const openSKU = (item: Partial<ProductSKU>) => {
+		const next = { productId: selectedProduct?.id, status: "active" as const, imageStorageKeys: [], ...item };
+		skuUploadSession.current += 1;
+		skuUploadControllers.current.forEach((controller) => controller.abort());
+		skuUploadControllers.current.clear();
+		skuUploadsInFlightRef.current = 0;
+		setSKUUploadsInFlight(0);
+		skuForm.resetFields();
+		setSkuDraft(next);
+		skuForm.setFieldsValue({ ...next, attributesText: JSON.stringify(next.attributes || {}, null, 2) });
+	};
+	const closeSKU = () => {
+		if (skuUploadsInFlightRef.current > 0) {
+			skuUploadSession.current += 1;
+			skuUploadControllers.current.forEach((controller) => controller.abort());
+			skuUploadControllers.current.clear();
+			skuUploadsInFlightRef.current = 0;
+			setSKUUploadsInFlight(0);
+		}
+		setSkuDraft(null);
+	};
+	const submitSKU = async () => {
+		if (skuUploadsInFlightRef.current > 0) { message.warning("请等待参考图上传完成"); return; }
+		const value = await skuForm.validateFields();
+		const { attributesText, ...fields } = value;
+		let attributes: Record<string, string> = {};
+		try { attributes = JSON.parse(attributesText || "{}") as Record<string, string>; } catch { message.error("规格属性必须是有效 JSON"); return; }
+		if (await run(() => saveProductSKU({ ...skuDraft, ...fields, productId: selectedProduct?.id, attributes }), "SKU 已保存")) setSkuDraft(null);
+	};
+	const closeBrand = () => {
+		brandLogoUploadSession.current += 1;
+		brandLogoUploadAbort.current?.abort();
+		brandLogoUploadAbort.current = null;
+		brandLogoUploadInFlight.current = false;
+		setBrandLogoUploading(false);
+		setBrandDraft(null);
+	};
+	const submitBrand = async () => {
+		if (brandLogoUploadInFlight.current) { message.warning("请等待 Logo 上传完成"); return; }
+		const value = await brandForm.validateFields();
+		if (await run(() => saveBrand({ ...brandDraft, ...value }), "品牌规范已保存")) closeBrand();
+	};
 
     if (!workspace && workspaceQuery.isLoading) return <main className="grid h-full place-items-center bg-background text-sm text-muted-foreground">正在建立企业工作区...</main>;
 
@@ -186,8 +259,8 @@ export default function CommercePage() {
                 <Card title={<span className="inline-flex items-center gap-2"><Users className="size-4" />企业成员</span>} extra={<div className="flex gap-2"><Input.Search allowClear placeholder="搜索成员" className="w-48" onSearch={(keyword) => setMemberListQuery((value) => ({ ...value, page: 1, keyword }))} />{canManage ? <Button type="primary" size="small" icon={<UserPlus className="size-4" />} onClick={() => { inviteForm.setFieldsValue({ role: "member" }); setInviteOpen(true); }}>邀请成员</Button> : null}</div>}>
                     <Table<OrganizationMember> rowKey="id" size="small" loading={membersQuery.isFetching} dataSource={membersQuery.data?.items || []} pagination={{ current: memberListQuery.page, pageSize: memberListQuery.pageSize, total: membersQuery.data?.total || 0, showSizeChanger: true, onChange: (page, pageSize) => setMemberListQuery((value) => ({ ...value, page, pageSize })) }} columns={[
                         { title: "成员", render: (_, item) => <div className="flex items-center gap-2"><Avatar src={item.avatarUrl}>{(item.displayName || item.username).slice(0, 1)}</Avatar><div><div className="text-sm font-medium">{item.displayName || item.username}</div><div className="text-xs text-muted-foreground">{item.email}</div></div></div> },
-                        { title: "角色", width: 130, render: (_, item) => item.role === "owner" || !canManage ? <Tag>{roleLabels[item.role]}</Tag> : <Select size="small" value={item.role} options={roleOptions} onChange={(role) => void run(() => updateOrganizationMember(item.id, role), "成员角色已更新")} /> },
-                        { title: "", width: 150, render: (_, item) => canManage && item.role !== "owner" ? <div className="flex justify-end gap-1">{workspace?.membership.role === "owner" ? <Popconfirm title="将企业所有权转移给该成员？" onConfirm={() => void run(() => transferOrganizationOwnership(item.id), "企业所有权已转移")}><Button size="small">设为所有者</Button></Popconfirm> : null}<Popconfirm title="移除该成员？" onConfirm={() => void run(() => removeOrganizationMember(item.id), "成员已移除")}><Button danger type="text" icon={<Trash2 className="size-4" />} /></Popconfirm></div> : null },
+                        { title: "角色", width: 130, render: (_, item) => item.role === "owner" || !canManage ? <Tag>{roleLabels[item.role]}</Tag> : <Select size="small" value={item.role} options={roleOptions} onChange={(role) => void run(() => updateOrganizationMember(item.id, role, item.version), "成员角色已更新")} /> },
+                        { title: "", width: 150, render: (_, item) => canManage && item.role !== "owner" ? <div className="flex justify-end gap-1">{workspace?.membership.role === "owner" ? <Popconfirm title="将企业所有权转移给该成员？" onConfirm={() => void run(() => transferOrganizationOwnership(item.id, item.version), "企业所有权已转移")}><Button size="small">设为所有者</Button></Popconfirm> : null}<Popconfirm title="移除该成员？" onConfirm={() => void run(() => removeOrganizationMember(item.id, item.version), "成员已移除")}><Button danger type="text" icon={<Trash2 className="size-4" />} /></Popconfirm></div> : null },
                     ]} />
 					{canManage && organizationInvitationsQuery.data?.some((item) => item.status === "pending") ? <div className="mt-4 border-t border-border pt-4"><div className="mb-2 text-xs text-muted-foreground">待接受邀请</div><div className="flex flex-wrap gap-2">{organizationInvitationsQuery.data.filter((item) => item.status === "pending").map((item) => <Tag key={item.id} closable onClose={(event) => { event.preventDefault(); void run(() => revokeOrganizationInvitation(item.id), "邀请已撤销"); }}>{item.email} · {roleLabels[item.role]}</Tag>)}</div></div> : null}
                 </Card>
@@ -198,8 +271,8 @@ export default function CommercePage() {
     const brandPanel = (
         <div>
             <div className="mb-5 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-2xl font-semibold">品牌规范中心</h2><p className="mt-1 text-sm text-muted-foreground">统一 Logo、颜色、字体、语气与禁止规则。</p></div><div className="flex gap-2"><Input.Search allowClear placeholder="搜索品牌" className="w-56" onSearch={(keyword) => setBrandListQuery((value) => ({ ...value, page: 1, keyword }))} />{canWrite ? <Button type="primary" icon={<Plus className="size-4" />} onClick={() => openBrand({})}>新增品牌</Button> : null}</div></div>
-            {brands.length ? <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{brands.map((item) => <Card key={item.id} className="overflow-hidden" actions={canWrite ? [<button key="edit" onClick={() => openBrand(item)}>编辑规范</button>, <Popconfirm key="delete" title="删除该品牌？" onConfirm={() => void run(() => deleteBrand(item.id), "品牌已删除")}><button className="text-red-500">删除</button></Popconfirm>] : undefined}>
-                <div className="flex items-start gap-3">{item.logoUrl ? <Avatar shape="square" size={48} src={item.logoUrl} /> : <div className="grid size-12 place-items-center bg-stone-950 text-lg font-semibold text-white">{item.name.slice(0, 1)}</div>}<div><h3 className="text-lg font-semibold">{item.name}</h3><p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{item.tone || "尚未填写品牌语气"}</p></div></div>
+			{brands.length ? <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{brands.map((item) => <Card key={item.id} className="overflow-hidden" actions={canWrite ? [<button key="edit" onClick={() => openBrand(item)}>编辑规范</button>, <Popconfirm key="delete" title="删除该品牌？" onConfirm={() => void run(() => deleteBrand(item.id, item.version), "品牌已删除")}><button className="text-red-500">删除</button></Popconfirm>] : undefined}>
+				<div className="flex items-start gap-3">{item.logoStorageKey ? <Avatar shape="square" size={48} src={workspaceFileUrl(item.logoStorageKey)} /> : <div className="grid size-12 place-items-center bg-stone-950 text-lg font-semibold text-white">{item.name.slice(0, 1)}</div>}<div><h3 className="text-lg font-semibold">{item.name}</h3><p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{item.tone || "尚未填写品牌语气"}</p></div></div>
                 <div className="mt-5 flex gap-2">{item.colors?.map((color) => <span key={color} className="size-7 border border-black/10" style={{ background: color }} title={color} />)}</div>
                 <p className="mt-4 line-clamp-3 min-h-15 text-sm leading-5 text-muted-foreground">{item.guidelines || "尚未填写视觉规范"}</p>
             </Card>)}</div> : <Empty description="还没有品牌规范" />}
@@ -216,14 +289,14 @@ export default function CommercePage() {
                 { title: "品牌", dataIndex: "brandName", width: 140, render: (value) => value || "—" },
                 { title: "SKU", dataIndex: "skuCount", width: 80 },
                 { title: "状态", width: 90, render: (_, item) => <Tag color={statusColors[item.status]}>{statusLabels[item.status]}</Tag> },
-                { title: "操作", width: 210, render: (_, item) => <div className="flex gap-1"><Button size="small" onClick={() => { setSKUListQuery(initialListQuery); setSelectedProduct(item); }}>管理 SKU</Button>{canWrite ? <><Button size="small" onClick={() => openProduct(item)}>编辑</Button><Popconfirm title="删除商品及其 SKU？" onConfirm={() => void run(() => deleteProduct(item.id), "商品已删除")}><Button danger size="small">删除</Button></Popconfirm></> : null}</div> },
+				{ title: "操作", width: 210, render: (_, item) => <div className="flex gap-1"><Button size="small" onClick={() => { setSKUListQuery(initialListQuery); setSelectedProduct(item); }}>管理 SKU</Button>{canWrite ? <><Button size="small" onClick={() => openProduct(item)}>编辑</Button><Popconfirm title="删除商品及其 SKU？" onConfirm={() => void run(() => deleteProduct(item.id, item.version), "商品已删除")}><Button danger size="small">删除</Button></Popconfirm></> : null}</div> },
             ]} /></Card>
         </div>
     );
 
     const batchPanel = (
         <div>
-            <div className="mb-5 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-2xl font-semibold">批量生产任务</h2><p className="mt-1 text-sm text-muted-foreground">按商品与 SKU 展开服务端持久化任务项，支持取消、失败重试和进度追踪。</p></div><div className="flex gap-2"><Input.Search allowClear placeholder="搜索任务" className="w-56" onSearch={(keyword) => setJobListQuery((value) => ({ ...value, page: 1, keyword }))} />{canWrite ? <Button type="primary" icon={<Plus className="size-4" />} onClick={() => { batchForm.resetFields(); setBatchOpen(true); }}>创建任务</Button> : null}</div></div>
+            <div className="mb-5 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-2xl font-semibold">批量生产任务</h2><p className="mt-1 text-sm text-muted-foreground">按商品与 SKU 展开服务端持久化任务项，支持取消、失败重试和进度追踪。</p></div><div className="flex gap-2"><Input.Search allowClear placeholder="搜索任务" className="w-56" onSearch={(keyword) => setJobListQuery((value) => ({ ...value, page: 1, keyword }))} />{canWrite ? <Button type="primary" icon={<Plus className="size-4" />} onClick={() => { batchRequestId.current = crypto.randomUUID(); batchForm.resetFields(); setBatchOpen(true); }}>创建任务</Button> : null}</div></div>
             <Card><Table<BatchProductionJob> rowKey="id" loading={jobsQuery.isFetching} dataSource={jobs} pagination={{ current: jobListQuery.page, pageSize: jobListQuery.pageSize, total: jobsQuery.data?.total || 0, showSizeChanger: true, onChange: (page, pageSize) => setJobListQuery((value) => ({ ...value, page, pageSize })) }} columns={[
                 { title: "任务", render: (_, item) => <div><div className="font-medium">{item.name}</div><div className="mt-1 text-xs text-muted-foreground">{commercePresets.find((preset) => preset.id === item.presetId)?.title || item.presetId}</div></div> },
                 { title: "状态", width: 100, render: (_, item) => <Tag color={statusColors[item.status]}>{statusLabels[item.status]}</Tag> },
@@ -252,14 +325,14 @@ export default function CommercePage() {
                 ]} />
             </div>
 
-			<Modal title={organizationMode === "edit" ? "企业设置" : "创建企业"} open={Boolean(organizationMode)} confirmLoading={working} onCancel={() => setOrganizationMode(null)} onOk={async () => { const value = await organizationForm.validateFields(); const editing = organizationMode === "edit"; const ok = await run(async () => { if (editing) return updateOrganization(value.name); await flushActiveWorkspaceChanges(); const organization = await createOrganization(value.name); setOrganizationId(organization.id); await refreshUser(); return organization; }, editing ? "企业信息已更新" : "企业已创建"); if (ok) setOrganizationMode(null); }}><Form form={organizationForm} layout="vertical"><Form.Item name="name" label="企业名称" rules={[{ required: true }]}><Input /></Form.Item></Form></Modal>
+			<Modal title={organizationMode === "edit" ? "企业设置" : "创建企业"} open={Boolean(organizationMode)} confirmLoading={working} onCancel={() => setOrganizationMode(null)} onOk={async () => { const value = await organizationForm.validateFields(); const editing = organizationMode === "edit"; const ok = await run(async () => { if (editing) return updateOrganization(value.name, workspace?.organization.version || 0); await flushActiveWorkspaceChanges(); const organization = await createOrganization(value.name); setOrganizationId(organization.id); await refreshUser(); return organization; }, editing ? "企业信息已更新" : "企业已创建"); if (ok) setOrganizationMode(null); }}><Form form={organizationForm} layout="vertical"><Form.Item name="name" label="企业名称" rules={[{ required: true, max: 200 }]}><Input /></Form.Item></Form></Modal>
             <Modal title="邀请企业成员" open={inviteOpen} confirmLoading={working} onCancel={() => setInviteOpen(false)} onOk={async () => { const value = await inviteForm.validateFields(); if (await run(() => inviteOrganizationMember(value.email, value.role), "邀请已创建")) setInviteOpen(false); }}><Form form={inviteForm} layout="vertical"><Form.Item name="email" label="成员邮箱" rules={[{ required: true, type: "email" }]}><Input /></Form.Item><Form.Item name="role" label="角色" rules={[{ required: true }]}><Select options={roleOptions} /></Form.Item></Form></Modal>
-            <Modal title={brandDraft?.id ? "编辑品牌规范" : "新增品牌"} open={Boolean(brandDraft)} width={760} confirmLoading={working} onCancel={() => setBrandDraft(null)} onOk={async () => { const value = await brandForm.validateFields(); if (await run(() => saveBrand({ ...brandDraft, ...value }), "品牌规范已保存")) setBrandDraft(null); }}><Form form={brandForm} layout="vertical"><div className="grid gap-x-4 sm:grid-cols-2"><Form.Item name="name" label="品牌名称" rules={[{ required: true }]}><Input /></Form.Item><Form.Item name="logoUrl" label="Logo 地址"><Input /></Form.Item><Form.Item name="colors" label="品牌色"><Select mode="tags" placeholder="#111111" /></Form.Item><Form.Item name="fonts" label="品牌字体"><Select mode="tags" /></Form.Item></div><Form.Item name="tone" label="品牌语气"><Input.TextArea rows={2} /></Form.Item><Form.Item name="guidelines" label="视觉规范"><Input.TextArea rows={4} /></Form.Item><Form.Item name="prohibitedTerms" label="禁用词"><Select mode="tags" /></Form.Item></Form></Modal>
+			<Modal title={brandDraft?.id ? "编辑品牌规范" : "新增品牌"} open={Boolean(brandDraft)} width={760} confirmLoading={working || brandLogoUploading} onCancel={closeBrand} onOk={submitBrand}><Form form={brandForm} layout="vertical"><div className="grid gap-x-4 sm:grid-cols-2"><Form.Item name="name" label="品牌名称" rules={[{ required: true }]}><Input /></Form.Item><Form.Item label="品牌 Logo"><div className="flex items-center gap-3">{brandLogoStorageKey ? <Avatar shape="square" size={48} src={workspaceFileUrl(brandLogoStorageKey)} /> : null}<Upload accept="image/*" maxCount={1} showUploadList={false} beforeUpload={(file) => { if (!file.type.startsWith("image/")) { message.error("只能上传图片文件"); return Upload.LIST_IGNORE; } if (brandLogoUploadInFlight.current) { message.warning("请等待当前 Logo 上传完成"); return Upload.LIST_IGNORE; } brandUploadFileSessions.current.set(file, brandLogoUploadSession.current); brandLogoUploadInFlight.current = true; setBrandLogoUploading(true); return true; }} customRequest={({ file, onSuccess, onError }) => { const session = brandUploadFileSessions.current.get(file as object); if (session !== brandLogoUploadSession.current) return { abort: () => undefined }; const controller = new AbortController(); brandLogoUploadAbort.current = controller; void uploadWorkspaceFile(token, `image:${crypto.randomUUID()}`, file as File, controller.signal).then((saved) => { if (session !== brandLogoUploadSession.current) return; brandForm.setFieldValue("logoStorageKey", saved.storageKey); onSuccess?.(saved); }).catch((error) => { if (session !== brandLogoUploadSession.current || controller.signal.aborted) return; message.error(error instanceof Error ? error.message : "Logo 上传失败"); onError?.(error as Error); }).finally(() => { if (session === brandLogoUploadSession.current) { brandLogoUploadAbort.current = null; brandLogoUploadInFlight.current = false; setBrandLogoUploading(false); } }); return { abort: () => controller.abort() }; }}><Button loading={brandLogoUploading} disabled={brandLogoUploading}>上传 Logo</Button></Upload>{brandLogoStorageKey ? <Button type="text" danger disabled={brandLogoUploading} onClick={() => brandForm.setFieldValue("logoStorageKey", "")}>移除</Button> : null}</div></Form.Item><Form.Item name="logoStorageKey" hidden><Input /></Form.Item><Form.Item name="colors" label="品牌色"><Select mode="tags" placeholder="#111111" /></Form.Item><Form.Item name="fonts" label="品牌字体"><Select mode="tags" /></Form.Item></div><Form.Item name="tone" label="品牌语气"><Input.TextArea rows={2} /></Form.Item><Form.Item name="guidelines" label="视觉规范"><Input.TextArea rows={4} /></Form.Item><Form.Item name="prohibitedTerms" label="禁用词"><Select mode="tags" /></Form.Item></Form></Modal>
             <Modal title={productDraft?.id ? "编辑商品" : "新增商品"} open={Boolean(productDraft)} width={760} confirmLoading={working} onCancel={() => setProductDraft(null)} onOk={async () => { const value = await productForm.validateFields(); if (await run(() => saveProduct({ ...productDraft, ...value }), "商品已保存")) setProductDraft(null); }}><Form form={productForm} layout="vertical"><div className="grid gap-x-4 sm:grid-cols-2"><Form.Item name="code" label="SPU 编码" rules={[{ required: true }]}><Input /></Form.Item><Form.Item name="name" label="商品名称" rules={[{ required: true }]}><Input /></Form.Item><Form.Item name="brandId" label="所属品牌"><Select allowClear showSearch filterOption={false} onSearch={setBrandOptionKeyword} loading={brandOptionsQuery.isFetching} options={brandOptions.map((item) => ({ value: item.id, label: item.name }))} /></Form.Item><Form.Item name="category" label="商品类目"><Input /></Form.Item><Form.Item name="status" label="状态"><Select options={[{ value: "draft", label: "草稿" }, { value: "active", label: "在售" }, { value: "paused", label: "暂停" }]} /></Form.Item><Form.Item name="targetAudience" label="目标人群"><Input /></Form.Item></div><Form.Item name="sellingPoints" label="核心卖点"><Select mode="tags" /></Form.Item><Form.Item name="description" label="商品描述"><Input.TextArea rows={4} /></Form.Item></Form></Modal>
-            <Drawer title={`${selectedProduct?.name || "商品"} · SKU`} width={820} open={Boolean(selectedProduct)} onClose={() => setSelectedProduct(null)} extra={canWrite ? <Button type="primary" icon={<Plus className="size-4" />} onClick={() => openSKU({})}>新增 SKU</Button> : null}><Input.Search allowClear placeholder="搜索 SKU 编码或名称" className="mb-4 w-64" onSearch={(keyword) => setSKUListQuery((value) => ({ ...value, page: 1, keyword }))} /><Table<ProductSKU> rowKey="id" loading={skusQuery.isFetching} dataSource={skusQuery.data?.items || []} pagination={{ current: skuListQuery.page, pageSize: skuListQuery.pageSize, total: skusQuery.data?.total || 0, showSizeChanger: true, onChange: (page, pageSize) => setSKUListQuery((value) => ({ ...value, page, pageSize })) }} columns={[{ title: "SKU 编码", dataIndex: "code", width: 150 }, { title: "名称", dataIndex: "name" }, { title: "规格", render: (_, item) => Object.entries(item.attributes || {}).map(([key, value]) => <Tag key={key}>{key}: {value}</Tag>) }, { title: "状态", width: 80, render: (_, item) => <Tag color={statusColors[item.status]}>{statusLabels[item.status]}</Tag> }, { title: "", width: 120, render: (_, item) => canWrite ? <div className="flex gap-1"><Button size="small" onClick={() => openSKU(item)}>编辑</Button><Popconfirm title="删除 SKU？" onConfirm={() => void run(() => deleteProductSKU(item.id), "SKU 已删除")}><Button danger size="small">删除</Button></Popconfirm></div> : null }]}/></Drawer>
-			<Modal title={skuDraft?.id ? "编辑 SKU" : "新增 SKU"} open={Boolean(skuDraft)} width={680} confirmLoading={working} onCancel={() => setSkuDraft(null)} onOk={async () => { const value = await skuForm.validateFields(); const { attributesText, ...fields } = value; let attributes: Record<string, string> = {}; try { attributes = JSON.parse(attributesText || "{}") as Record<string, string>; } catch { message.error("规格属性必须是有效 JSON"); return; } if (await run(() => saveProductSKU({ ...skuDraft, ...fields, productId: selectedProduct?.id, attributes }), "SKU 已保存")) setSkuDraft(null); }}><Form form={skuForm} layout="vertical"><div className="grid gap-x-4 sm:grid-cols-2"><Form.Item name="code" label="SKU 编码" rules={[{ required: true }]}><Input /></Form.Item><Form.Item name="name" label="SKU 名称" rules={[{ required: true }]}><Input /></Form.Item><Form.Item name="status" label="状态"><Select options={[{ value: "active", label: "在售" }, { value: "paused", label: "暂停" }]} /></Form.Item></div><Form.Item name="attributesText" label="规格属性 JSON"><Input.TextArea rows={4} placeholder={'{"颜色":"黑色","尺寸":"M"}'} /></Form.Item><Form.Item name="imageUrls" label="商品参考图"><Select mode="tags" placeholder="输入图片 URL 后回车" /></Form.Item></Form></Modal>
-            <Modal title="创建批量生产任务" open={batchOpen} width={680} confirmLoading={working} onCancel={() => setBatchOpen(false)} onOk={async () => { const value = await batchForm.validateFields(); if (await run(() => createBatchProductionJob(value), "批量任务已进入队列")) setBatchOpen(false); }}><Form form={batchForm} layout="vertical"><Form.Item name="name" label="任务名称" rules={[{ required: true }]}><Input placeholder="例如：秋季上新主图" /></Form.Item><Form.Item name="presetId" label="生产模板" rules={[{ required: true }]}><Select options={commercePresets.map((item) => ({ value: item.id, label: `${item.title} · ${item.description}` }))} /></Form.Item><Form.Item name="brandId" label="品牌"><Select allowClear showSearch filterOption={false} onSearch={setBrandOptionKeyword} loading={brandOptionsQuery.isFetching} options={brandOptions.map((item) => ({ value: item.id, label: item.name }))} /></Form.Item><Form.Item name="productIds" label="商品" rules={[{ required: true }]}><Select mode="multiple" showSearch filterOption={false} onSearch={setProductOptionKeyword} loading={productOptionsQuery.isFetching} options={(productOptionsQuery.data?.items || []).map((item) => ({ value: item.id, label: `${item.name} · ${item.code}` }))} /></Form.Item></Form></Modal>
-			<Drawer title={`${selectedBatch?.name || "任务"} · 生产项`} width={960} open={Boolean(selectedBatch)} onClose={() => setSelectedBatch(null)}><Input.Search allowClear placeholder="搜索商品、SKU 或错误" className="mb-4 w-64" onSearch={(keyword) => setItemListQuery((value) => ({ ...value, page: 1, keyword }))} /><Table rowKey="id" loading={batchItemsQuery.isFetching} dataSource={batchItemsQuery.data?.items || []} pagination={{ current: itemListQuery.page, pageSize: itemListQuery.pageSize, total: batchItemsQuery.data?.total || 0, showSizeChanger: true, onChange: (page, pageSize) => setItemListQuery((value) => ({ ...value, page, pageSize })) }} columns={[{ title: "商品", dataIndex: "productId" }, { title: "SKU", dataIndex: "skuId", render: (value) => value || "按 SPU" }, { title: "状态", width: 100, render: (_, item) => <Tag color={statusColors[item.status]}>{statusLabels[item.status]}</Tag> }, { title: "尝试", dataIndex: "attempts", width: 70 }, { title: "结果", dataIndex: "resultUrl", width: 80, render: (value) => value ? <a href={value} target="_blank" rel="noreferrer">查看</a> : "—" }, { title: "错误", dataIndex: "errorMessage" }]} /></Drawer>
+			<Drawer title={`${selectedProduct?.name || "商品"} · SKU`} width={820} open={Boolean(selectedProduct)} onClose={() => setSelectedProduct(null)} extra={canWrite ? <Button type="primary" icon={<Plus className="size-4" />} onClick={() => openSKU({})}>新增 SKU</Button> : null}><Input.Search allowClear placeholder="搜索 SKU 编码或名称" className="mb-4 w-64" onSearch={(keyword) => setSKUListQuery((value) => ({ ...value, page: 1, keyword }))} /><Table<ProductSKU> rowKey="id" loading={skusQuery.isFetching} dataSource={skusQuery.data?.items || []} pagination={{ current: skuListQuery.page, pageSize: skuListQuery.pageSize, total: skusQuery.data?.total || 0, showSizeChanger: true, onChange: (page, pageSize) => setSKUListQuery((value) => ({ ...value, page, pageSize })) }} columns={[{ title: "SKU 编码", dataIndex: "code", width: 150 }, { title: "名称", dataIndex: "name" }, { title: "规格", render: (_, item) => Object.entries(item.attributes || {}).map(([key, value]) => <Tag key={key}>{key}: {value}</Tag>) }, { title: "状态", width: 80, render: (_, item) => <Tag color={statusColors[item.status]}>{statusLabels[item.status]}</Tag> }, { title: "", width: 120, render: (_, item) => canWrite ? <div className="flex gap-1"><Button size="small" onClick={() => openSKU(item)}>编辑</Button><Popconfirm title="删除 SKU？" onConfirm={() => void run(() => deleteProductSKU(item.id, item.version), "SKU 已删除")}><Button danger size="small">删除</Button></Popconfirm></div> : null }]}/></Drawer>
+			<Modal title={skuDraft?.id ? "编辑 SKU" : "新增 SKU"} open={Boolean(skuDraft)} width={680} confirmLoading={working || skuUploadsInFlight > 0} onCancel={closeSKU} onOk={submitSKU}><Form form={skuForm} layout="vertical"><div className="grid gap-x-4 sm:grid-cols-2"><Form.Item name="code" label="SKU 编码" rules={[{ required: true }]}><Input /></Form.Item><Form.Item name="name" label="SKU 名称" rules={[{ required: true }]}><Input /></Form.Item><Form.Item name="status" label="状态"><Select options={[{ value: "active", label: "在售" }, { value: "paused", label: "暂停" }]} /></Form.Item></div><Form.Item name="attributesText" label="规格属性 JSON"><Input.TextArea rows={4} placeholder={'{"颜色":"黑色","尺寸":"M"}'} /></Form.Item><Form.Item label="商品参考图"><div className="mb-3 flex flex-wrap gap-2">{skuImageStorageKeys.map((storageKey: string) => <div key={storageKey} className="relative"><Avatar shape="square" size={56} src={workspaceFileUrl(storageKey)} /><Button className="absolute -right-2 -top-2" size="small" danger shape="circle" onClick={() => skuForm.setFieldValue("imageStorageKeys", skuImageStorageKeys.filter((item: string) => item !== storageKey))}>×</Button></div>)}</div><Upload accept="image/*" multiple showUploadList={false} beforeUpload={(file) => { if (!file.type.startsWith("image/")) { message.error("只能上传图片文件"); return Upload.LIST_IGNORE; } if (skuImageStorageKeys.length + skuUploadsInFlightRef.current >= 50) { message.error("单个 SKU 最多保存 50 张参考图"); return Upload.LIST_IGNORE; } skuUploadFileSessions.current.set(file, skuUploadSession.current); skuUploadsInFlightRef.current += 1; setSKUUploadsInFlight(skuUploadsInFlightRef.current); return true; }} customRequest={({ file, onSuccess, onError }) => { const session = skuUploadFileSessions.current.get(file as object); if (session !== skuUploadSession.current) return { abort: () => undefined }; const controller = new AbortController(); skuUploadControllers.current.add(controller); void uploadWorkspaceFile(token, `image:${crypto.randomUUID()}`, file as File, controller.signal).then((saved) => { if (session !== skuUploadSession.current) return; const current = skuForm.getFieldValue("imageStorageKeys") || []; skuForm.setFieldValue("imageStorageKeys", [...current, saved.storageKey]); onSuccess?.(saved); }).catch((error) => { if (session !== skuUploadSession.current || controller.signal.aborted) return; message.error(error instanceof Error ? error.message : "参考图上传失败"); onError?.(error as Error); }).finally(() => { skuUploadControllers.current.delete(controller); if (session === skuUploadSession.current) { skuUploadsInFlightRef.current = Math.max(0, skuUploadsInFlightRef.current - 1); setSKUUploadsInFlight(skuUploadsInFlightRef.current); } }); return { abort: () => controller.abort() }; }}><Button loading={skuUploadsInFlight > 0} disabled={skuImageStorageKeys.length + skuUploadsInFlight >= 50}>上传参考图</Button></Upload></Form.Item><Form.Item name="imageStorageKeys" hidden><Select mode="multiple" /></Form.Item></Form></Modal>
+            <Modal title="创建批量生产任务" open={batchOpen} width={680} confirmLoading={working} onCancel={() => setBatchOpen(false)} onOk={async () => { const value = await batchForm.validateFields(); if (await run(() => createBatchProductionJob({ ...value, requestId: batchRequestId.current }), "批量任务已进入队列")) setBatchOpen(false); }}><Form form={batchForm} layout="vertical"><Form.Item name="name" label="任务名称" rules={[{ required: true }]}><Input placeholder="例如：秋季上新主图" /></Form.Item><Form.Item name="presetId" label="生产模板" rules={[{ required: true }]}><Select options={commercePresets.map((item) => ({ value: item.id, label: `${item.title} · ${item.description}` }))} /></Form.Item><Form.Item name="brandId" label="品牌"><Select allowClear showSearch filterOption={false} onSearch={setBrandOptionKeyword} loading={brandOptionsQuery.isFetching} options={brandOptions.map((item) => ({ value: item.id, label: item.name }))} /></Form.Item><Form.Item name="productIds" label="商品" rules={[{ required: true }]}><Select mode="multiple" showSearch filterOption={false} onSearch={setProductOptionKeyword} loading={productOptionsQuery.isFetching} options={(productOptionsQuery.data?.items || []).map((item) => ({ value: item.id, label: `${item.name} · ${item.code}` }))} /></Form.Item></Form></Modal>
+			<Drawer title={`${selectedBatch?.name || "任务"} · 生产项`} width={960} open={Boolean(selectedBatch)} onClose={() => setSelectedBatch(null)}><Input.Search allowClear placeholder="搜索商品、SKU 或错误" className="mb-4 w-64" onSearch={(keyword) => setItemListQuery((value) => ({ ...value, page: 1, keyword }))} /><Table rowKey="id" loading={batchItemsQuery.isFetching} dataSource={batchItemsQuery.data?.items || []} pagination={{ current: itemListQuery.page, pageSize: itemListQuery.pageSize, total: batchItemsQuery.data?.total || 0, showSizeChanger: true, onChange: (page, pageSize) => setItemListQuery((value) => ({ ...value, page, pageSize })) }} columns={[{ title: "商品", dataIndex: "productId" }, { title: "SKU", dataIndex: "skuId", render: (value) => value || "按 SPU" }, { title: "状态", width: 100, render: (_, item) => <Tag color={statusColors[item.status]}>{statusLabels[item.status]}</Tag> }, { title: "尝试", dataIndex: "attempts", width: 70 }, { title: "结果", dataIndex: "resultStorageKey", width: 80, render: (value) => value ? <a href={workspaceFileUrl(value)} target="_blank" rel="noreferrer">查看</a> : "—" }, { title: "错误", dataIndex: "errorMessage" }]} /></Drawer>
         </main>
     );
 }

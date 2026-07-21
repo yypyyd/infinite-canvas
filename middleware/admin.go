@@ -44,15 +44,6 @@ func UserAuth(c *gin.Context) {
 
 func OptionalAuth(c *gin.Context) {
 	if user, ok := authUser(c); ok {
-		if organizationID := strings.TrimSpace(c.GetHeader("X-Organization-ID")); organizationID != "" {
-			organization, _, err := service.ResolveOrganizationAccess(user, organizationID)
-			if err != nil {
-				handler.FailError(c.Writer, err)
-				c.Abort()
-				return
-			}
-			user.OrganizationID = organization.ID
-		}
 		c.Request = c.Request.WithContext(service.WithUser(c.Request.Context(), user))
 	}
 	c.Next()
@@ -90,6 +81,7 @@ func OrganizationAuth(c *gin.Context) {
 		return
 	}
 	organizationID := strings.TrimSpace(c.GetHeader("X-Organization-ID"))
+	if organizationID == "" { organizationID = strings.TrimSpace(c.Query("organization")) }
 	if organizationID != "" && user.OrganizationID == organizationID {
 		c.Next()
 		return

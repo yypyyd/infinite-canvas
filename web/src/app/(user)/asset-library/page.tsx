@@ -63,7 +63,7 @@ export default function AssetLibraryPage() {
                     metadata: { source: "asset-library", assetId: asset.id },
                 });
             } else if (asset.type === "video") {
-                const video = await uploadMediaFile(asset.url, "asset-video");
+				const video = await uploadMediaFile(asset.url, "video");
                 addAsset({
                     kind: "video",
                     title: asset.title,

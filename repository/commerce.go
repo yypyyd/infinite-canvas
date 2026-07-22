@@ -71,6 +71,7 @@ func EnsureDefaultOrganization(user model.AuthUser, organizationID string, membe
 		result := tx.Model(&model.User{}).Where("id = ? AND organization_id = ''", user.ID).Update("organization_id", organization.ID)
 		if result.Error != nil { return result.Error }
 		if result.RowsAffected != 1 { return ErrDefaultOrganizationAlreadyCreated }
+		if err := assignLegacyOrganizationData(tx, user.ID, organization.ID); err != nil { return err }
 		return saveOrganizationAuditLogs(tx, auditLogs)
 	})
 	if errors.Is(err, ErrDefaultOrganizationAlreadyCreated) {

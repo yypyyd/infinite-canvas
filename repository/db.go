@@ -96,8 +96,43 @@ func DB() (*gorm.DB, error) {
 			&model.Asset{},
 			&model.Setting{},
 		)
+		if dbErr == nil {
+			dbErr = backfillLegacyOrganizationData(db)
+		}
 	})
 	return db, dbErr
+}
+
+func backfillLegacyOrganizationData(db *gorm.DB) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		var users []model.User
+		if err := tx.Select("id, organization_id").Where("organization_id <> ''").Find(&users).Error; err != nil {
+			return err
+		}
+		for _, user := range users {
+			if err := assignLegacyOrganizationData(tx, user.ID, user.OrganizationID); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func assignLegacyOrganizationData(tx *gorm.DB, userID string, organizationID string) error {
+	for _, item := range []any{
+		&model.GenerationTask{},
+		&model.UserFile{},
+		&model.UserProject{},
+		&model.UserAsset{},
+		&model.UserGenerationRecord{},
+		&model.UserProjectVersion{},
+		&model.UserWorkspaceState{},
+	} {
+		if err := tx.Model(item).Where("(organization_id = '' OR organization_id IS NULL) AND user_id = ?", userID).Update("organization_id", organizationID).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func dialector(driver string, dsn string) gorm.Dialector {

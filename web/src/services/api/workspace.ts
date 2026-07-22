@@ -3,6 +3,7 @@ import axios from "axios";
 import { apiGet, apiPost, authorizationHeaders, getActiveOrganizationId } from "@/services/api/request";
 
 export type WorkspaceDomain = "canvas_project" | "asset" | "generation_record";
+export type WorkspaceImageVariant = "thumb" | "preview";
 
 export type WorkspaceRecord = {
     domain: WorkspaceDomain;
@@ -79,12 +80,17 @@ export async function uploadWorkspaceFile(token: string, storageKey: string, fil
 	}
 }
 
-export function workspaceFileUrl(storageKey: string, accountId = "", organizationId = getActiveOrganizationId()) {
+export function workspaceFileUrl(storageKey: string, accountId = "", organizationId = getActiveOrganizationId(), variant?: WorkspaceImageVariant) {
 	const params = new URLSearchParams();
 	if (accountId) params.set("account", accountId);
 	if (organizationId) params.set("organization", organizationId);
+	if (variant) params.set("variant", variant);
 	const query = params.toString();
 	return `/api/workspace/files/${encodeURIComponent(storageKey)}${query ? `?${query}` : ""}`;
+}
+
+export function workspaceImageUrl(storageKey: string, variant: WorkspaceImageVariant, accountId = "", organizationId = getActiveOrganizationId()) {
+	return workspaceFileUrl(storageKey, accountId, organizationId, variant);
 }
 
 export async function workspaceFileExists(token: string, storageKey: string) {

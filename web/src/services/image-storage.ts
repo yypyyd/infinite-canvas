@@ -2,7 +2,7 @@
 
 import { nanoid } from "nanoid";
 import { readImageMeta } from "@/lib/image-utils";
-import { uploadWorkspaceFile, workspaceFileUrl } from "@/services/api/workspace";
+import { uploadWorkspaceFile, workspaceFileUrl, workspaceImageUrl, type WorkspaceImageVariant } from "@/services/api/workspace";
 import { useUserStore } from "@/stores/use-user-store";
 
 export type UploadedImage = {
@@ -54,6 +54,12 @@ export async function getImageBlob(storageKey: string) {
     const blob = await response.blob();
     blobs.set(storageKey, blob);
     return blob;
+}
+
+export function resolveImageVariantUrl(storageKey: string | undefined, fallback: string, variant: WorkspaceImageVariant) {
+    if (!storageKey) return fallback;
+    const userId = useUserStore.getState().user?.id;
+    return userId ? workspaceImageUrl(storageKey, variant, userId) : fallback;
 }
 
 export async function setImageBlob(storageKey: string, blob: Blob) {

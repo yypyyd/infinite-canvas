@@ -156,17 +156,33 @@ func CancelUserWorkspaceFileUpload(user model.AuthUser, uploadID string) error {
 	return repository.CancelUserFileUploadReservation(organization.ID, user.ID, uploadID, now())
 }
 
-func UserWorkspaceFileURL(user model.AuthUser, storageKey string) (string, bool) {
-	return organizationFileURL(user.OrganizationID, storageKey, 10*time.Minute)
+func UserWorkspaceFileURL(user model.AuthUser, storageKey, variant string) (string, bool) {
+	return organizationFileURL(user.OrganizationID, storageKey, variant, 10*time.Minute)
 }
 
-func organizationFileURL(organizationID string, storageKey string, validity time.Duration) (string, bool) {
+func organizationFileURL(organizationID string, storageKey, variant string, validity time.Duration) (string, bool) {
 	item, ok, err := repository.GetUserFile(organizationID, storageKey)
 	if err != nil || !ok || strings.TrimSpace(item.ObjectKey) == "" || ensureQiniuStorageConfigured() != nil {
 		return "", false
 	}
+	query, ok := userFileImageVariantQuery(item.MimeType, variant)
+	if !ok { return "", false }
 	deadline := time.Now().Add(validity).Unix()
-	return storage.MakePrivateURL(qiniuMac(), strings.TrimRight(config.Cfg.QiniuDownloadDomain, "/"), item.ObjectKey, deadline), true
+	return storage.MakePrivateURLv2WithQueryString(qiniuMac(), strings.TrimRight(config.Cfg.QiniuDownloadDomain, "/"), item.ObjectKey, query, deadline), true
+}
+
+func userFileImageVariantQuery(mimeType, variant string) (string, bool) {
+	variant = strings.TrimSpace(variant)
+	if variant == "" { return "", true }
+	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(mimeType)), "image/") { return "", false }
+	switch variant {
+	case "thumb":
+		return "imageView2/1/w/160/h/160/format/webp/q/75", true
+	case "preview":
+		return "imageView2/2/w/1280/h/1280/format/webp/q/80", true
+	default:
+		return "", false
+	}
 }
 
 func UserWorkspaceFileExists(user model.AuthUser, storageKey string) bool {

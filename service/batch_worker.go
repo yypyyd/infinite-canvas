@@ -261,7 +261,7 @@ func batchProductionExecution(item model.BatchProductionItem, job model.BatchPro
 		execution.MediaURLs = make(map[string]string, len(storageKeys))
 		for _, storageKey := range storageKeys {
 			if _, exists := execution.MediaURLs[storageKey]; exists { continue }
-			url, ok := organizationFileURL(item.OrganizationID, storageKey, 30*time.Minute)
+			url, ok := organizationFileURL(item.OrganizationID, storageKey, "", 30*time.Minute)
 			if !ok { return execution, errors.New("batch input media is unavailable") }
 			execution.MediaURLs[storageKey] = url
 		}

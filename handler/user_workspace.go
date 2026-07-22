@@ -108,7 +108,7 @@ func UserWorkspaceFile(w http.ResponseWriter, r *http.Request, storageKey string
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	fileURL, ok := service.UserWorkspaceFileURL(user, storageKey)
+	fileURL, ok := service.UserWorkspaceFileURL(user, storageKey, r.URL.Query().Get("variant"))
 	if !ok {
 		http.NotFound(w, r)
 		return

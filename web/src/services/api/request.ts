@@ -12,6 +12,11 @@ export function getActiveOrganizationId() {
     return activeOrganizationId;
 }
 
+export function organizationHeaders(organizationId = activeOrganizationId) {
+    const value = organizationId.trim();
+    return value ? { "X-Organization-ID": value } : {};
+}
+
 type ApiResponse<T> = {
     code: number;
     data: T;
@@ -87,7 +92,7 @@ async function apiRequest<T>(config: { url: string; method: "GET" | "POST" | "DE
             params: config.params,
             paramsSerializer: { serialize: (params) => serializeApiParams(params as ApiParams).toString() },
             data: config.data,
-			headers: { ...config.headers, ...(organizationId ? { "X-Organization-ID": organizationId } : {}) },
+			headers: { ...config.headers, ...organizationHeaders(organizationId) },
 			signal: config.signal,
 			timeout: config.timeout,
             validateStatus: () => true,

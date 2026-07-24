@@ -9,6 +9,8 @@ import { defaultConfig, useConfigStore, useEffectiveConfig, type AiConfig } from
 import { CreditSymbol, requestCreditQuote } from "@/constant/credits";
 import { useUserStore } from "@/stores/use-user-store";
 import { canvasThemes } from "@/lib/canvas-theme";
+import { supportsImageReferences } from "@/lib/image-model-capabilities";
+import { videoReferenceCapabilities } from "@/lib/seedance-video";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasImageSettingsPopover } from "./canvas-image-settings-popover";
 import { CanvasPromptLibrary } from "./canvas-prompt-library";
@@ -35,11 +37,15 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
     const globalConfig = useEffectiveConfig();
     const pricingRules = useConfigStore((state) => state.publicSettings?.modelChannel.pricingRules);
     const groupRatios = useConfigStore((state) => state.publicSettings?.modelChannel.groupRatios);
+    const managedModels = useConfigStore((state) => state.publicSettings?.modelChannel.models);
     const userGroup = useUserStore((state) => state.user?.group || "default");
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const mode = defaultMode(node.type);
     const config = buildNodeConfig(globalConfig, node, mode);
+    const imageSupportsReferences = supportsImageReferences(config.model, managedModels);
+    const referenceCapabilities = mode === "video" ? videoReferenceCapabilities(config.model) : { image: mode === "text" || (mode === "image" && imageSupportsReferences), video: false, audio: false };
+    const visibleMentionReferences = mentionReferences.filter((reference) => reference.kind === "text" || (reference.kind === "image" && referenceCapabilities.image) || (reference.kind === "video" && referenceCapabilities.video) || (reference.kind === "audio" && referenceCapabilities.audio));
     const hasTextContent = node.type === CanvasNodeType.Text && Boolean(node.metadata?.content?.trim());
     const hasImageContent = node.type === CanvasNodeType.Image && Boolean(node.metadata?.content);
     const isEditingExistingContent = hasTextContent || hasImageContent;
@@ -50,7 +56,7 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
         userGroup,
         model: config.model,
         modality: mode,
-        operation: mode === "text" ? "completion" : mode === "audio" ? "speech" : hasImageContent ? "edit" : "generation",
+        operation: mode === "text" ? "completion" : mode === "audio" ? "speech" : hasImageContent && imageSupportsReferences ? "edit" : "generation",
         unit: mode === "image" ? "image" : mode === "video" ? "second" : "request",
         count: mode === "image" ? config.count : mode === "video" ? config.videoSeconds : 1,
         size: config.size,
@@ -83,12 +89,12 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
         >
             <CanvasResourceMentionTextarea
                 value={prompt}
-                references={mentionReferences}
+                references={visibleMentionReferences}
                 onChange={updatePrompt}
                 onSubmit={submit}
                 className="thin-scrollbar h-24 w-full resize-none rounded-xl border px-3 py-2 text-sm leading-5 outline-none"
                 style={{ background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.text }}
-                placeholder={promptPlaceholder(mode, hasImageContent, hasTextContent)}
+                placeholder={promptPlaceholder(mode, hasImageContent, hasTextContent, imageSupportsReferences)}
             />
 
             <div className="mt-2 flex min-w-0 items-center justify-between gap-2">
@@ -99,6 +105,8 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
                             <ModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} capability="image" onMissingConfig={() => openConfigDialog(true)} />
                             <CanvasImageSettingsPopover
                                 config={config}
+                                model={config.model}
+                                operation={hasImageContent && imageSupportsReferences ? "edit" : "generation"}
                                 placement="topLeft"
                                 buttonClassName="!h-10 !max-w-[170px] !justify-start !rounded-full !px-3"
                                 onConfigChange={(key, value) => onConfigChange(node.id, key === "count" ? { count: Number(value) || 1 } : { [key]: value })}
@@ -176,10 +184,10 @@ function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: Can
     };
 }
 
-function promptPlaceholder(mode: CanvasNodeGenerationMode, hasImageContent: boolean, hasTextContent: boolean) {
+function promptPlaceholder(mode: CanvasNodeGenerationMode, hasImageContent: boolean, hasTextContent: boolean, imageSupportsReferences: boolean) {
     if (mode === "video") return "描述要生成的视频内容";
     if (mode === "audio") return "描述要生成的音频内容";
-    if (mode === "image") return hasImageContent ? "请输入你想要把这张图修改成什么" : "描述要生成的图片内容";
+    if (mode === "image") return hasImageContent && imageSupportsReferences ? "请输入你想要把这张图修改成什么" : "描述要生成的图片内容";
     return hasTextContent ? "请输入你想要将本段文本修改成什么" : "请输入你想要生成的文本内容";
 }
 

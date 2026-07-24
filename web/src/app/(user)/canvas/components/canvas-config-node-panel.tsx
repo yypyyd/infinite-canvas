@@ -9,6 +9,8 @@ import { defaultConfig, useConfigStore, useEffectiveConfig, type AiConfig } from
 import { CreditSymbol, requestCreditQuote } from "@/constant/credits";
 import { useUserStore } from "@/stores/use-user-store";
 import { canvasThemes } from "@/lib/canvas-theme";
+import { supportsImageReferences } from "@/lib/image-model-capabilities";
+import { videoReferenceCapabilities } from "@/lib/seedance-video";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasImageSettingsPopover } from "./canvas-image-settings-popover";
 import { CanvasAudioSettingsPopover, type CanvasAudioSettingKey } from "./canvas-audio-settings-popover";
@@ -29,11 +31,17 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
     const globalConfig = useEffectiveConfig();
     const pricingRules = useConfigStore((state) => state.publicSettings?.modelChannel.pricingRules);
     const groupRatios = useConfigStore((state) => state.publicSettings?.modelChannel.groupRatios);
+    const managedModels = useConfigStore((state) => state.publicSettings?.modelChannel.models);
     const userGroup = useUserStore((state) => state.user?.group || "default");
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const mode = node.metadata?.generationMode || "image";
     const config = buildNodeConfig(globalConfig, node, mode);
+    const imageSupportsReferences = supportsImageReferences(config.model, managedModels);
+    const videoCapabilities = videoReferenceCapabilities(config.model);
+    const supportsImageInput = mode === "text" || (mode === "image" && imageSupportsReferences) || (mode === "video" && videoCapabilities.image);
+    const supportsVideoInput = mode === "video" && videoCapabilities.video;
+    const supportsAudioInput = mode === "video" && videoCapabilities.audio;
     const count = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const creditQuote = requestCreditQuote({
         pricingRules,
@@ -41,14 +49,14 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
         userGroup,
         model: config.model,
         modality: mode,
-        operation: mode === "text" ? "completion" : mode === "audio" ? "speech" : "generation",
+        operation: mode === "text" ? "completion" : mode === "audio" ? "speech" : mode === "image" && imageSupportsReferences && inputSummary.imageCount ? "edit" : "generation",
         unit: mode === "image" ? "image" : mode === "video" ? "second" : "request",
         count: mode === "image" ? count : mode === "video" ? config.videoSeconds : 1,
         size: config.size,
         resolution: config.vquality,
     });
     const chipStyle = { background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.text };
-    const hasAnyInput = Boolean(inputSummary.textCount || inputSummary.imageCount || inputSummary.videoCount || inputSummary.audioCount);
+    const hasAnyInput = Boolean(inputSummary.textCount || (supportsImageInput && inputSummary.imageCount) || (supportsVideoInput && inputSummary.videoCount) || (supportsAudioInput && inputSummary.audioCount));
     const hasComposerContent = Boolean((node.metadata?.composerContent ?? node.metadata?.prompt ?? "").trim());
     const canGenerate = hasComposerContent || (mode === "audio" ? inputSummary.textCount > 0 : hasAnyInput);
 
@@ -106,9 +114,9 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
 
             <div className="mb-2 flex flex-wrap gap-1.5">
                 <InputChip label="提示词" value={`${inputSummary.textCount} 个`} style={chipStyle} />
-                <InputChip label="参考图" value={`${inputSummary.imageCount} 张`} style={chipStyle} />
-                <InputChip label="参考视频" value={`${inputSummary.videoCount} 个`} style={chipStyle} />
-                <InputChip label="参考音频" value={`${inputSummary.audioCount} 个`} style={chipStyle} />
+                {supportsImageInput ? <InputChip label="参考图" value={`${inputSummary.imageCount} 张`} style={chipStyle} /> : null}
+                {supportsVideoInput ? <InputChip label="参考视频" value={`${inputSummary.videoCount} 个`} style={chipStyle} /> : null}
+                {supportsAudioInput ? <InputChip label="参考音频" value={`${inputSummary.audioCount} 个`} style={chipStyle} /> : null}
                 <button type="button" className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border px-2 text-[11px]" style={chipStyle} onMouseDown={(event) => event.stopPropagation()} onClick={onComposerToggle}>
                     <Settings2 className="size-3.5" />
                     组装提示词
@@ -120,7 +128,7 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
                 {mode === "video" ? (
                     <CanvasVideoSettingsPopover config={config} placement="topRight" buttonClassName="canvas-compact-control !h-10 !w-full !justify-start !rounded-lg !px-2" onConfigChange={(key, value) => onConfigChange(node.id, videoConfigPatch(key, value))} />
                 ) : mode === "image" ? (
-                    <CanvasImageSettingsPopover config={config} placement="topRight" autoAdjustOverflow={false} buttonClassName="canvas-compact-control !h-10 !w-full !justify-start !rounded-lg !px-2" onConfigChange={(key, value) => onConfigChange(node.id, key === "count" ? { count: Number(value) || 1 } : { [key]: value })} />
+                    <CanvasImageSettingsPopover config={config} model={config.model} operation={imageSupportsReferences && inputSummary.imageCount ? "edit" : "generation"} placement="topRight" autoAdjustOverflow={false} buttonClassName="canvas-compact-control !h-10 !w-full !justify-start !rounded-lg !px-2" onConfigChange={(key, value) => onConfigChange(node.id, key === "count" ? { count: Number(value) || 1 } : { [key]: value })} />
                 ) : mode === "audio" ? (
                     <CanvasAudioSettingsPopover config={config} placement="topRight" buttonClassName="canvas-compact-control !h-10 !w-full !justify-start !rounded-lg !px-2" onConfigChange={(key, value) => onConfigChange(node.id, audioConfigPatch(key, value))} />
                 ) : null}

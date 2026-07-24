@@ -18,6 +18,7 @@ import { imageToDataUrl, uploadImage } from "@/services/image-storage";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { imageReferenceLabel } from "@/lib/image-reference-prompt";
+import { supportsImageQuality, supportsImageReferences } from "@/lib/image-model-capabilities";
 import type { ReferenceImage } from "@/types/image";
 import { DiaTextReveal } from "@/components/ui/dia-text-reveal";
 import { CanvasImageSettingsPopover } from "./canvas-image-settings-popover";
@@ -47,6 +48,7 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, sessions, activeS
     const effectiveConfig = useEffectiveConfig();
     const pricingRules = useConfigStore((state) => state.publicSettings?.modelChannel.pricingRules);
     const groupRatios = useConfigStore((state) => state.publicSettings?.modelChannel.groupRatios);
+    const managedModels = useConfigStore((state) => state.publicSettings?.modelChannel.models);
     const userGroup = useUserStore((state) => state.user?.group || "default");
     const cleanupImages = useAssetStore((state) => state.cleanupImages);
     const updateConfig = useConfigStore((state) => state.updateConfig);
@@ -144,7 +146,8 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, sessions, activeS
     };
 
     const sendMessage = async (text: string, nextMode: AssistantMode, history: CanvasAssistantMessage[], savedReferences?: CanvasAssistantReference[]) => {
-        const requestConfig = { ...effectiveConfig, count: nextMode === "image" ? effectiveConfig.canvasImageCount || effectiveConfig.count : effectiveConfig.count, model: nextMode === "image" ? effectiveConfig.imageModel || effectiveConfig.model : effectiveConfig.textModel || effectiveConfig.model };
+        const activeModel = nextMode === "image" ? effectiveConfig.imageModel || effectiveConfig.model : effectiveConfig.textModel || effectiveConfig.model;
+        const requestConfig = { ...effectiveConfig, count: nextMode === "image" ? effectiveConfig.canvasImageCount || effectiveConfig.count : effectiveConfig.count, model: activeModel, quality: nextMode === "image" && !supportsImageQuality(activeModel) ? "auto" : effectiveConfig.quality };
         if (!isAiConfigReady(requestConfig, requestConfig.model)) {
             openConfigDialog(true);
             return;
@@ -156,7 +159,7 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, sessions, activeS
             setLocalActiveSessionId(session.id);
         }
 
-        const refs = savedReferences || selectedReferences;
+        const refs = nextMode === "image" && !supportsImageReferences(activeModel, managedModels) ? [] : savedReferences || selectedReferences;
         const userMessage: CanvasAssistantMessage = { id: nanoid(), role: "user", mode: nextMode, text, references: refs };
         const assistantId = nanoid();
         appendMessage(session.id, userMessage);
@@ -402,14 +405,17 @@ function AssistantComposer({
     userGroup?: string;
 }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const managedModels = useConfigStore((state) => state.publicSettings?.modelChannel.models);
     const activeModel = mode === "image" ? config.imageModel || config.model : config.textModel || config.model;
+    const imageSupportsReferences = supportsImageReferences(activeModel, managedModels);
+    const visibleReferences = mode === "image" && !imageSupportsReferences ? [] : references;
     const creditQuote = requestCreditQuote({
         pricingRules,
         groupRatios,
         userGroup,
         model: activeModel,
         modality: mode === "image" ? "image" : "text",
-        operation: mode === "image" ? (references.some((item) => item.dataUrl) ? "edit" : "generation") : "completion",
+        operation: mode === "image" ? (imageSupportsReferences && visibleReferences.some((item) => item.dataUrl) ? "edit" : "generation") : "completion",
         unit: mode === "image" ? "image" : "request",
         count: mode === "image" ? config.count : 1,
         size: config.size,
@@ -417,10 +423,10 @@ function AssistantComposer({
 
     return (
         <div className="px-2 pb-2" onWheelCapture={(event) => event.stopPropagation()}>
-            {references.length ? (
+            {visibleReferences.length ? (
                 <div className="thin-scrollbar mb-1.5 flex max-w-full gap-1.5 overflow-x-auto px-1 pb-1">
-                    {references.map((item, index) => (
-                        <AssistantReferenceChip key={item.id} item={item} label={assistantImageReferenceLabel(references, index)} onRemove={() => onRemoveReference(item.id)} />
+                    {visibleReferences.map((item, index) => (
+                        <AssistantReferenceChip key={item.id} item={item} label={assistantImageReferenceLabel(visibleReferences, index)} onRemove={() => onRemoveReference(item.id)} />
                     ))}
                 </div>
             ) : null}
@@ -430,7 +436,7 @@ function AssistantComposer({
                     onChange={(event) => onPromptChange(event.target.value)}
                     onPaste={(event) => {
                         const file = Array.from(event.clipboardData.files).find((item) => item.type.startsWith("image/"));
-                        if (!file) return;
+                        if (!file || (mode === "image" && !imageSupportsReferences)) return;
                         event.preventDefault();
                         onPasteImage(file);
                     }}
@@ -450,7 +456,7 @@ function AssistantComposer({
                         {mode === "image" ? (
                             <>
                                 <ModelPicker className="h-8 shrink-0" config={config} value={config.imageModel || config.model} onChange={(model) => onConfigChange("imageModel", model)} capability="image" onMissingConfig={onMissingConfig} />
-                                <CanvasImageSettingsPopover config={config} placement="topRight" getPopupContainer={() => document.body} buttonClassName="canvas-composer-settings canvas-composer-icon !h-8 !min-w-8 !rounded-full !px-2" onConfigChange={onConfigChange} onMissingConfig={onMissingConfig} />
+                                <CanvasImageSettingsPopover config={config} model={activeModel} operation={visibleReferences.some((item) => item.dataUrl) ? "edit" : "generation"} placement="topRight" getPopupContainer={() => document.body} buttonClassName="canvas-composer-settings canvas-composer-icon !h-8 !min-w-8 !rounded-full !px-2" onConfigChange={onConfigChange} onMissingConfig={onMissingConfig} />
                             </>
                         ) : (
                             <ModelPicker className="h-8 shrink-0" config={config} value={config.textModel || config.model} onChange={(model) => onConfigChange("textModel", model)} capability="text" onMissingConfig={onMissingConfig} />

@@ -13,6 +13,7 @@ import { CreditSymbol, requestCreditQuote, type PricingRule } from "@/constant/c
 import { commercePresets, findCommercePreset } from "@/constant/commerce-presets";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { imageReferenceLabel } from "@/lib/image-reference-prompt";
+import { supportsImageQuality, supportsImageReferences } from "@/lib/image-model-capabilities";
 import { useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { nanoid } from "nanoid";
@@ -102,7 +103,7 @@ export default function ImagePage() {
 
     const model = effectiveConfig.imageModel || effectiveConfig.model;
     const modelDefinition = managedModels?.find((item) => item.id === model);
-    const supportsReferences = Boolean(modelDefinition?.operations.includes("edit"));
+    const supportsReferences = supportsImageReferences(model, managedModels);
     const supportsQuality = supportsImageQuality(model);
     const imageOperation = supportsReferences && references.length ? "edit" : "generation";
     const canGenerate = Boolean(prompt.trim());
@@ -675,10 +676,6 @@ function FailedImageCard({ error, onRetry }: { error: string; onRetry: () => voi
 
 function updateResultAt(results: GenerationResult[], index: number, next: Partial<GenerationResult>) {
     return results.map((item, itemIndex) => (itemIndex === index ? { ...item, ...next } : item));
-}
-
-function supportsImageQuality(model: string) {
-    return ["gpt-image-2", "gpt-image-1.5", "gpt-image-1", "gpt-image-1-mini"].includes(model.trim().toLowerCase());
 }
 
 function LogPanel({

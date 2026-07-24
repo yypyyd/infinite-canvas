@@ -96,11 +96,34 @@ func TestAdaptVividAIVideoMultipartBody(t *testing.T) {
 	if got := firstFormValue(form, "size"); got != "1080x1920" {
 		t.Fatalf("size = %q", got)
 	}
+	if got := firstFormValue(form, "seconds"); got != "5" {
+		t.Fatalf("seconds = %q", got)
+	}
 	if len(form.File["input_reference"]) != 1 || len(form.File["input_reference[]"]) != 0 {
 		t.Fatalf("reference fields = %#v", form.File)
 	}
 	if firstFormValue(form, "resolution_name", "preset") != "" {
 		t.Fatalf("unsupported fields were preserved")
+	}
+}
+
+func TestNormalizeVividAIVideoSeconds(t *testing.T) {
+	tests := []struct {
+		model        string
+		seconds      string
+		hasReference bool
+		want         string
+	}{
+		{model: "gemini-veo31", seconds: "5", want: "6"},
+		{model: "gemini-veo31", seconds: "4", hasReference: true, want: "8"},
+		{model: "firefly-video", seconds: "8", want: "5"},
+		{model: "firefly-ray", seconds: "8", want: "9"},
+		{model: "grok-video", seconds: "20", want: "15"},
+	}
+	for _, item := range tests {
+		if got := normalizeVividAIVideoSeconds(item.model, item.seconds, item.hasReference); got != item.want {
+			t.Fatalf("normalizeVividAIVideoSeconds(%q, %q, %v) = %q, want %q", item.model, item.seconds, item.hasReference, got, item.want)
+		}
 	}
 }
 

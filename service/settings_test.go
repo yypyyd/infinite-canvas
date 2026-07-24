@@ -209,7 +209,15 @@ func TestNormalizeSettingsAddsFallbackBesideResolutionPricingRule(t *testing.T) 
 	rules := settings.Public.ModelChannel.PricingRules
 	assertHasPricingRule(t, rules, "firefly-image-5", "image", "generation", "image", "2k")
 	assertHasPricingRule(t, rules, "firefly-image-5", "image", "generation", "image", "")
-	assertNoPricingRule(t, rules, "firefly-image-5", "image", "edit", "image", "")
+	assertHasPricingRule(t, rules, "firefly-image-5", "image", "edit", "image", "")
+}
+
+func TestDefaultModelOperationsIncludesOfficialEditableModels(t *testing.T) {
+	for _, modelName := range []string{"flux-klein-2", "firefly-image-5"} {
+		if got := defaultModelOperations(modelName, "image"); !reflect.DeepEqual(got, []string{"generation", "edit"}) {
+			t.Fatalf("defaultModelOperations(%q) = %#v", modelName, got)
+		}
+	}
 }
 
 func assertHasPricingRule(t *testing.T, rules []model.PricingRule, modelName string, modality string, operation string, unit string, resolutionTier string) {

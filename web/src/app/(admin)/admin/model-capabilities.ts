@@ -20,6 +20,6 @@ export function inferModelOperations(model: string, modality: string) {
     if (modality !== "image") return allowedModelOperations(modality);
     const name = model.toLowerCase();
     if (["qwen-image-edit", "image-edit", "image_edit", "inpaint", "outpaint", "remove-background", "flux-pro-1.0-fill", "flux-pro-1.0-expand"].some((pattern) => name.includes(pattern))) return ["edit"];
-    if (["gpt-image", "dall-e-2", "flux-kontext", "seedream", "nano-banana"].some((pattern) => name.includes(pattern))) return ["generation", "edit"];
+    if (["gpt-image", "dall-e-2", "flux-kontext", "flux-klein", "seedream", "nano-banana", "firefly-image-5"].some((pattern) => name.includes(pattern))) return ["generation", "edit"];
     return ["generation"];
 }

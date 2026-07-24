@@ -456,7 +456,7 @@ func defaultModelOperations(modelName string, modality string) []string {
 			return []string{"edit"}
 		}
 	}
-	editable := []string{"gpt-image", "dall-e-2", "flux-kontext", "seedream", "nano-banana"}
+	editable := []string{"gpt-image", "dall-e-2", "flux-kontext", "flux-klein", "seedream", "nano-banana", "firefly-image-5"}
 	for _, pattern := range editable {
 		if strings.Contains(name, pattern) {
 			return []string{"generation", "edit"}

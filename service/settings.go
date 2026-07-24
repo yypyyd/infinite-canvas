@@ -908,12 +908,12 @@ func repairDefaultModel(current string, models []string, preferred func(string) 
 
 func isVideoModelName(modelName string) bool {
 	name := strings.ToLower(strings.TrimSpace(modelName))
-	return strings.Contains(name, "seedance") || strings.Contains(name, "video") || strings.Contains(name, "sora") || strings.Contains(name, "veo") || strings.Contains(name, "kling") || strings.Contains(name, "wan")
+	return strings.Contains(name, "seedance") || strings.Contains(name, "video") || strings.Contains(name, "sora") || strings.Contains(name, "veo") || strings.Contains(name, "kling") || strings.Contains(name, "wan") || strings.Contains(name, "firefly-ray")
 }
 
 func isImageModelName(modelName string) bool {
 	name := strings.ToLower(strings.TrimSpace(modelName))
-	return strings.Contains(name, "seedream") || strings.Contains(name, "gpt-image") || strings.Contains(name, "image") || strings.Contains(name, "dall-e") || strings.Contains(name, "imagen") || strings.Contains(name, "flux") || strings.Contains(name, "nano-banana")
+	return strings.Contains(name, "seedream") || strings.Contains(name, "gpt-image") || strings.Contains(name, "image") || strings.Contains(name, "dall-e") || strings.Contains(name, "imagen") || strings.Contains(name, "imagine-") || strings.Contains(name, "flux") || strings.Contains(name, "nano-banana")
 }
 
 func isAudioModelName(modelName string) bool {

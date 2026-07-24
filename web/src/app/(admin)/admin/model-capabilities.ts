@@ -1,8 +1,8 @@
 export function inferModelModality(model: string) {
     const name = model.toLowerCase();
-    if (["seedance", "video", "sora", "veo", "kling", "wan"].some((pattern) => name.includes(pattern))) return "video";
+    if (["seedance", "video", "sora", "veo", "kling", "wan", "firefly-ray"].some((pattern) => name.includes(pattern))) return "video";
     if (["audio", "speech", "tts"].some((pattern) => name.includes(pattern))) return "audio";
-    if (["seedream", "image", "dall-e", "imagen", "flux", "nano-banana"].some((pattern) => name.includes(pattern))) return "image";
+    if (["seedream", "image", "dall-e", "imagen", "imagine-", "flux", "nano-banana"].some((pattern) => name.includes(pattern))) return "image";
     return "text";
 }
 

@@ -70,6 +70,13 @@ export function isSeedanceFastModel(model: string) {
     return isSeedanceVideoModel(value) && value.includes("fast");
 }
 
+export function videoReferenceCapabilities(model: string) {
+    const value = model.trim().toLowerCase();
+    const seedance = isSeedanceVideoModel(value);
+    const supportsImage = seedance || ["grok-imagine-video", "grok-video", "firefly-video", "firefly-ray", "gemini-veo31", "sora"].some((name) => value.includes(name));
+    return { image: supportsImage, video: seedance, audio: seedance };
+}
+
 export function normalizeSeedanceResolution(value: string, model = "") {
     const normalized = normalizeResolutionToken(value);
     if (isSeedanceFastModel(model) && normalized === "1080p") return "720p";

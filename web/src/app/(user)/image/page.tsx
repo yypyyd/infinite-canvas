@@ -102,7 +102,9 @@ export default function ImagePage() {
 
     const model = effectiveConfig.imageModel || effectiveConfig.model;
     const modelDefinition = managedModels?.find((item) => item.id === model);
-    const imageOperation = references.length ? "edit" : "generation";
+    const supportsReferences = Boolean(modelDefinition?.operations.includes("edit"));
+    const supportsQuality = supportsImageQuality(model);
+    const imageOperation = supportsReferences && references.length ? "edit" : "generation";
     const canGenerate = Boolean(prompt.trim());
     const generationCount = Math.max(1, Math.min(10, Number(config.count) || 1));
     const creditQuote = requestCreditQuote({
@@ -258,6 +260,11 @@ export default function ImagePage() {
         if (payload.kind === "text") {
             setPrompt(payload.content);
         } else if (payload.kind === "image") {
+            if (!supportsReferences) {
+                message.warning("当前模型不支持参考图");
+                setAssetPickerOpen(false);
+                return;
+            }
             const stored = await uploadImage(payload.dataUrl);
             setReferences((value) => [...value, { id: nanoid(), name: payload.title, type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey }]);
         } else {
@@ -316,7 +323,7 @@ export default function ImagePage() {
             openConfigDialog(true);
             return null;
         }
-        return { text, config: { ...effectiveConfig, model, count: "1" }, references: [...references] };
+        return { text, config: { ...effectiveConfig, model, count: "1", quality: supportsQuality ? effectiveConfig.quality : "auto" }, references: supportsReferences ? [...references] : [] };
     };
 
     const runGenerationSlot = async (index: number, snapshot: { text: string; config: AiConfig; references: ReferenceImage[] }) => {
@@ -413,7 +420,7 @@ export default function ImagePage() {
                                 <Input.TextArea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={7} placeholder="描述商品、目标人群、使用场景、核心卖点与投放平台" />
                             </div>
 
-                            <div className="min-w-0">
+                            {supportsReferences ? <div className="min-w-0">
                                 <div className="mb-2 flex items-center justify-between gap-3">
                                     <span className="text-base font-semibold">参考图</span>
                                     <div className="flex gap-2">
@@ -450,11 +457,11 @@ export default function ImagePage() {
                                     ))}
                                     {!references.length ? <div className="flex min-w-full items-center justify-center text-sm text-stone-500">暂无参考图</div> : null}
                                 </div>
-                            </div>
+                            </div> : null}
 
                             <div className="flex items-center justify-between rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm dark:border-stone-800 dark:bg-stone-900 sm:hidden">
                                 <span className="truncate text-stone-500 dark:text-stone-400">
-                                    {model} · {effectiveConfig.size} · {effectiveConfig.quality}
+                                    {model} · {effectiveConfig.size}{supportsQuality ? ` · ${effectiveConfig.quality}` : ""}
                                 </span>
                                 <Button size="small" type="text" icon={<SlidersHorizontal className="size-4" />} onClick={() => setSettingsOpen(true)}>
                                     调整
@@ -462,7 +469,7 @@ export default function ImagePage() {
                             </div>
 
                             <div className="hidden gap-4 sm:grid sm:grid-cols-2">
-                                <GenerationSettings config={effectiveConfig} model={model} operation={imageOperation} pricingRules={pricingRules} supportedRatios={modelAspectRatios?.[model]} supportedResolutionTiers={modelDefinition?.resolutionTiers} updateConfig={updateConfig} openConfigDialog={openConfigDialog} />
+                                <GenerationSettings config={effectiveConfig} model={model} operation={imageOperation} pricingRules={pricingRules} supportedRatios={modelAspectRatios?.[model]} supportedResolutionTiers={modelDefinition?.resolutionTiers} showQuality={supportsQuality} updateConfig={updateConfig} openConfigDialog={openConfigDialog} />
                             </div>
                         </div>
 
@@ -493,7 +500,7 @@ export default function ImagePage() {
                             <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
                                 {results.map((result, index) =>
                                     result.status === "success" && result.image ? (
-                                        <ResultImageCard key={result.id} image={result.image} index={index} onEdit={addResultToReferences} onDownload={downloadImage} onSaveAsset={saveResultToAssets} />
+                                        <ResultImageCard key={result.id} image={result.image} index={index} canEdit={supportsReferences} onEdit={addResultToReferences} onDownload={downloadImage} onSaveAsset={saveResultToAssets} />
                                     ) : result.status === "failed" ? (
                                         <FailedImageCard key={result.id} error={result.error || "生成失败"} onRetry={() => retryResult(index)} />
                                     ) : (
@@ -534,7 +541,7 @@ export default function ImagePage() {
             </Drawer>
             <Drawer title="参数" placement="bottom" size="82vh" open={settingsOpen} onClose={() => setSettingsOpen(false)}>
                 <div className="grid grid-cols-2 gap-3 pb-4">
-                    <GenerationSettings config={effectiveConfig} model={model} operation={imageOperation} pricingRules={pricingRules} supportedRatios={modelAspectRatios?.[model]} supportedResolutionTiers={modelDefinition?.resolutionTiers} updateConfig={updateConfig} openConfigDialog={openConfigDialog} />
+                    <GenerationSettings config={effectiveConfig} model={model} operation={imageOperation} pricingRules={pricingRules} supportedRatios={modelAspectRatios?.[model]} supportedResolutionTiers={modelDefinition?.resolutionTiers} showQuality={supportsQuality} updateConfig={updateConfig} openConfigDialog={openConfigDialog} />
                 </div>
             </Drawer>
             <PromptSelectDialog open={promptDialogOpen} onOpenChange={setPromptDialogOpen} onSelect={setPrompt} />
@@ -553,6 +560,7 @@ function GenerationSettings({
     pricingRules,
     supportedRatios,
     supportedResolutionTiers,
+    showQuality,
     updateConfig,
     openConfigDialog,
 }: {
@@ -562,6 +570,7 @@ function GenerationSettings({
     pricingRules?: PricingRule[];
     supportedRatios?: string[];
     supportedResolutionTiers?: string[];
+    showQuality: boolean;
     updateConfig: UpdateAiConfig;
     openConfigDialog: (shouldPromptContinue?: boolean) => void;
 }) {
@@ -574,7 +583,7 @@ function GenerationSettings({
                 <ModelPicker config={config} value={model} onChange={(value) => updateConfig("imageModel", value)} capability="image" fullWidth onMissingConfig={() => openConfigDialog(false)} />
             </label>
             <div className="col-span-2">
-                <ImageSettingsPanel config={config} onConfigChange={(key, value) => updateConfig(key, value)} theme={theme} showTitle={false} className="space-y-4" maxCount={10} pricingRules={pricingRules} model={model} operation={operation} supportedRatios={supportedRatios} supportedResolutionTiers={supportedResolutionTiers} />
+                <ImageSettingsPanel config={config} onConfigChange={(key, value) => updateConfig(key, value)} theme={theme} showTitle={false} className="space-y-4" maxCount={10} pricingRules={pricingRules} model={model} operation={operation} supportedRatios={supportedRatios} supportedResolutionTiers={supportedResolutionTiers} showQuality={showQuality} />
             </div>
         </>
     );
@@ -583,12 +592,14 @@ function GenerationSettings({
 function ResultImageCard({
     image,
     index,
+    canEdit,
     onEdit,
     onDownload,
     onSaveAsset,
 }: {
     image: GeneratedImage;
     index: number;
+    canEdit: boolean;
     onEdit: (image: GeneratedImage, index: number) => void;
     onDownload: (image: GeneratedImage, index: number) => void;
     onSaveAsset: (image: GeneratedImage, index: number) => void;
@@ -604,17 +615,17 @@ function ResultImageCard({
                     <span>{formatBytes(image.bytes)}</span>
                     <span>{formatDuration(image.durationMs)}</span>
                 </div>
-                <div className="grid min-w-0 grid-cols-3 gap-2">
+                <div className={`grid min-w-0 gap-2 ${canEdit ? "grid-cols-3" : "grid-cols-2"}`}>
                     <Tooltip title="添加到素材">
                         <Button className={RESULT_ACTION_BUTTON_CLASS} size="small" icon={<FolderPlus className="size-3.5" />} onClick={() => void onSaveAsset(image, index)}>
                             添加到素材
                         </Button>
                     </Tooltip>
-                    <Tooltip title="加入参考图">
+                    {canEdit ? <Tooltip title="加入参考图">
                         <Button className={RESULT_ACTION_BUTTON_CLASS} size="small" icon={<PenLine className="size-3.5" />} onClick={() => void onEdit(image, index)}>
                             加入参考图
                         </Button>
-                    </Tooltip>
+                    </Tooltip> : null}
                     <Tooltip title="下载">
                         <Button className={RESULT_ACTION_BUTTON_CLASS} size="small" icon={<Download className="size-3.5" />} onClick={() => onDownload(image, index)}>
                             下载
@@ -664,6 +675,10 @@ function FailedImageCard({ error, onRetry }: { error: string; onRetry: () => voi
 
 function updateResultAt(results: GenerationResult[], index: number, next: Partial<GenerationResult>) {
     return results.map((item, itemIndex) => (itemIndex === index ? { ...item, ...next } : item));
+}
+
+function supportsImageQuality(model: string) {
+    return ["gpt-image-2", "gpt-image-1.5", "gpt-image-1", "gpt-image-1-mini"].includes(model.trim().toLowerCase());
 }
 
 function LogPanel({

@@ -13,6 +13,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -936,7 +937,7 @@ func adaptVividAIVideoRequestBody(body []byte, contentType string) ([]byte, stri
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return body, contentType
 	}
-	result := vividAIVideoPayload(payloadString(payload, "model"), payloadString(payload, "prompt"), payloadString(payload, "seconds", "duration", "videoSeconds"), payloadString(payload, "size", "ratio", "aspect_ratio"), payloadString(payload, "resolution", "resolution_name", "vquality"))
+	result := vividAIVideoPayload(payloadString(payload, "model"), payloadString(payload, "prompt"), payloadString(payload, "seconds", "duration", "videoSeconds"), payloadString(payload, "size", "ratio", "aspect_ratio"), payloadString(payload, "resolution", "resolution_name", "vquality"), false)
 	encoded, err := json.Marshal(result)
 	if err != nil {
 		return body, contentType
@@ -950,11 +951,11 @@ func adaptVividAIVideoMultipartBody(body []byte, contentType string) ([]byte, st
 		return nil, "", err
 	}
 	defer form.RemoveAll()
-	fields := vividAIVideoPayload(firstFormValue(form, "model"), firstFormValue(form, "prompt"), firstFormValue(form, "seconds", "duration", "videoSeconds"), firstFormValue(form, "size", "ratio", "aspect_ratio"), firstFormValue(form, "resolution", "resolution_name", "vquality"))
 	files := form.File["input_reference"]
 	if len(files) == 0 {
 		files = form.File["input_reference[]"]
 	}
+	fields := vividAIVideoPayload(firstFormValue(form, "model"), firstFormValue(form, "prompt"), firstFormValue(form, "seconds", "duration", "videoSeconds"), firstFormValue(form, "size", "ratio", "aspect_ratio"), firstFormValue(form, "resolution", "resolution_name", "vquality"), len(files) > 0)
 	if len(files) == 0 {
 		encoded, err := json.Marshal(fields)
 		return encoded, "application/json", err
@@ -975,16 +976,61 @@ func adaptVividAIVideoMultipartBody(body []byte, contentType string) ([]byte, st
 	return buffer.Bytes(), writer.FormDataContentType(), nil
 }
 
-func vividAIVideoPayload(modelName string, prompt string, seconds string, size string, resolution string) map[string]any {
+func vividAIVideoPayload(modelName string, prompt string, seconds string, size string, resolution string, hasReference bool) map[string]any {
 	result := map[string]any{"model": strings.TrimSpace(modelName), "prompt": strings.TrimSpace(prompt)}
-	seconds = strings.TrimSuffix(strings.TrimSpace(seconds), "s")
+	seconds = normalizeVividAIVideoSeconds(modelName, seconds, hasReference)
 	if seconds != "" {
 		result["seconds"] = seconds
 	}
-	if size = vividAIVideoSize(size, resolution); size != "" {
+	if size = vividAIVideoSize(modelName, size, resolution); size != "" {
 		result["size"] = size
 	}
 	return result
+}
+
+func normalizeVividAIVideoSeconds(modelName string, value string, hasReference bool) string {
+	value = strings.TrimSuffix(strings.TrimSpace(value), "s")
+	if value == "" {
+		return ""
+	}
+	seconds, err := strconv.Atoi(value)
+	if err != nil {
+		return value
+	}
+	name := strings.ToLower(modelName)
+	if strings.Contains(name, "gemini-veo31") {
+		if hasReference {
+			return "8"
+		}
+		return nearestVideoDuration(seconds, 4, 6, 8)
+	}
+	if strings.Contains(name, "firefly-video") {
+		return "5"
+	}
+	if strings.Contains(name, "firefly-ray") {
+		return nearestVideoDuration(seconds, 5, 9)
+	}
+	if strings.Contains(name, "grok-video") {
+		seconds = min(max(seconds, 1), 15)
+	}
+	return strconv.Itoa(seconds)
+}
+
+func nearestVideoDuration(value int, allowed ...int) string {
+	best := allowed[0]
+	for _, candidate := range allowed[1:] {
+		if absInt(value-candidate) <= absInt(value-best) {
+			best = candidate
+		}
+	}
+	return strconv.Itoa(best)
+}
+
+func absInt(value int) int {
+	if value < 0 {
+		return -value
+	}
+	return value
 }
 
 func readMultipartForm(body []byte, contentType string) (*multipart.Form, error) {
@@ -1073,11 +1119,26 @@ func normalizeVividAIImageTier(value string, size string) string {
 	return "1k"
 }
 
-func vividAIVideoSize(size string, resolution string) string {
+func vividAIVideoSize(modelName string, size string, resolution string) string {
 	if strings.TrimSpace(size) == "" {
 		return ""
 	}
-	ratio := nearestVividAIRatio(size, vividAIVideoSizes)
+	sizes := vividAIVideoSizes
+	ratio := ""
+	if strings.Contains(strings.ToLower(modelName), "gemini-veo31") {
+		sizes = map[string]map[string]string{
+			"16:9": vividAIVideoSizes["16:9"],
+			"9:16": vividAIVideoSizes["9:16"],
+		}
+		width, height, ok := parseVividAIRatio(size)
+		if ok && width < height {
+			ratio = "9:16"
+		} else {
+			ratio = "16:9"
+		}
+	} else {
+		ratio = nearestVividAIRatio(size, sizes)
+	}
 	tier := normalizeResolutionName(resolution)
 	if tier != "1080p" {
 		width, height, ok := parseVividAIRatio(size)
@@ -1087,7 +1148,7 @@ func vividAIVideoSize(size string, resolution string) string {
 			tier = "720p"
 		}
 	}
-	return vividAIVideoSizes[ratio][tier]
+	return sizes[ratio][tier]
 }
 
 func nearestVividAIRatio(value string, sizes map[string]map[string]string) string {

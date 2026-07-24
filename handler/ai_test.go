@@ -14,12 +14,15 @@ func TestAIUpstreamErrorDetail(t *testing.T) {
 	}
 }
 
-func TestResolveAIProxyPathVideoGenerations(t *testing.T) {
-	if got := resolveAIProxyPath("https://vividai.run/v1", "firefly-video", "/videos"); got != "/videos/generations" {
+func TestResolveAIProxyPathVividAI(t *testing.T) {
+	if got := resolveAIProxyPath("https://vividai.run/v1", "firefly-video", "/videos"); got != "/videos" {
 		t.Fatalf("create path = %q", got)
 	}
-	if got := resolveAIProxyPath("https://vividai.run/v1", "firefly-video", "/videos/task-1/content"); got != "/videos/task-1" {
+	if got := resolveAIProxyPath("https://vividai.run/v1", "firefly-video", "/videos/task-1/content"); got != "/videos/task-1/content" {
 		t.Fatalf("content path = %q", got)
+	}
+	if got := resolveAIProxyPath("https://api.x.ai/v1", "grok-imagine-video", "/videos"); got != "/videos/generations" {
+		t.Fatalf("xAI create path = %q", got)
 	}
 }
 
@@ -53,60 +56,66 @@ func TestAdaptVideoGenerationsResponseCachesB64JSON(t *testing.T) {
 	}
 }
 
-func TestAdaptAIRequestBodyVideoGenerations(t *testing.T) {
+func TestAdaptVividAIVideoRequestBody(t *testing.T) {
 	body, contentType := adaptAIRequestBody("https://vividai.run/v1", "firefly-video", "/videos", []byte(`{"model":"firefly-video","prompt":"test","seconds":"5","resolution_name":"720p","size":"16:9"}`), "application/json")
 	if contentType != "application/json" {
 		t.Fatalf("contentType = %q", contentType)
 	}
 	text := string(body)
-	for _, want := range []string{`"duration":"5s"`, `"resolution":"720p"`, `"aspect_ratio":"16:9"`} {
+	for _, want := range []string{`"seconds":"5"`, `"size":"1280x720"`} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("body %s missing %s", text, want)
 		}
 	}
-}
-
-func TestNormalizeVideoGenerationsPayloadByModel(t *testing.T) {
-	tests := []struct {
-		model string
-		body  string
-		want  []string
-	}{
-		{"firefly-video", `{"model":"firefly-video","prompt":"test","seconds":"6","resolution_name":"480p","size":"1024x1024"}`, []string{`"duration":"5s"`, `"resolution":"720p"`, `"aspect_ratio":"16:9"`}},
-		{"firefly-ray", `{"model":"firefly-ray","prompt":"test","seconds":"6","resolution_name":"1080p","size":"3:4"}`, []string{`"duration":"10s"`, `"resolution":"720p"`, `"aspect_ratio":"3:4"`}},
-		{"gemini-veo31", `{"model":"gemini-veo31","prompt":"test","seconds":"5","resolution_name":"1080p","size":"9:16"}`, []string{`"duration":"6s"`, `"resolution":"1080p"`, `"aspect_ratio":"9:16"`}},
-	}
-	for _, tt := range tests {
-		body, _ := adaptAIRequestBody("https://vividai.run/v1", tt.model, "/videos", []byte(tt.body), "application/json")
-		text := string(body)
-		for _, want := range tt.want {
-			if !strings.Contains(text, want) {
-				t.Fatalf("%s body %s missing %s", tt.model, text, want)
-			}
+	for _, unwanted := range []string{`resolution_name`, `resolution`, `aspect_ratio`, `duration`} {
+		if strings.Contains(text, unwanted) {
+			t.Fatalf("body %s contains unsupported field %s", text, unwanted)
 		}
 	}
 }
 
-func TestNormalizeVideoGenerationsPayloadStripsReferenceDataURL(t *testing.T) {
-	body, _ := adaptAIRequestBody("https://vividai.run/v1", "gemini-veo31", "/videos", []byte(`{"model":"gemini-veo31","prompt":"test","duration":"6s","reference_images":["data:image/png;base64,QUJD"]}`), "application/json")
-	text := string(body)
-	if !strings.Contains(text, `"reference_images":["QUJD"]`) {
-		t.Fatalf("body = %s", text)
+func TestAdaptVividAIVideoMultipartBody(t *testing.T) {
+	var source strings.Builder
+	writer := multipart.NewWriter(&source)
+	_ = writer.WriteField("model", "firefly-video")
+	_ = writer.WriteField("prompt", "test")
+	_ = writer.WriteField("seconds", "8")
+	_ = writer.WriteField("size", "9:16")
+	_ = writer.WriteField("resolution_name", "1080p")
+	_ = writer.WriteField("preset", "normal")
+	file, _ := writer.CreateFormFile("input_reference[]", "image.png")
+	_, _ = file.Write([]byte("png"))
+	_ = writer.Close()
+
+	body, contentType := adaptAIRequestBody("https://vividai.run/v1", "firefly-video", "/videos", []byte(source.String()), writer.FormDataContentType())
+	form, err := readMultipartForm(body, contentType)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if strings.Contains(text, "data:image") {
-		t.Fatalf("body still contains data URL prefix: %s", text)
+	defer form.RemoveAll()
+	if got := firstFormValue(form, "size"); got != "1080x1920" {
+		t.Fatalf("size = %q", got)
+	}
+	if len(form.File["input_reference"]) != 1 || len(form.File["input_reference[]"]) != 0 {
+		t.Fatalf("reference fields = %#v", form.File)
+	}
+	if firstFormValue(form, "resolution_name", "preset") != "" {
+		t.Fatalf("unsupported fields were preserved")
 	}
 }
 
 func TestAdaptVividAIImageRequestBody(t *testing.T) {
-	body, contentType := adaptAIRequestBody("https://vividai.run/v1", "firefly-image-5", "/images/generations", []byte(`{"model":"firefly-image-5","prompt":"test","size":"3:2","resolution":"4k"}`), "application/json")
+	body, contentType := adaptAIRequestBody("https://vividai.run/v1", "firefly-gpt-image-2", "/images/generations", []byte(`{"model":"firefly-gpt-image-2","prompt":"test","size":"3:2","quality":"high","response_format":"b64_json"}`), "application/json")
 	if contentType != "application/json" {
 		t.Fatalf("contentType = %q", contentType)
 	}
 	text := string(body)
-	for _, want := range []string{`"size":"1:1"`, `"resolution":"1k"`} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("body %s missing %s", text, want)
+	if !strings.Contains(text, `"size":"3600x2400"`) {
+		t.Fatalf("body %s has wrong size", text)
+	}
+	for _, unwanted := range []string{`quality`, `response_format`, `resolution`} {
+		if strings.Contains(text, unwanted) {
+			t.Fatalf("body %s contains unsupported field %s", text, unwanted)
 		}
 	}
 }

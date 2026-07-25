@@ -28,6 +28,8 @@ description: 当前后端主要数据表与字段说明
 - `brands`
 - `products`
 - `product_skus`
+- `production_templates`
+- `production_template_versions`
 - `batch_production_jobs`
 - `batch_production_items`
 - `batch_production_snapshots`
@@ -55,7 +57,7 @@ description: 当前后端主要数据表与字段说明
 
 企业租户和成员关系表。一个用户可以加入多个企业，`users.organization_id` 只保存新会话默认/最近使用的企业。登录后的企业 API 请求携带 `X-Organization-ID`；浏览器原生图片、视频和下载请求无法自定义 Header，因此媒体 URL 使用 `organization` 查询参数携带企业 ID。后端中间件会逐请求校验企业状态和成员关系，再把企业上下文传给画布、媒体、模型任务和电商业务，多个浏览器标签页可各自保持独立企业上下文。
 
-`organizations` 保存企业名称、唯一标识、状态、创建人和创建时间；仅服务端使用的 `batch_claim_cursor` 记录该企业最近一次领取批量生产项的顺序游标。`organization_members` 通过 `organization_id + user_id` 联合唯一索引关联成员，角色包括 `owner`、`admin`、`member`、`reviewer`。企业与成员关系均保存 `version` 乐观版本号；企业设置、成员角色、成员移除和所有权转移必须提交读取时版本，拒绝多个管理员基于旧页面静默覆盖。企业所有者可以转移所有权，管理员不能修改或移除所有者。
+`organizations` 保存企业名称、唯一标识、状态、创建人和创建时间；`credit_mode` 决定生成任务使用成员个人额度还是企业共享额度，`credits` 保存共享余额，`monthly_credit_budget`、`monthly_credits_used`、`credit_budget_month` 和 `credit_alert_threshold` 保存月度预算、当月用量、预算月份与预警比例。月度预算为 0 时不限制；进入新月份时在首笔扣费或设置更新事务中重置当月用量。仅服务端使用的 `batch_claim_cursor` 记录该企业最近一次领取批量生产项的顺序游标。`organization_members` 通过 `organization_id + user_id` 联合唯一索引关联成员，角色包括 `owner`、`admin`、`member`、`reviewer`。企业与成员关系均保存 `version` 乐观版本号；企业设置、额度设置、成员角色、成员移除和所有权转移必须提交读取时版本，拒绝多个管理员基于旧页面静默覆盖。企业所有者可以转移所有权，管理员不能修改或移除所有者。
 
 ### organization_invitations / organization_email_outboxes / organization_audit_logs
 
@@ -69,11 +71,17 @@ description: 当前后端主要数据表与字段说明
 
 企业商品主数据表。`products` 保存 SPU 编码、品牌、类目、卖点、目标人群和状态；`product_skus` 保存 SKU 编码、规格属性、企业私有参考图 `storageKey` 和状态。SPU、SKU 编码均在企业内唯一，SKU 创建后不能变更所属商品；两张表均使用 `version` 乐观版本号和条件更新，保存和删除都必须提交读取时版本，拒绝基于旧版本的并发覆盖或误删。商品作为 SKU 聚合根，SKU 创建、更新或删除会在同一事务递增所属商品版本，因此旧商品列表不能级联删除其他成员刚变更的 SKU。品牌、商品或 SKU 已被商品主数据或批量生产历史引用时拒绝删除；写入、任务创建和删除会锁定相同父级记录，避免并发产生悬空引用。SKU 参考图引用与 SKU 保存处于同一事务，删除 SKU 或包含它的商品时同步释放引用，并从实际删除时间开始计算 24 小时文件回收宽限期。
 
+### production_templates / production_template_versions
+
+企业自定义生产模板及不可变版本。`production_templates` 保存企业内唯一名称、说明、启停状态、当前版本号和乐观 `version`；每次保存都必须提交读取时版本，并在同一事务新增一条 `production_template_versions`，历史提示词不原地修改。所有者和管理员可以发布新版本，其他角色只读。批量任务保存模板编号、明确版本及创建时完整提示词，后续启停或发布新版不改变已提交任务；提示词预览和 Worker 共用同一拼装逻辑，在模板指令后注入本企业品牌、商品和 SKU 快照信息。
+
 ### batch_production_jobs / batch_production_items / batch_production_snapshots
 
-企业批量生产任务及任务项。创建接口要求客户端生成 `request_id`，并通过 `organization_id + request_id` 联合唯一索引保证超时重试、双击和代理重放只创建一次任务；`request_hash` 保存规范化名称、品牌、模板和商品集合的 SHA-256 摘要，同请求号只有摘要一致时才返回已有任务，不同内容会返回冲突。每个任务还保存仅服务端可见的随机 `archive_token`，用于隔离 Worker 归档文件命名空间。幂等查询在商品和 SKU 展开前完成，成功响应丢失后的重试不会受后续主数据变化影响。首次创建会先锁定企业和所选商品，再在同一事务读取并展开完整 SKU 集合；没有 SKU 的商品按 SPU 创建任务项，因此并发新增 SKU 不会落在事务读取与任务写入之间。`batch_production_snapshots` 按任务分别保存一份品牌快照、每个商品快照和每个 SKU 快照，任务项只保存三个快照 ID，避免为每个生产项重复存储整包输入；单任务最多 5000 个生产项，单企业处于 `queued` 或 `running` 的生产项合计最多 10000 个，创建和人工重试均在企业锁内检查上限。去重后的快照总量限制为 16MB，后续主数据修改不会改变已经提交的生产输入。任务项支持 `queued`、`running`、`completed`、`failed`、`cancelled` 状态、不可伪造的 `lease_token`、`lease_expires_at`、尝试次数、结果地址和错误信息。
+企业批量生产任务及任务项。创建接口要求客户端生成 `request_id`，并通过 `organization_id + request_id` 联合唯一索引保证超时重试、双击和代理重放只创建一次任务；`request_hash` 保存规范化名称、品牌、模板编号与版本、渠道交付规格和商品集合的 SHA-256 摘要，同请求号只有摘要一致时才返回已有任务，不同内容会返回冲突。每个任务还保存仅服务端可见的随机 `archive_token`、`preset_version`、创建时的 `preset_prompt` 和以 `delivery_` 为前缀嵌入的交付规格快照，分别用于隔离 Worker 归档文件命名空间、冻结本次生产模板，以及固定平台、名称、宽高、格式、质量和文件命名规则。幂等查询在商品和 SKU 展开前完成，成功响应丢失后的重试不会受后续主数据变化影响。首次创建会先锁定企业和所选商品，再在同一事务读取并展开完整 SKU 集合；没有 SKU 的商品按 SPU 创建任务项，因此并发新增 SKU 不会落在事务读取与任务写入之间。`batch_production_snapshots` 按任务分别保存一份品牌快照、每个商品快照和每个 SKU 快照，任务项只保存三个快照 ID，避免为每个生产项重复存储整包输入；单任务最多 5000 个生产项，单企业处于 `queued` 或 `running` 的生产项合计最多 10000 个，创建和人工重试均在企业锁内检查上限。去重后的快照总量限制为 16MB，后续主数据修改不会改变已经提交的生产输入。任务项支持 `queued`、`running`、`completed`、`failed`、`cancelled` 状态、不可伪造的 `lease_token`、`lease_expires_at`、尝试次数、结果地址和错误信息；完成项还保存 `pending`、`approved`、`rejected` 审核状态、批注、审核人、审核时间和主图标记。同一任务内每个商品最多一个主图；失败项或已驳回项重新生成时递增 `run_number`，清空旧结果和审核信息并解除旧文件引用，审核、重试和主图选择都提交当前生产轮次以拒绝旧页面覆盖新结果。
 
-独立 `batch-worker` 进程通过数据库条件更新原子领取，每 2 分钟续租，并把输入快照、模板、任务项以及快照引用媒体的 30 分钟私有地址发送给 `BATCH_WORKER_EXECUTOR_URL`。领取按企业最近领取游标轮转，再在企业内按创建顺序领取，避免单个大租户长期占满全局 FIFO；候选企业使用索引顺序和相关 `EXISTS` 判断，不再为每个生产项聚合、排序全局队列。领取、续租、取消、完成和超时归档统一先锁企业；`BATCH_WORKER_TENANT_CONCURRENCY` 限制单企业同时运行数量，默认 2 且不会超过 `BATCH_WORKER_CONCURRENCY`。执行器地址、执行器返回地址及结果重定向只允许 HTTPS，携带 Bearer Token 的执行请求完全禁止跟随重定向。执行请求使用“任务项 ID + `run_number`”作为 `Idempotency-Key`，同一轮租约接管保持幂等，人工重试递增轮次后允许真正重跑；执行器必须据此幂等处理，并返回 `resultUrl`、`mimeType` 和 `size`。Worker 在归档前同步确认租约，通过拒绝私网解析、限制重定向和任务 Context 控制的 HTTP 流式读取获取结果，七牛上传凭证同时强制精确大小、媒体类型和对象键，实际读取最多为声明大小加 1 字节；归档文件使用“任务随机 `archive_token` + 任务项 ID + `run_number`”确定的稳定 `storageKey`，`batch-result-` 前缀禁止从用户上传入口创建，进程在文件确认后、任务完成前退出时，租约重投递会复用已校验结果而不是重复占用企业额度。校验成功后结果写入 `organizations/{organizationId}/batch-results/`，在企业额度事务中确认文件，并让任务项保存 `result_storage_key` 和事务型文件引用。任务项只持久化固定安全错误文案，服务日志只记录任务项和错误类型，不保存外部 URL、签名参数、内部地址或上游错误原文。连续 5 次租约超时会自动失败，人工重试会开启新的尝试周期；取消会清空租约并中止仍在进行的结果读取或上传。可通过 Docker Compose `worker` profile 启动，`BATCH_WORKER_TOKEN` 用于执行器鉴权。正式环境应让 API 与 Worker 共用 MySQL 或 PostgreSQL，不使用 SQLite 承载多进程生产队列；租约和业务时间统一保存为固定九位小数的 UTC RFC3339，保证字符串条件比较与时间先后一致。
+独立 `batch-worker` 进程通过数据库条件更新原子领取，每 2 分钟续租。默认内置标准执行器读取任务创建时固化的品牌、商品和 SKU 快照，按 `preset_id` 组装固定电商模板，并复用后台默认图片模型、渠道能力和用户组计费规则；没有参考图时调用 OpenAI 兼容生图接口，存在参考图时最多读取 4 张、单张不超过 20MB 的 Kodo 私有图片并通过 `image[]` 调用编辑接口。GPT Image 的 `b64_json` 和 DALL·E 类短期 URL 结果都会在 Worker 内限制大小、识别真实图片类型并归档，生成任务从预扣开始覆盖上游调用、结果下载、Kodo 归档和任务项完成，任一阶段失败均使用原有事务规则退款。配置 `BATCH_WORKER_EXECUTOR_URL` 与 `BATCH_WORKER_TOKEN` 后可切换到外部执行器，外部执行器接收快照、模板、任务项及 30 分钟私有媒体地址，并返回 `resultUrl`、`mimeType` 和 `size`。两类执行器的结果都在 Worker 公共归档边界按任务快照执行居中裁切、缩放和 JPEG/PNG 转码；需要变换的外部结果先通过拒绝私网解析、受限重定向、声明大小和真实 MIME 校验下载，因此外部执行器不需要自行实现渠道后处理。
+
+领取按企业最近领取游标轮转，再在企业内按创建顺序领取，避免单个大租户长期占满全局 FIFO；候选企业使用索引顺序和相关 `EXISTS` 判断，不再为每个生产项聚合、排序全局队列。领取、续租、取消、完成和超时归档统一先锁企业；`BATCH_WORKER_TENANT_CONCURRENCY` 限制单企业同时运行数量，默认 2 且不会超过 `BATCH_WORKER_CONCURRENCY`。标准执行器和外部执行器均使用“任务项 ID + `run_number`”派生稳定请求号，同一轮租约接管保持幂等，人工重试递增轮次后允许真正重跑；携带 API Key 或 Bearer Token 的请求完全禁止跟随重定向。Worker 在归档前同步确认租约，外部结果和标准执行器 URL 结果均通过拒绝私网解析、限制重定向和任务 Context 控制的读取获取；七牛上传凭证强制精确大小、媒体类型和对象键。归档文件使用“任务随机 `archive_token` + 任务项 ID + `run_number`”确定的稳定 `storageKey`，`batch-result-` 前缀禁止从用户上传入口创建，进程在文件确认后、任务完成前退出时，租约重投递会复用已校验结果而不是重复占用企业额度。校验成功后结果写入 `organizations/{organizationId}/batch-results/`，在企业额度事务中确认文件，并让任务项保存 `result_storage_key` 和事务型文件引用。任务项只持久化固定安全错误文案，服务日志只记录任务项和错误类型，不保存外部 URL、签名参数、内部地址或上游错误原文。连续 5 次租约超时会自动失败，人工重试会开启新的尝试周期；取消会清空租约并中止仍在进行的结果读取或上传。可通过 Docker Compose `worker` profile 启动；正式环境应让 API 与 Worker 共用 MySQL 或 PostgreSQL，不使用 SQLite 承载多进程生产队列。租约和业务时间统一保存为固定九位小数的 UTC RFC3339，保证字符串条件比较与时间先后一致。
 
 ### users
 
@@ -285,15 +293,17 @@ description: 当前后端主要数据表与字段说明
 
 ### credit_logs
 
-用户算力点变更流水表。当前记录后台调整、模型消费与返还、兑换码、签到和新用户赠送。
+个人与企业共享算力的统一变更流水表。当前记录后台调整、模型消费与返还、兑换码、签到、新用户赠送及个人余额转入企业共享池。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `id` | string | 主键 |
 | `user_id` | string | 关联用户 ID |
+| `organization_id` | string | 关联企业 ID；账号级个人流水可为空 |
+| `credit_source` | string | 本笔账本余额所属来源：`personal` 或 `organization` |
 | `type` | string | 额度变动类型 |
 | `amount` | number | 本次变动数量，增加为正，扣减为负 |
-| `balance` | number | 变动后的用户算力点余额 |
+| `balance` | number | 变动后对应来源的算力余额 |
 | `related_id` | string | 关联业务 ID，可为空 |
 | `remark` | string | 备注 |
 | `extra` | json | 扩展信息 |
@@ -309,6 +319,8 @@ description: 当前后端主要数据表与字段说明
 | `redeem_code` | 兑换码充值 |
 | `daily_check_in` | 每日签到奖励 |
 | `new_user_reward` | 新用户注册奖励 |
+| `organization_transfer_out` | 个人余额转入企业共享池的个人侧扣减 |
+| `organization_transfer_in` | 个人余额转入企业共享池的企业侧增加 |
 
 ### generation_tasks
 
@@ -319,6 +331,7 @@ description: 当前后端主要数据表与字段说明
 | `id` | string | 主键 |
 | `organization_id` | string | 当前企业 ID |
 | `user_id` | string | 发起任务的用户 ID |
+| `request_id` | string | 请求幂等编号；与企业、用户组成唯一索引 |
 | `model` | string | 前台请求的对外模型 |
 | `upstream_model` | string | 实际发送给上游的模型 |
 | `channel_name` | string | 命中的后台渠道名称 |
@@ -328,11 +341,14 @@ description: 当前后端主要数据表与字段说明
 | `resolution_tier` | string | 命中的分辨率档 |
 | `quantity` | number | 计费数量，例如图片张数或视频秒数 |
 | `credits` | number | 本次预扣算力点 |
+| `credit_source` | string | 创建任务时固化的扣费来源：`personal` 或 `organization` |
 | `status` | string | 状态：`running`、`success`、`failed` |
 | `error_message` | text | 失败原因摘要 |
 | `duration_ms` | number | 后端请求耗时 |
 | `created_at` | string | 创建时间 |
 | `updated_at` | string | 更新时间 |
+
+创建任务时会按企业当时的 `credit_mode` 固化 `credit_source`。`generation_tasks`、个人或企业余额预扣和 `ai_consume` 流水在同一事务中提交，任一步失败都会整体回滚；共享模式同时检查企业余额与月度预算，消费流水的 `related_id` 保存任务 ID。客户端可通过 `Idempotency-Key` 提交稳定请求编号，同一企业、用户和请求编号只能创建一个任务，重复请求不会再次扣费。任务失败时，失败终态、原扣费来源余额返还和 `ai_refund` 流水同样在一个事务中提交，并只允许 `running` 任务进入失败终态，因此切换扣费模式或重复失败回调不会退错账户或重复退款。同月退款减少当月用量，跨月退款只增加共享余额。
 
 当前任务表记录后端代理请求本身的状态；视频类异步上游的后续轮询结果仍由前端和上游任务接口决定，后续如需要完整任务生命周期，可继续扩展为服务端轮询和结果文件归档。
 

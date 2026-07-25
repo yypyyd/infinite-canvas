@@ -36,6 +36,8 @@ export type AdminUserListResponse = {
 export type AdminCreditLog = {
     id: string;
     userId: string;
+    organizationId: string;
+    creditSource: "personal" | "organization";
     type: string;
     amount: number;
     balance: number;
@@ -122,6 +124,28 @@ export type AdminDashboard = {
     recentFailures: AdminGenerationTask[];
 };
 
+export type AdminDataConsistencyIssue = {
+    id: string;
+    category: "media_reference" | "object_storage" | "generation_record" | "batch_result" | "credit_ledger";
+    code: string;
+    severity: "warning" | "error";
+    organizationId: string;
+    resourceType: string;
+    resourceId: string;
+    message: string;
+    repairAction?: string;
+};
+
+export type AdminDataConsistencyReport = {
+    checkedAt: string;
+    storageStatus: "ok" | "unconfigured" | "error";
+    totalIssues: number;
+    repairable: number;
+    truncated: boolean;
+    summary: Record<AdminDataConsistencyIssue["category"], number>;
+    issues: AdminDataConsistencyIssue[];
+};
+
 export async function fetchAdminUsers(token: string, query: AdminUserQuery = {}) {
     return apiGet<AdminUserListResponse>("/api/admin/users", compactApiParams(query), token);
 }
@@ -153,6 +177,9 @@ export async function deleteAdminCreditLog(token: string, id: string) {
 export async function fetchAdminDashboard(token: string) {
     return apiGet<AdminDashboard>("/api/admin/dashboard", undefined, token);
 }
+
+export const fetchAdminDataConsistency = (token: string) => apiGet<AdminDataConsistencyReport>("/api/admin/operations/data-consistency", undefined, token);
+export const repairAdminDataConsistency = (token: string, issueId: string) => apiPost<boolean>("/api/admin/operations/data-consistency/repair", { issueId }, token);
 
 export async function fetchAdminGenerationTasks(token: string, query: AdminGenerationTaskQuery = {}) {
     return apiGet<AdminGenerationTaskListResponse>("/api/admin/generation-tasks", compactApiParams(query), token);
@@ -373,6 +400,17 @@ export type AdminPrivateSettings = {
         smtpFromName: string;
         smtpSecurity: "ssl" | "starttls" | "none";
         passwordConfigured: boolean;
+    };
+    operationsAlerts: {
+        enabled: boolean;
+        batchQueuedThreshold: number;
+        batchExpiredLeasesThreshold: number;
+        emailPendingThreshold: number;
+        emailFailedThreshold: number;
+        emailExpiredLeasesThreshold: number;
+        objectDeletionPendingThreshold: number;
+        objectDeletionFailedThreshold: number;
+        objectDeletionExpiredLeasesThreshold: number;
     };
 };
 

@@ -107,46 +107,6 @@ func CreateUserWithCreditLog(user model.User, log *model.CreditLog) (model.User,
 	return user, err
 }
 
-func ConsumeUserCredits(id string, credits int, now string) (model.User, bool, error) {
-	db, err := DB()
-	if err != nil {
-		return model.User{}, false, err
-	}
-	if credits <= 0 {
-		user, ok, err := GetUserByID(id)
-		return user, ok, err
-	}
-	tx := db.Model(&model.User{}).Where("id = ? AND credits >= ?", id, credits).Updates(map[string]any{
-		"credits":    gorm.Expr("credits - ?", credits),
-		"updated_at": now,
-	})
-	if tx.Error != nil {
-		return model.User{}, false, tx.Error
-	}
-	user, ok, err := GetUserByID(id)
-	return user, ok && tx.RowsAffected > 0, err
-}
-
-func RefundUserCredits(id string, credits int, now string) (model.User, bool, error) {
-	db, err := DB()
-	if err != nil {
-		return model.User{}, false, err
-	}
-	if credits <= 0 {
-		user, ok, err := GetUserByID(id)
-		return user, ok, err
-	}
-	tx := db.Model(&model.User{}).Where("id = ?", id).Updates(map[string]any{
-		"credits":    gorm.Expr("credits + ?", credits),
-		"updated_at": now,
-	})
-	if tx.Error != nil {
-		return model.User{}, false, tx.Error
-	}
-	user, ok, err := GetUserByID(id)
-	return user, ok && tx.RowsAffected > 0, err
-}
-
 // SaveCreditLog 保存算力点变更流水。
 func SaveCreditLog(log model.CreditLog) (model.CreditLog, error) {
 	db, err := DB()

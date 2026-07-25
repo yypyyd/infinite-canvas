@@ -1,21 +1,20 @@
 package router
 
 import (
-	"net/http"
-
 	"github.com/basketikun/infinite-canvas/handler"
 	"github.com/basketikun/infinite-canvas/middleware"
 	"github.com/gin-gonic/gin"
 )
 
 func New() *gin.Engine {
-	router := gin.Default()
+	router := gin.New()
+	router.Use(middleware.RequestObservability, gin.Recovery())
 	router.RedirectTrailingSlash = false
 	_ = router.SetTrustedProxies(nil)
 	api := router.Group("/api")
-	api.GET("/health", func(c *gin.Context) {
-		c.String(http.StatusOK, "ok")
-	})
+	api.GET("/health", gin.WrapF(handler.Liveness))
+	api.GET("/health/live", gin.WrapF(handler.Liveness))
+	api.GET("/health/ready", gin.WrapF(handler.Readiness))
 	api.POST("/auth/register", gin.WrapF(handler.Register))
 	api.POST("/auth/email-code", gin.WrapF(handler.SendRegistrationEmailCode))
 	api.POST("/auth/login", gin.WrapF(handler.Login))
@@ -43,6 +42,8 @@ func New() *gin.Engine {
 	commerce.GET("/workspace", gin.WrapF(handler.CommerceWorkspace))
 	commerce.POST("/organizations", gin.WrapF(handler.CreateOrganization))
 	commerce.POST("/organizations/current", gin.WrapF(handler.UpdateOrganization))
+	commerce.POST("/organization-credit-settings", gin.WrapF(handler.UpdateOrganizationCreditSettings))
+	commerce.POST("/organization-credits/transfer", gin.WrapF(handler.TransferOrganizationCredits))
 	commerce.POST("/organizations/switch", gin.WrapF(handler.SwitchOrganization))
 	commerce.GET("/invitations", gin.WrapF(handler.PendingOrganizationInvitations))
 	commerce.GET("/organization-invitations", gin.WrapF(handler.CurrentOrganizationInvitations))
@@ -62,9 +63,18 @@ func New() *gin.Engine {
 	commerce.GET("/products/:id/skus", func(c *gin.Context) { handler.CommerceProductSKUs(c.Writer, c.Request, c.Param("id")) })
 	commerce.POST("/skus", gin.WrapF(handler.SaveCommerceProductSKU))
 	commerce.DELETE("/skus/:id", func(c *gin.Context) { handler.DeleteCommerceProductSKU(c.Writer, c.Request, c.Param("id")) })
+	commerce.GET("/production-templates", gin.WrapF(handler.CommerceProductionTemplates))
+	commerce.POST("/production-templates", gin.WrapF(handler.SaveCommerceProductionTemplate))
+	commerce.GET("/production-templates/:id/versions", func(c *gin.Context) { handler.CommerceProductionTemplateVersions(c.Writer, c.Request, c.Param("id")) })
+	commerce.POST("/production-templates/preview", gin.WrapF(handler.PreviewCommerceProductionPrompt))
+	commerce.GET("/production-delivery-specs", gin.WrapF(handler.CommerceProductionDeliverySpecs))
 	commerce.GET("/batch-jobs", gin.WrapF(handler.CommerceBatchJobs))
 	commerce.POST("/batch-jobs", gin.WrapF(handler.CreateCommerceBatchJob))
 	commerce.GET("/batch-jobs/:id/items", func(c *gin.Context) { handler.CommerceBatchItems(c.Writer, c.Request, c.Param("id")) })
+	commerce.GET("/batch-jobs/:id/archive", func(c *gin.Context) { handler.DownloadCommerceBatchArchive(c.Writer, c.Request, c.Param("id")) })
+	commerce.POST("/batch-jobs/:id/items/:itemId/review", func(c *gin.Context) { handler.ReviewCommerceBatchItem(c.Writer, c.Request, c.Param("id"), c.Param("itemId")) })
+	commerce.POST("/batch-jobs/:id/items/:itemId/retry", func(c *gin.Context) { handler.RetryCommerceBatchItem(c.Writer, c.Request, c.Param("id"), c.Param("itemId")) })
+	commerce.POST("/batch-jobs/:id/items/:itemId/primary", func(c *gin.Context) { handler.SetCommerceBatchItemPrimary(c.Writer, c.Request, c.Param("id"), c.Param("itemId")) })
 	commerce.POST("/batch-jobs/:id/cancel", func(c *gin.Context) { handler.CancelCommerceBatchJob(c.Writer, c.Request, c.Param("id")) })
 	commerce.POST("/batch-jobs/:id/retry", func(c *gin.Context) { handler.RetryCommerceBatchJob(c.Writer, c.Request, c.Param("id")) })
 	commerce.GET("/audit-logs", gin.WrapF(handler.CommerceAuditLogs))
@@ -104,6 +114,9 @@ func New() *gin.Engine {
 	admin := api.Group("/admin", middleware.AdminAuth)
 	admin.GET("/users", gin.WrapF(handler.AdminUsers))
 	admin.GET("/dashboard", gin.WrapF(handler.AdminDashboard))
+	admin.GET("/operations/health", gin.WrapF(handler.AdminOperationsHealth))
+	admin.GET("/operations/data-consistency", gin.WrapF(handler.AdminDataConsistency))
+	admin.POST("/operations/data-consistency/repair", gin.WrapF(handler.AdminRepairDataConsistency))
 	admin.GET("/generation-tasks", gin.WrapF(handler.AdminGenerationTasks))
 	admin.POST("/users", gin.WrapF(handler.AdminSaveUser))
 	admin.POST("/users/:id/credits", func(c *gin.Context) {

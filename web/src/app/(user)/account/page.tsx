@@ -36,6 +36,8 @@ const creditTypeMeta: Record<string, { label: string; color?: string }> = {
     redeem_code: { label: "兑换码充值", color: "green" },
     daily_check_in: { label: "每日签到", color: "gold" },
     new_user_reward: { label: "新用户赠送", color: "purple" },
+    organization_transfer_out: { label: "转入企业", color: "orange" },
+    organization_transfer_in: { label: "企业收款", color: "geekblue" },
 };
 const modalityLabels: Record<string, string> = { image: "图片", video: "视频", text: "文本", audio: "音频" };
 
@@ -109,7 +111,7 @@ function AccountContent() {
                         </Button>
                     </div>
                     <div className="relative grid grid-cols-1 border-t border-border sm:grid-cols-3 sm:divide-x sm:divide-border">
-                        <AccountMetric icon={<Coins />} label="当前算力" value={user.credits.toLocaleString()} suffix="点" />
+                        <AccountMetric icon={<Coins />} label={user.creditMode === "shared" ? "企业共享算力" : "个人算力"} value={(user.effectiveCredits ?? user.credits).toLocaleString()} suffix="点" />
                         <AccountMetric icon={<History />} label="生成记录" value={historyCountQuery.isLoading ? "—" : String(historyCountQuery.data || 0)} suffix="条" />
                         <AccountMetric icon={<Clock3 />} label="加入时间" value={user.createdAt ? dayjs(user.createdAt).format("YYYY.MM.DD") : "—"} />
                     </div>
@@ -604,6 +606,7 @@ function CreditsSection() {
     const columns = useMemo<TableColumnsType<CreditLog>>(() => [
         { title: "时间", dataIndex: "createdAt", width: 170, render: (value: string) => <span className="text-muted-foreground">{dayjs(value).format("YYYY-MM-DD HH:mm")}</span> },
         { title: "类型", dataIndex: "type", width: 130, render: (value: string) => <CreditTypeTag type={value} /> },
+        { title: "账本", dataIndex: "creditSource", width: 90, render: (value: CreditLog["creditSource"]) => <Tag color={value === "organization" ? "blue" : undefined}>{value === "organization" ? "企业" : "个人"}</Tag> },
         { title: "说明", dataIndex: "remark", render: (_: string, item) => { const extra = creditExtra(item.extra); return <div><div>{item.remark || "—"}</div>{extra.model ? <div className="mt-1 text-xs text-muted-foreground">{extra.model}</div> : null}</div>; } },
         { title: "变动", dataIndex: "amount", width: 110, align: "right", render: (value: number) => <Typography.Text strong type={value >= 0 ? "success" : "danger"}>{value > 0 ? "+" : ""}{value.toLocaleString()}</Typography.Text> },
         { title: "余额", dataIndex: "balance", width: 110, align: "right", render: (value: number) => value.toLocaleString() },
@@ -639,7 +642,7 @@ function CreditsSection() {
 
             <div className="my-5 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-muted px-4 py-3">
                 <span className="text-sm text-muted-foreground">共 {total.toLocaleString()} 条账户流水</span>
-                <span className="inline-flex items-center gap-1.5 font-semibold tabular-nums"><CreditSymbol />{credits.toLocaleString()}<span className="text-xs font-normal text-muted-foreground">当前余额</span></span>
+                <span className="inline-flex items-center gap-1.5 font-semibold tabular-nums"><CreditSymbol />{credits.toLocaleString()}<span className="text-xs font-normal text-muted-foreground">个人余额</span></span>
             </div>
 
             <div className="hidden md:block">
@@ -663,7 +666,7 @@ function CreditLogCard({ item }: { item: CreditLog }) {
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                 <span>{dayjs(item.createdAt).format("YYYY-MM-DD HH:mm")}</span>
-                <span className="text-right">余额 {item.balance.toLocaleString()}</span>
+                <span className="text-right">{item.creditSource === "organization" ? "企业" : "个人"}余额 {item.balance.toLocaleString()}</span>
                 {extra.model ? <span className="col-span-2 truncate">模型 {extra.model}</span> : null}
             </div>
         </article>

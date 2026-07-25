@@ -9,6 +9,7 @@ import { saveAs } from "file-saver";
 import { requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
 import { requestVideoGeneration, storeGeneratedVideo } from "@/services/api/video";
+import { workspaceFileUrl } from "@/services/api/workspace";
 import { defaultConfig, type AiConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { resolveImageUrl, uploadImage, type UploadedImage } from "@/services/image-storage";
 import { resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
@@ -27,6 +28,8 @@ import { NODE_DEFAULT_SIZE, getNodeSpec } from "../constants";
 import { ActiveConnectionPath, ConnectionPath } from "../components/canvas-connections";
 import { CanvasConfigComposer } from "../components/canvas-config-composer";
 import { CanvasConfigNodePanel } from "../components/canvas-config-node-panel";
+import { CanvasCommercePackagePanel } from "../components/canvas-commerce-package-panel";
+import { buildCommercePackageBlueprint, type CommercePackageRequest } from "../components/canvas-commerce-package";
 import { CanvasAssistantPanel } from "../components/canvas-assistant-panel";
 import { CanvasNodeContextMenu } from "../components/canvas-context-menu";
 import { CanvasNodeAngleDialog, type CanvasImageAngleParams } from "../components/canvas-node-angle-dialog";
@@ -288,6 +291,7 @@ function InfiniteCanvasPage() {
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
     const [assetPickerOpen, setAssetPickerOpen] = useState(false);
+    const [commercePackageOpen, setCommercePackageOpen] = useState(false);
     const [assetPickerTab, setAssetPickerTab] = useState<AssetPickerTab>("my-assets");
     const [projectLoaded, setProjectLoaded] = useState(false);
     const [toolbarNodeId, setToolbarNodeId] = useState<string | null>(null);
@@ -2327,6 +2331,55 @@ function InfiniteCanvasPage() {
         [clearRunningNodeId, effectiveConfig, finishGenerationRequest, managedModels, openConfigDialog, startGenerationRequest],
     );
 
+    const createCommercePackage = useCallback(
+        async (request: CommercePackageRequest) => {
+            const selectedReferences = request.useSelectedImages
+                ? nodesRef.current.filter((node) => selectedNodeIdsRef.current.has(node.id) && node.type === CanvasNodeType.Image && node.metadata?.content).slice(0, 4)
+                : [];
+            const center = getCanvasCenter();
+            const origin = selectedReferences.length
+                ? { x: Math.max(...selectedReferences.map((node) => node.position.x + node.width)) + 180, y: Math.min(...selectedReferences.map((node) => node.position.y)) }
+                : { x: center.x - 400, y: center.y - 120 };
+            const skuReferenceNodes: CanvasNodeData[] = selectedReferences.length
+                ? []
+                : (request.sku?.imageStorageKeys || []).slice(0, 4).map((storageKey, index) => ({
+                      id: nanoid(),
+                      type: CanvasNodeType.Image,
+                      title: `${request.sku?.name || request.product.name} · 参考图 ${index + 1}`,
+                      position: { x: origin.x - 260, y: origin.y + index * 150 },
+                      width: 180,
+                      height: 120,
+                      metadata: { content: workspaceFileUrl(storageKey), storageKey, status: NODE_STATUS_SUCCESS, mimeType: "image/*" },
+                  }));
+            const referenceNodeIds = selectedReferences.length ? selectedReferences.map((node) => node.id) : skuReferenceNodes.map((node) => node.id);
+            const blueprint = buildCommercePackageBlueprint(request, origin, effectiveConfig, referenceNodeIds);
+            const nextNodes = [...nodesRef.current, ...skuReferenceNodes, ...blueprint.nodes];
+            const nextConnections = [...connectionsRef.current, ...blueprint.connections];
+            nodesRef.current = nextNodes;
+            connectionsRef.current = nextConnections;
+            setNodes(nextNodes);
+            setConnections(nextConnections);
+            setSelectedNodeIds(new Set(blueprint.rootIds));
+            setSelectedConnectionId(null);
+            setDialogNodeId(null);
+            setCommercePackageOpen(false);
+
+            if (!request.generateNow) {
+                message.success(`已编排 ${blueprint.tasks.length} 个素材生产节点`);
+                return;
+            }
+            message.success(`素材包已建立，开始生成 ${blueprint.tasks.length} 项内容`);
+            void (async () => {
+                for (const task of blueprint.tasks) {
+                    if (!nodesRef.current.some((node) => node.id === task.nodeId)) continue;
+                    await handleGenerateNode(task.nodeId, task.mode, task.prompt);
+                }
+                message.success("本次素材包生成流程已完成");
+            })();
+        },
+        [effectiveConfig, getCanvasCenter, handleGenerateNode, message],
+    );
+
     const handleRetryNode = useCallback(
         async (node: CanvasNodeData) => {
             const sourceNode = findRetrySourceNode(node.id, nodesRef.current, connectionsRef.current) || node;
@@ -2765,6 +2818,14 @@ function InfiniteCanvasPage() {
                         setAssetPickerTab("my-assets");
                         setAssetPickerOpen(true);
                     }}
+                    onOpenCommercePackage={() => setCommercePackageOpen(true)}
+                />
+
+                <CanvasCommercePackagePanel
+                    open={commercePackageOpen}
+                    selectedImageCount={nodes.filter((node) => selectedNodeIds.has(node.id) && node.type === CanvasNodeType.Image && node.metadata?.content).length}
+                    onClose={() => setCommercePackageOpen(false)}
+                    onCreate={createCommercePackage}
                 />
 
                 {isMiniMapOpen ? <Minimap nodes={nodes} viewport={viewport} viewportSize={size} onViewportChange={setViewport} /> : null}
@@ -2774,7 +2835,18 @@ function InfiniteCanvasPage() {
                 {contextMenu ? (
                     <CanvasNodeContextMenu
                         menu={contextMenu}
+                        isSelected={contextMenu.type === "node" && selectedNodeIds.has(contextMenu.nodeId)}
                         onClose={() => setContextMenu(null)}
+                        onToggleSelection={() => {
+                            if (contextMenu.type !== "node") return;
+                            setSelectedNodeIds((current) => {
+                                const next = new Set(current);
+                                if (next.has(contextMenu.nodeId)) next.delete(contextMenu.nodeId); else next.add(contextMenu.nodeId);
+                                return next;
+                            });
+                            setSelectedConnectionId(null);
+                            setContextMenu(null);
+                        }}
                         onDuplicate={() => {
                             if (contextMenu.type !== "node") return;
                             duplicateNode(contextMenu.nodeId);

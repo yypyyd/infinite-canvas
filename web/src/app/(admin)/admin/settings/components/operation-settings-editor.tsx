@@ -1,6 +1,6 @@
 "use client";
 
-import { BellRing, CalendarCheck2, ShieldBan, UserPlus } from "lucide-react";
+import { BellRing, CalendarCheck2, ListTodo, MailWarning, ShieldBan, Trash2, UserPlus } from "lucide-react";
 import dayjs from "dayjs";
 import { Alert, Button, Card, Col, DatePicker, Empty, Flex, Form, Input, InputNumber, Row, Select, Space, Switch, Tag, Typography } from "antd";
 
@@ -10,6 +10,38 @@ const announcementTypes = [
     { label: "提醒", value: "warning", color: "orange" },
     { label: "重要", value: "error", color: "red" },
 ];
+
+const operationsAlertGroups = [
+    {
+        key: "batch",
+        title: "批量生产队列",
+        icon: <ListTodo className="size-4" />,
+        fields: [
+            { name: "batchQueuedThreshold", label: "待处理项", extra: "排队中的生产项数量" },
+            { name: "batchExpiredLeasesThreshold", label: "过期租约", extra: "运行中但租约已过期的生产项" },
+        ],
+    },
+    {
+        key: "email",
+        title: "邀请邮件 Outbox",
+        icon: <MailWarning className="size-4" />,
+        fields: [
+            { name: "emailPendingThreshold", label: "待发送邮件", extra: "尚未被 Worker 领取的邀请邮件" },
+            { name: "emailFailedThreshold", label: "发送失败", extra: "已进入失败终态的邀请邮件" },
+            { name: "emailExpiredLeasesThreshold", label: "过期租约", extra: "处理中但租约已过期的邀请邮件" },
+        ],
+    },
+    {
+        key: "objects",
+        title: "对象删除 Outbox",
+        icon: <Trash2 className="size-4" />,
+        fields: [
+            { name: "objectDeletionPendingThreshold", label: "待删除对象", extra: "尚未被 Worker 领取的对象删除任务" },
+            { name: "objectDeletionFailedThreshold", label: "删除失败", extra: "已进入失败终态的对象删除任务" },
+            { name: "objectDeletionExpiredLeasesThreshold", label: "过期租约", extra: "处理中但租约已过期的对象删除任务" },
+        ],
+    },
+] as const;
 
 export function OperationSettingsEditor() {
     const checkInReward = Form.useWatch(["public", "checkIn", "reward"]) === true;
@@ -91,6 +123,35 @@ export function OperationSettingsEditor() {
                         </Flex>
                     )}
                 </Form.List>
+            </Card>
+        </Flex>
+    );
+}
+
+export function OperationsAlertSettingsEditor() {
+    const enabled = Form.useWatch(["private", "operationsAlerts", "enabled"]) !== false;
+
+    return (
+        <Flex vertical gap={16}>
+            <Alert type="info" showIcon message="达到阈值时管理员运维摘要会标记为 degraded；设置为 0 可单独关闭某项告警，readiness 不受影响。" />
+            <Card
+                size="small"
+                title="积压阈值"
+                extra={<Form.Item name={["private", "operationsAlerts", "enabled"]} noStyle valuePropName="checked"><Switch checkedChildren="已开启" unCheckedChildren="已关闭" /></Form.Item>}
+            >
+                <Row gutter={[16, 16]}>
+                    {operationsAlertGroups.map((group) => (
+                        <Col key={group.key} xs={24} xl={8}>
+                            <Card size="small" type="inner" title={<Space>{group.icon}{group.title}</Space>} className="h-full">
+                                {group.fields.map((field) => (
+                                    <Form.Item key={field.name} name={["private", "operationsAlerts", field.name]} label={field.label} extra={field.extra}>
+                                        <InputNumber min={0} precision={0} className="!w-full" disabled={!enabled} addonAfter="条" />
+                                    </Form.Item>
+                                ))}
+                            </Card>
+                        </Col>
+                    ))}
+                </Row>
             </Card>
         </Flex>
     );

@@ -24,7 +24,7 @@ func Fail(w http.ResponseWriter, msg string) {
 }
 
 func FailError(w http.ResponseWriter, err error) {
-	log.Printf("request failed: %v", err)
+	log.Printf("request failed request_id=%q: %v", w.Header().Get("X-Request-ID"), err)
 	if safe, ok := err.(interface{ SafeMessage() string }); ok {
 		Fail(w, safe.SafeMessage())
 		return
@@ -34,6 +34,12 @@ func FailError(w http.ResponseWriter, err error) {
 
 func writeJSON(w http.ResponseWriter, value any) {
 	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(value)
+}
+
+func writeJSONStatus(w http.ResponseWriter, status int, value any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)
 }
 

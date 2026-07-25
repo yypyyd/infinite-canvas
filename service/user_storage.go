@@ -3,7 +3,6 @@ package service
 import (
 	"encoding/json"
 	"errors"
-	"log"
 	"path"
 	"regexp"
 	"strings"
@@ -214,30 +213,38 @@ func cleanupPendingUserObjects() error {
 	for index := 0; index < 50; index++ {
 		claimedAt := time.Now().UTC()
 		item, claimed, err := repository.ClaimUserObjectDeletion(claimedAt.Format(timestampLayout), claimedAt.Add(2*time.Minute).Format(timestampLayout), newID("delete-lease"))
-		if err != nil { return err }
+		if err != nil { logWorkerError("object_deletion", "item_claim_failed", err); return err }
 		if !claimed { return nil }
+		logAttrs := []any{"organization_id", item.OrganizationID, "deletion_id", item.ID, "attempts", item.Attempts}
+		logWorkerInfo("object_deletion", "deletion_started", logAttrs...)
 		deletionErr := qiniuBucketManager().Delete(config.Cfg.QiniuBucket, item.ObjectKey)
 		var qiniuError *client.ErrorInfo
 		if errors.As(deletionErr, &qiniuError) && qiniuError.Code == 612 { deletionErr = nil }
 		message := ""
-		if deletionErr != nil { message = "对象存储删除失败"; log.Printf("delete workspace object failed deletion=%s error_type=%T", item.ID, deletionErr) }
+		if deletionErr != nil { message = "对象存储删除失败" }
 		delay := time.Minute * time.Duration(1<<min(item.Attempts-1, 6))
-		if err := repository.FinishUserObjectDeletion(item, deletionErr == nil, message, time.Now().UTC().Add(delay).Format(timestampLayout), now()); err != nil { return err }
+		if err := repository.FinishUserObjectDeletion(item, deletionErr == nil, message, time.Now().UTC().Add(delay).Format(timestampLayout), now()); err != nil { logWorkerError("object_deletion", "deletion_finalize_failed", err, logAttrs...); return err }
+		if deletionErr != nil {
+			logWorkerError("object_deletion", "deletion_failed", deletionErr, logAttrs...)
+		} else {
+			logWorkerInfo("object_deletion", "deletion_completed", logAttrs...)
+		}
 	}
 	return nil
 }
 
 func StartUserFileMaintenanceWorker() {
+	logWorkerInfo("file_maintenance", "worker_started")
 	go func() {
 		for {
 			timestamp := now()
 			cutoff := time.Now().UTC().Add(-24*time.Hour).Format(timestampLayout)
 			organizationIDs, err := repository.ListUserFileMaintenanceOrganizations(timestamp, cutoff)
-			if err != nil { log.Printf("list workspace file maintenance organizations failed: %v", err) }
+			if err != nil { logWorkerError("file_maintenance", "organization_list_failed", err) }
 			for _, organizationID := range organizationIDs {
-				if err := cleanupUserWorkspaceFiles(organizationID); err != nil { log.Printf("cleanup workspace files failed organization=%s err=%v", organizationID, err) }
+				if err := cleanupUserWorkspaceFiles(organizationID); err != nil { logWorkerError("file_maintenance", "organization_cleanup_failed", err, "organization_id", organizationID) }
 			}
-			if err := cleanupPendingUserObjects(); err != nil { log.Printf("cleanup workspace objects failed: %v", err) }
+			_ = cleanupPendingUserObjects()
 			time.Sleep(time.Minute)
 		}
 	}()

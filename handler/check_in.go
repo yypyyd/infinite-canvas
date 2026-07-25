@@ -32,5 +32,7 @@ func CheckIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result.User.OrganizationID = user.OrganizationID
+	result.User, err = service.ApplyEffectiveCredits(result.User)
+	if err != nil { FailError(w, err); return }
 	OK(w, result)
 }

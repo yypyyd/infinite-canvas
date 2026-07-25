@@ -24,7 +24,9 @@ COPY router ./router
 COPY service ./service
 COPY cmd ./cmd
 COPY main.go ./
-RUN go build -o /server . && go build -o /batch-worker ./cmd/batch-worker
+RUN go build -o /server . \
+ && go build -o /batch-worker ./cmd/batch-worker \
+ && go build -o /ops-backup ./cmd/ops-backup
 
 # 运行镜像：Next.js 对外监听 3000，Go 只在容器内部监听 8080。
 FROM node:22-bookworm-slim
@@ -34,6 +36,7 @@ COPY VERSION /app/VERSION
 COPY CHANGELOG.md /app/CHANGELOG.md
 COPY --from=api-build /server /app/server
 COPY --from=api-build /batch-worker /app/batch-worker
+COPY --from=api-build /ops-backup /app/ops-backup
 COPY --from=web-build /app/web/public /app/web/public
 COPY --from=web-build /app/web/.next/standalone /app/web
 COPY --from=web-build /app/web/.next/static /app/web/.next/static
@@ -41,7 +44,7 @@ ENV NODE_ENV=production
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
 ENV PROMPT_DATA_DIR=/app/data/prompts
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates default-mysql-client postgresql-client && rm -rf /var/lib/apt/lists/*
 RUN mkdir -p /app/data/prompts
 
 EXPOSE 3000

@@ -14,7 +14,7 @@ function aiApiUrl(_config: AiConfig, path: string) {
 
 function aiHeaders(_config: AiConfig) {
     const token = useUserStore.getState().token;
-    return { ...authorizationHeaders(token), ...organizationHeaders(), "Content-Type": "application/json" };
+    return { ...authorizationHeaders(token), ...organizationHeaders(), "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() };
 }
 
 function refreshRemoteUser(_config: AiConfig) {

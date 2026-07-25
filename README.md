@@ -6,9 +6,9 @@
 
 <p align="center">
   <a href="https://linux.do/"><img src="https://img.shields.io/badge/Linux.do-Community-2b6de8?style=flat-square" alt="Linux.do"></a>
-  <a href="https://render.com/deploy?repo=https://github.com/basketikun/infinite-canvas"><img src="https://img.shields.io/badge/Render-Deploy-46e3b7?style=flat-square&logo=render&logoColor=111111" alt="Deploy to Render"></a>
-  <a href="https://github.com/basketikun/infinite-canvas"><img src="https://img.shields.io/github/stars/basketikun/infinite-canvas?style=flat-square&logo=github" alt="GitHub stars"></a>
-  <a href="VERSION"><img src="https://img.shields.io/badge/version-v0.2.0-2563eb?style=flat-square" alt="Version"></a>
+  <a href="https://render.com/deploy?repo=https://github.com/yypyyd/infinite-canvas"><img src="https://img.shields.io/badge/Render-Deploy-46e3b7?style=flat-square&logo=render&logoColor=111111" alt="Deploy to Render"></a>
+  <a href="https://github.com/yypyyd/infinite-canvas"><img src="https://img.shields.io/github/stars/yypyyd/infinite-canvas?style=flat-square&logo=github" alt="GitHub stars"></a>
+  <a href="VERSION"><img src="https://img.shields.io/badge/version-v0.2.5-2563eb?style=flat-square" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-f97316?style=flat-square" alt="License"></a>
   <a href="https://www.docker.com/"><img src="https://img.shields.io/badge/Docker-ready-2496ed?style=flat-square&logo=docker&logoColor=white" alt="Docker ready"></a>
   <a href="https://nextjs.org/"><img src="https://img.shields.io/badge/Next.js-16.2-000000?style=flat-square&logo=nextdotjs" alt="Next.js"></a>
@@ -31,7 +31,7 @@
 - 画布助手：围绕选中节点和上游节点对话、生图，并把结果插回画布。
 - 提示词库：抓取多个 GitHub 开源项目，按案例整理数百个图片提示词。
 
-完整功能说明见 [docs/features.md](docs2/features.md)。
+完整功能说明见[功能介绍](docs/content/docs/overview/features.mdx)。
 
 如果你在为担心没有合适的生图API来发愁，可以查看该免费生图项目：[chatgpt2api](https://github.com/basketikun/chatgpt2api)
 
@@ -43,10 +43,10 @@
 
 ## 快速开始
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/basketikun/infinite-canvas)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/yypyyd/infinite-canvas)
 
 ```bash
-git clone git@github.com:basketikun/infinite-canvas.git
+git clone git@github.com:yypyyd/infinite-canvas.git
 cd infinite-canvas
 cp .env.example .env
 # 修改默认账号密码等信息
@@ -83,14 +83,17 @@ docker compose -f docker-compose.local.yml up -d --build
 
 ## 文档
 
-- [功能介绍](docs2/features.md)
-- [部署说明](docs2/deployment.md)
-- [画布节点操作手册](docs2/canvas-node-manual.md)
-- [画布快捷键](docs2/canvas-shortcuts.md)
-- [待办事项](docs2/todo.md)
-- [后端数据库说明](docs2/backend-database.md)
-- [系统配置数据结构](docs2/system-settings.md)
-- [接口响应约定](docs2/api-response.md)
+- [功能介绍](docs/content/docs/overview/features.mdx)
+- [Docker 部署](docs/content/docs/overview/docker.mdx)
+- [备份与恢复](docs/content/docs/overview/backup-restore.mdx)
+- [Render 部署](docs/content/docs/overview/render.mdx)
+- [画布节点操作手册](docs/content/docs/canvas/canvas-node-manual.mdx)
+- [画布快捷键](docs/content/docs/canvas/canvas-shortcuts.mdx)
+- [待办事项](docs/content/docs/progress/todo.mdx)
+- [待测试事项](docs/content/docs/progress/pending-test.mdx)
+- [后端数据库说明](docs/content/docs/backend/backend-database.mdx)
+- [系统配置数据结构](docs/content/docs/backend/system-settings.mdx)
+- [接口响应约定](docs/content/docs/backend/api-response.mdx)
 
 ## 赞助支持
 
@@ -121,10 +124,10 @@ docker compose -f docker-compose.local.yml up -d --build
 
 ## Star History
 
-<a href="https://www.star-history.com/?repos=basketikun%2Finfinite-canvas&type=date&legend=top-left">
+<a href="https://www.star-history.com/?repos=yypyyd%2Finfinite-canvas&type=date&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=basketikun/infinite-canvas&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=basketikun/infinite-canvas&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=basketikun/infinite-canvas&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=yypyyd/infinite-canvas&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=yypyyd/infinite-canvas&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=yypyyd/infinite-canvas&type=date&legend=top-left" />
  </picture>
 </a>

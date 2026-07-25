@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/basketikun/infinite-canvas/model"
 	"github.com/basketikun/infinite-canvas/service"
 )
 
@@ -145,16 +146,14 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		return
 	}
 	request.Header.Set("Authorization", "Bearer "+channel.APIKey)
+	if requestID := strings.TrimSpace(r.Header.Get("X-Request-ID")); requestID != "" { request.Header.Set("X-Request-ID", requestID) }
 	if contentType != "" {
 		request.Header.Set("Content-Type", contentType)
 	}
-	if err := service.ConsumeUserCredits(user.ID, requestMeta.ModelName, credits, path); err != nil {
-		FailError(w, err)
-		return
-	}
-	task, taskErr := service.BeginGenerationTask(service.GenerationTaskInput{
+	task, err := service.BeginGenerationTask(service.GenerationTaskInput{
 		UserID:         user.ID,
 		OrganizationID: user.OrganizationID,
+		RequestID:      strings.TrimSpace(r.Header.Get("Idempotency-Key")),
 		Model:          requestMeta.ModelName,
 		UpstreamModel:  upstreamModel,
 		ChannelName:    channel.Name,
@@ -165,29 +164,32 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		Quantity:       pricingRequest.Quantity,
 		Credits:        credits,
 	})
-	if taskErr != nil {
-		log.Printf("AI proxy create generation task failed: user=%s model=%s err=%v", user.ID, requestMeta.ModelName, taskErr)
+	if err != nil {
+		log.Printf("AI proxy create generation task failed: user=%s model=%s err=%v", user.ID, requestMeta.ModelName, err)
+		FailError(w, err)
+		return
+	}
+	request.Header.Set("Idempotency-Key", task.RequestID)
+	finishTask := func(status model.GenerationTaskStatus, message string) {
+		if err := service.FinishGenerationTask(task, status, message); err != nil {
+			log.Printf("AI proxy finish generation task failed: task=%s status=%s err=%v", task.ID, status, err)
+		}
 	}
 	failed := false
 	onFailure := func(message string) {
 		failed = true
-		if err := service.RefundUserCredits(user.ID, requestMeta.ModelName, credits, path); err != nil {
-			log.Printf("AI proxy refund credits failed: user=%s model=%s credits=%d err=%v", user.ID, requestMeta.ModelName, credits, err)
-		}
-		if taskErr == nil {
-			service.FinishGenerationTask(task, "failed", message)
-		}
+		finishTask("failed", message)
 	}
 	if isChatGPT2APIImageTaskChannel(channel.BaseURL, originalPath) {
 		copyChatGPT2APIImageTaskResponse(w, channel.BaseURL, channel.APIKey, body, onFailure)
-		if !failed && taskErr == nil {
-			service.FinishGenerationTask(task, "success", "")
+		if !failed {
+			finishTask("success", "")
 		}
 		return
 	}
 	copyAIResponse(w, request, onFailure, aiResponseAdapter(channel.BaseURL, upstreamModel, originalPath), aiRetryPolicyForRequest(channel.BaseURL, upstreamModel, originalPath))
-	if !failed && taskErr == nil {
-		service.FinishGenerationTask(task, "success", "")
+	if !failed {
+		finishTask("success", "")
 	}
 }
 

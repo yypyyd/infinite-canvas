@@ -12,6 +12,8 @@ export type AuthUser = {
     role: UserRole;
     group: string;
     credits: number;
+    effectiveCredits: number;
+    creditMode: "personal" | "shared";
     createdAt: string;
     updatedAt: string;
 };
@@ -48,6 +50,8 @@ export type CheckInResult = {
 export type CreditLog = {
     id: string;
     userId: string;
+    organizationId: string;
+    creditSource: "personal" | "organization";
     type: string;
     amount: number;
     balance: number;
@@ -72,6 +76,7 @@ export type GenerationTask = {
     resolutionTier: string;
     quantity: number;
     credits: number;
+    creditSource: "personal" | "organization";
     status: "running" | "success" | "failed";
     errorMessage: string;
     durationMs: number;

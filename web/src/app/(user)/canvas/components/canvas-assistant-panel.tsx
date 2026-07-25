@@ -63,9 +63,18 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, sessions, activeS
     const [deleteChatIds, setDeleteChatIds] = useState<string[]>([]);
     const [closing, setClosing] = useState(false);
     const [resizing, setResizing] = useState(false);
+    const [isMobile, setIsMobile] = useState(false);
     const [removedReferenceIds, setRemovedReferenceIds] = useState<Set<string>>(new Set());
     const [localSessions, setLocalSessions] = useState<CanvasAssistantSession[]>(() => (sessions.length ? sessions : [createSession()]));
     const [localActiveSessionId, setLocalActiveSessionId] = useState<string | null>(activeSessionId);
+
+    useEffect(() => {
+        const media = window.matchMedia("(max-width: 639px)");
+        const update = () => setIsMobile(media.matches);
+        update();
+        media.addEventListener("change", update);
+        return () => media.removeEventListener("change", update);
+    }, []);
 
     useEffect(() => {
         if (!sessions.length) return;
@@ -232,7 +241,7 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, sessions, activeS
         <motion.div
             className="flex shrink-0"
             initial={{ width: 0, opacity: 0 }}
-            animate={{ width: closing ? 0 : width + 1, opacity: closing ? 0 : 1 }}
+            animate={{ width: closing ? 0 : isMobile ? "100%" : width + 1, opacity: closing ? 0 : 1 }}
             transition={{ duration: resizing ? 0 : PANEL_MOTION_SECONDS, ease: [0.22, 1, 0.36, 1] }}
             style={{ overflow: "clip", pointerEvents: closing ? "none" : undefined }}
         >
@@ -241,9 +250,9 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, sessions, activeS
                 initial={{ x: 48 }}
                 animate={{ x: closing ? 28 : 0 }}
                 transition={{ duration: resizing ? 0 : PANEL_MOTION_SECONDS, ease: [0.22, 1, 0.36, 1] }}
-                style={{ width, background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.text }}
+                style={{ width: isMobile ? "100%" : width, background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.text }}
             >
-                <button type="button" className="absolute inset-y-0 left-0 z-40 w-4 -translate-x-1/2 cursor-col-resize" onMouseDown={startResize} aria-label="调整右侧面板宽度" />
+                <button type="button" className="absolute inset-y-0 left-0 z-40 hidden w-4 -translate-x-1/2 cursor-col-resize sm:block" onMouseDown={startResize} aria-label="调整右侧面板宽度" />
                 <div className="flex items-center justify-between border-b px-4 py-3" style={{ borderColor: theme.node.stroke }}>
                     <div className="flex items-center gap-2 text-sm font-medium">
                         <Sparkles className="size-4" />

@@ -1,6 +1,7 @@
 package model
 
 type OrganizationRole string
+type OrganizationCreditMode string
 
 const (
 	OrganizationRoleOwner    OrganizationRole = "owner"
@@ -9,12 +10,23 @@ const (
 	OrganizationRoleReviewer OrganizationRole = "reviewer"
 )
 
+const (
+	OrganizationCreditModePersonal OrganizationCreditMode = "personal"
+	OrganizationCreditModeShared   OrganizationCreditMode = "shared"
+)
+
 type Organization struct {
 	ID        string `json:"id" gorm:"primaryKey;index:idx_batch_claim_organizations,priority:3"`
 	Name      string `json:"name"`
 	Slug      string `json:"slug" gorm:"uniqueIndex"`
 	Status    string `json:"status" gorm:"index;index:idx_batch_claim_organizations,priority:1"`
 	Version   int64  `json:"version"`
+	CreditMode           OrganizationCreditMode `json:"-" gorm:"size:16;not null;default:personal"`
+	Credits              int                    `json:"-" gorm:"not null;default:0"`
+	MonthlyCreditBudget  int                    `json:"-" gorm:"not null;default:0"`
+	MonthlyCreditsUsed   int                    `json:"-" gorm:"not null;default:0"`
+	CreditBudgetMonth    string                 `json:"-" gorm:"size:7;not null;default:''"`
+	CreditAlertThreshold int                    `json:"-" gorm:"not null;default:80"`
 	BatchClaimCursor string `json:"-" gorm:"size:128;index;not null;default:'';index:idx_batch_claim_organizations,priority:2"`
 	CreatedBy string `json:"createdBy" gorm:"index"`
 	CreatedAt string `json:"createdAt"`
@@ -115,6 +127,17 @@ type OrganizationWorkspace struct {
 	Membership   OrganizationMember         `json:"membership"`
 	Organizations []OrganizationSummary     `json:"organizations"`
 	Stats        OrganizationWorkspaceStats `json:"stats"`
+	CreditSummary OrganizationCreditSummary `json:"creditSummary"`
+}
+
+type OrganizationCreditSummary struct {
+	Mode            OrganizationCreditMode `json:"mode"`
+	Balance         int                    `json:"balance"`
+	PersonalBalance int                    `json:"personalBalance"`
+	MonthlyBudget   int                    `json:"monthlyBudget"`
+	MonthlyUsed     int                    `json:"monthlyUsed"`
+	AlertThreshold  int                    `json:"alertThreshold"`
+	Warning         bool                   `json:"warning"`
 }
 
 type OrganizationWorkspaceStats struct {
@@ -198,6 +221,75 @@ type ProductSKUList struct {
 	Total int          `json:"total"`
 }
 
+type ProductionTemplateStatus string
+
+const (
+	ProductionTemplateStatusActive   ProductionTemplateStatus = "active"
+	ProductionTemplateStatusDisabled ProductionTemplateStatus = "disabled"
+)
+
+type ProductionTemplate struct {
+	ID             string                   `json:"id" gorm:"primaryKey"`
+	OrganizationID string                   `json:"organizationId" gorm:"index;uniqueIndex:idx_organization_template_name"`
+	Name           string                   `json:"name" gorm:"uniqueIndex:idx_organization_template_name"`
+	Description    string                   `json:"description"`
+	Status         ProductionTemplateStatus `json:"status" gorm:"index"`
+	CurrentVersion int                      `json:"currentVersion"`
+	CurrentPrompt  string                   `json:"currentPrompt" gorm:"-"`
+	Version        int64                    `json:"version"`
+	CreatedBy      string                   `json:"createdBy" gorm:"index"`
+	CreatedAt      string                   `json:"createdAt"`
+	UpdatedAt      string                   `json:"updatedAt"`
+}
+
+type ProductionTemplateVersion struct {
+	ID             string `json:"id" gorm:"primaryKey"`
+	OrganizationID string `json:"organizationId" gorm:"index"`
+	TemplateID     string `json:"templateId" gorm:"index;uniqueIndex:idx_template_version"`
+	Version        int    `json:"version" gorm:"uniqueIndex:idx_template_version"`
+	Prompt         string `json:"prompt" gorm:"type:text"`
+	CreatedBy      string `json:"createdBy" gorm:"index"`
+	CreatedAt      string `json:"createdAt"`
+}
+
+type ProductionTemplateList struct {
+	Items []ProductionTemplate `json:"items"`
+	Total int                  `json:"total"`
+}
+
+type SaveProductionTemplateInput struct {
+	ID          string                   `json:"id"`
+	Name        string                   `json:"name"`
+	Description string                   `json:"description"`
+	Status      ProductionTemplateStatus `json:"status"`
+	Prompt      string                   `json:"prompt"`
+	Version     int64                    `json:"version"`
+}
+
+type PreviewProductionPromptInput struct {
+	PresetID      string `json:"presetId"`
+	PresetVersion int    `json:"presetVersion"`
+	DeliverySpecID string `json:"deliverySpecId"`
+	BrandID       string `json:"brandId"`
+	ProductID     string `json:"productId"`
+	SKUID         string `json:"skuId"`
+}
+
+type ProductionPromptPreview struct {
+	Prompt string `json:"prompt"`
+}
+
+type ProductionDeliverySpec struct {
+	ID              string `json:"id"`
+	Platform        string `json:"platform"`
+	Name            string `json:"name"`
+	Width           int    `json:"width"`
+	Height          int    `json:"height"`
+	Format          string `json:"format"`
+	Quality         int    `json:"quality"`
+	FilenamePattern string `json:"filenamePattern"`
+}
+
 type BatchProductionStatus string
 
 const (
@@ -206,6 +298,14 @@ const (
 	BatchProductionStatusCompleted BatchProductionStatus = "completed"
 	BatchProductionStatusFailed    BatchProductionStatus = "failed"
 	BatchProductionStatusCancelled BatchProductionStatus = "cancelled"
+)
+
+type BatchProductionReviewStatus string
+
+const (
+	BatchProductionReviewPending  BatchProductionReviewStatus = "pending"
+	BatchProductionReviewApproved BatchProductionReviewStatus = "approved"
+	BatchProductionReviewRejected BatchProductionReviewStatus = "rejected"
 )
 
 type BatchProductionJob struct {
@@ -217,6 +317,9 @@ type BatchProductionJob struct {
 	BrandID        string                `json:"brandId" gorm:"index"`
 	Name           string                `json:"name"`
 	PresetID       string                `json:"presetId" gorm:"index"`
+	PresetVersion  int                   `json:"presetVersion"`
+	PresetPrompt   string                `json:"-" gorm:"type:text"`
+	DeliverySpec   ProductionDeliverySpec `json:"deliverySpec" gorm:"embedded;embeddedPrefix:delivery_"`
 	ProductIDs     []string              `json:"productIds" gorm:"serializer:json"`
 	Status         BatchProductionStatus `json:"status" gorm:"index"`
 	TotalItems     int                   `json:"totalItems"`
@@ -247,6 +350,11 @@ type BatchProductionItem struct {
 	Status         BatchProductionStatus `json:"status" gorm:"index;index:idx_batch_ready,priority:2;index:idx_batch_retry,priority:2;index:idx_batch_running,priority:2;index:idx_batch_expired,priority:1"`
 	ResultStorageKey string              `json:"resultStorageKey" gorm:"size:191"`
 	ErrorMessage   string                `json:"errorMessage" gorm:"type:text"`
+	ReviewStatus   BatchProductionReviewStatus `json:"reviewStatus" gorm:"index"`
+	ReviewComment  string                `json:"reviewComment" gorm:"type:text"`
+	ReviewedBy     string                `json:"reviewedBy" gorm:"index"`
+	ReviewedAt     string                `json:"reviewedAt"`
+	IsPrimary      bool                  `json:"isPrimary" gorm:"index"`
 	BrandSnapshotID string               `json:"-"`
 	ProductSnapshotID string             `json:"-"`
 	SKUSnapshotID string                 `json:"-"`
@@ -259,11 +367,32 @@ type BatchProductionItem struct {
 	FinishedAt     string                `json:"finishedAt"`
 	CreatedAt      string                `json:"createdAt" gorm:"index:idx_batch_ready,priority:3"`
 	UpdatedAt      string                `json:"updatedAt"`
+	ResultMimeType string                `json:"resultMimeType" gorm:"-"`
+	ResultSize     int64                 `json:"resultSize" gorm:"-"`
+	QualityContext *BatchProductionQualityContext `json:"qualityContext,omitempty" gorm:"-"`
+}
+
+type BatchProductionQualityContext struct {
+	Brand   *Brand      `json:"brand,omitempty"`
+	Product Product     `json:"product"`
+	SKU     *ProductSKU `json:"sku,omitempty"`
 }
 
 type BatchProductionItemList struct {
 	Items []BatchProductionItem `json:"items"`
 	Total int                   `json:"total"`
+}
+
+type BatchProductionArchiveItem struct {
+	ID               string `json:"-"`
+	ProductID        string `json:"-"`
+	ProductCode      string `json:"-"`
+	SKUID            string `json:"-"`
+	SKUCode          string `json:"-"`
+	ResultStorageKey string `json:"-"`
+	MimeType         string `json:"-"`
+	Size             int64  `json:"-"`
+	IsPrimary        bool   `json:"-"`
 }
 
 type BatchProductionJobList struct {
@@ -276,5 +405,17 @@ type CreateBatchProductionJobInput struct {
 	Name       string   `json:"name"`
 	BrandID    string   `json:"brandId"`
 	PresetID   string   `json:"presetId"`
+	PresetVersion int   `json:"presetVersion"`
+	DeliverySpecID string `json:"deliverySpecId"`
 	ProductIDs []string `json:"productIds"`
+}
+
+type ReviewBatchProductionItemInput struct {
+	RunNumber int                         `json:"runNumber"`
+	Status    BatchProductionReviewStatus `json:"status"`
+	Comment   string                      `json:"comment"`
+}
+
+type BatchProductionItemRunInput struct {
+	RunNumber int `json:"runNumber"`
 }

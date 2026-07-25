@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
-	"log"
+	"fmt"
+	"log/slog"
 	"net/url"
+	"os"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -12,14 +14,39 @@ import (
 	"github.com/basketikun/infinite-canvas/service"
 )
 
+var logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
 func main() {
-	if err := config.Load(); err != nil { log.Fatal(err) }
+	if err := config.Load(); err != nil {
+		exitWorker("configuration_load_failed", err)
+	}
 	executorURL := strings.TrimSpace(config.Cfg.BatchWorkerExecutorURL)
-	parsedURL, err := url.Parse(executorURL)
-	if executorURL == "" || err != nil || parsedURL.Scheme != "https" || parsedURL.Host == "" || parsedURL.User != nil { log.Fatal("BATCH_WORKER_EXECUTOR_URL must be a valid HTTPS URL") }
-	if strings.TrimSpace(config.Cfg.BatchWorkerToken) == "" { log.Fatal("BATCH_WORKER_TOKEN is required") }
+	var executor service.BatchProductionExecutor = service.StandardBatchProductionExecutor{}
+	mode := "standard"
+	if executorURL != "" {
+		parsedURL, err := url.Parse(executorURL)
+		if err != nil || parsedURL.Scheme != "https" || parsedURL.Host == "" || parsedURL.User != nil {
+			exitWorker("configuration_invalid", err, "setting", "BATCH_WORKER_EXECUTOR_URL")
+		}
+		if strings.TrimSpace(config.Cfg.BatchWorkerToken) == "" {
+			exitWorker("configuration_invalid", nil, "setting", "BATCH_WORKER_TOKEN")
+		}
+		executor = service.HTTPBatchProductionExecutor{URL: executorURL, Token: config.Cfg.BatchWorkerToken}
+		mode = "external"
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	executor := service.HTTPBatchProductionExecutor{URL: executorURL, Token: config.Cfg.BatchWorkerToken}
-	if err := service.RunBatchProductionWorker(ctx, config.Cfg.BatchWorkerConcurrency, config.Cfg.BatchWorkerTenantConcurrency, executor); err != nil { log.Fatal(err) }
+	logger.Info("worker_event", "component", "worker", "worker", "batch_production", "event", "executor_selected", "executor_mode", mode)
+	if err := service.RunBatchProductionWorker(ctx, config.Cfg.BatchWorkerConcurrency, config.Cfg.BatchWorkerTenantConcurrency, executor); err != nil {
+		exitWorker("worker_failed", err)
+	}
+}
+
+func exitWorker(event string, err error, attrs ...any) {
+	fields := []any{"component", "worker", "worker", "batch_production", "event", event}
+	if err != nil {
+		fields = append(fields, "error_type", fmt.Sprintf("%T", err))
+	}
+	logger.Error("worker_event", append(fields, attrs...)...)
+	os.Exit(1)
 }

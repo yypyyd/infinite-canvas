@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/netip"
 	"net/http"
@@ -34,9 +33,11 @@ type BatchProductionExecution struct {
 }
 
 type BatchProductionResult struct {
-	ResultURL string `json:"resultUrl"`
-	MimeType  string `json:"mimeType"`
-	Size      int64  `json:"size"`
+	ResultURL     string                `json:"resultUrl"`
+	MimeType      string                `json:"mimeType"`
+	Size          int64                 `json:"size"`
+	Data          []byte                `json:"-"`
+	GenerationTask *model.GenerationTask `json:"-"`
 }
 
 type BatchProductionExecutor interface {
@@ -82,6 +83,7 @@ func RunBatchProductionWorker(ctx context.Context, concurrency int, tenantConcur
 	if concurrency < 1 { concurrency = 1 }
 	if tenantConcurrency < 1 { tenantConcurrency = 1 }
 	if tenantConcurrency > concurrency { tenantConcurrency = concurrency }
+	logWorkerInfo("batch_production", "worker_started", "concurrency", concurrency, "tenant_concurrency", tenantConcurrency)
 	var workers sync.WaitGroup
 	workers.Add(concurrency)
 	for index := 0; index < concurrency; index++ {
@@ -92,6 +94,7 @@ func RunBatchProductionWorker(ctx context.Context, concurrency int, tenantConcur
 	}
 	<-ctx.Done()
 	workers.Wait()
+	logWorkerInfo("batch_production", "worker_stopped")
 	return nil
 }
 
@@ -99,7 +102,7 @@ func batchProductionWorkerLoop(ctx context.Context, maxTenantRunning int, execut
 	for ctx.Err() == nil {
 		item, job, claimed, err := ClaimBatchProductionItem(maxTenantRunning)
 		if err != nil {
-			log.Printf("claim batch production item failed: %v", err)
+			logWorkerError("batch_production", "item_claim_failed", err)
 			waitBatchWorker(ctx, 2*time.Second)
 			continue
 		}
@@ -107,15 +110,18 @@ func batchProductionWorkerLoop(ctx context.Context, maxTenantRunning int, execut
 			waitBatchWorker(ctx, 2*time.Second)
 			continue
 		}
+		logWorkerInfo("batch_production", "item_claimed", batchProductionLogAttrs(item, job)...)
 		executeBatchProductionItem(ctx, executor, item, job)
 	}
 }
 
 func executeBatchProductionItem(parent context.Context, executor BatchProductionExecutor, item model.BatchProductionItem, job model.BatchProductionJob) {
+	startedAt := time.Now()
+	logAttrs := batchProductionLogAttrs(item, job)
 	execution, err := batchProductionExecution(item, job)
 	if err != nil {
-		log.Printf("build batch production input failed item=%s error_type=%T", item.ID, err)
-		if finishErr := FinishBatchProductionItem(item, false, "", "批量生产输入不可用"); finishErr != nil { log.Printf("finish invalid batch production item failed item=%s err=%v", item.ID, finishErr) }
+		logWorkerError("batch_production", "input_build_failed", err, logAttrs...)
+		if finishErr := FinishBatchProductionItem(item, false, "", "批量生产输入不可用"); finishErr != nil { logWorkerError("batch_production", "item_finalize_failed", finishErr, append(logAttrs, "outcome", "invalid_input")...) }
 		return
 	}
 	ctx, cancel := context.WithCancel(parent)
@@ -132,26 +138,58 @@ func executeBatchProductionItem(parent context.Context, executor BatchProduction
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if err := RenewBatchProductionItemLease(item); err != nil { cancel(); return }
+				if err := RenewBatchProductionItemLease(item); err != nil { logWorkerError("batch_production", "lease_renew_failed", err, logAttrs...); cancel(); return }
 			}
 		}
 	}()
 	result, executeErr := executor.Execute(ctx, execution)
 	if parent.Err() != nil { return }
+	if ctx.Err() != nil { return }
 	if executeErr != nil {
-		log.Printf("execute batch production item failed item=%s error_type=%T", item.ID, executeErr)
-		if err := FinishBatchProductionItem(item, false, "", "生产执行器调用失败"); err != nil { log.Printf("finish failed batch production item failed item=%s err=%v", item.ID, err) }
+		settleBatchProductionGeneration(result, false, logAttrs)
+		logWorkerError("batch_production", "executor_failed", executeErr, logAttrs...)
+		if err := FinishBatchProductionItem(item, false, "", "生产执行器调用失败"); err != nil { logWorkerError("batch_production", "item_finalize_failed", err, append(logAttrs, "outcome", "executor_failed")...) }
 		return
 	}
-	if err := RenewBatchProductionItemLease(item); err != nil { log.Printf("verify batch production lease before archive failed item=%s err=%v", item.ID, err); return }
+	if err := RenewBatchProductionItemLease(item); err != nil { logWorkerError("batch_production", "lease_verify_failed", err, logAttrs...); return }
+	result, deliveryErr := prepareProductionDeliveryResult(ctx, result, job.DeliverySpec)
+	if deliveryErr != nil {
+		settleBatchProductionGeneration(result, false, logAttrs)
+		logWorkerError("batch_production", "delivery_transform_failed", deliveryErr, logAttrs...)
+		if err := FinishBatchProductionItem(item, false, "", "生产结果交付处理失败"); err != nil { logWorkerError("batch_production", "item_finalize_failed", err, append(logAttrs, "outcome", "delivery_failed")...) }
+		return
+	}
 	storageKey, archiveErr := archiveBatchProductionResult(ctx, item, job, result)
 	if ctx.Err() != nil { return }
 	if archiveErr != nil {
-		log.Printf("archive batch production result failed item=%s error_type=%T", item.ID, archiveErr)
-		if err := FinishBatchProductionItem(item, false, "", "生产结果归档失败"); err != nil { log.Printf("finish failed batch production archive failed item=%s err=%v", item.ID, err) }
+		settleBatchProductionGeneration(result, false, logAttrs)
+		logWorkerError("batch_production", "result_archive_failed", archiveErr, logAttrs...)
+		if err := FinishBatchProductionItem(item, false, "", "生产结果归档失败"); err != nil { logWorkerError("batch_production", "item_finalize_failed", err, append(logAttrs, "outcome", "archive_failed")...) }
 		return
 	}
-	if err := FinishBatchProductionItem(item, true, storageKey, ""); err != nil { log.Printf("finish batch production item failed item=%s err=%v", item.ID, err) }
+	if err := FinishBatchProductionItem(item, true, storageKey, ""); err != nil {
+		logWorkerError("batch_production", "item_finalize_failed", err, append(logAttrs, "outcome", "completed")...)
+		return
+	}
+	settleBatchProductionGeneration(result, true, logAttrs)
+	logWorkerInfo("batch_production", "item_completed", append(logAttrs, "duration_ms", time.Since(startedAt).Milliseconds())...)
+}
+
+func settleBatchProductionGeneration(result BatchProductionResult, succeeded bool, logAttrs []any) {
+	if result.GenerationTask == nil {
+		return
+	}
+	status, message := model.GenerationTaskStatusSuccess, ""
+	if !succeeded {
+		status, message = model.GenerationTaskStatusFailed, "批量生产未完成"
+	}
+	if err := FinishGenerationTask(*result.GenerationTask, status, message); err != nil {
+		logWorkerError("batch_production", "generation_settlement_failed", err, logAttrs...)
+	}
+}
+
+func batchProductionLogAttrs(item model.BatchProductionItem, job model.BatchProductionJob) []any {
+	return []any{"organization_id", item.OrganizationID, "job_id", job.ID, "item_id", item.ID, "run_number", item.RunNumber, "attempts", item.Attempts}
 }
 
 func archiveBatchProductionResult(ctx context.Context, item model.BatchProductionItem, job model.BatchProductionJob, result BatchProductionResult) (string, error) {
@@ -180,26 +218,35 @@ func archiveBatchProductionResult(ctx context.Context, item model.BatchProductio
 	if _, err := repository.ReserveUserFileUpload(reservation, userStorageQuotaBytes(), timestamp); err != nil { return "", err }
 	confirmed := false
 	defer func() { if !confirmed { _ = repository.CancelUserFileUploadReservation(job.OrganizationID, job.CreatedBy, uploadID, now()) } }()
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, result.ResultURL, nil)
-	if err != nil { return "", err }
-	transport := batchResultTransport()
-	defer transport.CloseIdleConnections()
-	client := &http.Client{Transport: transport, Timeout: 15 * time.Minute, CheckRedirect: func(request *http.Request, via []*http.Request) error { if len(via) >= 5 || !validHTTPSURL(request.URL.String()) { return errors.New("batch result redirect is not allowed") }; return nil }}
-	response, err := client.Do(request)
-	if err != nil { return "", err }
-	defer response.Body.Close()
-	if response.StatusCode < 200 || response.StatusCode >= 300 { return "", fmt.Errorf("batch result returned HTTP %d", response.StatusCode) }
-	if response.ContentLength >= 0 && response.ContentLength != result.Size { return "", errors.New("batch result size does not match executor response") }
-	responseMime := strings.TrimSpace(strings.Split(response.Header.Get("Content-Type"), ";")[0])
-	if responseMime != "" && assetTypeFromMime(responseMime) != assetType { return "", errors.New("batch result MIME does not match executor response") }
-	limited := &io.LimitedReader{R: response.Body, N: result.Size + 1}
+	var body io.Reader
+	var responseBody io.ReadCloser
+	if len(result.Data) > 0 {
+		if int64(len(result.Data)) != result.Size { return "", errors.New("batch result size does not match executor response") }
+		body = bytes.NewReader(result.Data)
+	} else {
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, result.ResultURL, nil)
+		if err != nil { return "", err }
+		transport := batchResultTransport()
+		defer transport.CloseIdleConnections()
+		client := &http.Client{Transport: transport, Timeout: 15 * time.Minute, CheckRedirect: func(request *http.Request, via []*http.Request) error { if len(via) >= 5 || !validHTTPSURL(request.URL.String()) { return errors.New("batch result redirect is not allowed") }; return nil }}
+		response, err := client.Do(request)
+		if err != nil { return "", err }
+		responseBody = response.Body
+		defer responseBody.Close()
+		if response.StatusCode < 200 || response.StatusCode >= 300 { return "", fmt.Errorf("batch result returned HTTP %d", response.StatusCode) }
+		if response.ContentLength >= 0 && response.ContentLength != result.Size { return "", errors.New("batch result size does not match executor response") }
+		responseMime := strings.TrimSpace(strings.Split(response.Header.Get("Content-Type"), ";")[0])
+		if responseMime != "" && assetTypeFromMime(responseMime) != assetType { return "", errors.New("batch result MIME does not match executor response") }
+		body = responseBody
+	}
+	limited := &io.LimitedReader{R: body, N: result.Size + 1}
 	policy := storage.PutPolicy{Scope: config.Cfg.QiniuBucket + ":" + reservation.ObjectKey, Expires: 1800, FsizeMin: result.Size, FsizeLimit: result.Size, DetectMime: 1, MimeLimit: assetType + "/*", EndUser: job.CreatedBy}
 	var uploaded storage.PutRet
 	uploader := storage.NewFormUploader(&storage.Config{UseHTTPS: true})
 	if err := uploader.Put(ctx, &uploaded, policy.UploadToken(qiniuMac()), reservation.ObjectKey, limited, result.Size, &storage.PutExtra{MimeType: result.MimeType}); err != nil { return "", err }
 	if result.Size+1-limited.N != result.Size { return "", errors.New("batch result size does not match executor response") }
 	var extra [1]byte
-	if total, _ := response.Body.Read(extra[:]); total > 0 { return "", errors.New("batch result exceeds declared size") }
+	if total, _ := body.Read(extra[:]); total > 0 { return "", errors.New("batch result exceeds declared size") }
 	info, err := qiniuBucketManager().Stat(config.Cfg.QiniuBucket, reservation.ObjectKey)
 	if err != nil { return "", err }
 	if info.Fsize != result.Size || assetTypeFromMime(info.MimeType) != assetType { return "", errors.New("archived batch result metadata does not match executor response") }

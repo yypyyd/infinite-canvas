@@ -73,6 +73,8 @@ func DB() (*gorm.DB, error) {
 			&model.Brand{},
 			&model.Product{},
 			&model.ProductSKU{},
+			&model.ProductionTemplate{},
+			&model.ProductionTemplateVersion{},
 			&model.BatchProductionJob{},
 			&model.BatchProductionItem{},
 			&model.BatchProductionSnapshot{},

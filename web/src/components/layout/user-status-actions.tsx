@@ -42,7 +42,8 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const canvasTheme = canvasThemes[theme];
     const userName = user?.displayName || user?.username || "";
-    const credits = user?.credits ?? 0;
+    const credits = user?.effectiveCredits ?? user?.credits ?? 0;
+    const creditLabel = user?.creditMode === "shared" ? "企业共享算力余额" : "个人算力余额";
     const avatarUrl = user?.avatarUrl?.trim();
     const avatarText = (userName.trim()[0] || "U").toUpperCase();
     const naturalIconClass = "inline-flex size-7 shrink-0 items-center justify-center text-stone-600 transition hover:text-stone-950 dark:text-stone-300 dark:hover:text-white [&_svg]:size-4";
@@ -85,7 +86,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
             setSession(token, nextUser);
             setRedeemOpen(false);
             redeemForm.resetFields();
-            message.success(`兑换成功，当前余额 ${nextUser.credits.toLocaleString()} 点`);
+            message.success(`兑换成功，个人余额 ${nextUser.credits.toLocaleString()} 点`);
         } catch (error) {
             message.error(error instanceof Error ? error.message : "兑换失败");
         } finally {
@@ -130,7 +131,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
         <>
             <div className="inline-flex shrink-0 items-center gap-1">
                 {user ? (
-                    <Tooltip title="当前算力点余额" placement="bottom">
+                    <Tooltip title={creditLabel} placement="bottom">
                         <div className={creditClass} style={creditStyle}>
                             <CreditSymbol className="text-sm leading-none" />
                             <span>{credits.toLocaleString()}</span>
@@ -182,8 +183,8 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
             </div>
             <Modal title="兑换码" open={redeemOpen} onCancel={() => setRedeemOpen(false)} onOk={() => void submitRedeemCode()} okText="兑换" cancelText="取消" confirmLoading={redeeming} destroyOnHidden>
                 <Form form={redeemForm} layout="vertical" requiredMark={false}>
-                    <Form.Item name="code" label="兑换码" rules={[{ required: true, message: "请输入兑换码" }]}>
-                        <Input autoFocus placeholder="请输入后台生成的兑换码" onPressEnter={() => void submitRedeemCode()} />
+                    <Form.Item name="code" label="兑换码" extra="兑换码会充值到个人余额；企业共享模式可在企业中心继续转入共享池。" rules={[{ required: true, message: "请输入兑换码" }]}>
+						<Input autoFocus placeholder="请输入购买后获得的兑换码" onPressEnter={() => void submitRedeemCode()} />
                     </Form.Item>
                 </Form>
             </Modal>

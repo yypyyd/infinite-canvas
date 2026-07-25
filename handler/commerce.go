@@ -3,9 +3,11 @@ package handler
 import (
 	"encoding/json"
 	"io"
+	"mime"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/basketikun/infinite-canvas/model"
 	"github.com/basketikun/infinite-canvas/service"
@@ -125,6 +127,47 @@ func DeleteCommerceProductSKU(w http.ResponseWriter, r *http.Request, id string)
 	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return true, service.DeleteProductSKU(user, id, version) })
 }
 
+func UpdateOrganizationCreditSettings(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Mode model.OrganizationCreditMode `json:"mode"`
+		MonthlyBudget int `json:"monthlyBudget"`
+		AlertThreshold int `json:"alertThreshold"`
+		Version int64 `json:"version"`
+	}
+	if !decodeCommerceJSON(w, r, &input) { return }
+	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return service.UpdateOrganizationCreditSettings(user, input.Mode, input.MonthlyBudget, input.AlertThreshold, input.Version) })
+}
+
+func TransferOrganizationCredits(w http.ResponseWriter, r *http.Request) {
+	var input struct { Amount int `json:"amount"` }
+	if !decodeCommerceJSON(w, r, &input) { return }
+	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return service.TransferOrganizationCredits(user, input.Amount) })
+}
+
+func CommerceProductionTemplates(w http.ResponseWriter, r *http.Request) {
+	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return service.ListProductionTemplates(user, parseQuery(r)) })
+}
+
+func SaveCommerceProductionTemplate(w http.ResponseWriter, r *http.Request) {
+	var input model.SaveProductionTemplateInput
+	if !decodeCommerceJSON(w, r, &input) { return }
+	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return service.SaveProductionTemplate(user, input) })
+}
+
+func CommerceProductionTemplateVersions(w http.ResponseWriter, r *http.Request, id string) {
+	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return service.ListProductionTemplateVersions(user, id) })
+}
+
+func PreviewCommerceProductionPrompt(w http.ResponseWriter, r *http.Request) {
+	var input model.PreviewProductionPromptInput
+	if !decodeCommerceJSON(w, r, &input) { return }
+	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return service.PreviewProductionPrompt(user, input) })
+}
+
+func CommerceProductionDeliverySpecs(w http.ResponseWriter, r *http.Request) {
+	withCommerceUser(w, r, func(model.AuthUser) (any, error) { return service.ListProductionDeliverySpecs(), nil })
+}
+
 func CommerceBatchJobs(w http.ResponseWriter, r *http.Request) {
 	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return service.ListBatchProductionJobs(user, parseQuery(r)) })
 }
@@ -137,6 +180,36 @@ func CreateCommerceBatchJob(w http.ResponseWriter, r *http.Request) {
 
 func CommerceBatchItems(w http.ResponseWriter, r *http.Request, id string) {
 	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return service.ListBatchProductionItems(user, id, parseQuery(r)) })
+}
+
+func DownloadCommerceBatchArchive(w http.ResponseWriter, r *http.Request, id string) {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok { Fail(w, "未登录或权限不足"); return }
+	archive, err := service.CreateBatchProductionArchive(r.Context(), user, id)
+	if err != nil { FailError(w, err); return }
+	defer archive.Cleanup()
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": archive.Name}))
+	w.Header().Set("Cache-Control", "private, no-store")
+	http.ServeContent(w, r, archive.Name, time.Time{}, archive.File)
+}
+
+func ReviewCommerceBatchItem(w http.ResponseWriter, r *http.Request, jobID string, itemID string) {
+	var input model.ReviewBatchProductionItemInput
+	if !decodeCommerceJSON(w, r, &input) { return }
+	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return service.ReviewBatchProductionItem(user, jobID, itemID, input) })
+}
+
+func RetryCommerceBatchItem(w http.ResponseWriter, r *http.Request, jobID string, itemID string) {
+	var input model.BatchProductionItemRunInput
+	if !decodeCommerceJSON(w, r, &input) { return }
+	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return true, service.RetryBatchProductionItem(user, jobID, itemID, input) })
+}
+
+func SetCommerceBatchItemPrimary(w http.ResponseWriter, r *http.Request, jobID string, itemID string) {
+	var input model.BatchProductionItemRunInput
+	if !decodeCommerceJSON(w, r, &input) { return }
+	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return service.SetBatchProductionPrimary(user, jobID, itemID, input) })
 }
 
 func CancelCommerceBatchJob(w http.ResponseWriter, r *http.Request, id string) {

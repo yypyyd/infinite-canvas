@@ -46,15 +46,16 @@ export default function PromptsPage() {
     };
 
     return (
-        <div className="flex h-full flex-col overflow-hidden bg-background text-stone-800 dark:text-stone-100">
+        <div className="flex h-full flex-col overflow-hidden bg-background text-foreground">
             <main
-                className="min-h-0 flex-1 overflow-y-auto bg-background bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] px-6 py-8 [background-size:16px_16px] dark:bg-[radial-gradient(rgba(245,245,244,.16)_1px,transparent_1px)]"
+                className="min-h-0 flex-1 overflow-y-auto px-4 py-10 sm:px-6 lg:px-8 lg:py-14"
                 onScroll={handleListScroll}
             >
-                <div className="pb-8">
+                <div className="pb-10">
                     <div className="mx-auto max-w-5xl text-center">
-                        <h1 className="text-4xl font-semibold tracking-tight text-stone-950 dark:text-stone-100">电商灵感模板</h1>
-                        <p className="mt-3 text-sm text-stone-500 dark:text-stone-400">共 {totalPrompts} 条视觉模板，按标题、标签与分类查找适合商品的创作方向。</p>
+                        <div className="mb-3 text-sm font-medium text-[#0071e3] dark:text-[#2997ff]">创意灵感库</div>
+                        <h1 className="text-5xl font-semibold tracking-[-.045em] sm:text-6xl">为商品找到更好的表达。</h1>
+                        <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-muted-foreground">从 {totalPrompts} 条视觉模板中，按标题、标签与分类找到适合商品的创作方向。</p>
                     </div>
                     {query.isLoading ? (
                         <div className="flex h-60 items-center justify-center">
@@ -63,8 +64,8 @@ export default function PromptsPage() {
                     ) : null}
                     {!query.isLoading ? (
                         <>
-                            <div className="mx-auto mt-8 w-full max-w-2xl">
-                                <Input size="large" className="w-full" prefix={<Search className="size-4 text-stone-400" />} value={titleKeyword} placeholder="按标题查询" onChange={(event) => setTitleKeyword(event.target.value)} />
+                            <div className="mx-auto mt-9 w-full max-w-2xl rounded-full bg-card p-1.5 shadow-[0_14px_40px_rgba(29,29,31,.08)] ring-1 ring-black/[.04] dark:ring-white/10">
+                                <Input size="large" className="w-full" prefix={<Search className="size-4 text-muted-foreground" />} value={titleKeyword} placeholder="搜索标题、品类或视觉风格" onChange={(event) => setTitleKeyword(event.target.value)} />
                             </div>
                             <div className="mx-auto mt-6 grid max-w-6xl gap-3 text-left">
                                 <div className="grid gap-2 sm:grid-cols-[56px_minmax(0,1fr)] sm:items-start">

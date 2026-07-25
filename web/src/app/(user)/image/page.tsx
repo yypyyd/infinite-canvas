@@ -352,9 +352,9 @@ export default function ImagePage() {
     };
 
     return (
-        <div className="flex h-full flex-col overflow-hidden bg-stone-50 text-stone-900 dark:bg-stone-950 dark:text-stone-100">
-            <main className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto p-3 lg:grid-cols-[300px_minmax(0,1fr)] lg:overflow-hidden xl:grid-cols-[320px_minmax(0,1fr)]">
-                <aside className="thin-scrollbar hidden min-h-0 overflow-y-auto rounded-lg border border-stone-200 bg-card p-4 shadow-sm dark:border-stone-800 lg:block">
+        <div className="flex h-full flex-col overflow-hidden bg-background text-foreground">
+            <main className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[300px_minmax(0,1fr)] lg:overflow-hidden xl:grid-cols-[320px_minmax(0,1fr)] xl:p-6">
+                <aside className="thin-scrollbar hidden min-h-0 overflow-y-auto rounded-[24px] bg-card p-5 shadow-[0_16px_48px_rgba(29,29,31,.07)] ring-1 ring-black/[.04] dark:ring-white/10 lg:block">
                     <LogPanel
                         logs={logs}
                         selectedLogIds={selectedLogIds}
@@ -366,13 +366,14 @@ export default function ImagePage() {
                     />
                 </aside>
 
-                <section className="grid gap-3 lg:min-h-0 lg:overflow-hidden xl:grid-cols-[420px_minmax(0,1fr)]">
-                    <div className="thin-scrollbar flex flex-col rounded-lg border border-stone-200 bg-card p-4 shadow-sm dark:border-stone-800 lg:min-h-0 lg:overflow-y-auto">
+                <section className="grid gap-4 lg:min-h-0 lg:overflow-hidden xl:grid-cols-[420px_minmax(0,1fr)]">
+                    <div className="thin-scrollbar flex flex-col rounded-[24px] bg-card p-5 shadow-[0_16px_48px_rgba(29,29,31,.07)] ring-1 ring-black/[.04] dark:ring-white/10 lg:min-h-0 lg:overflow-y-auto lg:p-6">
                         <div>
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
-                                    <h1 className="text-2xl font-semibold text-stone-950 dark:text-stone-100">商品图生成</h1>
-                                    <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">上传商品参考图，快速制作可直接用于上新的视觉素材。</p>
+                                    <div className="mb-2 text-xs font-medium text-[#0071e3] dark:text-[#2997ff]">AI 商品影棚</div>
+                                    <h1 className="text-3xl font-semibold tracking-[-.035em]">制作下一张商品好图。</h1>
+                                    <p className="mt-2 text-sm leading-6 text-muted-foreground">上传商品参考图，快速制作可直接用于上新的视觉素材。</p>
                                 </div>
                                 <div className="flex shrink-0 gap-2 lg:hidden">
                                     <Button icon={<History className="size-4" />} onClick={() => setLogsOpen(true)}>
@@ -395,7 +396,7 @@ export default function ImagePage() {
                                             <button
                                                 key={preset.id}
                                                 type="button"
-                                                className="inline-flex h-8 items-center gap-1.5 rounded-full border border-stone-300 px-3 text-xs transition hover:border-stone-950 hover:text-stone-950 dark:border-stone-700 dark:hover:border-stone-200 dark:hover:text-stone-100"
+                                                className="inline-flex min-h-9 items-center gap-1.5 rounded-full bg-muted px-3.5 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                                                 onClick={() => setPrompt(preset.prompt)}
                                                 title={preset.description}
                                             >
@@ -490,10 +491,11 @@ export default function ImagePage() {
                         </div>
                     </div>
 
-                    <div className="thin-scrollbar rounded-lg border border-stone-200 bg-card p-4 shadow-sm dark:border-stone-800 lg:min-h-0 lg:overflow-y-auto lg:p-5">
+                    <div className="thin-scrollbar rounded-[24px] bg-card p-5 shadow-[0_16px_48px_rgba(29,29,31,.07)] ring-1 ring-black/[.04] dark:ring-white/10 lg:min-h-0 lg:overflow-y-auto lg:p-6">
                         <div className="mb-4 flex items-center justify-between gap-3">
                             <div>
-                                <h2 className="text-xl font-semibold">商品视觉结果</h2>
+                                <div className="text-xs font-medium text-[#0071e3] dark:text-[#2997ff]">实时结果</div>
+                                <h2 className="mt-1 text-2xl font-semibold tracking-[-.03em]">商品视觉</h2>
                             </div>
                             {running ? <Tag className="m-0 px-2 py-1">等待 {formatDuration(elapsedMs)}</Tag> : null}
                         </div>

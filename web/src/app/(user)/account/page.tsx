@@ -87,15 +87,13 @@ function AccountContent() {
     return (
         <main className="h-full overflow-y-auto bg-background">
             <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
-                <section className="relative overflow-hidden rounded-[28px] border border-border bg-card">
-                    <div className="pointer-events-none absolute -right-14 -top-20 size-64 rounded-full border border-border/70" />
-                    <div className="pointer-events-none absolute right-16 top-9 size-20 rounded-full border border-dashed border-border" />
+                <section className="relative overflow-hidden rounded-[30px] bg-[#f5f5f7] dark:bg-[#1d1d1f]">
                     <div className="relative flex flex-col gap-5 px-5 py-6 sm:flex-row sm:items-center sm:px-7 sm:py-8">
                         <Avatar size={72} src={user.avatarUrl || undefined} className="shrink-0 border border-border bg-foreground text-xl font-semibold text-background">
                             {avatarText}
                         </Avatar>
                         <div className="min-w-0 flex-1">
-                            <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">Account / 个人工作台</div>
+                            <div className="mb-2 text-sm font-medium text-[#0071e3] dark:text-[#2997ff]">个人工作台</div>
                             <div className="flex min-w-0 flex-wrap items-center gap-2">
                                 <h1 className="truncate text-2xl font-semibold tracking-tight sm:text-3xl">{userName}</h1>
                                 <Tag className="m-0">{user.role === "admin" ? "管理员" : "普通用户"}</Tag>
@@ -117,7 +115,7 @@ function AccountContent() {
                     </div>
                 </section>
 
-                <div className="mt-6 rounded-2xl border border-border bg-card px-4 sm:px-6">
+                <div className="mt-6 rounded-[22px] bg-card px-4 shadow-[0_12px_36px_rgba(29,29,31,.06)] ring-1 ring-black/[.04] dark:ring-white/10 sm:px-6">
                     <Tabs
                         activeKey={activeTab}
                         items={accountTabs}

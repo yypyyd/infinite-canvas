@@ -497,8 +497,8 @@ export default function CommercePage() {
 
     return (
         <main className="h-full overflow-y-auto bg-background">
-            <div className="mx-auto max-w-7xl px-6 py-8">
-                <header className="mb-8 flex flex-wrap items-end justify-between gap-4 border-b border-border pb-6"><div><div className="mb-3 inline-flex items-center gap-2 text-xs font-medium tracking-[.14em] text-muted-foreground"><Building2 className="size-4" /> ENTERPRISE COMMERCE OS</div><h1 className="text-4xl font-semibold tracking-tight">{workspace?.organization.name || "企业中心"}</h1><p className="mt-2 text-sm text-muted-foreground">企业租户、品牌资产、商品主数据与视觉生产任务统一管理。</p></div><Button icon={<RefreshCw className="size-4" />} onClick={() => void invalidate()}>刷新</Button></header>
+            <div className="mx-auto max-w-[1440px] px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
+                <header className="mb-9 flex min-h-64 flex-wrap items-end justify-between gap-6 rounded-[30px] bg-[#f5f5f7] p-7 dark:bg-[#1d1d1f] sm:p-10"><div><div className="mb-3 inline-flex items-center gap-2 text-sm font-medium text-[#0071e3] dark:text-[#2997ff]"><Building2 className="size-4" /> 企业电商工作区</div><h1 className="text-5xl font-semibold tracking-[-.045em] sm:text-6xl">{workspace?.organization.name || "企业中心"}</h1><p className="mt-4 max-w-2xl text-base leading-7 text-muted-foreground">品牌资产、商品主数据与视觉生产任务，在一个工作区持续协作。</p></div><Button icon={<RefreshCw className="size-4" />} onClick={() => void invalidate()}>刷新数据</Button></header>
 				<Tabs size="large" activeKey={activeTab} onChange={setActiveTab} items={[
                     { key: "organization", label: <span className="inline-flex items-center gap-2"><Users className="size-4" />企业与成员</span>, children: organizationPanel },
                     { key: "brands", label: <span className="inline-flex items-center gap-2"><Palette className="size-4" />品牌中心</span>, children: brandPanel },

@@ -98,11 +98,19 @@ function LoginContent() {
     };
 
     return (
-        <main className="flex h-full min-h-0 items-center justify-center overflow-y-auto bg-background bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] px-6 py-10 [background-size:16px_16px] dark:bg-[radial-gradient(rgba(245,245,244,.16)_1px,transparent_1px)]">
-            <section className="w-full max-w-[420px]">
-                <div className="mb-7 text-center">
-                    <img src="/logo.png" alt="道生画境" className="mx-auto mb-4 block size-16 rounded-full object-cover" />
-                    <h1 className="text-3xl font-semibold tracking-normal text-stone-950 dark:text-stone-100">账号登录</h1>
+        <main className="flex h-full min-h-0 items-center justify-center overflow-y-auto bg-background px-4 py-8 sm:px-6">
+            <section className="w-full max-w-[1040px] overflow-hidden rounded-[32px] bg-[#f5f5f7] shadow-[0_28px_90px_rgba(29,29,31,.1)] dark:bg-[#1d1d1f] lg:grid lg:grid-cols-[1.05fr_.95fr]">
+                <div className="hidden min-h-[680px] flex-col justify-between bg-[linear-gradient(145deg,#e9e4dc,#fbfbfd_54%,#dbe8f5)] p-12 dark:bg-[linear-gradient(145deg,#303033,#1d1d1f_54%,#17324b)] lg:flex">
+                    <div className="text-sm font-medium text-[#0071e3] dark:text-[#2997ff]">道生画境</div>
+                    <div><h1 className="text-6xl font-semibold leading-[.98] tracking-[-.055em]">从商品灵感，<br />到整套销售素材。</h1><p className="mt-6 max-w-md text-lg leading-8 text-muted-foreground">让品牌、电商运营与设计团队，在一个工作台持续完成上新。</p></div>
+                    <div className="text-xs text-muted-foreground">商品主图 · 场景视觉 · 详情页 · 营销视频</div>
+                </div>
+                <div className="flex min-h-[620px] items-center p-6 sm:p-12">
+                    <div className="mx-auto w-full max-w-[420px]">
+                <div className="mb-8">
+                    <img src="/logo.png" alt="道生画境" className="mb-5 block size-14 rounded-full object-cover" />
+                    <div className="mb-2 text-sm font-medium text-[#0071e3] dark:text-[#2997ff]">欢迎回来</div>
+                    <h1 className="text-4xl font-semibold tracking-[-.04em]">登录你的创作空间。</h1>
                 </div>
 
                 <Form<LoginFormValues> form={form} layout="vertical" size="large" requiredMark={false} onFinish={submit}>
@@ -153,6 +161,8 @@ function LoginContent() {
                         </Button>
                     </Space>
                 </Form>
+                    </div>
+                </div>
             </section>
         </main>
     );

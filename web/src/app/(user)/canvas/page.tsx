@@ -57,13 +57,13 @@ export default function CanvasPage() {
     };
 
     return (
-        <main className="h-full overflow-auto bg-background text-stone-950 dark:text-stone-100">
-            <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-6 py-10">
-                <header className="flex flex-wrap items-end justify-between gap-4 border-b border-stone-200 pb-6 dark:border-stone-800">
+        <main className="h-full overflow-auto bg-background text-foreground">
+            <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-10 px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
+                <header className="flex min-h-64 flex-wrap items-end justify-between gap-6 rounded-[30px] bg-[#f5f5f7] p-7 dark:bg-[#1d1d1f] sm:p-10">
                     <div>
-                        <p className="text-xs font-medium tracking-[.14em] text-stone-500">PRODUCT WORKSPACES</p>
-                        <h1 className="mt-3 text-3xl font-semibold">商品画布</h1>
-                        <p className="mt-2 text-sm text-stone-500">按商品或活动管理参考图、生成过程与最终交付素材。</p>
+                        <p className="text-sm font-medium text-[#0071e3] dark:text-[#2997ff]">商品创作空间</p>
+                        <h1 className="mt-3 text-5xl font-semibold tracking-[-.045em] sm:text-6xl">每个商品，都有自己的画布。</h1>
+                        <p className="mt-4 max-w-2xl text-base leading-7 text-muted-foreground">按商品或活动管理参考图、生成过程与最终交付素材。</p>
                     </div>
                     <div className="flex items-center gap-2">
                         {selectedIds.length ? (
@@ -91,15 +91,15 @@ export default function CanvasPage() {
                 </header>
 
                 <section>
-                    <div className="mb-3 flex items-center gap-2 text-sm font-medium"><LayoutTemplate className="size-4" /> 快速开始</div>
-                    <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="mb-4 flex items-center gap-2 text-sm font-medium"><LayoutTemplate className="size-4 text-[#0071e3] dark:text-[#2997ff]" /> 快速开始</div>
+                    <div className="grid gap-4 sm:grid-cols-3">
                         {[
                             { title: "商品主图套系", detail: "白底图、角度图与 SKU 系列", icon: Images },
                             { title: "详情页视觉", detail: "卖点拆解、材质特写与场景图", icon: ScanText },
                             { title: "大促活动视觉", detail: "活动主视觉、横幅与社媒素材", icon: BadgePercent },
                         ].map((item) => {
                             const Icon = item.icon;
-                            return <button key={item.title} type="button" disabled={!hydrated} onClick={() => createAndEnter(item.title)} className="group flex items-center gap-4 border border-stone-200 p-4 text-left transition hover:border-stone-400 hover:bg-stone-50 disabled:opacity-50 dark:border-stone-800 dark:hover:border-stone-600 dark:hover:bg-stone-900"><span className="grid size-10 shrink-0 place-items-center bg-stone-100 dark:bg-stone-800"><Icon className="size-4" /></span><span><span className="block text-sm font-medium">{item.title}</span><span className="mt-1 block text-xs text-stone-500">{item.detail}</span></span></button>;
+                            return <button key={item.title} type="button" disabled={!hydrated} onClick={() => createAndEnter(item.title)} className="group flex min-h-32 items-center gap-4 rounded-[24px] bg-card p-5 text-left shadow-[0_12px_36px_rgba(29,29,31,.06)] ring-1 ring-black/[.04] transition hover:-translate-y-0.5 hover:shadow-[0_18px_48px_rgba(29,29,31,.1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50 dark:ring-white/10"><span className="grid size-11 shrink-0 place-items-center rounded-full bg-muted"><Icon className="size-4" /></span><span><span className="block text-sm font-medium">{item.title}</span><span className="mt-1 block text-xs leading-5 text-muted-foreground">{item.detail}</span></span></button>;
                         })}
                     </div>
                 </section>
@@ -113,7 +113,7 @@ export default function CanvasPage() {
                         ))}
                     </div>
                 ) : (
-                    <section className="flex min-h-[360px] flex-col items-center justify-center border-y border-stone-200 text-center dark:border-stone-800">
+                    <section className="flex min-h-[360px] flex-col items-center justify-center rounded-[28px] bg-[#f5f5f7] p-8 text-center dark:bg-[#1d1d1f]">
                         <h2 className="text-xl font-medium">还没有商品项目</h2>
                         <p className="mt-3 text-sm text-stone-500">为一个商品或一次营销活动建立独立画布，集中管理全部视觉素材。</p>
                         <Button type="primary" className="mt-6" icon={<Plus className="size-4" />} onClick={() => createAndEnter()}>

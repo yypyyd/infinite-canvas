@@ -371,7 +371,7 @@ export default function ImagePage() {
                         <div>
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
-                                    <div className="mb-2 text-xs font-medium text-[#0071e3] dark:text-[#2997ff]">AI 商品影棚</div>
+                                    <div className="mb-2 text-xs font-medium text-primary">AI 商品影棚</div>
                                     <h1 className="text-3xl font-semibold tracking-[-.035em]">制作下一张商品好图。</h1>
                                     <p className="mt-2 text-sm leading-6 text-muted-foreground">上传商品参考图，快速制作可直接用于上新的视觉素材。</p>
                                 </div>
@@ -494,7 +494,7 @@ export default function ImagePage() {
                     <div className="thin-scrollbar rounded-[24px] bg-card p-5 shadow-[0_16px_48px_rgba(29,29,31,.07)] ring-1 ring-black/[.04] dark:ring-white/10 lg:min-h-0 lg:overflow-y-auto lg:p-6">
                         <div className="mb-4 flex items-center justify-between gap-3">
                             <div>
-                                <div className="text-xs font-medium text-[#0071e3] dark:text-[#2997ff]">实时结果</div>
+                                <div className="text-xs font-medium text-primary">实时结果</div>
                                 <h2 className="mt-1 text-2xl font-semibold tracking-[-.03em]">商品视觉</h2>
                             </div>
                             {running ? <Tag className="m-0 px-2 py-1">等待 {formatDuration(elapsedMs)}</Tag> : null}

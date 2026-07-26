@@ -53,7 +53,7 @@ export default function PromptsPage() {
             >
                 <div className="pb-10">
                     <div className="mx-auto max-w-5xl text-center">
-                        <div className="mb-3 text-sm font-medium text-[#0071e3] dark:text-[#2997ff]">创意灵感库</div>
+                        <div className="mb-3 text-sm font-medium text-primary">创意灵感库</div>
                         <h1 className="text-5xl font-semibold tracking-[-.045em] sm:text-6xl">为商品找到更好的表达。</h1>
                         <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-muted-foreground">从 {totalPrompts} 条视觉模板中，按标题、标签与分类找到适合商品的创作方向。</p>
                     </div>

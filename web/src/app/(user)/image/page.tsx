@@ -354,7 +354,7 @@ export default function ImagePage() {
     return (
         <div className="flex h-full flex-col overflow-hidden bg-background text-foreground">
             <main className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[300px_minmax(0,1fr)] lg:overflow-hidden xl:grid-cols-[320px_minmax(0,1fr)] xl:p-6">
-                <aside className="thin-scrollbar hidden min-h-0 overflow-y-auto rounded-[24px] bg-card p-5 shadow-[0_16px_48px_rgba(29,29,31,.07)] ring-1 ring-black/[.04] dark:ring-white/10 lg:block">
+                <aside className="thin-scrollbar hidden min-h-0 overflow-y-auto rounded-[24px] bg-card p-5 shadow-[0_16px_48px_rgba(29,29,31,.07)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border lg:block">
                     <LogPanel
                         logs={logs}
                         selectedLogIds={selectedLogIds}
@@ -367,7 +367,7 @@ export default function ImagePage() {
                 </aside>
 
                 <section className="grid gap-4 lg:min-h-0 lg:overflow-hidden xl:grid-cols-[420px_minmax(0,1fr)]">
-                    <div className="thin-scrollbar flex flex-col rounded-[24px] bg-card p-5 shadow-[0_16px_48px_rgba(29,29,31,.07)] ring-1 ring-black/[.04] dark:ring-white/10 lg:min-h-0 lg:overflow-y-auto lg:p-6">
+                    <div className="thin-scrollbar flex flex-col rounded-[24px] bg-card p-5 shadow-[0_16px_48px_rgba(29,29,31,.07)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border lg:min-h-0 lg:overflow-y-auto lg:p-6">
                         <div>
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
@@ -491,7 +491,7 @@ export default function ImagePage() {
                         </div>
                     </div>
 
-                    <div className="thin-scrollbar rounded-[24px] bg-card p-5 shadow-[0_16px_48px_rgba(29,29,31,.07)] ring-1 ring-black/[.04] dark:ring-white/10 lg:min-h-0 lg:overflow-y-auto lg:p-6">
+                    <div className="thin-scrollbar rounded-[24px] bg-card p-5 shadow-[0_16px_48px_rgba(29,29,31,.07)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border lg:min-h-0 lg:overflow-y-auto lg:p-6">
                         <div className="mb-4 flex items-center justify-between gap-3">
                             <div>
                                 <div className="text-xs font-medium text-primary">实时结果</div>

@@ -1,11 +1,12 @@
 "use client";
 
-import { ArrowRight, Check, Layers3, Play, ShoppingBag, Sparkles } from "lucide-react";
+import { ArrowRight, Check, Layers3, Play, ShoppingBag } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { App, Image } from "antd";
 
 import { commercePresets } from "@/constant/commerce-presets";
+import { TemplateScene, type TemplateSceneVariant } from "@/components/template-scene";
 import { fetchPrompts, type Prompt } from "@/services/api/prompts";
 
 const workflow = [
@@ -13,6 +14,15 @@ const workflow = [
     { step: "02", title: "选择用途", detail: "从主图、场景图、详情页到活动视觉，直接从任务开始。" },
     { step: "03", title: "生成并交付", detail: "在画布中对比、审核与迭代，沉淀可复用的整套商品素材。" },
 ];
+
+const presetScenes: Record<string, TemplateSceneVariant> = {
+    "product-main": "main",
+    lifestyle: "lifestyle",
+    "selling-points": "detail",
+    promotion: "promo",
+    "apparel-model": "apparel",
+    "sku-series": "sku",
+};
 
 export default function IndexPage() {
     const { message } = App.useApp();
@@ -75,15 +85,21 @@ export default function IndexPage() {
                     <p className="mt-4 text-lg leading-8 text-muted-foreground">选择用途，带入专业提示词，再上传商品参考图即可开始。</p>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    {commercePresets.map((preset, index) => {
-                        const Icon = preset.icon;
-                        return (
-                            <Link key={preset.id} href={`/image?preset=${preset.id}`} className="group flex min-h-64 flex-col rounded-[28px] bg-card p-7 shadow-[0_1px_0_rgba(0,0,0,.04),0_16px_50px_rgba(29,29,31,.06)] ring-1 ring-black/[.04] transition duration-300 hover:-translate-y-1 hover:shadow-[0_24px_65px_rgba(29,29,31,.11)] dark:ring-white/10">
-                                <div className="flex items-center justify-between"><span className="grid size-11 place-items-center rounded-full bg-muted"><Icon className="size-5" /></span><span className="text-xs tabular-nums text-muted-foreground">0{index + 1}</span></div>
-                                <div className="mt-auto pt-10"><h3 className="text-xl font-semibold tracking-tight">{preset.title}</h3><p className="mt-2 text-sm leading-6 text-muted-foreground">{preset.description}</p><span className="mt-5 inline-flex items-center gap-1 text-sm font-medium text-primary">立即制作 <ArrowRight className="size-4 transition group-hover:translate-x-1" /></span></div>
-                            </Link>
-                        );
-                    })}
+                    {commercePresets.map((preset, index) => (
+                        <Link key={preset.id} href={`/image?preset=${preset.id}`} className="group overflow-hidden rounded-[22px] bg-white shadow-[0_2px_14px_rgba(29,29,31,.06)] ring-1 ring-black/[.04] transition hover:-translate-y-[3px] hover:shadow-[0_14px_44px_rgba(29,29,31,.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:bg-card dark:shadow-none dark:ring-border dark:hover:shadow-none dark:hover:ring-border-strong">
+                            <span className="relative block aspect-[4/3] overflow-hidden">
+                                <TemplateScene variant={presetScenes[preset.id] ?? "main"} />
+                                <span className="absolute left-3 top-3 rounded-full bg-white/75 px-2.5 py-1 text-[11px] font-semibold tabular-nums backdrop-blur-md dark:bg-black/55">0{index + 1}</span>
+                            </span>
+                            <span className="block px-[18px] pb-[18px] pt-4">
+                                <span className="block text-[15.5px] font-semibold tracking-[-.01em]">{preset.title}</span>
+                                <span className="mt-1 block text-xs leading-5 text-muted-foreground">{preset.description}</span>
+                                <span className="mt-2.5 inline-flex items-center gap-1 text-[13px] font-medium text-primary">
+                                    立即制作 <ArrowRight className="size-3.5 transition group-hover:translate-x-0.5" />
+                                </span>
+                            </span>
+                        </Link>
+                    ))}
                 </div>
             </section>
 
@@ -99,7 +115,7 @@ export default function IndexPage() {
             {promptShowcase.length ? (
                 <section className="mx-auto max-w-[1440px] px-4 py-20 sm:px-6 lg:px-8">
                     <div className="mb-9 flex flex-wrap items-end justify-between gap-4"><div><p className="text-sm font-medium text-primary">视觉灵感</p><h2 className="mt-3 text-4xl font-semibold tracking-[-.04em]">看看还能怎么呈现商品。</h2></div><Link href="/prompts" className="inline-flex items-center gap-1 text-sm text-primary">查看全部 <ArrowRight className="size-4" /></Link></div>
-                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{promptShowcase.map((item, index) => <button key={item.id} type="button" onClick={() => { setPreviewIndex(index); setPreviewOpen(true); }} className="group relative aspect-[4/3] overflow-hidden rounded-[24px] bg-muted text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"><img src={item.coverUrl} alt={item.title} className="size-full object-cover transition duration-700 group-hover:scale-[1.035]" /><div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent p-6 pt-20 text-white"><h3 className="font-medium">{item.title}</h3></div></button>)}</div>
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{promptShowcase.map((item, index) => <button key={item.id} type="button" onClick={() => { setPreviewIndex(index); setPreviewOpen(true); }} className="group relative aspect-[4/3] overflow-hidden rounded-[22px] bg-muted text-left transition hover:-translate-y-[3px] hover:shadow-[0_14px_44px_rgba(29,29,31,.14)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"><img src={item.coverUrl} alt={item.title} className="size-full object-cover transition duration-700 group-hover:scale-[1.035]" /><div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent p-6 pt-20 text-white"><h3 className="font-medium">{item.title}</h3></div></button>)}</div>
                 </section>
             ) : null}
 

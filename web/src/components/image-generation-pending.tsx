@@ -20,7 +20,7 @@ export function ImageGenerationPending({ className, label, compact = false }: { 
     const progress = Math.min(98, 10 + (1 - Math.exp(-tick / 28)) * 88);
 
     return (
-        <div className={cn("relative overflow-hidden bg-stone-100 dark:bg-white/10", compact ? "min-h-24" : "aspect-[4/3]", className)}>
+        <div className={cn("relative overflow-hidden bg-stone-100 dark:bg-surface-2", compact ? "min-h-24" : "aspect-[4/3]", className)}>
             <div
                 className="absolute inset-0 opacity-60"
                 style={{

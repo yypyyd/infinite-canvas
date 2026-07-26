@@ -4,28 +4,28 @@ import { theme as antdTheme } from "antd";
 
 const neutral = {
     light: {
-        primary: "#0071e3",
-        primaryHover: "#0077ed",
+        primary: "#c44a1d",
+        primaryHover: "#a93f18",
         primaryText: "#ffffff",
         menuBg: "#f5f5f7",
         menuText: "#1d1d1f",
         selectActiveBg: "#f5f5f7",
-        selectSelectedBg: "#e8f2ff",
+        selectSelectedBg: "#fdeee5",
         selectText: "#1d1d1f",
-        tableSelectedBg: "rgba(0, 113, 227, 0.06)",
-        tableSelectedHoverBg: "rgba(0, 113, 227, 0.1)",
+        tableSelectedBg: "rgba(196, 74, 29, 0.06)",
+        tableSelectedHoverBg: "rgba(196, 74, 29, 0.1)",
     },
     dark: {
-        primary: "#2997ff",
-        primaryHover: "#40a4ff",
-        primaryText: "#0f1012",
-        menuBg: "#2c2c2e",
+        primary: "#ff8f66",
+        primaryHover: "#ffa585",
+        primaryText: "#26120a",
+        menuBg: "#282a32",
         menuText: "#f5f5f7",
-        selectActiveBg: "#2c2c2e",
-        selectSelectedBg: "#14395e",
+        selectActiveBg: "#282a32",
+        selectSelectedBg: "#4a2a1c",
         selectText: "#f5f5f7",
-        tableSelectedBg: "rgba(41, 151, 255, 0.1)",
-        tableSelectedHoverBg: "rgba(41, 151, 255, 0.16)",
+        tableSelectedBg: "rgba(255, 143, 102, 0.1)",
+        tableSelectedHoverBg: "rgba(255, 143, 102, 0.16)",
     },
 };
 
@@ -55,6 +55,18 @@ export function getAntThemeConfig(dark: boolean): ThemeConfig {
             controlHeightLG: 48,
             fontFamily: '"SF Pro Text","PingFang SC","Microsoft YaHei","Helvetica Neue",sans-serif',
             boxShadowSecondary: dark ? "0 18px 48px rgba(0, 0, 0, 0.35)" : "0 18px 48px rgba(29, 29, 31, 0.1)",
+            ...(dark
+                ? {
+                      colorBgLayout: "#141519",
+                      colorBgContainer: "#1f2127",
+                      colorBgElevated: "#30323b",
+                      colorBorder: "rgba(255, 255, 255, 0.14)",
+                      colorBorderSecondary: "rgba(255, 255, 255, 0.08)",
+                      colorText: "#f5f5f7",
+                      colorTextSecondary: "#aeaeb2",
+                      colorTextTertiary: "#86868b",
+                  }
+                : {}),
         },
         components: {
             Button: {

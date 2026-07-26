@@ -87,13 +87,13 @@ function AccountContent() {
     return (
         <main className="h-full overflow-y-auto bg-background">
             <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
-                <section className="relative overflow-hidden rounded-[30px] bg-[#f5f5f7] dark:bg-[#1d1d1f]">
+                <section className="relative overflow-hidden rounded-[30px] bg-[#f5f5f7] dark:bg-card dark:ring-1 dark:ring-border">
                     <div className="relative flex flex-col gap-5 px-5 py-6 sm:flex-row sm:items-center sm:px-7 sm:py-8">
                         <Avatar size={72} src={user.avatarUrl || undefined} className="shrink-0 border border-border bg-foreground text-xl font-semibold text-background">
                             {avatarText}
                         </Avatar>
                         <div className="min-w-0 flex-1">
-                            <div className="mb-2 text-sm font-medium text-[#0071e3] dark:text-[#2997ff]">个人工作台</div>
+                            <div className="mb-2 text-sm font-medium text-primary">个人工作台</div>
                             <div className="flex min-w-0 flex-wrap items-center gap-2">
                                 <h1 className="truncate text-2xl font-semibold tracking-tight sm:text-3xl">{userName}</h1>
                                 <Tag className="m-0">{user.role === "admin" ? "管理员" : "普通用户"}</Tag>

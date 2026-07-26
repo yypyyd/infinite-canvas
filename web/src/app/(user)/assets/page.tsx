@@ -192,12 +192,12 @@ export default function AssetsPage() {
             <main className="min-h-0 flex-1 overflow-y-auto px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
                 <div className="pb-10">
                     <div className="mx-auto max-w-5xl text-center">
-                        <div className="mb-3 text-sm font-medium text-primary">商品内容库</div>
+                        <div className="mb-3 inline-flex items-center gap-2 text-sm font-medium text-primary"><span className="size-1.5 rounded-full bg-primary" />商品内容库</div>
                         <h1 className="text-5xl font-semibold tracking-[-.045em] sm:text-6xl">每份素材，都为上新准备。</h1>
                         <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-muted-foreground">集中管理商品实拍、品牌参考、卖点文案与生成结果。</p>
                     </div>
 
-                    <div className="mx-auto mt-9 w-full max-w-2xl rounded-full bg-card p-1.5 shadow-[0_14px_40px_rgba(29,29,31,.08)] ring-1 ring-black/[.04] dark:ring-white/10">
+                    <div className="mx-auto mt-9 w-full max-w-2xl rounded-full bg-card p-1.5 shadow-[0_14px_40px_rgba(29,29,31,.08)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border">
                         <Input.Search
                             className="w-full"
                             size="large"

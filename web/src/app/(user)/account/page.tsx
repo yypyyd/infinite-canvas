@@ -115,7 +115,7 @@ function AccountContent() {
                     </div>
                 </section>
 
-                <div className="mt-6 rounded-[22px] bg-card px-4 shadow-[0_12px_36px_rgba(29,29,31,.06)] ring-1 ring-black/[.04] dark:ring-white/10 sm:px-6">
+                <div className="mt-6 rounded-[22px] bg-card px-4 shadow-[0_12px_36px_rgba(29,29,31,.06)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border sm:px-6">
                     <Tabs
                         activeKey={activeTab}
                         items={accountTabs}

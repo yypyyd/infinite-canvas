@@ -53,7 +53,7 @@ export default function PromptsPage() {
             >
                 <div className="pb-10">
                     <div className="mx-auto max-w-5xl text-center">
-                        <div className="mb-3 text-sm font-medium text-primary">创意灵感库</div>
+                        <div className="mb-3 inline-flex items-center gap-2 text-sm font-medium text-primary"><span className="size-1.5 rounded-full bg-primary" />创意灵感库</div>
                         <h1 className="text-5xl font-semibold tracking-[-.045em] sm:text-6xl">为商品找到更好的表达。</h1>
                         <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-muted-foreground">从 {totalPrompts} 条视觉模板中，按标题、标签与分类找到适合商品的创作方向。</p>
                     </div>
@@ -64,7 +64,7 @@ export default function PromptsPage() {
                     ) : null}
                     {!query.isLoading ? (
                         <>
-                            <div className="mx-auto mt-9 w-full max-w-2xl rounded-full bg-card p-1.5 shadow-[0_14px_40px_rgba(29,29,31,.08)] ring-1 ring-black/[.04] dark:ring-white/10">
+                            <div className="mx-auto mt-9 w-full max-w-2xl rounded-full bg-card p-1.5 shadow-[0_14px_40px_rgba(29,29,31,.08)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border">
                                 <Input size="large" className="w-full" prefix={<Search className="size-4 text-muted-foreground" />} value={titleKeyword} placeholder="搜索标题、品类或视觉风格" onChange={(event) => setTitleKeyword(event.target.value)} />
                             </div>
                             <div className="mx-auto mt-6 grid max-w-6xl gap-3 text-left">

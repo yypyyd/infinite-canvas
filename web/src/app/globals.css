@@ -106,7 +106,7 @@
     --primary: oklch(0.75 0.15 45);
     --primary-foreground: oklch(0.21 0.04 45);
     --accent-soft: rgb(255 143 102 / 14%);
-    --accent-glow: rgb(255 143 102 / 7%);
+    --accent-glow: rgb(255 143 102 / 5%);
     --secondary: oklch(0.25 0.007 250);
     --secondary-foreground: oklch(0.96 0.003 250);
     --muted: oklch(0.235 0.007 250);
@@ -156,8 +156,8 @@
 @layer utilities {
     .dark .hero-atmosphere {
         background-image:
-            radial-gradient(90% 130% at 82% -20%, var(--accent-glow), transparent 55%),
-            radial-gradient(70% 100% at 12% -30%, rgb(245 245 247 / 3.5%), transparent 60%);
+            radial-gradient(80% 120% at 90% -40%, var(--accent-glow), transparent 60%),
+            radial-gradient(70% 100% at 8% -40%, rgb(245 245 247 / 3%), transparent 60%);
     }
 
     .ai-title-aurora {

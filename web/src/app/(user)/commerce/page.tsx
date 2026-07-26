@@ -39,7 +39,6 @@ import {
     saveBrand,
     saveProduct,
     saveProductSKU,
-    saveProductionTemplate,
     switchOrganization,
     setBatchProductionItemPrimary,
     transferOrganizationOwnership,
@@ -58,6 +57,7 @@ import {
     type ProductionTemplate,
     type ProductionTemplateVersion,
 } from "@/services/api/commerce";
+import { commerceQueryKeys, userCommerceQueryKeys } from "@/services/api/commerce-query-keys";
 import { useUserStore } from "@/stores/use-user-store";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { flushActiveWorkspaceChanges } from "@/components/layout/workspace-provider";
@@ -71,10 +71,11 @@ const roleOptions = [
     { value: "reviewer", label: "审核人" },
 ];
 const roleLabels: Record<string, string> = { owner: "所有者", admin: "管理员", member: "成员", reviewer: "审核人" };
-const statusLabels: Record<string, string> = { draft: "草稿", active: "在售", paused: "暂停", queued: "排队中", running: "生产中", completed: "已完成", failed: "失败", cancelled: "已取消" };
-const statusColors: Record<string, string> = { active: "green", completed: "green", running: "blue", queued: "gold", failed: "red", cancelled: "default", paused: "orange" };
+const statusLabels: Record<string, string> = { draft: "草稿", active: "在售", paused: "暂停", queued: "排队中", running: "生产中", pending_review: "待审核", partial_success: "部分成功", completed: "已完成", failed: "失败", cancelled: "已取消" };
+const statusColors: Record<string, string> = { active: "green", completed: "green", running: "blue", queued: "gold", pending_review: "cyan", partial_success: "orange", failed: "red", cancelled: "default", paused: "orange" };
 const reviewLabels: Record<string, string> = { pending: "待审核", approved: "已通过", rejected: "已驳回" };
 const reviewColors: Record<string, string> = { pending: "gold", approved: "green", rejected: "red" };
+const canSetBatchItemPrimary = (item: BatchProductionItem) => item.status === "completed" && item.reviewStatus === "approved" && Boolean(item.resultStorageKey) && !item.isPrimary && Number.isInteger(item.runNumber) && item.runNumber > 0;
 type ListQuery = { page: number; pageSize: number; keyword: string };
 const initialListQuery: ListQuery = { page: 1, pageSize: 20, keyword: "" };
 
@@ -99,7 +100,6 @@ export default function CommercePage() {
     const [skuDraft, setSkuDraft] = useState<Partial<ProductSKU> | null>(null);
     const [batchOpen, setBatchOpen] = useState(false);
     const [selectedBatch, setSelectedBatch] = useState<BatchProductionJob | null>(null);
-    const [templateDraft, setTemplateDraft] = useState<Partial<ProductionTemplate> | null>(null);
     const [selectedTemplate, setSelectedTemplate] = useState<ProductionTemplate | null>(null);
     const [promptPreview, setPromptPreview] = useState("");
     const [reviewDraft, setReviewDraft] = useState<{ item: BatchProductionItem; status: "approved" | "rejected" } | null>(null);
@@ -112,6 +112,7 @@ export default function CommercePage() {
     const [auditListQuery, setAuditListQuery] = useState(initialListQuery);
     const [skuListQuery, setSKUListQuery] = useState(initialListQuery);
     const [itemListQuery, setItemListQuery] = useState(initialListQuery);
+    const [itemStatus, setItemStatus] = useState("all");
     const [productOptionKeyword, setProductOptionKeyword] = useState("");
     const [brandOptionKeyword, setBrandOptionKeyword] = useState("");
     const [organizationForm] = Form.useForm<{ name: string }>();
@@ -122,7 +123,6 @@ export default function CommercePage() {
     const [productForm] = Form.useForm<Partial<Product>>();
     const [skuForm] = Form.useForm<Partial<ProductSKU> & { attributesText?: string }>();
     const [batchForm] = Form.useForm<{ name: string; brandId?: string; presetId: string; presetVersion: number; deliverySpecId: string; productIds: string[]; previewSkuId?: string }>();
-    const [templateForm] = Form.useForm<{ name: string; description: string; status: "active" | "disabled"; prompt: string }>();
     const [reviewForm] = Form.useForm<{ comment: string }>();
 	const brandLogoUploadInFlight = useRef(false);
 	const brandLogoUploadSession = useRef(0);
@@ -133,6 +133,8 @@ export default function CommercePage() {
 	const skuUploadControllers = useRef(new Set<AbortController>());
 	const skuUploadFileSessions = useRef(new WeakMap<object, number>());
 	const batchRequestId = useRef("");
+    const selectedBatchIdRef = useRef("");
+    selectedBatchIdRef.current = selectedBatch?.id || "";
 	const [brandLogoUploading, setBrandLogoUploading] = useState(false);
 	const [skuUploadsInFlight, setSKUUploadsInFlight] = useState(0);
 	const brandLogoStorageKey = Form.useWatch("logoStorageKey", brandForm);
@@ -147,6 +149,7 @@ export default function CommercePage() {
         setAuditListQuery(initialListQuery);
         setSKUListQuery(initialListQuery);
         setItemListQuery(initialListQuery);
+        setItemStatus("all");
         setSelectedProduct(null);
         setSelectedBatch(null);
 		brandLogoUploadAbort.current?.abort();
@@ -166,27 +169,27 @@ export default function CommercePage() {
         setReviewDraft(null);
         setComparisonItems([]);
         setComparisonOpen(false);
-        setTemplateDraft(null);
         setSelectedTemplate(null);
         setPromptPreview("");
     }, [organizationId]);
 
-    const workspaceQuery = useQuery({ queryKey: ["commerce-workspace", organizationId], queryFn: fetchCommerceWorkspace, enabled: Boolean(organizationId) });
-	const membersQuery = useQuery({ queryKey: ["commerce-members", organizationId, memberListQuery], queryFn: () => fetchOrganizationMembers(memberListQuery), enabled: Boolean(organizationId) && activeTab === "organization" });
-	const brandsQuery = useQuery({ queryKey: ["commerce-brands", organizationId, brandListQuery], queryFn: () => fetchBrands(brandListQuery), enabled: Boolean(organizationId) && activeTab === "brands" });
-	const productsQuery = useQuery({ queryKey: ["commerce-products", organizationId, productListQuery], queryFn: () => fetchProducts(productListQuery), enabled: Boolean(organizationId) && activeTab === "products" });
-	const jobsQuery = useQuery({ queryKey: ["commerce-batch-jobs", organizationId, jobListQuery], queryFn: () => fetchBatchProductionJobs(jobListQuery), enabled: Boolean(organizationId) && activeTab === "batch", refetchInterval: (query) => ((query.state.data as { items?: BatchProductionJob[] } | undefined)?.items?.some((item) => item.status === "queued" || item.status === "running") ? 5000 : false) });
-	const invitationsQuery = useQuery({ queryKey: ["commerce-pending-invitations", userId], queryFn: fetchPendingInvitations, enabled: Boolean(userId) && activeTab === "organization" });
-	const organizationInvitationsQuery = useQuery({ queryKey: ["commerce-organization-invitations", organizationId], queryFn: fetchCurrentOrganizationInvitations, enabled: Boolean(organizationId) && activeTab === "organization" && ["owner", "admin"].includes(workspaceQuery.data?.membership.role || "") });
-	const auditQuery = useQuery({ queryKey: ["commerce-audit", organizationId, auditListQuery], queryFn: () => fetchAuditLogs(auditListQuery), enabled: Boolean(organizationId) && activeTab === "audit" && ["owner", "admin"].includes(workspaceQuery.data?.membership.role || "") });
-    const skusQuery = useQuery({ queryKey: ["commerce-skus", organizationId, selectedProduct?.id, skuListQuery], queryFn: () => fetchProductSKUs(selectedProduct?.id || "", skuListQuery), enabled: activeTab === "products" && Boolean(selectedProduct?.id) });
-	const batchItemsQuery = useQuery({ queryKey: ["commerce-batch-items", organizationId, selectedBatch?.id, itemListQuery], queryFn: () => fetchBatchProductionItems(selectedBatch?.id || "", itemListQuery), enabled: activeTab === "batch" && Boolean(selectedBatch?.id), refetchInterval: (query) => ((query.state.data as { items?: Array<{ status: string }> } | undefined)?.items?.some((item) => item.status === "queued" || item.status === "running") ? 5000 : false) });
-    const templatesQuery = useQuery({ queryKey: ["commerce-production-templates", organizationId], queryFn: () => fetchProductionTemplates({ page: 1, pageSize: 100 }), enabled: Boolean(organizationId) && (activeTab === "templates" || activeTab === "batch" || batchOpen) });
-    const deliverySpecsQuery = useQuery({ queryKey: ["commerce-production-delivery-specs"], queryFn: fetchProductionDeliverySpecs, enabled: activeTab === "batch" || batchOpen });
-    const templateVersionsQuery = useQuery({ queryKey: ["commerce-production-template-versions", organizationId, selectedTemplate?.id], queryFn: () => fetchProductionTemplateVersions(selectedTemplate?.id || ""), enabled: Boolean(selectedTemplate?.id) });
-    const previewSKUsQuery = useQuery({ queryKey: ["commerce-preview-skus", organizationId, batchProductIDs[0]], queryFn: () => fetchProductSKUs(batchProductIDs[0], { page: 1, pageSize: 100 }), enabled: batchOpen && Boolean(batchProductIDs[0]) });
-    const productOptionsQuery = useQuery({ queryKey: ["commerce-product-options", organizationId, productOptionKeyword], queryFn: () => fetchProducts({ page: 1, pageSize: 50, keyword: productOptionKeyword }), enabled: batchOpen });
-    const brandOptionsQuery = useQuery({ queryKey: ["commerce-brand-options", organizationId, brandOptionKeyword], queryFn: () => fetchBrands({ page: 1, pageSize: 50, keyword: brandOptionKeyword }), enabled: Boolean(productDraft || batchOpen) });
+    const workspaceQuery = useQuery({ queryKey: commerceQueryKeys.workspace(organizationId), queryFn: fetchCommerceWorkspace, enabled: Boolean(organizationId) });
+	const membersQuery = useQuery({ queryKey: commerceQueryKeys.members(organizationId, memberListQuery), queryFn: () => fetchOrganizationMembers(memberListQuery), enabled: Boolean(organizationId) && activeTab === "organization" });
+	const brandsQuery = useQuery({ queryKey: commerceQueryKeys.brands(organizationId, brandListQuery), queryFn: () => fetchBrands(brandListQuery), enabled: Boolean(organizationId) && activeTab === "brands" });
+	const productsQuery = useQuery({ queryKey: commerceQueryKeys.products(organizationId, productListQuery), queryFn: () => fetchProducts(productListQuery), enabled: Boolean(organizationId) && activeTab === "products" });
+	const jobsQuery = useQuery({ queryKey: commerceQueryKeys.jobs(organizationId, jobListQuery), queryFn: () => fetchBatchProductionJobs(jobListQuery), enabled: Boolean(organizationId) && activeTab === "batch", refetchInterval: (query) => ((query.state.data as { items?: BatchProductionJob[] } | undefined)?.items?.some((item) => item.status === "queued" || item.status === "running") ? 5000 : false) });
+	const invitationsQuery = useQuery({ queryKey: userCommerceQueryKeys.pendingInvitations(userId), queryFn: fetchPendingInvitations, enabled: Boolean(userId) && activeTab === "organization" });
+	const organizationInvitationsQuery = useQuery({ queryKey: commerceQueryKeys.organizationInvitations(organizationId), queryFn: fetchCurrentOrganizationInvitations, enabled: Boolean(organizationId) && activeTab === "organization" && ["owner", "admin"].includes(workspaceQuery.data?.membership.role || "") });
+	const auditQuery = useQuery({ queryKey: commerceQueryKeys.audit(organizationId, auditListQuery), queryFn: () => fetchAuditLogs(auditListQuery), enabled: Boolean(organizationId) && activeTab === "audit" && ["owner", "admin"].includes(workspaceQuery.data?.membership.role || "") });
+    const skusQuery = useQuery({ queryKey: commerceQueryKeys.skus(organizationId, selectedProduct?.id || "", skuListQuery), queryFn: () => fetchProductSKUs(selectedProduct?.id || "", skuListQuery), enabled: activeTab === "products" && Boolean(selectedProduct?.id) });
+	const itemFilters = { ...itemListQuery, type: itemStatus };
+	const batchItemsQuery = useQuery({ queryKey: commerceQueryKeys.items(organizationId, selectedBatch?.id || "", itemFilters), queryFn: () => fetchBatchProductionItems(selectedBatch?.id || "", itemFilters), enabled: activeTab === "batch" && Boolean(selectedBatch?.id), refetchInterval: (query) => ((query.state.data as { items?: Array<{ status: string }> } | undefined)?.items?.some((item) => item.status === "queued" || item.status === "running") ? 5000 : false) });
+    const templatesQuery = useQuery({ queryKey: commerceQueryKeys.templates(organizationId, { page: 1, pageSize: 100 }), queryFn: () => fetchProductionTemplates({ page: 1, pageSize: 100 }), enabled: Boolean(organizationId) && (activeTab === "templates" || activeTab === "batch" || batchOpen) });
+    const deliverySpecsQuery = useQuery({ queryKey: commerceQueryKeys.deliverySpecs(organizationId), queryFn: fetchProductionDeliverySpecs, enabled: Boolean(organizationId) && (activeTab === "batch" || batchOpen) });
+    const templateVersionsQuery = useQuery({ queryKey: commerceQueryKeys.templateVersions(organizationId, selectedTemplate?.id || ""), queryFn: () => fetchProductionTemplateVersions(selectedTemplate?.id || ""), enabled: Boolean(organizationId && selectedTemplate?.id) });
+    const previewSKUsQuery = useQuery({ queryKey: commerceQueryKeys.previewSkus(organizationId, batchProductIDs[0] || "", { page: 1, pageSize: 100 }), queryFn: () => fetchProductSKUs(batchProductIDs[0], { page: 1, pageSize: 100 }), enabled: Boolean(organizationId) && batchOpen && Boolean(batchProductIDs[0]) });
+    const productOptionsQuery = useQuery({ queryKey: commerceQueryKeys.productOptions(organizationId, { page: 1, pageSize: 50, keyword: productOptionKeyword }), queryFn: () => fetchProducts({ page: 1, pageSize: 50, keyword: productOptionKeyword }), enabled: Boolean(organizationId) && batchOpen });
+    const brandOptionsQuery = useQuery({ queryKey: commerceQueryKeys.brandOptions(organizationId, { page: 1, pageSize: 50, keyword: brandOptionKeyword }), queryFn: () => fetchBrands({ page: 1, pageSize: 50, keyword: brandOptionKeyword }), enabled: Boolean(organizationId) && Boolean(productDraft || batchOpen) });
 
     const workspace = workspaceQuery.data;
     const brands = brandsQuery.data?.items || [];
@@ -203,12 +206,15 @@ export default function CommercePage() {
     const canReview = canManage || workspace?.membership.role === "reviewer";
     const creditSummary = workspace?.creditSummary;
     const budgetPercent = creditSummary?.monthlyBudget ? Math.min(100, Math.round(creditSummary.monthlyUsed * 100 / creditSummary.monthlyBudget)) : 0;
-    const invalidate = async () => queryClient.invalidateQueries({ predicate: (query) => String(query.queryKey[0]).startsWith("commerce-") });
-    const run = async (action: () => Promise<unknown>, success: string) => {
+    const invalidate = async () => {
+        if (!organizationId) return;
+        await queryClient.invalidateQueries({ queryKey: commerceQueryKeys.root(organizationId), exact: false });
+    };
+    const run = async (action: () => Promise<unknown>, success: string, invalidateAfter = true) => {
         setWorking(true);
         try {
             await action();
-            await invalidate();
+            if (invalidateAfter) await invalidate();
             message.success(success);
             return true;
         } catch (error) {
@@ -218,18 +224,63 @@ export default function CommercePage() {
             setWorking(false);
         }
     };
+    const changeOrganizationContext = async (changeOrganization: () => Promise<string>) => {
+        const previousOrganizationId = organizationId;
+        await flushActiveWorkspaceChanges();
+        if (previousOrganizationId) await queryClient.cancelQueries({ queryKey: commerceQueryKeys.root(previousOrganizationId), exact: false });
+        const nextOrganizationId = await changeOrganization();
+        if (previousOrganizationId && previousOrganizationId !== nextOrganizationId) queryClient.removeQueries({ queryKey: commerceQueryKeys.root(previousOrganizationId), exact: false });
+        setOrganizationId(nextOrganizationId);
+        await refreshUser();
+        await queryClient.invalidateQueries({ queryKey: commerceQueryKeys.root(nextOrganizationId), exact: false });
+        await queryClient.refetchQueries({ queryKey: commerceQueryKeys.root(nextOrganizationId), exact: false, type: "active" });
+    };
 
+    const canReviewBatchItem = (item: BatchProductionItem, status?: "approved" | "rejected") => canReview && Boolean(selectedBatch) && item.jobId === selectedBatch?.id && item.status === "completed" && Number.isInteger(item.runNumber) && item.runNumber > 0 && (!status || status === "approved" || status === "rejected");
+    const canSetPrimary = (item: BatchProductionItem) => canReviewBatchItem(item) && canSetBatchItemPrimary(item);
     const openReview = (item: BatchProductionItem, status: "approved" | "rejected") => {
+        if (!canReviewBatchItem(item, status)) { message.error("当前结果不可审核"); return; }
         reviewForm.resetFields();
         reviewForm.setFieldsValue({ comment: item.reviewComment || "" });
         setReviewDraft({ item, status });
     };
 
     const submitReview = async () => {
-        if (!selectedBatch || !reviewDraft) return;
+        const job = selectedBatch;
+        if (!job || !reviewDraft || !canReviewBatchItem(reviewDraft.item, reviewDraft.status)) { message.error("当前结果不可审核"); return; }
         const value = await reviewForm.validateFields();
-        if (await run(() => reviewBatchProductionItem(selectedBatch.id, reviewDraft.item.id, { runNumber: reviewDraft.item.runNumber, status: reviewDraft.status, comment: value.comment || "" }), reviewDraft.status === "approved" ? "审核已通过" : "结果已驳回")) setReviewDraft(null);
+        const comment = String(value.comment || "").trim();
+        if ((reviewDraft.status === "rejected" && !comment) || comment.length > 1000) { message.error(reviewDraft.status === "rejected" && !comment ? "驳回时请填写批注" : "审核批注不能超过 1000 字"); return; }
+        const item = reviewDraft.item; const reviewStatus = reviewDraft.status;
+        setWorking(true);
+        try {
+            await reviewBatchProductionItem(job.id, item.id, { runNumber: item.runNumber, status: reviewStatus, comment });
+            await Promise.all([
+                queryClient.invalidateQueries({ queryKey: commerceQueryKeys.jobsRoot(organizationId) }),
+                queryClient.invalidateQueries({ queryKey: commerceQueryKeys.job(organizationId, job.id), exact: true }),
+                queryClient.invalidateQueries({ queryKey: commerceQueryKeys.jobItemsRoot(organizationId, job.id) }),
+            ]);
+            message.success(reviewStatus === "approved" ? "审核已通过" : "结果已驳回");
+            if (selectedBatchIdRef.current === job.id) setReviewDraft((current) => current?.item.jobId === job.id && current.item.id === item.id ? null : current);
+        } catch (error) { message.error(error instanceof Error ? error.message : "审核失败"); } finally { setWorking(false); }
     };
+
+    const setPrimary = async (item: BatchProductionItem) => {
+        if (!canSetPrimary(item)) { message.error("当前结果不可设为主图"); return false; }
+        setWorking(true);
+        try {
+            await setBatchProductionItemPrimary(item.jobId, item.id, item.runNumber);
+            await Promise.all([
+                queryClient.invalidateQueries({ queryKey: commerceQueryKeys.job(organizationId, item.jobId), exact: true }),
+                queryClient.invalidateQueries({ queryKey: commerceQueryKeys.jobItemsRoot(organizationId, item.jobId) }),
+            ]);
+            message.success("已设为商品主图");
+            return true;
+        } catch (error) { message.error(error instanceof Error ? error.message : "设置主图失败"); return false; } finally { setWorking(false); }
+    };
+
+    const cancelJob = async (job: BatchProductionJob) => { if (!canWrite || !["queued", "running"].includes(job.status)) { message.error("当前任务不可取消"); return; } await run(() => cancelBatchProductionJob(job.id), "任务已取消"); };
+    const retryJob = async (job: BatchProductionJob) => { if (!canWrite || !["failed", "partial_success"].includes(job.status)) { message.error("当前任务不可重试"); return; } await run(() => retryBatchProductionJob(job.id), "失败项已重新排队"); };
 
     const downloadBatchArchive = async (job: BatchProductionJob) => {
         setWorking(true);
@@ -299,17 +350,6 @@ export default function CommercePage() {
         } finally {
             setWorking(false);
         }
-    };
-
-    const openProductionTemplate = (item: Partial<ProductionTemplate>) => {
-        templateForm.resetFields();
-        templateForm.setFieldsValue({ name: item.name || "", description: item.description || "", status: item.status || "active", prompt: item.currentPrompt || "" });
-        setTemplateDraft(item);
-    };
-
-    const submitProductionTemplate = async () => {
-        const value = await templateForm.validateFields();
-        if (await run(() => saveProductionTemplate({ id: templateDraft?.id, version: templateDraft?.version || 0, ...value }), templateDraft?.id ? "模板新版本已发布" : "生产模板已创建")) setTemplateDraft(null);
     };
 
     const previewBatchPrompt = async () => {
@@ -392,7 +432,7 @@ export default function CommercePage() {
             {(invitationsQuery.data || []).length ? (
                 <Card className="border-orange-200 bg-orange-50/60 dark:border-orange-900 dark:bg-orange-950/20">
                     <div className="mb-3 text-sm font-medium">待接受的企业邀请</div>
-					<div className="flex flex-wrap gap-2">{invitationsQuery.data?.map((item) => <Button key={item.id} onClick={() => void run(async () => { await flushActiveWorkspaceChanges(); await acceptOrganizationInvitation(item.id); setOrganizationId(item.organizationId); await refreshUser(); }, "已加入企业")}>{item.organizationName || "企业邀请"} · {roleLabels[item.role]}</Button>)}</div>
+					<div className="flex flex-wrap gap-2">{invitationsQuery.data?.map((item) => <Button key={item.id} onClick={() => void run(() => changeOrganizationContext(async () => { await acceptOrganizationInvitation(item.id); return item.organizationId; }), "已加入企业", false)}>{item.organizationName || "企业邀请"} · {roleLabels[item.role]}</Button>)}</div>
                 </Card>
             ) : null}
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
@@ -422,7 +462,7 @@ export default function CommercePage() {
                     ]} />
                     <div className="mt-5 border-t border-border pt-4">
                         <div className="mb-2 text-xs text-muted-foreground">切换企业</div>
-						<Select className="w-full" value={workspace?.organization.id} disabled={working} options={workspace?.organizations.map((item) => ({ value: item.id, label: `${item.name} · ${roleLabels[item.role]}` }))} onChange={(value) => void run(async () => { await flushActiveWorkspaceChanges(); await switchOrganization(value); setOrganizationId(value); await refreshUser(); }, "已切换企业")} />
+						<Select className="w-full" value={workspace?.organization.id} disabled={working} options={workspace?.organizations.map((item) => ({ value: item.id, label: `${item.name} · ${roleLabels[item.role]}` }))} onChange={(value) => void run(() => changeOrganizationContext(async () => { await switchOrganization(value); return value; }), "已切换企业", false)} />
                         <Button className="mt-3" block icon={<Plus className="size-4" />} onClick={() => { organizationForm.resetFields(); setOrganizationMode("create"); }}>创建新企业</Button>
                     </div>
                 </Card>
@@ -471,20 +511,20 @@ export default function CommercePage() {
                 { title: "任务", render: (_, item) => <div><div className="font-medium">{item.name}</div><div className="mt-1 text-xs text-muted-foreground">{productionTemplateOptions.find((template) => template.id === item.presetId)?.title || item.presetId} · v{item.presetVersion || 1} · {item.deliverySpec?.platform || "通用"}</div></div> },
                 { title: "状态", width: 100, render: (_, item) => <Tag color={statusColors[item.status]}>{statusLabels[item.status]}</Tag> },
 				{ title: "进度", width: 220, render: (_, item) => <Progress size="small" percent={item.totalItems ? Math.round(((item.completedItems + item.failedItems) / item.totalItems) * 100) : 0} format={() => `${item.completedItems + item.failedItems}/${item.totalItems}${item.failedItems ? ` · ${item.failedItems} 失败` : ""}`} /> },
-                { title: "操作", width: 290, render: (_, item) => <div className="flex gap-1"><Button size="small" onClick={() => { setItemListQuery(initialListQuery); setComparisonItems([]); setComparisonOpen(false); setSelectedBatch(item); }}>任务项</Button>{item.completedItems > 0 ? <Button size="small" icon={<Download className="size-3.5" />} onClick={() => void downloadBatchArchive(item)}>下载结果</Button> : null}{["queued", "running"].includes(item.status) ? <Button size="small" onClick={() => void run(() => cancelBatchProductionJob(item.id), "任务已取消")}>取消</Button> : null}{item.status === "failed" ? <Button size="small" onClick={() => void run(() => retryBatchProductionJob(item.id), "失败项已重新排队")}>重试</Button> : null}</div> },
+                { title: "操作", width: 290, render: (_, item) => <div className="flex gap-1"><Button size="small" onClick={() => { setItemListQuery(initialListQuery); setComparisonItems([]); setComparisonOpen(false); setSelectedBatch(item); }}>任务项</Button>{item.completedItems > 0 ? <Button size="small" icon={<Download className="size-3.5" />} onClick={() => void downloadBatchArchive(item)}>下载结果</Button> : null}{canWrite && ["queued", "running"].includes(item.status) ? <Button size="small" onClick={() => void cancelJob(item)}>取消</Button> : null}{canWrite && ["failed", "partial_success"].includes(item.status) ? <Button size="small" onClick={() => void retryJob(item)}>重试</Button> : null}</div> },
             ]} /></Card>
         </div>
     );
 
     const templatePanel = (
         <div>
-            <div className="mb-5 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-2xl font-semibold">企业生产模板</h2><p className="mt-1 text-sm text-muted-foreground">版本化维护企业专属生产指令，历史任务始终使用创建时版本。</p></div>{canManage ? <Button type="primary" icon={<Plus className="size-4" />} onClick={() => openProductionTemplate({})}>新增模板</Button> : null}</div>
+            <div className="mb-5 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-2xl font-semibold">企业生产模板</h2><p className="mt-1 text-sm text-muted-foreground">版本化维护企业专属生产指令，历史任务始终使用创建时版本。</p></div>{canManage ? <Button type="primary" icon={<Plus className="size-4" />} onClick={() => router.push("/commerce/templates")}>管理模板</Button> : null}</div>
             <Card><Table<ProductionTemplate> rowKey="id" loading={templatesQuery.isFetching} dataSource={productionTemplates} pagination={false} columns={[
                 { title: "模板", render: (_, item) => <div><div className="font-medium">{item.name}</div><div className="mt-1 text-xs text-muted-foreground">{item.description || "暂无说明"}</div></div> },
                 { title: "状态", width: 100, render: (_, item) => <Tag color={item.status === "active" ? "green" : "default"}>{item.status === "active" ? "启用" : "停用"}</Tag> },
                 { title: "当前版本", width: 100, render: (_, item) => `v${item.currentVersion}` },
                 { title: "更新时间", dataIndex: "updatedAt", width: 190 },
-                { title: "操作", width: 150, render: (_, item) => <div className="flex gap-1"><Button size="small" onClick={() => setSelectedTemplate(item)}>版本</Button>{canManage ? <Button size="small" onClick={() => openProductionTemplate(item)}>发布新版</Button> : null}</div> },
+                { title: "操作", width: 150, render: (_, item) => <div className="flex gap-1"><Button size="small" onClick={() => setSelectedTemplate(item)}>版本</Button>{canManage ? <Button size="small" onClick={() => router.push("/commerce/templates")}>编辑</Button> : null}</div> },
             ]} /></Card>
         </div>
     );
@@ -509,7 +549,7 @@ export default function CommercePage() {
                 ]} />
             </div>
 
-			<Modal title={organizationMode === "edit" ? "企业设置" : "创建企业"} open={Boolean(organizationMode)} confirmLoading={working} onCancel={() => setOrganizationMode(null)} onOk={async () => { const value = await organizationForm.validateFields(); const editing = organizationMode === "edit"; const ok = await run(async () => { if (editing) return updateOrganization(value.name, workspace?.organization.version || 0); await flushActiveWorkspaceChanges(); const organization = await createOrganization(value.name); setOrganizationId(organization.id); await refreshUser(); return organization; }, editing ? "企业信息已更新" : "企业已创建"); if (ok) setOrganizationMode(null); }}><Form form={organizationForm} layout="vertical"><Form.Item name="name" label="企业名称" rules={[{ required: true, max: 200 }]}><Input /></Form.Item></Form></Modal>
+			<Modal title={organizationMode === "edit" ? "企业设置" : "创建企业"} open={Boolean(organizationMode)} confirmLoading={working} onCancel={() => setOrganizationMode(null)} onOk={async () => { const value = await organizationForm.validateFields(); const editing = organizationMode === "edit"; const ok = editing ? await run(() => updateOrganization(value.name, workspace?.organization.version || 0), "企业信息已更新") : await run(() => changeOrganizationContext(async () => (await createOrganization(value.name)).id), "企业已创建", false); if (ok) setOrganizationMode(null); }}><Form form={organizationForm} layout="vertical"><Form.Item name="name" label="企业名称" rules={[{ required: true, max: 200 }]}><Input /></Form.Item></Form></Modal>
             <Modal title="企业额度设置" open={creditSettingsOpen} confirmLoading={working} onCancel={() => setCreditSettingsOpen(false)} onOk={async () => { const value = await creditSettingsForm.validateFields(); const ok = await run(async () => { await updateOrganizationCreditSettings({ ...value, version: workspace?.organization.version || 0 }); await refreshUser(); }, "企业额度设置已更新"); if (ok) setCreditSettingsOpen(false); }}>
                 <Form form={creditSettingsForm} layout="vertical" requiredMark={false}>
                     <Form.Item name="mode" label="成员生成任务扣费方式" rules={[{ required: true }]}><Select options={[{ value: "personal", label: "成员个人额度" }, { value: "shared", label: "企业共享额度" }]} /></Form.Item>
@@ -537,13 +577,10 @@ export default function CommercePage() {
                     <Button block icon={<ScanText className="size-4" />} onClick={() => void previewBatchPrompt()}>预览最终提示词</Button>
                 </Form>
             </Modal>
-            <Modal title={templateDraft?.id ? `发布 ${templateDraft.name} 的新版本` : "新增企业生产模板"} open={Boolean(templateDraft)} width={760} confirmLoading={working} onCancel={() => setTemplateDraft(null)} onOk={submitProductionTemplate}>
-                <Form form={templateForm} layout="vertical"><div className="grid gap-x-4 sm:grid-cols-2"><Form.Item name="name" label="模板名称" rules={[{ required: true, max: 120 }]}><Input /></Form.Item><Form.Item name="status" label="状态" rules={[{ required: true }]}><Select options={[{ value: "active", label: "启用" }, { value: "disabled", label: "停用" }]} /></Form.Item></div><Form.Item name="description" label="模板说明" rules={[{ max: 500 }]}><Input.TextArea rows={2} /></Form.Item><Form.Item name="prompt" label="生产指令" rules={[{ required: true, max: 12000 }]} extra="系统会在此指令后自动注入品牌、商品和 SKU 数据。"><Input.TextArea rows={10} showCount maxLength={12000} /></Form.Item></Form>
-            </Modal>
             <Drawer title={`${selectedTemplate?.name || "模板"} · 版本历史`} width={720} open={Boolean(selectedTemplate)} onClose={() => setSelectedTemplate(null)}><Table<ProductionTemplateVersion> rowKey="id" loading={templateVersionsQuery.isFetching} dataSource={templateVersionsQuery.data || []} pagination={false} expandable={{ expandedRowRender: (item) => <pre className="whitespace-pre-wrap text-sm leading-6">{item.prompt}</pre> }} columns={[{ title: "版本", width: 90, render: (_, item) => `v${item.version}` }, { title: "创建人", dataIndex: "createdBy" }, { title: "发布时间", dataIndex: "createdAt", width: 190 }]} /></Drawer>
             <Modal title="最终提示词预览" open={Boolean(promptPreview)} width={760} footer={<Button type="primary" onClick={() => setPromptPreview("")}>关闭</Button>} onCancel={() => setPromptPreview("")}><pre className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap rounded-lg bg-muted p-4 text-sm leading-6">{promptPreview}</pre></Modal>
 			<Drawer title={`${selectedBatch?.name || "任务"} · 结果审核`} width={1180} open={Boolean(selectedBatch)} onClose={() => { setSelectedBatch(null); setReviewDraft(null); setComparisonItems([]); setComparisonOpen(false); }}>
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><Input.Search allowClear placeholder="搜索商品、SKU、错误或批注" className="w-72" onSearch={(keyword) => { setComparisonItems([]); setItemListQuery((value) => ({ ...value, page: 1, keyword })); }} /><Button icon={<Columns3 className="size-4" />} disabled={comparisonItems.length < 2} onClick={() => setComparisonOpen(true)}>对比选片 {comparisonItems.length}/4</Button></div>
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><div className="flex flex-wrap gap-2"><Input.Search allowClear placeholder="搜索商品、SKU、错误或批注" className="w-72" onSearch={(keyword) => { setComparisonItems([]); setItemListQuery((value) => ({ ...value, page: 1, keyword })); }} /><Select className="w-32" value={itemStatus} options={[{ value: "all", label: "全部状态" }, { value: "queued", label: "排队中" }, { value: "running", label: "生产中" }, { value: "completed", label: "已完成" }, { value: "failed", label: "失败" }, { value: "cancelled", label: "已取消" }]} onChange={(value) => { setComparisonItems([]); setItemStatus(value); setItemListQuery((current) => ({ ...current, page: 1 })); }}/></div><Button icon={<Columns3 className="size-4" />} disabled={comparisonItems.length < 2} onClick={() => setComparisonOpen(true)}>对比选片 {comparisonItems.length}/4</Button></div>
                 <Table<BatchProductionItem> rowKey="id" loading={batchItemsQuery.isFetching} dataSource={batchItemsQuery.data?.items || []} rowSelection={{ hideSelectAll: true, selectedRowKeys: comparisonItems.map((item) => item.id), getCheckboxProps: (item) => ({ disabled: item.status !== "completed" || !item.resultStorageKey || (comparisonItems.length >= 4 && !comparisonItems.some((selected) => selected.id === item.id)) }), onSelect: (item, selected) => setComparisonItems((current) => selected ? [...current, item] : current.filter((currentItem) => currentItem.id !== item.id)) }} scroll={{ x: 1120 }} pagination={{ current: itemListQuery.page, pageSize: itemListQuery.pageSize, total: batchItemsQuery.data?.total || 0, showSizeChanger: true, onChange: (page, pageSize) => { setComparisonItems([]); setItemListQuery((value) => ({ ...value, page, pageSize })); } }} columns={[
                     { title: "商品 / SKU", width: 220, render: (_, item) => <div><div className="font-medium">{item.qualityContext?.product.name || item.productId}</div><div className="mt-1 text-xs text-muted-foreground">{item.qualityContext?.sku ? `${item.qualityContext.sku.name} · ${item.qualityContext.sku.code}` : "按 SPU 生产"}</div></div> },
                     { title: "结果", width: 90, render: (_, item) => item.resultStorageKey ? <a href={workspaceFileUrl(item.resultStorageKey)} target="_blank" rel="noreferrer"><Avatar shape="square" size={56} src={workspaceFileUrl(item.resultStorageKey)} /></a> : "—" },
@@ -551,14 +588,14 @@ export default function CommercePage() {
                     { title: "审核", width: 110, render: (_, item) => item.reviewStatus ? <div className="space-y-1"><Tag color={reviewColors[item.reviewStatus]}>{reviewLabels[item.reviewStatus]}</Tag>{item.isPrimary ? <Tag color="blue">商品主图</Tag> : null}</div> : "—" },
                     { title: "批注 / 错误", render: (_, item) => item.reviewComment || item.errorMessage || "—" },
                     { title: "操作", fixed: "right", width: 360, render: (_, item) => <div className="flex flex-wrap gap-1">
-                        {canReview && item.status === "completed" ? <><Button size="small" onClick={() => openReview(item, "approved")}>通过</Button><Button danger size="small" onClick={() => openReview(item, "rejected")}>驳回</Button></> : null}
-                        {canReview && item.status === "completed" && item.reviewStatus !== "rejected" && !item.isPrimary ? <Button size="small" onClick={() => void run(() => setBatchProductionItemPrimary(item.jobId, item.id, item.runNumber), "已设为商品主图")}>设为主图</Button> : null}
+                        {canReviewBatchItem(item) ? <><Button size="small" onClick={() => openReview(item, "approved")}>通过</Button><Button danger size="small" onClick={() => openReview(item, "rejected")}>驳回</Button></> : null}
+                        {canSetPrimary(item) ? <Button size="small" onClick={() => void setPrimary(item)}>设为主图</Button> : null}
                         {canWrite && item.reviewStatus === "approved" ? <><Button size="small" onClick={() => void saveBatchItemToAssets(item)}>存素材</Button><Button size="small" onClick={() => void saveBatchItemToCanvas(item)}>建画布</Button></> : null}
-                        {(canWrite || canReview) && (item.status === "failed" || item.reviewStatus === "rejected") ? <Popconfirm title="重新生成该项？" description="旧结果将解除引用，并进入新的生产轮次。" onConfirm={() => void run(() => retryBatchProductionItem(item.jobId, item.id, item.runNumber), "生产项已重新排队")}><Button size="small" icon={<RefreshCw className="size-3.5" />}>重新生成</Button></Popconfirm> : null}
+                        {canWrite && (item.status === "failed" || item.reviewStatus === "rejected") ? <Popconfirm title="重新生成该项？" description="旧结果将解除引用，并进入新的生产轮次。" onConfirm={() => void run(() => retryBatchProductionItem(item.jobId, item.id, item.runNumber), "生产项已重新排队")}><Button size="small" icon={<RefreshCw className="size-3.5" />}>重新生成</Button></Popconfirm> : null}
                     </div> },
                 ]} />
             </Drawer>
-            <BatchResultComparison open={comparisonOpen} job={selectedBatch} items={comparisonItems} canReview={canReview} working={working} onClose={() => setComparisonOpen(false)} onApprove={(item) => { setComparisonOpen(false); setComparisonItems([]); openReview(item, "approved"); }} onReject={(item) => { setComparisonOpen(false); setComparisonItems([]); openReview(item, "rejected"); }} onSetPrimary={async (item) => { if (await run(() => setBatchProductionItemPrimary(item.jobId, item.id, item.runNumber), "已设为商品主图")) setComparisonItems((current) => current.map((currentItem) => currentItem.productId === item.productId ? { ...currentItem, isPrimary: currentItem.id === item.id } : currentItem)); }} />
+            <BatchResultComparison open={comparisonOpen} job={selectedBatch} items={comparisonItems} canReview={canReview} working={working} onClose={() => setComparisonOpen(false)} onApprove={(item) => { setComparisonOpen(false); setComparisonItems([]); openReview(item, "approved"); }} onReject={(item) => { setComparisonOpen(false); setComparisonItems([]); openReview(item, "rejected"); }} onSetPrimary={async (item) => { if (!canSetPrimary(item)) { message.error("当前结果不可设为主图"); return; } const requestJobId = item.jobId; if (await setPrimary(item) && selectedBatchIdRef.current === requestJobId) setComparisonItems((current) => current.map((currentItem) => currentItem.productId === item.productId && currentItem.skuId === item.skuId ? { ...currentItem, isPrimary: currentItem.id === item.id } : currentItem)); }} />
             <Modal title={reviewDraft?.status === "approved" ? "通过生产结果" : "驳回生产结果"} open={Boolean(reviewDraft)} confirmLoading={working} okText={reviewDraft?.status === "approved" ? "确认通过" : "确认驳回"} okButtonProps={{ danger: reviewDraft?.status === "rejected" }} onCancel={() => setReviewDraft(null)} onOk={submitReview}>
                 <Form form={reviewForm} layout="vertical"><Form.Item name="comment" label="审核批注" rules={[{ required: reviewDraft?.status === "rejected", message: "驳回时请填写批注" }, { max: 1000 }]}><Input.TextArea rows={4} placeholder={reviewDraft?.status === "rejected" ? "请说明需要调整的内容" : "可选，记录通过说明"} /></Form.Item></Form>
             </Modal>

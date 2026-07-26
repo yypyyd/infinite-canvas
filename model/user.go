@@ -27,8 +27,9 @@ type User struct {
 	OrganizationID string  `json:"organizationId" gorm:"index"`
 	Role        UserRole   `json:"role"`
 	Group       string     `json:"group"`
-	Credits     int        `json:"credits"`
-	AffCode     string     `json:"affCode" gorm:"uniqueIndex"`
+	Credits         int        `json:"credits"`
+	ReservedCredits int        `json:"-" gorm:"not null;default:0"`
+	AffCode         string     `json:"affCode" gorm:"uniqueIndex"`
 	AffCount    int        `json:"affCount"`
 	InviterID   string     `json:"inviterId"`
 	GithubID    string     `json:"githubId"`

@@ -158,6 +158,12 @@ func CommerceProductionTemplateVersions(w http.ResponseWriter, r *http.Request, 
 	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return service.ListProductionTemplateVersions(user, id) })
 }
 
+func PublishCommerceProductionTemplate(w http.ResponseWriter, r *http.Request, id string) {
+	var input model.PublishProductionTemplateInput
+	if !decodeCommerceJSON(w, r, &input) { return }
+	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return service.PublishProductionTemplate(user, id, input.ExpectedVersion) })
+}
+
 func PreviewCommerceProductionPrompt(w http.ResponseWriter, r *http.Request) {
 	var input model.PreviewProductionPromptInput
 	if !decodeCommerceJSON(w, r, &input) { return }
@@ -170,6 +176,16 @@ func CommerceProductionDeliverySpecs(w http.ResponseWriter, r *http.Request) {
 
 func CommerceBatchJobs(w http.ResponseWriter, r *http.Request) {
 	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return service.ListBatchProductionJobs(user, parseQuery(r)) })
+}
+
+func PreflightCommerceImageProduction(w http.ResponseWriter, r *http.Request) {
+	var input model.CreateBatchProductionJobInput
+	if !decodeCommerceJSON(w, r, &input) { return }
+	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return service.PreflightImageProduction(user, input) })
+}
+
+func CommerceBatchJob(w http.ResponseWriter, r *http.Request, id string) {
+	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return service.GetBatchProductionJob(user, id) })
 }
 
 func CreateCommerceBatchJob(w http.ResponseWriter, r *http.Request) {

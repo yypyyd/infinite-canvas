@@ -3,6 +3,8 @@ package service
 import (
 	"archive/zip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -66,7 +68,16 @@ func writeBatchProductionArchive(ctx context.Context, organizationID string, tar
 			return nil
 		},
 	}
+	usedEntryNames := make(map[string]int, len(items))
 	for _, item := range items {
+		entrySpec := spec
+		if item.TemplateSelectionID != "" {
+			if item.ResolvedTemplateSelectionID != item.TemplateSelectionID { _ = writer.Close(); return errors.New("batch archive template selection is unavailable") }
+			resolvedSpec, err := resolveProductionDeliverySpec(item.DeliverySpec.ID)
+			if err != nil || resolvedSpec != item.DeliverySpec { _ = writer.Close(); return errors.New("batch archive delivery specification is invalid") }
+			entrySpec = item.DeliverySpec
+		}
+		entryName := uniqueBatchArchiveEntryName(batchProductionArchiveEntryName(item, entrySpec), usedEntryNames)
 		value, ok := organizationFileURL(organizationID, item.ResultStorageKey, 30*time.Minute)
 		if !ok { _ = writer.Close(); return errors.New("batch archive source is unavailable") }
 		request, err := http.NewRequestWithContext(ctx, http.MethodGet, value, nil)
@@ -78,7 +89,7 @@ func writeBatchProductionArchive(ctx context.Context, organizationID string, tar
 			_ = writer.Close()
 			return fmt.Errorf("batch archive source returned HTTP %d", response.StatusCode)
 		}
-		entry, err := writer.CreateHeader(&zip.FileHeader{Name: batchProductionArchiveEntryName(item, spec), Method: zip.Store})
+		entry, err := writer.CreateHeader(&zip.FileHeader{Name: entryName, Method: zip.Store})
 		if err != nil { response.Body.Close(); _ = writer.Close(); return err }
 		written, copyErr := io.CopyN(entry, response.Body, item.Size+1)
 		response.Body.Close()
@@ -97,19 +108,60 @@ func batchProductionArchiveName(job model.BatchProductionJob) string {
 func batchProductionArchiveEntryName(item model.BatchProductionArchiveItem, spec model.ProductionDeliverySpec) string {
 	product := safeBatchArchiveSegment(item.ProductCode)
 	if product == "" { product = safeBatchArchiveSegment(item.ProductID) }
+	if product == "" { product = "product" }
 	sku := safeBatchArchiveSegment(item.SKUCode)
 	if sku == "" && item.SKUID != "" { sku = safeBatchArchiveSegment(item.SKUID) }
 	if sku == "" { sku = "SPU" }
-	id := safeBatchArchiveSegment(item.ID)
-	if runes := []rune(id); len(runes) > 10 { id = string(runes[len(runes)-10:]) }
+	itemSegment := safeBatchArchiveSegment(item.ID)
+	if runes := []rune(itemSegment); len(runes) > 10 { itemSegment = string(runes[len(runes)-10:]) }
+	if itemSegment == "" { itemSegment = stableBatchArchiveSuffix(item.ID) }
 	role := "结果"
 	if item.IsPrimary { role = "主图" }
 	pattern := spec.FilenamePattern
 	if strings.TrimSpace(pattern) == "" { pattern = "{spu}_{sku}_{role}_{item}" }
-	for key, value := range map[string]string{"{spu}": product, "{sku}": sku, "{role}": role, "{item}": id} { pattern = strings.ReplaceAll(pattern, key, value) }
+	templateType := safeBatchArchiveSegment(item.TemplateType); if templateType == "" { templateType = "legacy" }
+	variant := fmt.Sprintf("%d", item.VariantIndex); if item.VariantIndex < 1 { variant = "1" }
+	for key, value := range map[string]string{"{spu}": product, "{sku}": sku, "{role}": role, "{template}": templateType, "{variant}": variant, "{item}": itemSegment} { pattern = strings.ReplaceAll(pattern, key, value) }
 	name := safeBatchArchiveSegment(pattern)
-	if name == "" { name = sku + "_" + role + "_" + id }
-	return product + "/" + name + batchArchiveExtension(item.MimeType)
+	if name == "" { name = sku + "_" + templateType + "_" + variant }
+	uniqueSuffix := stableBatchArchiveSuffix(item.ID)
+	maxBaseRunes := 80 - 1 - len([]rune(uniqueSuffix))
+	nameRunes := []rune(name)
+	if len(nameRunes) > maxBaseRunes { name = string(nameRunes[:maxBaseRunes]) }
+	name = strings.Trim(name, "-_")
+	if name == "" { name = "result" }
+	return product + "/" + sku + "/" + templateType + "/" + name + "_" + uniqueSuffix + batchArchiveExtension(item.MimeType)
+}
+
+func stableBatchArchiveSuffix(itemID string) string {
+	sum := sha256.Sum256([]byte(itemID))
+	return hex.EncodeToString(sum[:6])
+}
+
+func uniqueBatchArchiveEntryName(candidate string, used map[string]int) string {
+	if used[candidate] == 0 {
+		used[candidate] = 1
+		return candidate
+	}
+	directory, filename := "", candidate
+	if index := strings.LastIndex(candidate, "/"); index >= 0 { directory, filename = candidate[:index+1], candidate[index+1:] }
+	extension := ""
+	if index := strings.LastIndex(filename, "."); index >= 0 { filename, extension = filename[:index], filename[index:] }
+	protectedSuffix := ""
+	if index := strings.LastIndex(filename, "_"); index >= 0 && len(filename[index+1:]) == 12 {
+		if _, err := hex.DecodeString(filename[index+1:]); err == nil { protectedSuffix, filename = filename[index:], filename[:index] }
+	}
+	for sequence := used[candidate] + 1; ; sequence++ {
+		sequenceSuffix := fmt.Sprintf("-%d", sequence)
+		maxPrefixRunes := 80 - len([]rune(protectedSuffix)) - len([]rune(sequenceSuffix))
+		prefixRunes := []rune(filename)
+		if len(prefixRunes) > maxPrefixRunes { prefixRunes = prefixRunes[:maxPrefixRunes] }
+		name := directory + string(prefixRunes) + protectedSuffix + sequenceSuffix + extension
+		if used[name] == 0 {
+			used[candidate], used[name] = sequence, 1
+			return name
+		}
+	}
 }
 
 func safeBatchArchiveSegment(value string) string {

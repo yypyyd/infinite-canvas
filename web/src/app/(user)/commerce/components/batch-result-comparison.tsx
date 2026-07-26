@@ -97,7 +97,7 @@ export function BatchResultComparison({ open, job, items, canReview, working, on
                                     <div><div className="mb-1 font-medium">SKU 参考图</div>{references.length ? <Image.PreviewGroup><div className="flex gap-2 overflow-x-auto">{references.slice(0, 6).map((key) => <Image key={key} src={workspaceFileUrl(key)} alt="SKU 参考图" width={48} height={48} className="rounded object-cover" />)}</div></Image.PreviewGroup> : <span className="text-muted-foreground">未配置参考图，请依据商品资料人工判断</span>}</div>
                                 </div>
 
-                                {canReview ? <div className="mt-4 flex flex-wrap gap-2"><Button size="small" type="primary" disabled={checked.length < manualChecks.length || hasAutomaticError} onClick={() => onApprove(item)}>通过</Button><Button size="small" danger onClick={() => onReject(item)}>驳回</Button>{item.reviewStatus !== "rejected" && !item.isPrimary ? <Button size="small" loading={working} onClick={() => void onSetPrimary(item)}>设为主图</Button> : null}</div> : null}
+                                {canReview ? <div className="mt-4 flex flex-wrap gap-2"><Button size="small" type="primary" disabled={checked.length < manualChecks.length || hasAutomaticError} onClick={() => onApprove(item)}>通过</Button><Button size="small" danger onClick={() => onReject(item)}>驳回</Button>{item.status === "completed" && item.reviewStatus === "approved" && Boolean(item.resultStorageKey) && !item.isPrimary ? <Button size="small" loading={working} onClick={() => void onSetPrimary(item)}>设为主图</Button> : null}</div> : null}
                             </Card>
                         );
                     })}

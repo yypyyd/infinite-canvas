@@ -296,6 +296,41 @@ func ListProducts(user model.AuthUser, q model.Query) (model.ProductList, error)
 	return model.ProductList{Items: items, Total: int(total)}, err
 }
 
+func GetProduct(user model.AuthUser, id string) (model.Product, error) {
+	organization, _, err := EnsureOrganization(user)
+	if err != nil { return model.Product{}, err }
+	item, ok, err := repository.GetProduct(organization.ID, strings.TrimSpace(id))
+	if err != nil { return model.Product{}, err }
+	if !ok { return model.Product{}, safeMessageError{message: "商品不存在"} }
+	if item.BrandID != "" {
+		if brand, ok, err := repository.GetBrand(organization.ID, item.BrandID); err != nil { return model.Product{}, err } else if ok { item.BrandName = brand.Name }
+	}
+	return item, nil
+}
+
+func UpdateProductStatuses(user model.AuthUser, input model.UpdateProductStatusesInput) error {
+	organization, membership, err := EnsureOrganization(user)
+	if err != nil { return err }
+	if !canWriteCommerce(membership.Role) { return safeMessageError{message: "没有商品编辑权限"} }
+	if !validProductStatus(input.Status) { return safeMessageError{message: "商品状态无效"} }
+	if len(input.Items) == 0 || len(input.Items) > 100 { return safeMessageError{message: "单次最多批量更新 100 个商品"} }
+	items := make([]model.ProductStatusItemInput, 0, len(input.Items))
+	seen := map[string]bool{}
+	for _, item := range input.Items {
+		item.ID = strings.TrimSpace(item.ID)
+		if item.ID == "" || item.Version <= 0 { return safeMessageError{message: "商品编号或数据版本无效，请刷新后重试"} }
+		if seen[item.ID] { continue }
+		seen[item.ID] = true
+		items = append(items, item)
+	}
+	timestamp := now()
+	ids := make([]string, 0, len(items))
+	for _, item := range items { ids = append(ids, item.ID) }
+	err = repository.UpdateProductStatuses(organization.ID, items, input.Status, timestamp, newAuditLog(user.ID, organization.ID, "product.batch_status", "product", "", map[string]any{"status": input.Status, "productIds": ids}, timestamp))
+	if errors.Is(err, repository.ErrCommerceVersionConflict) || errors.Is(err, gorm.ErrRecordNotFound) { return safeMessageError{message: "部分商品已被其他成员更新，请刷新后重试"} }
+	return err
+}
+
 func SaveProduct(user model.AuthUser, item model.Product) (model.Product, error) {
 	organization, membership, err := EnsureOrganization(user)
 	if err != nil { return item, err }
@@ -389,15 +424,28 @@ func DeleteProductSKU(user model.AuthUser, id string, expectedVersion int64) err
 func ListProductionTemplates(user model.AuthUser, q model.Query) (model.ProductionTemplateList, error) {
 	organization, _, err := EnsureOrganization(user)
 	if err != nil { return model.ProductionTemplateList{}, err }
+	q.Normalize()
 	items, total, err := repository.ListProductionTemplates(organization.ID, q)
-	return model.ProductionTemplateList{Items: items, Total: int(total)}, err
+	if err != nil { return model.ProductionTemplateList{}, err }
+	if q.Page == 1 && (q.Type == "" || q.Type == "all" || q.Type == string(model.ProductionTemplateStatusActive)) {
+		keyword := strings.ToLower(strings.TrimSpace(q.Keyword))
+		builtins := make([]model.ProductionTemplate, 0, len(builtinProductionTemplates))
+		for _, definition := range builtinProductionTemplates {
+			if keyword != "" && !strings.Contains(strings.ToLower(definition.Name+" "+definition.Description), keyword) { continue }
+			builtins = append(builtins, model.ProductionTemplate{ID: definition.ID, Name: definition.Name, Description: definition.Description, Source: model.ProductionTemplateSourceBuiltin, MediaType: model.ProductionTemplateMediaTypeImage, TemplateType: definition.TemplateType, Platform: definition.Platform, Status: model.ProductionTemplateStatusActive, CurrentVersion: 1, CurrentPrompt: definition.Prompt, CurrentSpec: definition.SpecJSON, Version: 1})
+		}
+		items = append(builtins, items...)
+		total += int64(len(builtins))
+	}
+	return model.ProductionTemplateList{Items: items, Total: int(total)}, nil
 }
 
 func ListProductionTemplateVersions(user model.AuthUser, id string) ([]model.ProductionTemplateVersion, error) {
 	organization, _, err := EnsureOrganization(user)
 	if err != nil { return nil, err }
-	if _, _, ok, err := repository.GetProductionTemplateVersion(organization.ID, strings.TrimSpace(id), 0); err != nil { return nil, err } else if !ok { return nil, safeMessageError{message: "生产模板不存在"} }
-	return repository.ListProductionTemplateVersions(organization.ID, strings.TrimSpace(id))
+	id = strings.TrimSpace(id)
+	if _, ok, err := repository.GetProductionTemplate(organization.ID, id); err != nil { return nil, err } else if !ok { return nil, safeMessageError{message: "生产模板不存在"} }
+	return repository.ListProductionTemplateVersions(organization.ID, id)
 }
 
 func SaveProductionTemplate(user model.AuthUser, input model.SaveProductionTemplateInput) (model.ProductionTemplate, error) {
@@ -405,13 +453,69 @@ func SaveProductionTemplate(user model.AuthUser, input model.SaveProductionTempl
 	if err != nil { return model.ProductionTemplate{}, err }
 	if !canManageOrganization(membership.Role) { return model.ProductionTemplate{}, safeMessageError{message: "没有生产模板管理权限"} }
 	input.ID, input.Name, input.Description, input.Prompt = strings.TrimSpace(input.ID), strings.TrimSpace(input.Name), strings.TrimSpace(input.Description), strings.TrimSpace(input.Prompt)
-	if input.Name == "" || len([]rune(input.Name)) > 120 || len([]rune(input.Description)) > 500 || input.Prompt == "" || len([]rune(input.Prompt)) > 12000 || (input.Status != model.ProductionTemplateStatusActive && input.Status != model.ProductionTemplateStatusDisabled) { return model.ProductionTemplate{}, safeMessageError{message: "模板名称、说明、状态或提示词无效"} }
+	input.Source = model.ProductionTemplateSource(strings.TrimSpace(string(input.Source)))
+	input.MediaType = model.ProductionTemplateMediaType(strings.TrimSpace(string(input.MediaType)))
+	input.TemplateType = model.ProductionTemplateType(strings.TrimSpace(string(input.TemplateType)))
+	input.Platform = strings.TrimSpace(input.Platform)
+	if input.Source == "" { input.Source = model.ProductionTemplateSourceOrganization }; if input.MediaType == "" { input.MediaType = model.ProductionTemplateMediaTypeImage }; if input.TemplateType == "" { input.TemplateType = model.ProductionTemplateTypeCustom }; if input.Platform == "" { input.Platform = "original" }; if input.Status == "" { input.Status = model.ProductionTemplateStatusDraft }
+	if input.Status == model.ProductionTemplateStatusActive { return model.ProductionTemplate{}, safeMessageError{message: "启用模板请使用发布操作"} }
+	if input.Name == "" || len([]rune(input.Name)) > 120 || len([]rune(input.Description)) > 500 || input.Prompt == "" || len([]rune(input.Prompt)) > 12000 || input.Source != model.ProductionTemplateSourceOrganization || input.MediaType != model.ProductionTemplateMediaTypeImage || (input.Status != model.ProductionTemplateStatusDraft && input.Status != model.ProductionTemplateStatusDisabled) { return model.ProductionTemplate{}, safeMessageError{message: "模板名称、说明、类型、状态或提示词无效"} }
+	if err := validateProductionTemplateVariables(input.Prompt); err != nil { return model.ProductionTemplate{}, err }
+	specJSON, _, err := normalizeProductionTemplateSpec(input.SpecJSON); if err != nil { return model.ProductionTemplate{}, err }
 	if input.ID == "" { input.ID = newID("template") } else if input.Version <= 0 { return model.ProductionTemplate{}, safeMessageError{message: "生产模板版本无效，请刷新后重试"} }
 	timestamp := now()
-	item := model.ProductionTemplate{ID: input.ID, OrganizationID: organization.ID, Name: input.Name, Description: input.Description, Status: input.Status, CreatedBy: user.ID}
-	result, err := repository.SaveProductionTemplate(item, input.Prompt, input.Version, newID("template-version"), user.ID, timestamp, newAuditLog(user.ID, organization.ID, "template.save", "production_template", item.ID, map[string]any{"name": item.Name}, timestamp))
+	item := model.ProductionTemplate{ID: input.ID, OrganizationID: organization.ID, Name: input.Name, Description: input.Description, Source: input.Source, MediaType: input.MediaType, TemplateType: input.TemplateType, Platform: input.Platform, Status: input.Status, DraftPrompt: input.Prompt, DraftSpecJSON: specJSON, CreatedBy: user.ID}
+	result, err := repository.SaveProductionTemplate(item, input.Version, timestamp, newAuditLog(user.ID, organization.ID, "template.save", "production_template", item.ID, map[string]any{"name": item.Name}, timestamp))
 	if errors.Is(err, repository.ErrProductionTemplateNameConflict) { return model.ProductionTemplate{}, safeMessageError{message: "企业内生产模板名称不能重复"} }
 	if errors.Is(err, repository.ErrCommerceVersionConflict) { return model.ProductionTemplate{}, safeMessageError{message: "生产模板已被其他成员更新，请刷新后重试"} }
+	return result, err
+}
+
+func PublishProductionTemplate(user model.AuthUser, id string, expectedVersion int64) (model.ProductionTemplate, error) {
+	organization, membership, err := EnsureOrganization(user)
+	if err != nil { return model.ProductionTemplate{}, err }
+	if !canManageOrganization(membership.Role) { return model.ProductionTemplate{}, safeMessageError{message: "没有生产模板发布权限"} }
+	id = strings.TrimSpace(id)
+	if id == "" || expectedVersion <= 0 { return model.ProductionTemplate{}, safeMessageError{message: "生产模板版本无效，请刷新后重试"} }
+	item, ok, err := repository.GetProductionTemplate(organization.ID, id)
+	if err != nil { return model.ProductionTemplate{}, err }
+	if !ok { return model.ProductionTemplate{}, safeMessageError{message: "生产模板不存在"} }
+	if item.Version != expectedVersion { return model.ProductionTemplate{}, safeMessageError{message: "生产模板已被其他成员更新，请刷新后重试"} }
+	if strings.TrimSpace(item.DraftPrompt) == "" { return model.ProductionTemplate{}, safeMessageError{message: "模板草稿提示词不能为空"} }
+	if err := validateProductionTemplateVariables(item.DraftPrompt); err != nil { return model.ProductionTemplate{}, err }
+	if _, _, err := normalizeProductionTemplateSpec(item.DraftSpecJSON); err != nil { return model.ProductionTemplate{}, err }
+	timestamp := now()
+	result, _, err := repository.PublishProductionTemplate(organization.ID, id, expectedVersion, newID("template-version"), user.ID, timestamp, newAuditLog(user.ID, organization.ID, "template.publish", "production_template", id, map[string]any{"version": item.CurrentVersion + 1}, timestamp))
+	if errors.Is(err, repository.ErrCommerceVersionConflict) { return model.ProductionTemplate{}, safeMessageError{message: "生产模板已被其他成员更新，请刷新后重试"} }
+	return result, err
+}
+
+func CopyProductionTemplate(user model.AuthUser, id string, input model.CopyProductionTemplateInput) (model.ProductionTemplate, error) {
+	organization, membership, err := EnsureOrganization(user)
+	if err != nil { return model.ProductionTemplate{}, err }
+	if !canManageOrganization(membership.Role) { return model.ProductionTemplate{}, safeMessageError{message: "没有生产模板管理权限"} }
+	id, name := strings.TrimSpace(id), strings.TrimSpace(input.Name)
+	if id == "" { return model.ProductionTemplate{}, safeMessageError{message: "生产模板不存在"} }
+	var sourceName, prompt, specJSON string
+	templateType, platform := model.ProductionTemplateTypeCustom, "original"
+	if definition, ok := findBuiltinProductionTemplate(id); ok {
+		sourceName, prompt, specJSON, templateType, platform = definition.Name, definition.Prompt, definition.SpecJSON, definition.TemplateType, definition.Platform
+	} else {
+		source, ok, err := repository.GetProductionTemplate(organization.ID, id)
+		if err != nil { return model.ProductionTemplate{}, err }
+		if !ok { return model.ProductionTemplate{}, safeMessageError{message: "生产模板不存在"} }
+		sourceName, prompt, specJSON, templateType, platform = source.Name, source.DraftPrompt, source.DraftSpecJSON, source.TemplateType, source.Platform
+	}
+	if name == "" { name = sourceName + " 副本" }
+	if len([]rune(name)) > 120 { return model.ProductionTemplate{}, safeMessageError{message: "模板名称过长"} }
+	if strings.TrimSpace(prompt) == "" { return model.ProductionTemplate{}, safeMessageError{message: "源模板草稿提示词为空，不能复制"} }
+	if err := validateProductionTemplateVariables(prompt); err != nil { return model.ProductionTemplate{}, err }
+	specJSON, _, err = normalizeProductionTemplateSpec(specJSON)
+	if err != nil { return model.ProductionTemplate{}, err }
+	timestamp := now()
+	item := model.ProductionTemplate{ID: newID("template"), OrganizationID: organization.ID, Name: name, Description: "复制自「" + sourceName + "」", Source: model.ProductionTemplateSourceOrganization, MediaType: model.ProductionTemplateMediaTypeImage, TemplateType: templateType, Platform: platform, Status: model.ProductionTemplateStatusDraft, DraftPrompt: prompt, DraftSpecJSON: specJSON, CreatedBy: user.ID}
+	result, err := repository.SaveProductionTemplate(item, 0, timestamp, newAuditLog(user.ID, organization.ID, "template.copy", "production_template", item.ID, map[string]any{"name": name, "sourceId": id}, timestamp))
+	if errors.Is(err, repository.ErrProductionTemplateNameConflict) { return model.ProductionTemplate{}, safeMessageError{message: "企业内生产模板名称不能重复"} }
 	return result, err
 }
 
@@ -451,7 +555,7 @@ func ListBatchProductionJobs(user model.AuthUser, q model.Query) (model.BatchPro
 	return model.BatchProductionJobList{Items: items, Total: int(total)}, err
 }
 
-func CreateBatchProductionJob(user model.AuthUser, input model.CreateBatchProductionJobInput) (model.BatchProductionJob, error) {
+func legacyCreateBatchProductionJob(user model.AuthUser, input model.CreateBatchProductionJobInput) (model.BatchProductionJob, error) {
 	organization, membership, err := EnsureOrganization(user)
 	if err != nil { return model.BatchProductionJob{}, err }
 	if !canWriteCommerce(membership.Role) { return model.BatchProductionJob{}, safeMessageError{message: "没有批量生产权限"} }
@@ -559,18 +663,21 @@ func SetBatchProductionPrimary(user model.AuthUser, jobID string, itemID string,
 	if input.RunNumber < 1 { return model.BatchProductionItem{}, safeMessageError{message: "生产轮次无效"} }
 	timestamp := now()
 	item, err := repository.SetBatchProductionPrimary(organization.ID, strings.TrimSpace(jobID), strings.TrimSpace(itemID), input.RunNumber, timestamp, newAuditLog(user.ID, organization.ID, "batch.primary", "batch_item", itemID, map[string]any{"runNumber": input.RunNumber}, timestamp))
-	if errors.Is(err, repository.ErrBatchProductionStateConflict) { return model.BatchProductionItem{}, safeMessageError{message: "只有未驳回的有效结果可以设为主图"} }
+	if errors.Is(err, repository.ErrBatchProductionStateConflict) { return model.BatchProductionItem{}, safeMessageError{message: "只有已审核通过的有效结果可以设为主图"} }
 	return item, err
 }
 
 func RetryBatchProductionItem(user model.AuthUser, jobID string, itemID string, input model.BatchProductionItemRunInput) error {
 	organization, membership, err := EnsureOrganization(user)
 	if err != nil { return err }
-	if !canWriteCommerce(membership.Role) && !canReviewCommerce(membership.Role) { return safeMessageError{message: "没有重新生成权限"} }
+	if !canWriteCommerce(membership.Role) { return safeMessageError{message: "没有重新生成权限"} }
 	if input.RunNumber < 1 { return safeMessageError{message: "生产轮次无效"} }
 	timestamp := now()
 	err = repository.RetryBatchProductionItem(organization.ID, strings.TrimSpace(jobID), strings.TrimSpace(itemID), input.RunNumber, timestamp, newAuditLog(user.ID, organization.ID, "batch.item_retry", "batch_item", itemID, map[string]any{"runNumber": input.RunNumber}, timestamp))
 	if errors.Is(err, repository.ErrBatchProductionOrganizationQueueFull) { return safeMessageError{message: "企业待生产项目已达上限，请等待现有任务完成"} }
+	if errors.Is(err, repository.ErrInsufficientUserCredits) { return safeMessageError{message: "个人算力余额不足"} }
+	if errors.Is(err, repository.ErrInsufficientOrganizationCredits) { return safeMessageError{message: "企业共享算力余额不足"} }
+	if errors.Is(err, repository.ErrOrganizationCreditBudgetExceeded) { return safeMessageError{message: "企业本月算力预算不足"} }
 	if errors.Is(err, repository.ErrBatchProductionStateConflict) { return safeMessageError{message: "只有失败或已驳回的结果可以重新生成"} }
 	return err
 }
@@ -594,7 +701,10 @@ func RetryBatchProductionJob(user model.AuthUser, id string) error {
 	timestamp := now()
 	if err := repository.RetryBatchProductionJob(organization.ID, id, timestamp, newAuditLog(user.ID, organization.ID, "batch.retry", "batch_job", id, "", timestamp)); err != nil {
 		if errors.Is(err, repository.ErrBatchProductionOrganizationQueueFull) { return safeMessageError{message: "企业待生产项目已达上限，请等待现有任务完成"} }
-		if errors.Is(err, repository.ErrBatchProductionStateConflict) || errors.Is(err, gorm.ErrRecordNotFound) { return safeMessageError{message: "只有失败任务可以重试"} }
+		if errors.Is(err, repository.ErrInsufficientUserCredits) { return safeMessageError{message: "个人算力余额不足"} }
+		if errors.Is(err, repository.ErrInsufficientOrganizationCredits) { return safeMessageError{message: "企业共享算力余额不足"} }
+		if errors.Is(err, repository.ErrOrganizationCreditBudgetExceeded) { return safeMessageError{message: "企业本月算力预算不足"} }
+		if errors.Is(err, repository.ErrBatchProductionStateConflict) || errors.Is(err, gorm.ErrRecordNotFound) { return safeMessageError{message: "只有失败或部分成功任务可以重试"} }
 		return err
 	}
 	return nil
@@ -638,24 +748,15 @@ func validCommerceRecord(value any) bool {
 	return err == nil && len(data) <= 64<<10
 }
 
-var commerceProductionPresets = map[string]string{
-	"product-main": "以参考图中的商品为唯一主体，保持商品外观、结构、颜色、材质和品牌细节准确一致。生成纯白背景电商主图，商品居中完整展示，占画面约 85%，柔和棚拍光，边缘清晰，真实自然阴影，无道具、无文字、无水印，专业商业摄影质感。",
-	"lifestyle": "以参考图中的商品为核心，严格保持商品外观、颜色、比例和品牌细节。将商品置于符合目标消费者生活方式的真实使用场景中，主体醒目，环境克制，光线自然高级，画面有呼吸感与购买欲，商业摄影，细节清晰，不添加无关文字或水印。",
-	"selling-points": "根据参考商品生成电商详情页视觉，准确保留商品结构、材质、颜色和品牌细节。通过局部特写与简洁构图突出核心功能和材质质感，画面层级清楚，预留干净的标题与卖点文案区域，但不要生成任何文字，专业棚拍光，高级电商详情页风格。",
-	"promotion": "以参考商品为视觉中心，保持商品本身准确一致，生成具有强转化氛围的电商促销视觉。使用有张力的构图、清晰的前后层次和适度的活动装饰，预留价格、折扣和活动标题区域，但不要生成任何文字，商品清晰醒目，商业广告质感。",
-	"apparel-model": "让专业模特自然穿着参考图中的服饰，严格保持服饰版型、颜色、图案、面料纹理和所有设计细节一致。姿态自然，搭配克制，背景干净，柔和时尚棚拍光，完整展示穿着效果，真实服装摄影，不添加文字或水印。",
-	"sku-series": "基于参考图生成同一商品系列的标准化电商视觉。严格保持各 SKU 的颜色、结构、材质和区别点，统一拍摄角度、光线、背景、商品占比和阴影风格，构图规整，适合店铺列表与 SKU 选择展示，不添加文字或水印。",
-}
-
 func resolveProductionPreset(organizationID string, presetID string, presetVersion int) (string, int, error) {
 	presetID = strings.TrimSpace(presetID)
-	if prompt, ok := commerceProductionPresets[presetID]; ok {
+	if definition, ok := findBuiltinProductionTemplate(presetID); ok {
 		if presetVersion > 1 { return "", 0, safeMessageError{message: "生产模板版本无效"} }
-		return prompt, 1, nil
+		return definition.Prompt, 1, nil
 	}
 	item, version, ok, err := repository.GetProductionTemplateVersion(organizationID, presetID, presetVersion)
 	if err != nil { return "", 0, err }
-	if !ok || item.Status != model.ProductionTemplateStatusActive { return "", 0, safeMessageError{message: "生产模板无效或已停用"} }
+	if !ok || item.MediaType != model.ProductionTemplateMediaTypeImage || item.Status != model.ProductionTemplateStatusActive || item.CurrentVersion <= 0 { return "", 0, safeMessageError{message: "生产模板无效、未发布或已停用"} }
 	return version.Prompt, version.Version, nil
 }
 

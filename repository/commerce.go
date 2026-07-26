@@ -528,6 +528,12 @@ func ListProducts(organizationID string, q model.Query) ([]model.Product, int64,
 	if q.Type != "" && q.Type != "all" {
 		tx = tx.Where("products.status = ?", q.Type)
 	}
+	if q.Brand != "" && q.Brand != "all" {
+		tx = tx.Where("products.brand_id = ?", q.Brand)
+	}
+	if q.Category != "" && q.Category != "all" {
+		tx = tx.Where("products.category = ?", q.Category)
+	}
 	var total int64
 	if err := tx.Count(&total).Error; err != nil {
 		return nil, 0, err
@@ -584,6 +590,21 @@ func GetProduct(organizationID string, id string) (model.Product, bool, error) {
 	err = db.Where("organization_id = ? AND id = ?", organizationID, id).First(&item).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) { return model.Product{}, false, nil }
 	return item, err == nil, err
+}
+
+func UpdateProductStatuses(organizationID string, items []model.ProductStatusItemInput, status model.ProductStatus, timestamp string, auditLogs ...model.OrganizationAuditLog) error {
+	db, err := DB()
+	if err != nil { return err }
+	return db.Transaction(func(tx *gorm.DB) error {
+		var organization model.Organization
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&organization, "id = ?", organizationID).Error; err != nil { return err }
+		for _, item := range items {
+			result := tx.Model(&model.Product{}).Where("organization_id = ? AND id = ? AND version = ?", organizationID, item.ID, item.Version).Updates(map[string]any{"status": status, "version": gorm.Expr("version + 1"), "updated_at": timestamp})
+			if result.Error != nil { return result.Error }
+			if result.RowsAffected != 1 { return ErrCommerceVersionConflict }
+		}
+		return saveOrganizationAuditLogs(tx, auditLogs)
+	})
 }
 
 func DeleteProduct(organizationID string, id string, expectedVersion int64, timestamp string, auditLogs ...model.OrganizationAuditLog) error {
@@ -754,11 +775,20 @@ func ListProductionTemplates(organizationID string, q model.Query) ([]model.Prod
 	var items []model.ProductionTemplate
 	if err := tx.Order("updated_at desc").Offset(q.Offset()).Limit(q.PageSize).Find(&items).Error; err != nil { return nil, 0, err }
 	for index := range items {
-		var version model.ProductionTemplateVersion
-		if err := db.Where("organization_id = ? AND template_id = ? AND version = ?", organizationID, items[index].ID, items[index].CurrentVersion).First(&version).Error; err != nil { return nil, 0, err }
-		items[index].CurrentPrompt = version.Prompt
+		items[index].CurrentPrompt, items[index].CurrentSpec = items[index].DraftPrompt, items[index].DraftSpecJSON
 	}
 	return items, total, nil
+}
+
+func GetProductionTemplate(organizationID string, templateID string) (model.ProductionTemplate, bool, error) {
+	db, err := DB()
+	if err != nil { return model.ProductionTemplate{}, false, err }
+	var item model.ProductionTemplate
+	err = db.Where("organization_id = ? AND id = ?", organizationID, templateID).First(&item).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) { return item, false, nil }
+	if err != nil { return item, false, err }
+	item.CurrentPrompt, item.CurrentSpec = item.DraftPrompt, item.DraftSpecJSON
+	return item, true, nil
 }
 
 func GetProductionTemplateVersion(organizationID string, templateID string, versionNumber int) (model.ProductionTemplate, model.ProductionTemplateVersion, bool, error) {
@@ -769,7 +799,7 @@ func GetProductionTemplateVersion(organizationID string, templateID string, vers
 	if versionNumber <= 0 { versionNumber = item.CurrentVersion }
 	var version model.ProductionTemplateVersion
 	if err := db.Where("organization_id = ? AND template_id = ? AND version = ?", organizationID, templateID, versionNumber).First(&version).Error; errors.Is(err, gorm.ErrRecordNotFound) { return item, model.ProductionTemplateVersion{}, false, nil } else if err != nil { return item, model.ProductionTemplateVersion{}, false, err }
-	item.CurrentPrompt = version.Prompt
+	item.CurrentPrompt, item.CurrentSpec = version.Prompt, version.SpecJSON
 	return item, version, true, nil
 }
 
@@ -781,7 +811,7 @@ func ListProductionTemplateVersions(organizationID string, templateID string) ([
 	return items, err
 }
 
-func SaveProductionTemplate(item model.ProductionTemplate, prompt string, expectedVersion int64, versionID string, versionCreatedBy string, timestamp string, auditLogs ...model.OrganizationAuditLog) (model.ProductionTemplate, error) {
+func SaveProductionTemplate(item model.ProductionTemplate, expectedVersion int64, timestamp string, auditLogs ...model.OrganizationAuditLog) (model.ProductionTemplate, error) {
 	db, err := DB()
 	if err != nil { return item, err }
 	err = db.Transaction(func(tx *gorm.DB) error {
@@ -792,23 +822,44 @@ func SaveProductionTemplate(item model.ProductionTemplate, prompt string, expect
 		find := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("organization_id = ? AND id = ?", item.OrganizationID, item.ID).First(&saved)
 		if errors.Is(find.Error, gorm.ErrRecordNotFound) {
 			if expectedVersion != 0 { return ErrCommerceVersionConflict }
-			item.CurrentVersion, item.Version, item.CreatedAt, item.UpdatedAt = 1, 1, timestamp, timestamp
+			item.Status, item.CurrentVersion, item.Version = model.ProductionTemplateStatusDraft, 0, 1
+			item.CreatedAt, item.UpdatedAt = timestamp, timestamp
 			if err := tx.Create(&item).Error; err != nil { if isDuplicateKeyError(err) { return ErrProductionTemplateNameConflict }; return err }
 		} else {
 			if find.Error != nil { return find.Error }
 			if saved.Version != expectedVersion { return ErrCommerceVersionConflict }
 			item.CreatedBy, item.CreatedAt = saved.CreatedBy, saved.CreatedAt
-			item.CurrentVersion, item.Version, item.UpdatedAt = saved.CurrentVersion+1, saved.Version+1, timestamp
-			result := tx.Model(&model.ProductionTemplate{}).Where("organization_id = ? AND id = ? AND version = ?", item.OrganizationID, item.ID, expectedVersion).Updates(map[string]any{"name": item.Name, "description": item.Description, "status": item.Status, "current_version": item.CurrentVersion, "version": item.Version, "updated_at": timestamp})
+			item.CurrentVersion, item.Version, item.UpdatedAt = saved.CurrentVersion, saved.Version+1, timestamp
+			result := tx.Model(&model.ProductionTemplate{}).Where("organization_id = ? AND id = ? AND version = ?", item.OrganizationID, item.ID, expectedVersion).Updates(map[string]any{"name": item.Name, "description": item.Description, "source": item.Source, "media_type": item.MediaType, "template_type": item.TemplateType, "platform": item.Platform, "status": item.Status, "draft_prompt": item.DraftPrompt, "draft_spec_json": item.DraftSpecJSON, "version": item.Version, "updated_at": timestamp})
 			if result.Error != nil { if isDuplicateKeyError(result.Error) { return ErrProductionTemplateNameConflict }; return result.Error }
 			if result.RowsAffected != 1 { return ErrCommerceVersionConflict }
 		}
-		version := model.ProductionTemplateVersion{ID: versionID, OrganizationID: item.OrganizationID, TemplateID: item.ID, Version: item.CurrentVersion, Prompt: prompt, CreatedBy: versionCreatedBy, CreatedAt: timestamp}
-		if err := tx.Create(&version).Error; err != nil { return err }
-		item.CurrentPrompt = prompt
+		item.CurrentPrompt, item.CurrentSpec = item.DraftPrompt, item.DraftSpecJSON
 		return saveOrganizationAuditLogs(tx, auditLogs)
 	})
 	return item, err
+}
+
+func PublishProductionTemplate(organizationID string, templateID string, expectedVersion int64, versionID string, createdBy string, timestamp string, auditLogs ...model.OrganizationAuditLog) (model.ProductionTemplate, model.ProductionTemplateVersion, error) {
+	db, err := DB()
+	if err != nil { return model.ProductionTemplate{}, model.ProductionTemplateVersion{}, err }
+	var item model.ProductionTemplate
+	var version model.ProductionTemplateVersion
+	err = db.Transaction(func(tx *gorm.DB) error {
+		var organization model.Organization
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").First(&organization, "id = ?", organizationID).Error; err != nil { return err }
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("organization_id = ? AND id = ?", organizationID, templateID).First(&item).Error; err != nil { return err }
+		if item.Version != expectedVersion { return ErrCommerceVersionConflict }
+		version = model.ProductionTemplateVersion{ID: versionID, OrganizationID: organizationID, TemplateID: templateID, Version: item.CurrentVersion+1, Prompt: item.DraftPrompt, SpecJSON: item.DraftSpecJSON, CreatedBy: createdBy, CreatedAt: timestamp}
+		if err := tx.Create(&version).Error; err != nil { return err }
+		result := tx.Model(&model.ProductionTemplate{}).Where("organization_id = ? AND id = ? AND version = ?", organizationID, templateID, expectedVersion).Updates(map[string]any{"status": model.ProductionTemplateStatusActive, "current_version": version.Version, "version": expectedVersion+1, "updated_at": timestamp})
+		if result.Error != nil { return result.Error }
+		if result.RowsAffected != 1 { return ErrCommerceVersionConflict }
+		item.Status, item.CurrentVersion, item.Version, item.UpdatedAt = model.ProductionTemplateStatusActive, version.Version, expectedVersion+1, timestamp
+		item.CurrentPrompt, item.CurrentSpec = item.DraftPrompt, item.DraftSpecJSON
+		return saveOrganizationAuditLogs(tx, auditLogs)
+	})
+	return item, version, err
 }
 
 func ListBatchProductionJobs(organizationID string, q model.Query) ([]model.BatchProductionJob, int64, error) {
@@ -921,18 +972,251 @@ func GetBatchProductionSnapshots(organizationID string, ids []string) (map[strin
 	return result, nil
 }
 
+func releaseBatchProductionCredits(tx *gorm.DB, job *model.BatchProductionJob, timestamp string) error {
+	outstanding := job.ReservedCredits - job.SettledCredits - job.ReleasedCredits
+	if outstanding < 0 {
+		return ErrBatchProductionStateConflict
+	}
+	if outstanding == 0 {
+		return nil
+	}
+	if job.CreditSource == model.CreditSourceOrganization {
+		var organization model.Organization
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&organization, "id = ?", job.OrganizationID).Error; err != nil {
+			return err
+		}
+		if organization.ReservedCredits < outstanding {
+			return ErrBatchProductionStateConflict
+		}
+		result := tx.Model(&model.Organization{}).
+			Where("id = ? AND reserved_credits >= ?", organization.ID, outstanding).
+			Updates(map[string]any{
+				"reserved_credits": gorm.Expr("reserved_credits - ?", outstanding),
+				"updated_at":       timestamp,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrBatchProductionStateConflict
+		}
+	} else if job.CreditSource == model.CreditSourcePersonal {
+		var user model.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, "id = ?", job.CreatedBy).Error; err != nil {
+			return err
+		}
+		if user.ReservedCredits < outstanding {
+			return ErrBatchProductionStateConflict
+		}
+		result := tx.Model(&model.User{}).
+			Where("id = ? AND reserved_credits >= ?", user.ID, outstanding).
+			Updates(map[string]any{
+				"reserved_credits": gorm.Expr("reserved_credits - ?", outstanding),
+				"updated_at":       timestamp,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrBatchProductionStateConflict
+		}
+	} else {
+		return ErrBatchProductionStateConflict
+	}
+	result := tx.Model(&model.BatchProductionJob{}).
+		Where("organization_id = ? AND id = ?", job.OrganizationID, job.ID).
+		Update("released_credits", gorm.Expr("released_credits + ?", outstanding))
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return ErrBatchProductionStateConflict
+	}
+	job.ReleasedCredits += outstanding
+	return nil
+}
+
+func aggregateBatchProductionJob(tx *gorm.DB, job *model.BatchProductionJob, timestamp string) error {
+	base := tx.Model(&model.BatchProductionItem{}).
+		Where("organization_id = ? AND job_id = ?", job.OrganizationID, job.ID)
+	var total, queued, running, completed, failed, cancelled int64
+	if err := base.Count(&total).Error; err != nil {
+		return err
+	}
+	if total == 0 {
+		return ErrBatchProductionStateConflict
+	}
+	if err := tx.Model(&model.BatchProductionItem{}).Where("organization_id = ? AND job_id = ? AND status = ?", job.OrganizationID, job.ID, model.BatchProductionStatusQueued).Count(&queued).Error; err != nil {
+		return err
+	}
+	if err := tx.Model(&model.BatchProductionItem{}).Where("organization_id = ? AND job_id = ? AND status = ?", job.OrganizationID, job.ID, model.BatchProductionStatusRunning).Count(&running).Error; err != nil {
+		return err
+	}
+	if err := tx.Model(&model.BatchProductionItem{}).Where("organization_id = ? AND job_id = ? AND status = ?", job.OrganizationID, job.ID, model.BatchProductionStatusCompleted).Count(&completed).Error; err != nil {
+		return err
+	}
+	if err := tx.Model(&model.BatchProductionItem{}).Where("organization_id = ? AND job_id = ? AND status = ?", job.OrganizationID, job.ID, model.BatchProductionStatusFailed).Count(&failed).Error; err != nil {
+		return err
+	}
+	if err := tx.Model(&model.BatchProductionItem{}).Where("organization_id = ? AND job_id = ? AND status = ?", job.OrganizationID, job.ID, model.BatchProductionStatusCancelled).Count(&cancelled).Error; err != nil {
+		return err
+	}
+
+	status := job.Status
+	if status != model.BatchProductionStatusCancelled {
+		if queued > 0 || running > 0 {
+			var started int64
+			if err := tx.Model(&model.BatchProductionItem{}).Where("organization_id = ? AND job_id = ? AND started_at <> ''", job.OrganizationID, job.ID).Count(&started).Error; err != nil {
+				return err
+			}
+			status = model.BatchProductionStatusQueued
+			if running > 0 || completed > 0 || failed > 0 || started > 0 {
+				status = model.BatchProductionStatusRunning
+			}
+		} else {
+			var pendingReviews, rejected int64
+			if err := tx.Model(&model.BatchProductionItem{}).Where("organization_id = ? AND job_id = ? AND status = ? AND review_status = ?", job.OrganizationID, job.ID, model.BatchProductionStatusCompleted, model.BatchProductionReviewPending).Count(&pendingReviews).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&model.BatchProductionItem{}).Where("organization_id = ? AND job_id = ? AND status = ? AND review_status = ?", job.OrganizationID, job.ID, model.BatchProductionStatusCompleted, model.BatchProductionReviewRejected).Count(&rejected).Error; err != nil {
+				return err
+			}
+			if failed > 0 {
+				if completed > 0 {
+					status = model.BatchProductionStatusPartialSuccess
+				} else {
+					status = model.BatchProductionStatusFailed
+				}
+			} else if cancelled > 0 {
+				if completed > 0 {
+					status = model.BatchProductionStatusPartialSuccess
+				} else {
+					status = model.BatchProductionStatusFailed
+				}
+			} else if pendingReviews > 0 {
+				status = model.BatchProductionStatusPendingReview
+			} else if rejected > 0 {
+				status = model.BatchProductionStatusPartialSuccess
+			} else {
+				status = model.BatchProductionStatusCompleted
+			}
+		}
+	}
+
+	result := tx.Model(&model.BatchProductionJob{}).
+		Where("organization_id = ? AND id = ?", job.OrganizationID, job.ID).
+		Updates(map[string]any{
+			"status":          status,
+			"total_items":     total,
+			"queued_items":    queued,
+			"running_items":   running,
+			"completed_items": completed,
+			"failed_items":    failed,
+			"updated_at":      timestamp,
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return ErrBatchProductionStateConflict
+	}
+	job.Status = status
+	job.TotalItems = int(total)
+	job.QueuedItems = int(queued)
+	job.RunningItems = int(running)
+	job.CompletedItems = int(completed)
+	job.FailedItems = int(failed)
+	job.UpdatedAt = timestamp
+	if status != model.BatchProductionStatusQueued && status != model.BatchProductionStatusRunning {
+		return releaseBatchProductionCredits(tx, job, timestamp)
+	}
+	return nil
+}
+
+func reserveBatchProductionRetryCredits(tx *gorm.DB, job *model.BatchProductionJob, amount int, timestamp string) error {
+	if amount <= 0 {
+		return ErrBatchProductionStateConflict
+	}
+	if job.CreditSource == model.CreditSourceOrganization {
+		var organization model.Organization
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&organization, "id = ?", job.OrganizationID).Error; err != nil {
+			return err
+		}
+		budgetMonth := batchCreditBudgetMonth(timestamp)
+		if organization.CreditBudgetMonth != budgetMonth {
+			if err := tx.Model(&model.Organization{}).Where("id = ?", organization.ID).Updates(map[string]any{
+				"monthly_credits_used": 0,
+				"credit_budget_month":  budgetMonth,
+				"updated_at":            timestamp,
+			}).Error; err != nil {
+				return err
+			}
+			organization.MonthlyCreditsUsed = 0
+			organization.CreditBudgetMonth = budgetMonth
+		}
+		if organization.Credits-organization.ReservedCredits < amount {
+			return ErrInsufficientOrganizationCredits
+		}
+		if organization.MonthlyCreditBudget > 0 && organization.MonthlyCreditsUsed+organization.ReservedCredits+amount > organization.MonthlyCreditBudget {
+			return ErrOrganizationCreditBudgetExceeded
+		}
+		result := tx.Model(&model.Organization{}).
+			Where("id = ? AND credits - reserved_credits >= ? AND (monthly_credit_budget = 0 OR monthly_credits_used + reserved_credits + ? <= monthly_credit_budget)", organization.ID, amount, amount).
+			Updates(map[string]any{
+				"reserved_credits": gorm.Expr("reserved_credits + ?", amount),
+				"updated_at":       timestamp,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrOrganizationCreditBudgetExceeded
+		}
+	} else if job.CreditSource == model.CreditSourcePersonal {
+		var user model.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, "id = ?", job.CreatedBy).Error; err != nil {
+			return err
+		}
+		if user.Credits-user.ReservedCredits < amount {
+			return ErrInsufficientUserCredits
+		}
+		result := tx.Model(&model.User{}).
+			Where("id = ? AND credits - reserved_credits >= ?", user.ID, amount).
+			Updates(map[string]any{
+				"reserved_credits": gorm.Expr("reserved_credits + ?", amount),
+				"updated_at":       timestamp,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrInsufficientUserCredits
+		}
+	} else {
+		return ErrBatchProductionStateConflict
+	}
+	result := tx.Model(&model.BatchProductionJob{}).
+		Where("organization_id = ? AND id = ?", job.OrganizationID, job.ID).
+		Update("reserved_credits", gorm.Expr("reserved_credits + ?", amount))
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return ErrBatchProductionStateConflict
+	}
+	job.ReservedCredits += amount
+	return nil
+}
+
 func CancelBatchProductionJob(organizationID string, id string, timestamp string, auditLogs ...model.OrganizationAuditLog) error {
 	db, err := DB()
 	if err != nil { return err }
 	return db.Transaction(func(tx *gorm.DB) error {
-		var organization model.Organization
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&organization, "id = ?", organizationID).Error; err != nil { return err }
 		var job model.BatchProductionJob
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("organization_id = ? AND id = ? AND status IN ?", organizationID, id, []model.BatchProductionStatus{model.BatchProductionStatusQueued, model.BatchProductionStatusRunning}).First(&job).Error; errors.Is(err, gorm.ErrRecordNotFound) { return ErrBatchProductionStateConflict } else if err != nil { return err }
-		result := tx.Model(&model.BatchProductionJob{}).Where("organization_id = ? AND id = ? AND status IN ?", organizationID, id, []model.BatchProductionStatus{model.BatchProductionStatusQueued, model.BatchProductionStatusRunning}).Updates(map[string]any{"status": model.BatchProductionStatusCancelled, "updated_at": timestamp})
-		if result.Error != nil { return result.Error }
-		if result.RowsAffected != 1 { return ErrBatchProductionStateConflict }
-		if err := tx.Model(&model.BatchProductionItem{}).Where("organization_id = ? AND job_id = ? AND status IN ?", organizationID, id, []model.BatchProductionStatus{model.BatchProductionStatusQueued, model.BatchProductionStatusRunning}).Updates(map[string]any{"status": model.BatchProductionStatusCancelled, "lease_token": "", "lease_expires_at": "", "locked_at": "", "finished_at": timestamp, "updated_at": timestamp}).Error; err != nil { return err }
+		if err := tx.Model(&model.BatchProductionItem{}).Where("organization_id = ? AND job_id = ? AND status IN ?", organizationID, id, []model.BatchProductionStatus{model.BatchProductionStatusQueued, model.BatchProductionStatusRunning}).Updates(map[string]any{"status": model.BatchProductionStatusCancelled, "error_code": model.BatchProductionErrorCancelledLeaseLost, "retryable": false, "next_attempt_at": "", "lease_token": "", "lease_expires_at": "", "locked_at": "", "finished_at": timestamp, "updated_at": timestamp}).Error; err != nil { return err }
+		job.Status = model.BatchProductionStatusCancelled
+		if err := aggregateBatchProductionJob(tx, &job, timestamp); err != nil { return err }
 		return saveOrganizationAuditLogs(tx, auditLogs)
 	})
 }
@@ -966,9 +1250,10 @@ func ListBatchProductionArchiveItems(organizationID string, jobID string) (model
 	if err := db.Where("organization_id = ? AND id = ?", organizationID, jobID).First(&job).Error; err != nil { return model.BatchProductionJob{}, nil, err }
 	var items []model.BatchProductionArchiveItem
 	err = db.Table("batch_production_items AS items").
-		Select("items.id, items.product_id, products.code AS product_code, items.sku_id, product_skus.code AS sku_code, items.result_storage_key, user_files.mime_type, user_files.size, items.is_primary").
+		Select("items.id, items.product_id, products.code AS product_code, items.sku_id, product_skus.code AS sku_code, items.template_selection_id, selections.id AS resolved_template_selection_id, items.result_storage_key, user_files.mime_type, user_files.size, items.is_primary, items.template_type, items.variant_index, selections.delivery_id, selections.delivery_platform, selections.delivery_name, selections.delivery_width, selections.delivery_height, selections.delivery_format, selections.delivery_quality, selections.delivery_filename_pattern").
 		Joins("JOIN products ON products.organization_id = items.organization_id AND products.id = items.product_id").
 		Joins("LEFT JOIN product_skus ON product_skus.organization_id = items.organization_id AND product_skus.id = items.sku_id").
+		Joins("LEFT JOIN batch_production_template_selections AS selections ON selections.organization_id = items.organization_id AND selections.job_id = items.job_id AND selections.id = items.template_selection_id").
 		Joins("JOIN user_files ON user_files.organization_id = items.organization_id AND user_files.storage_key = items.result_storage_key").
 		Where("items.organization_id = ? AND items.job_id = ? AND items.status = ? AND items.review_status = ? AND items.result_storage_key <> ''", organizationID, jobID, model.BatchProductionStatusCompleted, model.BatchProductionReviewApproved).
 		Order("items.product_id asc, items.is_primary desc, items.sku_id asc, items.id asc").
@@ -981,6 +1266,8 @@ func ReviewBatchProductionItem(organizationID string, jobID string, itemID strin
 	if err != nil { return model.BatchProductionItem{}, err }
 	var item model.BatchProductionItem
 	err = db.Transaction(func(tx *gorm.DB) error {
+		var job model.BatchProductionJob
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("organization_id = ? AND id = ?", organizationID, jobID).First(&job).Error; errors.Is(err, gorm.ErrRecordNotFound) { return ErrBatchProductionStateConflict } else if err != nil { return err }
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("organization_id = ? AND job_id = ? AND id = ? AND status = ? AND run_number = ?", organizationID, jobID, itemID, model.BatchProductionStatusCompleted, runNumber).First(&item).Error; errors.Is(err, gorm.ErrRecordNotFound) { return ErrBatchProductionStateConflict } else if err != nil { return err }
 		updates := map[string]any{"review_status": status, "review_comment": comment, "reviewed_by": reviewerID, "reviewed_at": timestamp, "updated_at": timestamp}
 		if status == model.BatchProductionReviewRejected { updates["is_primary"] = false }
@@ -989,6 +1276,7 @@ func ReviewBatchProductionItem(organizationID string, jobID string, itemID strin
 		if result.RowsAffected != 1 { return ErrBatchProductionStateConflict }
 		item.ReviewStatus, item.ReviewComment, item.ReviewedBy, item.ReviewedAt, item.UpdatedAt = status, comment, reviewerID, timestamp, timestamp
 		if status == model.BatchProductionReviewRejected { item.IsPrimary = false }
+		if err := aggregateBatchProductionJob(tx, &job, timestamp); err != nil { return err }
 		return saveOrganizationAuditLogs(tx, auditLogs)
 	})
 	return item, err
@@ -999,11 +1287,15 @@ func SetBatchProductionPrimary(organizationID string, jobID string, itemID strin
 	if err != nil { return model.BatchProductionItem{}, err }
 	var item model.BatchProductionItem
 	err = db.Transaction(func(tx *gorm.DB) error {
+		var candidate model.BatchProductionItem
+		if err := tx.Where("organization_id = ? AND job_id = ? AND id = ? AND status = ? AND run_number = ? AND review_status = ? AND result_storage_key <> ''", organizationID, jobID, itemID, model.BatchProductionStatusCompleted, runNumber, model.BatchProductionReviewApproved).First(&candidate).Error; errors.Is(err, gorm.ErrRecordNotFound) { return ErrBatchProductionStateConflict } else if err != nil { return err }
 		var job model.BatchProductionJob
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("organization_id = ? AND id = ?", organizationID, jobID).First(&job).Error; errors.Is(err, gorm.ErrRecordNotFound) { return ErrBatchProductionStateConflict } else if err != nil { return err }
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("organization_id = ? AND job_id = ? AND id = ? AND status = ? AND run_number = ? AND review_status <> ? AND result_storage_key <> ''", organizationID, jobID, itemID, model.BatchProductionStatusCompleted, runNumber, model.BatchProductionReviewRejected).First(&item).Error; errors.Is(err, gorm.ErrRecordNotFound) { return ErrBatchProductionStateConflict } else if err != nil { return err }
-		if err := tx.Model(&model.BatchProductionItem{}).Where("organization_id = ? AND job_id = ? AND product_id = ? AND is_primary = ?", organizationID, jobID, item.ProductID, true).Update("is_primary", false).Error; err != nil { return err }
-		result := tx.Model(&model.BatchProductionItem{}).Where("organization_id = ? AND job_id = ? AND id = ? AND status = ? AND run_number = ? AND review_status <> ?", organizationID, jobID, itemID, model.BatchProductionStatusCompleted, runNumber, model.BatchProductionReviewRejected).Updates(map[string]any{"is_primary": true, "updated_at": timestamp})
+		var scopeItems []model.BatchProductionItem
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("organization_id = ? AND product_id = ? AND sku_id = ?", organizationID, candidate.ProductID, candidate.SKUID).Order("id asc").Find(&scopeItems).Error; err != nil { return err }
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("organization_id = ? AND job_id = ? AND id = ? AND product_id = ? AND sku_id = ? AND status = ? AND run_number = ? AND review_status = ? AND result_storage_key <> ''", organizationID, jobID, itemID, candidate.ProductID, candidate.SKUID, model.BatchProductionStatusCompleted, runNumber, model.BatchProductionReviewApproved).First(&item).Error; errors.Is(err, gorm.ErrRecordNotFound) { return ErrBatchProductionStateConflict } else if err != nil { return err }
+		if err := tx.Model(&model.BatchProductionItem{}).Where("organization_id = ? AND product_id = ? AND sku_id = ? AND id <> ? AND is_primary = ?", organizationID, item.ProductID, item.SKUID, item.ID, true).Update("is_primary", false).Error; err != nil { return err }
+		result := tx.Model(&model.BatchProductionItem{}).Where("organization_id = ? AND job_id = ? AND id = ? AND product_id = ? AND sku_id = ? AND status = ? AND run_number = ? AND review_status = ? AND result_storage_key <> ''", organizationID, jobID, itemID, item.ProductID, item.SKUID, model.BatchProductionStatusCompleted, runNumber, model.BatchProductionReviewApproved).Updates(map[string]any{"is_primary": true, "updated_at": timestamp})
 		if result.Error != nil { return result.Error }
 		if result.RowsAffected != 1 { return ErrBatchProductionStateConflict }
 		item.IsPrimary, item.UpdatedAt = true, timestamp
@@ -1016,8 +1308,6 @@ func RetryBatchProductionItem(organizationID string, jobID string, itemID string
 	db, err := DB()
 	if err != nil { return err }
 	return db.Transaction(func(tx *gorm.DB) error {
-		var organization model.Organization
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&organization, "id = ?", organizationID).Error; err != nil { return err }
 		var job model.BatchProductionJob
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("organization_id = ? AND id = ? AND status <> ?", organizationID, jobID, model.BatchProductionStatusCancelled).First(&job).Error; errors.Is(err, gorm.ErrRecordNotFound) { return ErrBatchProductionStateConflict } else if err != nil { return err }
 		var item model.BatchProductionItem
@@ -1026,15 +1316,12 @@ func RetryBatchProductionItem(organizationID string, jobID string, itemID string
 		var pending int64
 		if err := tx.Model(&model.BatchProductionItem{}).Where("organization_id = ? AND status IN ?", organizationID, []model.BatchProductionStatus{model.BatchProductionStatusQueued, model.BatchProductionStatusRunning}).Count(&pending).Error; err != nil { return err }
 		if pending+1 > maxBatchProductionPendingItemsPerOrganization { return ErrBatchProductionOrganizationQueueFull }
-		result := tx.Model(&model.BatchProductionItem{}).Where("organization_id = ? AND job_id = ? AND id = ? AND run_number = ? AND (status = ? OR (status = ? AND review_status = ?))", organizationID, jobID, itemID, runNumber, model.BatchProductionStatusFailed, model.BatchProductionStatusCompleted, model.BatchProductionReviewRejected).Updates(map[string]any{"status": model.BatchProductionStatusQueued, "result_storage_key": "", "error_message": "", "review_status": "", "review_comment": "", "reviewed_by": "", "reviewed_at": "", "is_primary": false, "run_number": gorm.Expr("run_number + 1"), "attempts": 0, "lease_token": "", "lease_expires_at": "", "locked_at": "", "started_at": "", "finished_at": "", "updated_at": timestamp})
+		if err := reserveBatchProductionRetryCredits(tx, &job, item.EstimatedCredits, timestamp); err != nil { return err }
+		result := tx.Model(&model.BatchProductionItem{}).Where("organization_id = ? AND job_id = ? AND id = ? AND run_number = ? AND (status = ? OR (status = ? AND review_status = ?))", organizationID, jobID, itemID, runNumber, model.BatchProductionStatusFailed, model.BatchProductionStatusCompleted, model.BatchProductionReviewRejected).Updates(map[string]any{"status": model.BatchProductionStatusQueued, "result_storage_key": "", "error_code": "", "retryable": false, "next_attempt_at": "", "error_message": "", "review_status": "", "review_comment": "", "reviewed_by": "", "reviewed_at": "", "is_primary": false, "run_number": gorm.Expr("run_number + 1"), "attempts": 0, "lease_token": "", "lease_expires_at": "", "locked_at": "", "started_at": "", "finished_at": "", "updated_at": timestamp})
 		if result.Error != nil { return result.Error }
 		if result.RowsAffected != 1 { return ErrBatchProductionStateConflict }
 		if err := replaceUserFileReferences(tx, organizationID, "batch_result", item.ID, "batch-result-"+item.ID, nil, true, timestamp); err != nil { return err }
-		var completed, failed int64
-		base := tx.Model(&model.BatchProductionItem{}).Where("organization_id = ? AND job_id = ?", organizationID, jobID)
-		if err := base.Where("status = ?", model.BatchProductionStatusCompleted).Count(&completed).Error; err != nil { return err }
-		if err := tx.Model(&model.BatchProductionItem{}).Where("organization_id = ? AND job_id = ? AND status = ?", organizationID, jobID, model.BatchProductionStatusFailed).Count(&failed).Error; err != nil { return err }
-		if err := tx.Model(&model.BatchProductionJob{}).Where("organization_id = ? AND id = ? AND status <> ?", organizationID, jobID, model.BatchProductionStatusCancelled).Updates(map[string]any{"status": model.BatchProductionStatusQueued, "completed_items": completed, "failed_items": failed, "updated_at": timestamp}).Error; err != nil { return err }
+		if err := aggregateBatchProductionJob(tx, &job, timestamp); err != nil { return err }
 		return saveOrganizationAuditLogs(tx, auditLogs)
 	})
 }
@@ -1043,21 +1330,29 @@ func RetryBatchProductionJob(organizationID string, id string, timestamp string,
 	db, err := DB()
 	if err != nil { return err }
 	return db.Transaction(func(tx *gorm.DB) error {
-		var organization model.Organization
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&organization, "id = ?", organizationID).Error; err != nil { return err }
 		var job model.BatchProductionJob
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("organization_id = ? AND id = ? AND status = ?", organizationID, id, model.BatchProductionStatusFailed).First(&job).Error; err != nil { return err }
-		var pending, retrying int64
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("organization_id = ? AND id = ? AND status IN ?", organizationID, id, []model.BatchProductionStatus{model.BatchProductionStatusFailed, model.BatchProductionStatusPartialSuccess}).First(&job).Error; errors.Is(err, gorm.ErrRecordNotFound) { return ErrBatchProductionStateConflict } else if err != nil { return err }
+		var retryItems []model.BatchProductionItem
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("organization_id = ? AND job_id = ? AND status = ?", organizationID, id, model.BatchProductionStatusFailed).Order("id asc").Find(&retryItems).Error; err != nil { return err }
+		if len(retryItems) == 0 { return ErrBatchProductionStateConflict }
+		var pending int64
 		if err := tx.Model(&model.BatchProductionItem{}).Where("organization_id = ? AND status IN ?", organizationID, []model.BatchProductionStatus{model.BatchProductionStatusQueued, model.BatchProductionStatusRunning}).Count(&pending).Error; err != nil { return err }
-		if err := tx.Model(&model.BatchProductionItem{}).Where("organization_id = ? AND job_id = ? AND status = ?", organizationID, id, model.BatchProductionStatusFailed).Count(&retrying).Error; err != nil { return err }
-		if pending+retrying > maxBatchProductionPendingItemsPerOrganization { return ErrBatchProductionOrganizationQueueFull }
-		if err := tx.Model(&model.BatchProductionItem{}).Where("organization_id = ? AND job_id = ? AND status = ?", organizationID, id, model.BatchProductionStatusFailed).Updates(map[string]any{"status": model.BatchProductionStatusQueued, "error_message": "", "run_number": gorm.Expr("run_number + 1"), "attempts": 0, "lease_token": "", "lease_expires_at": "", "locked_at": "", "started_at": "", "finished_at": "", "updated_at": timestamp}).Error; err != nil { return err }
-		var queued int64
-		if err := tx.Model(&model.BatchProductionItem{}).Where("organization_id = ? AND job_id = ? AND status = ?", organizationID, id, model.BatchProductionStatusQueued).Count(&queued).Error; err != nil { return err }
-		if queued == 0 { return ErrBatchProductionStateConflict }
-		result := tx.Model(&model.BatchProductionJob{}).Where("organization_id = ? AND id = ? AND status = ?", organizationID, id, model.BatchProductionStatusFailed).Updates(map[string]any{"status": model.BatchProductionStatusQueued, "failed_items": 0, "updated_at": timestamp})
+		if pending+int64(len(retryItems)) > maxBatchProductionPendingItemsPerOrganization { return ErrBatchProductionOrganizationQueueFull }
+		retryCredits := 0
+		itemIDs := make([]string, 0, len(retryItems))
+		for _, item := range retryItems {
+			if item.EstimatedCredits <= 0 { return ErrBatchProductionStateConflict }
+			retryCredits += item.EstimatedCredits
+			itemIDs = append(itemIDs, item.ID)
+		}
+		if err := reserveBatchProductionRetryCredits(tx, &job, retryCredits, timestamp); err != nil { return err }
+		result := tx.Model(&model.BatchProductionItem{}).Where("organization_id = ? AND job_id = ? AND id IN ? AND status = ?", organizationID, id, itemIDs, model.BatchProductionStatusFailed).Updates(map[string]any{"status": model.BatchProductionStatusQueued, "result_storage_key": "", "error_code": "", "retryable": false, "next_attempt_at": "", "error_message": "", "review_status": "", "review_comment": "", "reviewed_by": "", "reviewed_at": "", "is_primary": false, "run_number": gorm.Expr("run_number + 1"), "attempts": 0, "lease_token": "", "lease_expires_at": "", "locked_at": "", "started_at": "", "finished_at": "", "updated_at": timestamp})
 		if result.Error != nil { return result.Error }
-		if result.RowsAffected != 1 { return ErrBatchProductionStateConflict }
+		if result.RowsAffected != int64(len(retryItems)) { return ErrBatchProductionStateConflict }
+		for _, item := range retryItems {
+			if err := replaceUserFileReferences(tx, organizationID, "batch_result", item.ID, "batch-result-"+item.ID, nil, true, timestamp); err != nil { return err }
+		}
+		if err := aggregateBatchProductionJob(tx, &job, timestamp); err != nil { return err }
 		return saveOrganizationAuditLogs(tx, auditLogs)
 	})
 }
@@ -1079,40 +1374,45 @@ func ClaimNextBatchProductionItem(timestamp string, leaseExpiresAt string, lease
 			candidate := tx.Table("organizations").
 				Select("organizations.id AS organization_id, organizations.batch_claim_cursor AS batch_claim_cursor").
 				Where("organizations.status = ?", "active").
-				Where("EXISTS (SELECT 1 FROM batch_production_items AS ready_items JOIN batch_production_jobs AS ready_jobs ON ready_jobs.id = ready_items.job_id AND ready_jobs.organization_id = ready_items.organization_id WHERE ready_items.organization_id = organizations.id AND ready_jobs.status IN ? AND (ready_items.status = ? OR (ready_items.status = ? AND ready_items.attempts < ? AND ready_items.lease_expires_at <> '' AND ready_items.lease_expires_at <= ?)))", []model.BatchProductionStatus{model.BatchProductionStatusQueued, model.BatchProductionStatusRunning}, model.BatchProductionStatusQueued, model.BatchProductionStatusRunning, 5, timestamp).
+				Where("EXISTS (SELECT 1 FROM batch_production_items AS ready_items JOIN batch_production_jobs AS ready_jobs ON ready_jobs.id = ready_items.job_id AND ready_jobs.organization_id = ready_items.organization_id WHERE ready_items.organization_id = organizations.id AND ready_jobs.status IN ? AND ((ready_items.status = ? AND (ready_items.next_attempt_at = '' OR ready_items.next_attempt_at <= ?)) OR (ready_items.status = ? AND ready_items.attempts < ? AND ready_items.lease_expires_at <> '' AND ready_items.lease_expires_at <= ?)))", []model.BatchProductionStatus{model.BatchProductionStatusQueued, model.BatchProductionStatusRunning}, model.BatchProductionStatusQueued, timestamp, model.BatchProductionStatusRunning, 5, timestamp).
 				Where("(SELECT COUNT(*) FROM batch_production_items AS active_items WHERE active_items.organization_id = organizations.id AND active_items.status = ? AND active_items.lease_expires_at > ?) < ?", model.BatchProductionStatusRunning, timestamp, maxTenantRunning).
 				Order("organizations.batch_claim_cursor asc, organizations.id asc").
 				Limit(1)
 			if err := candidate.Find(&candidates).Error; err != nil { return err }
 			if len(candidates) == 0 { return gorm.ErrRecordNotFound }
 			selected := candidates[0]
-			var organization model.Organization
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id, batch_claim_cursor").First(&organization, "id = ?", selected.OrganizationID).Error; err != nil { return err }
-			if organization.BatchClaimCursor != selected.BatchClaimCursor { return nil }
-			var activeRunning int64
-			if err := tx.Model(&model.BatchProductionItem{}).Where("organization_id = ? AND status = ? AND lease_expires_at > ?", selected.OrganizationID, model.BatchProductionStatusRunning, timestamp).Count(&activeRunning).Error; err != nil { return err }
-			if activeRunning >= int64(maxTenantRunning) { return nil }
 			itemCandidate := tx.Model(&model.BatchProductionItem{}).
 				Select("batch_production_items.*").
 				Joins("JOIN batch_production_jobs AS jobs ON jobs.id = batch_production_items.job_id AND jobs.organization_id = batch_production_items.organization_id").
 				Where("batch_production_items.organization_id = ? AND jobs.status IN ?", selected.OrganizationID, []model.BatchProductionStatus{model.BatchProductionStatusQueued, model.BatchProductionStatusRunning}).
-				Where("batch_production_items.status = ? OR (batch_production_items.status = ? AND batch_production_items.attempts < ? AND batch_production_items.lease_expires_at <> '' AND batch_production_items.lease_expires_at <= ?)", model.BatchProductionStatusQueued, model.BatchProductionStatusRunning, 5, timestamp).
+				Where("(batch_production_items.status = ? AND (batch_production_items.next_attempt_at = '' OR batch_production_items.next_attempt_at <= ?)) OR (batch_production_items.status = ? AND batch_production_items.attempts < ? AND batch_production_items.lease_expires_at <> '' AND batch_production_items.lease_expires_at <= ?)", model.BatchProductionStatusQueued, timestamp, model.BatchProductionStatusRunning, 5, timestamp).
 				Order("batch_production_items.created_at asc, batch_production_items.id asc")
 			if err := itemCandidate.First(&item).Error; err != nil { return err }
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&job, "id = ? AND organization_id = ? AND status IN ?", item.JobID, item.OrganizationID, []model.BatchProductionStatus{model.BatchProductionStatusQueued, model.BatchProductionStatusRunning}).Error; err != nil { return err }
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&job, "id = ? AND organization_id = ? AND status IN ?", item.JobID, selected.OrganizationID, []model.BatchProductionStatus{model.BatchProductionStatusQueued, model.BatchProductionStatusRunning}).Error; err != nil { return err }
+			var organization model.Organization
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id, status, batch_claim_cursor").First(&organization, "id = ?", selected.OrganizationID).Error; err != nil { return err }
+			if organization.Status != "active" || organization.BatchClaimCursor != selected.BatchClaimCursor { return nil }
+			var activeRunning int64
+			if err := tx.Model(&model.BatchProductionItem{}).Where("organization_id = ? AND status = ? AND lease_expires_at > ?", selected.OrganizationID, model.BatchProductionStatusRunning, timestamp).Count(&activeRunning).Error; err != nil { return err }
+			if activeRunning >= int64(maxTenantRunning) { return nil }
+			var currentItem model.BatchProductionItem
+			if err := tx.Where("id = ? AND organization_id = ? AND job_id = ? AND ((status = ? AND (next_attempt_at = '' OR next_attempt_at <= ?)) OR (status = ? AND attempts < ? AND lease_expires_at <> '' AND lease_expires_at <= ?))", item.ID, selected.OrganizationID, job.ID, model.BatchProductionStatusQueued, timestamp, model.BatchProductionStatusRunning, 5, timestamp).First(&currentItem).Error; errors.Is(err, gorm.ErrRecordNotFound) { return nil } else if err != nil { return err }
+			item = currentItem
 			result := tx.Model(&model.BatchProductionItem{}).
-				Where("id = ? AND organization_id = ? AND (status = ? OR (status = ? AND lease_expires_at <> '' AND lease_expires_at <= ?))", item.ID, item.OrganizationID, model.BatchProductionStatusQueued, model.BatchProductionStatusRunning, timestamp).
-				Updates(map[string]any{"status": model.BatchProductionStatusRunning, "attempts": gorm.Expr("attempts + 1"), "lease_token": leaseToken, "lease_expires_at": leaseExpiresAt, "locked_at": timestamp, "started_at": timestamp, "finished_at": "", "result_storage_key": "", "error_message": "", "updated_at": timestamp})
+				Where("id = ? AND organization_id = ? AND job_id = ? AND ((status = ? AND (next_attempt_at = '' OR next_attempt_at <= ?)) OR (status = ? AND attempts < ? AND lease_expires_at <> '' AND lease_expires_at <= ?))", item.ID, selected.OrganizationID, job.ID, model.BatchProductionStatusQueued, timestamp, model.BatchProductionStatusRunning, 5, timestamp).
+				Updates(map[string]any{"status": model.BatchProductionStatusRunning, "attempts": gorm.Expr("attempts + 1"), "lease_token": leaseToken, "lease_expires_at": leaseExpiresAt, "locked_at": timestamp, "started_at": timestamp, "finished_at": "", "result_storage_key": "", "error_code": "", "retryable": false, "next_attempt_at": "", "error_message": "", "review_status": "", "review_comment": "", "reviewed_by": "", "reviewed_at": "", "is_primary": false, "updated_at": timestamp})
 			if result.Error != nil { return result.Error }
 			if result.RowsAffected == 0 { return nil }
-			jobResult := tx.Model(&model.BatchProductionJob{}).Where("id = ? AND organization_id = ? AND status IN ?", job.ID, item.OrganizationID, []model.BatchProductionStatus{model.BatchProductionStatusQueued, model.BatchProductionStatusRunning}).Updates(map[string]any{"status": model.BatchProductionStatusRunning, "updated_at": timestamp})
-			if jobResult.Error != nil { return jobResult.Error }
+			if err := aggregateBatchProductionJob(tx, &job, timestamp); err != nil { return err }
 			if err := tx.Model(&model.Organization{}).Where("id = ?", organization.ID).Update("batch_claim_cursor", timestamp+":"+leaseToken).Error; err != nil { return err }
 			claimed = true
 			item.Status, item.LockedAt, item.StartedAt, item.UpdatedAt = model.BatchProductionStatusRunning, timestamp, timestamp, timestamp
 			item.LeaseToken, item.LeaseExpiresAt = leaseToken, leaseExpiresAt
+			item.FinishedAt, item.ResultStorageKey, item.ErrorMessage, item.NextAttemptAt = "", "", "", ""
+			item.ErrorCode, item.Retryable = "", false
+			item.ReviewStatus, item.ReviewComment, item.ReviewedBy, item.ReviewedAt = "", "", "", ""
+			item.IsPrimary = false
 			item.Attempts++
-			job.Status, job.UpdatedAt = model.BatchProductionStatusRunning, timestamp
 			return nil
 		})
 		if errors.Is(err, gorm.ErrRecordNotFound) { return model.BatchProductionItem{}, model.BatchProductionJob{}, false, nil }
@@ -1139,52 +1439,66 @@ func failExhaustedBatchProductionItems(db *gorm.DB, timestamp string, maxAttempt
 		for _, key := range keys {
 			ids := byJob[key]
 			item := jobs[key]
-			var organization model.Organization
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&organization, "id = ?", item.OrganizationID).Error; err != nil { return err }
 			var job model.BatchProductionJob
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND organization_id = ? AND status IN ?", item.JobID, item.OrganizationID, []model.BatchProductionStatus{model.BatchProductionStatusQueued, model.BatchProductionStatusRunning}).First(&job).Error; errors.Is(err, gorm.ErrRecordNotFound) { continue } else if err != nil { return err }
-			if err := tx.Model(&model.BatchProductionItem{}).Where("id IN ? AND organization_id = ? AND job_id = ? AND status = ? AND attempts >= ? AND lease_expires_at <= ?", ids, item.OrganizationID, item.JobID, model.BatchProductionStatusRunning, maxAttempts, timestamp).Updates(map[string]any{"status": model.BatchProductionStatusFailed, "error_message": "执行租约连续超时", "lease_token": "", "lease_expires_at": "", "locked_at": "", "finished_at": timestamp, "updated_at": timestamp}).Error; err != nil { return err }
-			var completed, failed, pending int64
-			base := tx.Model(&model.BatchProductionItem{}).Where("organization_id = ? AND job_id = ?", job.OrganizationID, job.ID)
-			if err := base.Where("status = ?", model.BatchProductionStatusCompleted).Count(&completed).Error; err != nil { return err }
-			if err := tx.Model(&model.BatchProductionItem{}).Where("organization_id = ? AND job_id = ? AND status = ?", job.OrganizationID, job.ID, model.BatchProductionStatusFailed).Count(&failed).Error; err != nil { return err }
-			if err := tx.Model(&model.BatchProductionItem{}).Where("organization_id = ? AND job_id = ? AND status IN ?", job.OrganizationID, job.ID, []model.BatchProductionStatus{model.BatchProductionStatusQueued, model.BatchProductionStatusRunning}).Count(&pending).Error; err != nil { return err }
-			status := model.BatchProductionStatusRunning
-			if pending == 0 { status = model.BatchProductionStatusFailed }
-			if err := tx.Model(&model.BatchProductionJob{}).Where("id = ? AND organization_id = ? AND status IN ?", job.ID, job.OrganizationID, []model.BatchProductionStatus{model.BatchProductionStatusQueued, model.BatchProductionStatusRunning}).Updates(map[string]any{"status": status, "completed_items": completed, "failed_items": failed, "updated_at": timestamp}).Error; err != nil { return err }
+			if err := tx.Model(&model.BatchProductionItem{}).Where("id IN ? AND organization_id = ? AND job_id = ? AND status = ? AND attempts >= ? AND lease_expires_at <= ?", ids, item.OrganizationID, item.JobID, model.BatchProductionStatusRunning, maxAttempts, timestamp).Updates(map[string]any{"status": model.BatchProductionStatusFailed, "error_code": model.BatchProductionErrorCancelledLeaseLost, "retryable": false, "next_attempt_at": "", "error_message": "执行租约连续超时", "lease_token": "", "lease_expires_at": "", "locked_at": "", "finished_at": timestamp, "updated_at": timestamp}).Error; err != nil { return err }
+			if err := aggregateBatchProductionJob(tx, &job, timestamp); err != nil { return err }
 		}
 		return nil
 	})
 }
 
 func FinishBatchProductionItem(item model.BatchProductionItem, status model.BatchProductionStatus, resultStorageKey string, errorMessage string, timestamp string) error {
+	return FinishBatchProductionItemWithSchedule(item, status, resultStorageKey, errorMessage, "", false, false, "", timestamp)
+}
+
+func FinishBatchProductionItemWithSchedule(item model.BatchProductionItem, status model.BatchProductionStatus, resultStorageKey string, errorMessage string, errorCategory model.BatchProductionErrorCategory, retryable bool, reserveRetryCredits bool, nextAttemptAt string, timestamp string) error {
 	db, err := DB()
 	if err != nil { return err }
 	return db.Transaction(func(tx *gorm.DB) error {
-		var organization model.Organization
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&organization, "id = ?", item.OrganizationID).Error; err != nil { return err }
 		var job model.BatchProductionJob
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&job, "id = ? AND organization_id = ?", item.JobID, item.OrganizationID).Error; err != nil { return err }
-		if job.Status == model.BatchProductionStatusCancelled || job.Status == model.BatchProductionStatusCompleted || job.Status == model.BatchProductionStatusFailed { return ErrBatchProductionLeaseLost }
+		if job.Status == model.BatchProductionStatusCancelled || job.Status == model.BatchProductionStatusCompleted || job.Status == model.BatchProductionStatusFailed || job.Status == model.BatchProductionStatusPendingReview || job.Status == model.BatchProductionStatusPartialSuccess { return ErrBatchProductionLeaseLost }
+		if retryable {
+			if status != model.BatchProductionStatusQueued || errorCategory == "" || nextAttemptAt == "" || item.EstimatedCredits <= 0 {
+				return ErrBatchProductionStateConflict
+			}
+			if reserveRetryCredits {
+				if err := reserveBatchProductionRetryCredits(tx, &job, item.EstimatedCredits, timestamp); err != nil {
+					if !errors.Is(err, ErrInsufficientUserCredits) && !errors.Is(err, ErrInsufficientOrganizationCredits) && !errors.Is(err, ErrOrganizationCreditBudgetExceeded) {
+						return err
+					}
+					status = model.BatchProductionStatusFailed
+					errorCategory = model.BatchProductionErrorPricingCredit
+					retryable = false
+					nextAttemptAt = ""
+					errorMessage = "自动重试额度不足"
+				}
+			}
+		}
 		reviewStatus := model.BatchProductionReviewStatus("")
-		if status == model.BatchProductionStatusCompleted { reviewStatus = model.BatchProductionReviewPending }
-		result := tx.Model(&model.BatchProductionItem{}).Where("id = ? AND organization_id = ? AND job_id = ? AND status = ? AND lease_token = ?", item.ID, item.OrganizationID, item.JobID, model.BatchProductionStatusRunning, item.LeaseToken).Updates(map[string]any{"status": status, "result_storage_key": resultStorageKey, "error_message": errorMessage, "review_status": reviewStatus, "review_comment": "", "reviewed_by": "", "reviewed_at": "", "is_primary": false, "finished_at": timestamp, "locked_at": "", "lease_token": "", "lease_expires_at": "", "updated_at": timestamp})
+		if status == model.BatchProductionStatusCompleted {
+			reviewStatus = model.BatchProductionReviewPending
+			errorCategory, retryable, nextAttemptAt, errorMessage = "", false, "", ""
+		} else if status == model.BatchProductionStatusFailed {
+			if errorCategory == "" { return ErrBatchProductionStateConflict }
+			retryable, nextAttemptAt = false, ""
+		} else if status != model.BatchProductionStatusQueued {
+			return ErrBatchProductionStateConflict
+		}
+		finishedAt := timestamp
+		if status == model.BatchProductionStatusQueued { finishedAt = "" }
+		updates := map[string]any{"status": status, "result_storage_key": resultStorageKey, "error_code": errorCategory, "retryable": retryable, "next_attempt_at": nextAttemptAt, "error_message": errorMessage, "review_status": reviewStatus, "review_comment": "", "reviewed_by": "", "reviewed_at": "", "is_primary": false, "finished_at": finishedAt, "locked_at": "", "lease_token": "", "lease_expires_at": "", "updated_at": timestamp}
+		if status == model.BatchProductionStatusQueued {
+			updates["run_number"] = gorm.Expr("run_number + 1")
+		}
+		result := tx.Model(&model.BatchProductionItem{}).Where("id = ? AND organization_id = ? AND job_id = ? AND status = ? AND lease_token = ?", item.ID, item.OrganizationID, item.JobID, model.BatchProductionStatusRunning, item.LeaseToken).Updates(updates)
 		if result.Error != nil { return result.Error }
 		if result.RowsAffected != 1 { return ErrBatchProductionLeaseLost }
 		storageKeys := []string{}
 		if resultStorageKey != "" { storageKeys = append(storageKeys, resultStorageKey) }
 		if err := replaceUserFileReferences(tx, item.OrganizationID, "batch_result", item.ID, "batch-result-"+item.ID, storageKeys, status != model.BatchProductionStatusCompleted, timestamp); err != nil { return err }
-		var completed, failed, pending int64
-		base := tx.Model(&model.BatchProductionItem{}).Where("organization_id = ? AND job_id = ?", item.OrganizationID, item.JobID)
-		if err := base.Where("status = ?", model.BatchProductionStatusCompleted).Count(&completed).Error; err != nil { return err }
-		if err := tx.Model(&model.BatchProductionItem{}).Where("organization_id = ? AND job_id = ? AND status = ?", item.OrganizationID, item.JobID, model.BatchProductionStatusFailed).Count(&failed).Error; err != nil { return err }
-		if err := tx.Model(&model.BatchProductionItem{}).Where("organization_id = ? AND job_id = ? AND status IN ?", item.OrganizationID, item.JobID, []model.BatchProductionStatus{model.BatchProductionStatusQueued, model.BatchProductionStatusRunning}).Count(&pending).Error; err != nil { return err }
-		jobStatus := model.BatchProductionStatusRunning
-		if pending == 0 { if failed > 0 { jobStatus = model.BatchProductionStatusFailed } else { jobStatus = model.BatchProductionStatusCompleted } }
-		result = tx.Model(&model.BatchProductionJob{}).Where("organization_id = ? AND id = ? AND status IN ?", item.OrganizationID, item.JobID, []model.BatchProductionStatus{model.BatchProductionStatusQueued, model.BatchProductionStatusRunning}).Updates(map[string]any{"status": jobStatus, "completed_items": completed, "failed_items": failed, "updated_at": timestamp})
-		if result.Error != nil { return result.Error }
-		if result.RowsAffected != 1 { return ErrBatchProductionLeaseLost }
-		return nil
+		return aggregateBatchProductionJob(tx, &job, timestamp)
 	})
 }
 

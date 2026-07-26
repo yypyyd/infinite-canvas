@@ -119,7 +119,7 @@ func batchProductionArchiveEntryName(item model.BatchProductionArchiveItem, spec
 	if item.IsPrimary { role = "主图" }
 	pattern := spec.FilenamePattern
 	if strings.TrimSpace(pattern) == "" { pattern = "{spu}_{sku}_{role}_{item}" }
-	templateType := safeBatchArchiveSegment(item.TemplateType); if templateType == "" { templateType = "legacy" }
+	templateType := safeBatchArchiveSegment(string(item.TemplateType)); if templateType == "" { templateType = "legacy" }
 	variant := fmt.Sprintf("%d", item.VariantIndex); if item.VariantIndex < 1 { variant = "1" }
 	for key, value := range map[string]string{"{spu}": product, "{sku}": sku, "{role}": role, "{template}": templateType, "{variant}": variant, "{item}": itemSegment} { pattern = strings.ReplaceAll(pattern, key, value) }
 	name := safeBatchArchiveSegment(pattern)

@@ -32,26 +32,45 @@ type StandardBatchProductionExecutor struct {
 	ResultClient *http.Client
 }
 
+func standardBatchTypedError(err error, category model.BatchProductionErrorCategory, retryable bool) error {
+	var typedError *batchProductionTypedError
+	if errors.As(err, &typedError) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) { return err }
+	if retryable { return transientBatchProductionError(category, err) }
+	return permanentBatchProductionError(category, err)
+}
+
+func validateStandardBatchGenerationTask(task model.GenerationTask, item model.BatchProductionItem, job model.BatchProductionJob) error {
+	if task.OrganizationID != item.OrganizationID || item.OrganizationID != job.OrganizationID ||
+		task.BatchItemID != item.ID || task.BatchJobID != item.JobID || item.JobID != job.ID ||
+		task.RequestID != standardBatchRequestID(item) {
+		return errors.New("batch generation task does not match the current production item")
+	}
+	return nil
+}
+
 func (executor StandardBatchProductionExecutor) Execute(ctx context.Context, input BatchProductionExecution) (BatchProductionResult, error) {
 	requestID := standardBatchRequestID(input.Item)
 	existingTask, exists, err := repository.GetGenerationTaskByRequest(input.Job.OrganizationID, input.Job.CreatedBy, requestID)
 	if err != nil {
-		return BatchProductionResult{}, err
+		return BatchProductionResult{}, standardBatchTypedError(err, model.BatchProductionErrorInternal, true)
 	}
 	pendingResult := BatchProductionResult{}
 	if exists {
+		if err := validateStandardBatchGenerationTask(existingTask, input.Item, input.Job); err != nil {
+			return BatchProductionResult{}, permanentBatchProductionError(model.BatchProductionErrorUpstreamPermanent, err)
+		}
 		pendingResult.GenerationTask = &existingTask
 		if existingTask.Status != model.GenerationTaskStatusRunning {
-			return pendingResult, errors.New("batch generation request is already settled")
+			return pendingResult, permanentBatchProductionError(model.BatchProductionErrorUpstreamPermanent, errors.New("batch generation request is already settled"))
 		}
 	}
 	prompt, err := batchProductionPrompt(input)
 	if err != nil {
-		return pendingResult, err
+		return pendingResult, standardBatchTypedError(err, model.BatchProductionErrorValidationInput, false)
 	}
 	references, err := standardBatchReferenceURLs(input.MediaURLs)
 	if err != nil {
-		return pendingResult, err
+		return pendingResult, standardBatchTypedError(err, model.BatchProductionErrorValidationInput, false)
 	}
 	operation, path := "generation", "/images/generations"
 	if len(references) > 0 {
@@ -64,67 +83,86 @@ func (executor StandardBatchProductionExecutor) Execute(ctx context.Context, inp
 	} else {
 		settings, err := PublicSettings()
 		if err != nil {
-			return pendingResult, err
+			return pendingResult, standardBatchTypedError(err, model.BatchProductionErrorInternal, true)
 		}
 		modelName = strings.TrimSpace(settings.ModelChannel.DefaultImageModel)
 		if modelName == "" {
-			return pendingResult, errors.New("default image model is not configured")
+			return pendingResult, permanentBatchProductionError(model.BatchProductionErrorValidationInput, errors.New("default image model is not configured"))
 		}
 	}
-	generationSize := productionDeliveryGenerationSize(input.Job.DeliverySpec)
-	pricing := PricingRequest{Model: modelName, Modality: "image", Operation: operation, Unit: "image", ResolutionTier: "1k", Size: generationSize, Quantity: 1}
+	deliverySpec := input.Job.DeliverySpec
+	if input.Selection != nil { deliverySpec = input.Selection.DeliverySpec }
+	generationSize := productionDeliveryGenerationSize(deliverySpec)
+	pricing := standardBatchPricingRequest(modelName, operation, deliverySpec)
 	selection, err := selectStandardBatchModelChannel(pricing, resumeTask, requestID)
 	if err != nil {
-		return pendingResult, err
+		if err.Error() == "original batch model channel is unavailable" || err.Error() == "batch image model has no compatible channel" {
+			return pendingResult, permanentBatchProductionError(model.BatchProductionErrorValidationInput, err)
+		}
+		return pendingResult, standardBatchTypedError(err, model.BatchProductionErrorInternal, true)
 	}
 	user, ok, err := repository.GetUserByID(input.Job.CreatedBy)
 	if err != nil {
-		return pendingResult, err
+		return pendingResult, standardBatchTypedError(err, model.BatchProductionErrorInternal, true)
 	}
 	if !ok || user.Status != model.UserStatusActive {
-		return pendingResult, errors.New("batch production creator is unavailable")
+		return pendingResult, permanentBatchProductionError(model.BatchProductionErrorValidationInput, errors.New("batch production creator is unavailable"))
 	}
 	credits := existingTask.Credits
 	if !exists {
 		credits, err = CalculateRequestCreditsForGroup(pricing, user.Group)
 		if err != nil {
-			return pendingResult, err
+			return pendingResult, permanentBatchProductionError(model.BatchProductionErrorPricingCredit, err)
 		}
+	}
+	if credits != input.Item.EstimatedCredits {
+		return pendingResult, permanentBatchProductionError(model.BatchProductionErrorPricingCredit, errors.New("batch production item pricing changed after reservation"))
 	}
 	resultClient, cleanup := executor.standardResultClient()
 	defer cleanup()
 	body, contentType, err := buildStandardBatchRequest(ctx, resultClient, selection, prompt, references, generationSize)
 	if err != nil {
-		return pendingResult, err
+		return pendingResult, standardBatchTypedError(err, model.BatchProductionErrorUpstreamTransient, true)
 	}
 	task, err := beginOrResumeBatchGeneration(GenerationTaskInput{
 		UserID: input.Job.CreatedBy, OrganizationID: input.Job.OrganizationID,
-		RequestID: requestID, Model: modelName,
+		RequestID: requestID, BatchJobID: input.Job.ID, BatchItemID: input.Item.ID, Model: modelName,
 		UpstreamModel: selection.Model.UpstreamModel, ChannelName: selection.Channel.Name,
 		Path: path, Modality: "image", Operation: operation, ResolutionTier: "1k", Quantity: 1, Credits: credits,
 	})
 	if err != nil {
-		return pendingResult, err
+		var typedError *batchProductionTypedError
+		if errors.As(err, &typedError) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) { return pendingResult, err }
+		if errors.Is(err, repository.ErrGenerationTaskRequestConflict) || strings.Contains(err.Error(), "batch generation request is already settled") {
+			return pendingResult, permanentBatchProductionError(model.BatchProductionErrorUpstreamPermanent, err)
+		}
+		return pendingResult, transientBatchProductionError(model.BatchProductionErrorInternal, err)
+	}
+	if err := validateStandardBatchGenerationTask(task, input.Item, input.Job); err != nil {
+		return BatchProductionResult{}, permanentBatchProductionError(model.BatchProductionErrorUpstreamPermanent, err)
 	}
 	pendingResult.GenerationTask = &task
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, BuildModelChannelURL(selection.Channel, path), bytes.NewReader(body))
 	if err != nil {
-		return pendingResult, err
+		return pendingResult, standardBatchTypedError(err, model.BatchProductionErrorUpstreamPermanent, false)
 	}
 	request.Header.Set("Authorization", "Bearer "+selection.Channel.APIKey)
 	request.Header.Set("Content-Type", contentType)
 	request.Header.Set("Idempotency-Key", task.RequestID)
 	response, err := executor.standardUpstreamClient().Do(request)
 	if err != nil {
-		return pendingResult, err
+		return pendingResult, standardBatchTypedError(err, model.BatchProductionErrorUpstreamTransient, true)
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return pendingResult, fmt.Errorf("model channel returned HTTP %d", response.StatusCode)
+		statusErr := fmt.Errorf("model channel returned HTTP %d", response.StatusCode)
+		if response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= 500 { return pendingResult, transientBatchProductionError(model.BatchProductionErrorUpstreamTransient, statusErr) }
+		return pendingResult, permanentBatchProductionError(model.BatchProductionErrorUpstreamPermanent, statusErr)
 	}
 	result, err := parseStandardBatchResponse(ctx, resultClient, response.Body)
 	result.GenerationTask = &task
-	return result, err
+	if err != nil { return result, standardBatchTypedError(err, model.BatchProductionErrorUpstreamPermanent, false) }
+	return result, nil
 }
 
 func (executor StandardBatchProductionExecutor) standardUpstreamClient() *http.Client {
@@ -159,6 +197,10 @@ func (executor StandardBatchProductionExecutor) standardResultClient() (*http.Cl
 
 func standardBatchRequestID(item model.BatchProductionItem) string {
 	return fmt.Sprintf("batch:%s:%d", item.ID, item.RunNumber)
+}
+
+func standardBatchPricingRequest(modelName string, operation string, deliverySpec model.ProductionDeliverySpec) PricingRequest {
+	return PricingRequest{Model: modelName, Modality: "image", Operation: operation, Unit: "image", ResolutionTier: "1k", Size: productionDeliveryGenerationSize(deliverySpec), Quantity: 1}
 }
 
 func selectStandardBatchModelChannel(request PricingRequest, task *model.GenerationTask, key string) (ModelChannelSelection, error) {
@@ -353,7 +395,11 @@ func batchProductionPrompt(input BatchProductionExecution) (string, error) {
 	if preset == "" {
 		return "", errors.New("batch production preset is invalid")
 	}
-	sections := []string{preset, "商品名称：" + input.Product.Name}
+	renderedPreset, err := renderProductionTemplatePrompt(preset, input.Product, input.SKU, input.Brand)
+	if err != nil {
+		return "", err
+	}
+	sections := []string{renderedPreset, "商品名称：" + input.Product.Name}
 	appendSection := func(label, value string) {
 		if value = strings.TrimSpace(value); value != "" {
 			sections = append(sections, label+"："+value)

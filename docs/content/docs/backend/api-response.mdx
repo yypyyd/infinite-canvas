@@ -23,6 +23,17 @@ description: 业务接口统一响应结构与前端处理约定
 
 接口连接失败、服务不可达、返回体不是约定 JSON 时，前端按网络或接口异常处理。
 
+## 企业电商生产接口
+
+企业接口继续使用 `X-Organization-ID`，服务端逐请求复核当前用户成员关系。新增真实可用接口包括：
+
+- `POST /api/commerce/production/image/preflight`：规范化商品/SKU 范围与模板选择，返回任务项数、问题定位和提示词预览；服务端创建任务时会重新验证。
+- `POST /api/commerce/batch-jobs`：兼容旧单模板请求，同时接受 `productScopes + templateSelections`；`requestId` 同内容重放返回原任务，不同内容返回冲突。
+- `GET /api/commerce/batch-jobs/:id`：返回父任务、冻结模板选择与聚合进度；运行中前端可每 5 秒轮询。
+- `/api/commerce/video-projects` 及 `/:id/preflight`、`/:id/versions`：保存草稿、执行预检、冻结不可变版本。Release 1 没有 render 接口，不返回视频排队任务或 MP4。
+
+图片父任务可能返回 `pending_review` 和 `partial_success`；前者表示所有执行项完成并等待审核，后者表示成功与失败并存。持久化文件字段仍为 `storageKey`，签名 URL 不进入响应模型或数据库。
+
 ## 请求 ID 与访问日志
 
 - 每个响应都会返回 `X-Request-ID`。客户端可传入由字母、数字、点、下划线、冒号或短横线组成且不超过 128 位的请求 ID；缺失或格式无效时由服务端生成 UUID。

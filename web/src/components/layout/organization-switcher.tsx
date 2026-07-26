@@ -6,6 +6,7 @@ import { Building2 } from "lucide-react";
 import { useState } from "react";
 
 import { fetchCommerceWorkspace, switchOrganization } from "@/services/api/commerce";
+import { commerceQueryKeys } from "@/services/api/commerce-query-keys";
 import { useUserStore } from "@/stores/use-user-store";
 import { flushActiveWorkspaceChanges } from "@/components/layout/workspace-provider";
 
@@ -16,7 +17,7 @@ export function OrganizationSwitcher() {
     const refreshUser = useUserStore((state) => state.refreshUser);
 	const setOrganizationId = useUserStore((state) => state.setOrganizationId);
 	const [switching, setSwitching] = useState(false);
-    const query = useQuery({ queryKey: ["commerce-workspace", user?.organizationId], queryFn: fetchCommerceWorkspace, enabled: Boolean(user) });
+    const query = useQuery({ queryKey: commerceQueryKeys.workspace(user?.organizationId || ""), queryFn: fetchCommerceWorkspace, enabled: Boolean(user?.organizationId) });
 
     if (!user || !query.data) return null;
 
@@ -31,8 +32,10 @@ export function OrganizationSwitcher() {
                 className="max-w-40"
                 popupMatchSelectWidth={240}
                 options={query.data.organizations.map((item) => ({ value: item.id, label: item.name }))}
-				onChange={(organizationId) => { setSwitching(true); void flushActiveWorkspaceChanges().then(() => switchOrganization(organizationId))
-					.then(async () => { setOrganizationId(organizationId); await refreshUser(); await queryClient.invalidateQueries(); })
+				onChange={(organizationId) => { if (switching || organizationId === user.organizationId) return; const previousOrganizationId = user.organizationId; setSwitching(true); void flushActiveWorkspaceChanges()
+					.then(() => queryClient.cancelQueries({ queryKey: commerceQueryKeys.root(previousOrganizationId), exact: false }))
+					.then(() => switchOrganization(organizationId))
+					.then(async () => { setOrganizationId(organizationId); queryClient.removeQueries({ queryKey: commerceQueryKeys.root(previousOrganizationId), exact: false }); await refreshUser(); await queryClient.invalidateQueries({ queryKey: commerceQueryKeys.root(organizationId), exact: false }); await queryClient.refetchQueries({ queryKey: commerceQueryKeys.root(organizationId), exact: false, type: "active" }); })
 					.catch((error) => message.error(error instanceof Error ? error.message : "切换企业失败"))
 					.finally(() => setSwitching(false)); }}
             />

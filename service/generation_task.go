@@ -14,6 +14,8 @@ type GenerationTaskInput struct {
 	UserID         string
 	OrganizationID string
 	RequestID      string
+	BatchJobID     string
+	BatchItemID    string
 	Model          string
 	UpstreamModel  string
 	ChannelName    string
@@ -60,6 +62,8 @@ func BeginGenerationTask(input GenerationTaskInput) (model.GenerationTask, error
 		UserID:         input.UserID,
 		OrganizationID: input.OrganizationID,
 		RequestID:      input.RequestID,
+		BatchJobID:     strings.TrimSpace(input.BatchJobID),
+		BatchItemID:    strings.TrimSpace(input.BatchItemID),
 		Model:          input.Model,
 		UpstreamModel:  input.UpstreamModel,
 		ChannelName:    input.ChannelName,
@@ -79,7 +83,12 @@ func BeginGenerationTask(input GenerationTaskInput) (model.GenerationTask, error
 		extra, _ := json.Marshal(map[string]string{"model": input.Model, "path": input.Path})
 		log = &model.CreditLog{ID: newID("credit"), UserID: input.UserID, OrganizationID: input.OrganizationID, CreditSource: creditSource, Type: model.CreditLogTypeAIConsume, Amount: -input.Credits, Remark: "调用模型 " + input.Model, Extra: string(extra), CreatedAt: nowText}
 	}
-	task, err = repository.CreateGenerationTaskWithCharge(task, log)
+	if task.BatchJobID != "" || task.BatchItemID != "" {
+		if task.BatchJobID == "" || task.BatchItemID == "" { return task, safeMessageError{message: "批量任务扣费关联无效"} }
+		task, err = repository.CreateBatchGenerationTaskWithCharge(task, log)
+	} else {
+		task, err = repository.CreateGenerationTaskWithCharge(task, log)
+	}
 	if errors.Is(err, repository.ErrInsufficientUserCredits) {
 		return task, safeMessageError{message: "个人算力余额不足"}
 	}

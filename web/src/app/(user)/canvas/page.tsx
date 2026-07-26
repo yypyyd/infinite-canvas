@@ -3,13 +3,14 @@
 import { useRef } from "react";
 import { useRouter } from "next/navigation";
 import { App, Button } from "antd";
-import { BadgePercent, Download, FileUp, Images, LayoutTemplate, Plus, ScanText } from "lucide-react";
+import { ArrowRight, Download, FileUp, Plus } from "lucide-react";
 
 import { readZip } from "@/lib/zip";
 import { setMediaBlob } from "@/services/file-storage";
 import { setImageBlob } from "@/services/image-storage";
 import { CanvasDeleteProjectsDialog } from "./components/canvas-delete-projects-dialog";
 import { CanvasProjectCard } from "./components/canvas-project-card";
+import { TemplateScene, type TemplateSceneVariant } from "./components/template-scene";
 import type { CanvasExportFile } from "./export-types";
 import { useCanvasStore } from "./stores/use-canvas-store";
 import { useCanvasUiStore } from "./stores/use-canvas-ui-store";
@@ -59,7 +60,7 @@ export default function CanvasPage() {
     return (
         <main className="h-full overflow-auto bg-background text-foreground">
             <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-10 px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
-                <header className="hero-atmosphere flex min-h-64 flex-wrap items-end justify-between gap-6 rounded-[30px] bg-[#f5f5f7] p-7 sm:p-10 dark:rounded-none dark:border-b dark:border-border dark:bg-transparent dark:p-0 dark:py-12 dark:sm:py-14">
+                <header className="hero-atmosphere flex flex-wrap items-end justify-between gap-6 py-8 sm:py-10 dark:border-b dark:border-border">
                     <div>
                         <p className="flex items-center gap-2 text-sm font-medium text-primary"><span className="size-1.5 rounded-full bg-primary" />商品创作空间</p>
                         <h1 className="mt-3 text-5xl font-semibold tracking-[-.045em] sm:text-6xl">每个商品，都有自己的画布。</h1>
@@ -77,11 +78,11 @@ export default function CanvasPage() {
                             </>
                         ) : null}
                         {projects.length ? (
-                            <Button disabled={!hydrated} type="text" onClick={() => setDeleteIds(projects.map((project) => project.id))}>
+                            <Button disabled={!hydrated} type="text" className="text-muted-foreground" onClick={() => setDeleteIds(projects.map((project) => project.id))}>
                                 删除全部
                             </Button>
                         ) : null}
-                        <Button disabled={!hydrated} icon={<FileUp className="size-4" />} onClick={() => inputRef.current?.click()}>
+                        <Button disabled={!hydrated} type="text" icon={<FileUp className="size-4" />} onClick={() => inputRef.current?.click()}>
                             导入画布
                         </Button>
                         <Button disabled={!hydrated} type="primary" icon={<Plus className="size-4" />} onClick={() => createAndEnter()}>
@@ -91,27 +92,41 @@ export default function CanvasPage() {
                 </header>
 
                 <section>
-                    <div className="mb-4 flex items-center gap-2 text-sm font-medium"><LayoutTemplate className="size-4 text-primary" /> 快速开始</div>
+                    <h2 className="mb-[18px] text-[22px] font-semibold tracking-[-.02em]">从模板开始</h2>
                     <div className="grid gap-4 sm:grid-cols-3">
                         {[
-                            { title: "商品主图套系", detail: "白底图、角度图与 SKU 系列", icon: Images },
-                            { title: "详情页视觉", detail: "卖点拆解、材质特写与场景图", icon: ScanText },
-                            { title: "大促活动视觉", detail: "活动主视觉、横幅与社媒素材", icon: BadgePercent },
-                        ].map((item) => {
-                            const Icon = item.icon;
-                            return <button key={item.title} type="button" disabled={!hydrated} onClick={() => createAndEnter(item.title)} className="group flex min-h-32 items-center gap-4 rounded-[24px] bg-card p-5 text-left shadow-[0_12px_36px_rgba(29,29,31,.06)] ring-1 ring-black/[.04] transition hover:-translate-y-0.5 hover:shadow-[0_18px_48px_rgba(29,29,31,.1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50 dark:shadow-none dark:ring-border dark:hover:bg-surface-2 dark:hover:shadow-none dark:hover:ring-border-strong"><span className="grid size-11 shrink-0 place-items-center rounded-[14px] bg-accent-soft"><Icon className="size-4 text-primary" /></span><span><span className="block text-sm font-medium">{item.title}</span><span className="mt-1 block text-xs leading-5 text-muted-foreground">{item.detail}</span></span></button>;
-                        })}
+                            { title: "商品主图套系", detail: "白底图、角度图与 SKU 系列", tag: "主图套系", scene: "main" as TemplateSceneVariant },
+                            { title: "详情页视觉", detail: "卖点拆解、材质特写与场景图", tag: "详情页视觉", scene: "detail" as TemplateSceneVariant },
+                            { title: "大促活动视觉", detail: "活动主视觉、横幅与社媒素材", tag: "大促活动视觉", scene: "promo" as TemplateSceneVariant },
+                        ].map((item) => (
+                            <button key={item.title} type="button" disabled={!hydrated} onClick={() => createAndEnter(item.title)} className="group overflow-hidden rounded-[22px] bg-white text-left shadow-[0_2px_14px_rgba(29,29,31,.06)] ring-1 ring-black/[.04] transition hover:-translate-y-[3px] hover:shadow-[0_14px_44px_rgba(29,29,31,.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50 dark:bg-card dark:shadow-none dark:ring-border dark:hover:shadow-none dark:hover:ring-border-strong">
+                                <span className="relative block aspect-[4/3] overflow-hidden">
+                                    <TemplateScene variant={item.scene} />
+                                    <span className="absolute left-3 top-3 rounded-full bg-white/75 px-2.5 py-1 text-[11px] font-semibold backdrop-blur-md dark:bg-black/55">{item.tag}</span>
+                                </span>
+                                <span className="block px-[18px] pb-[18px] pt-4">
+                                    <span className="block text-[15.5px] font-semibold tracking-[-.01em]">{item.title}</span>
+                                    <span className="mt-1 block text-xs leading-5 text-muted-foreground">{item.detail}</span>
+                                    <span className="mt-2.5 inline-flex items-center gap-1 text-[13px] font-medium text-primary">
+                                        开始创作 <ArrowRight className="size-3.5 transition group-hover:translate-x-0.5" />
+                                    </span>
+                                </span>
+                            </button>
+                        ))}
                     </div>
                 </section>
 
                 {!hydrated ? (
                     <section className="flex min-h-[360px] items-center justify-center border-y border-border text-sm text-muted-foreground">正在加载画布...</section>
                 ) : projects.length ? (
-                    <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-                        {projects.map((project) => (
-                            <CanvasProjectCard key={project.id} project={project} />
-                        ))}
-                    </div>
+                    <section>
+                        <h2 className="mb-[18px] text-[22px] font-semibold tracking-[-.02em]">我的项目</h2>
+                        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                            {projects.map((project, index) => (
+                                <CanvasProjectCard key={project.id} project={project} featured={index === 0} />
+                            ))}
+                        </div>
+                    </section>
                 ) : (
                     <section className="flex min-h-[360px] flex-col items-center justify-center rounded-[28px] bg-[#f5f5f7] p-8 text-center dark:bg-transparent dark:border dark:border-dashed dark:border-border-strong">
                         <h2 className="text-xl font-medium">还没有商品项目</h2>

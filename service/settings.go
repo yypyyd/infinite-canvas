@@ -456,7 +456,7 @@ func defaultModelOperations(modelName string, modality string) []string {
 			return []string{"edit"}
 		}
 	}
-	editable := []string{"gpt-image", "dall-e-2", "flux-kontext", "seedream", "nano-banana"}
+	editable := []string{"gpt-image", "dall-e-2", "flux-kontext", "flux-klein", "seedream", "nano-banana", "firefly-image-5"}
 	for _, pattern := range editable {
 		if strings.Contains(name, pattern) {
 			return []string{"generation", "edit"}
@@ -701,6 +701,7 @@ func normalizePrivateSetting(setting model.PrivateSetting) model.PrivateSetting 
 	}
 	setting.PromptSync = normalizePromptSyncSetting(setting.PromptSync)
 	setting.Email = normalizeEmailSetting(setting.Email)
+	setting.OperationsAlerts = normalizeOperationsAlertSetting(setting.OperationsAlerts)
 	for i := range setting.Channels {
 		setting.Channels[i] = normalizeModelChannel(setting.Channels[i])
 	}
@@ -908,12 +909,39 @@ func repairDefaultModel(current string, models []string, preferred func(string) 
 
 func isVideoModelName(modelName string) bool {
 	name := strings.ToLower(strings.TrimSpace(modelName))
-	return strings.Contains(name, "seedance") || strings.Contains(name, "video") || strings.Contains(name, "sora") || strings.Contains(name, "veo") || strings.Contains(name, "kling") || strings.Contains(name, "wan")
+	return strings.Contains(name, "seedance") || strings.Contains(name, "video") || strings.Contains(name, "sora") || strings.Contains(name, "veo") || strings.Contains(name, "kling") || strings.Contains(name, "wan") || strings.Contains(name, "firefly-ray")
+}
+
+func normalizeOperationsAlertSetting(setting model.OperationsAlertSetting) model.OperationsAlertSetting {
+	if setting.Enabled == nil {
+		enabled := true
+		setting.Enabled = &enabled
+	}
+	setting.BatchQueuedThreshold = normalizeOperationsAlertThreshold(setting.BatchQueuedThreshold, 100)
+	setting.BatchExpiredLeasesThreshold = normalizeOperationsAlertThreshold(setting.BatchExpiredLeasesThreshold, 1)
+	setting.EmailPendingThreshold = normalizeOperationsAlertThreshold(setting.EmailPendingThreshold, 50)
+	setting.EmailFailedThreshold = normalizeOperationsAlertThreshold(setting.EmailFailedThreshold, 1)
+	setting.EmailExpiredLeasesThreshold = normalizeOperationsAlertThreshold(setting.EmailExpiredLeasesThreshold, 1)
+	setting.ObjectDeletionPendingThreshold = normalizeOperationsAlertThreshold(setting.ObjectDeletionPendingThreshold, 100)
+	setting.ObjectDeletionFailedThreshold = normalizeOperationsAlertThreshold(setting.ObjectDeletionFailedThreshold, 1)
+	setting.ObjectDeletionExpiredLeasesThreshold = normalizeOperationsAlertThreshold(setting.ObjectDeletionExpiredLeasesThreshold, 1)
+	return setting
+}
+
+func normalizeOperationsAlertThreshold(value *int64, fallback int64) *int64 {
+	if value == nil {
+		value = &fallback
+	}
+	if *value < 0 {
+		zero := int64(0)
+		return &zero
+	}
+	return value
 }
 
 func isImageModelName(modelName string) bool {
 	name := strings.ToLower(strings.TrimSpace(modelName))
-	return strings.Contains(name, "seedream") || strings.Contains(name, "gpt-image") || strings.Contains(name, "image") || strings.Contains(name, "dall-e") || strings.Contains(name, "imagen") || strings.Contains(name, "flux") || strings.Contains(name, "nano-banana")
+	return strings.Contains(name, "seedream") || strings.Contains(name, "gpt-image") || strings.Contains(name, "image") || strings.Contains(name, "dall-e") || strings.Contains(name, "imagen") || strings.Contains(name, "imagine-") || strings.Contains(name, "flux") || strings.Contains(name, "nano-banana")
 }
 
 func isAudioModelName(modelName string) bool {

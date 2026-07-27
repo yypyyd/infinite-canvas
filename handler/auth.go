@@ -162,6 +162,8 @@ func UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	updated.OrganizationID = user.OrganizationID
+	updated, err = service.ApplyEffectiveCredits(updated)
+	if err != nil { FailError(w, err); return }
 	OK(w, updated)
 }
 

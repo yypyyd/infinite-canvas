@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -9,6 +10,22 @@ import (
 
 	"github.com/basketikun/infinite-canvas/model"
 )
+
+func TestNormalizeOperationsAlertSettingsUsesDefaultsAndAllowsDisabling(t *testing.T) {
+	setting := normalizePrivateSetting(model.PrivateSetting{}).OperationsAlerts
+	if setting.Enabled == nil || !*setting.Enabled || setting.BatchQueuedThreshold == nil || *setting.BatchQueuedThreshold != 100 || setting.EmailFailedThreshold == nil || *setting.EmailFailedThreshold != 1 {
+		t.Fatalf("unexpected default operations alerts: %#v", setting)
+	}
+	negative := int64(-1)
+	setting = normalizePrivateSetting(model.PrivateSetting{OperationsAlerts: model.OperationsAlertSetting{EmailFailedThreshold: &negative}}).OperationsAlerts
+	if setting.EmailFailedThreshold == nil || *setting.EmailFailedThreshold != 0 {
+		t.Fatalf("negative threshold was not disabled: %#v", setting)
+	}
+	publicJSON, err := json.Marshal(model.PublicSetting{})
+	if err != nil || strings.Contains(string(publicJSON), "operationsAlerts") {
+		t.Fatalf("public settings exposed operations alerts: %s, err=%v", publicJSON, err)
+	}
+}
 
 func TestFetchAdminChannelModelsParsesOpenAIModels(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -209,7 +226,15 @@ func TestNormalizeSettingsAddsFallbackBesideResolutionPricingRule(t *testing.T) 
 	rules := settings.Public.ModelChannel.PricingRules
 	assertHasPricingRule(t, rules, "firefly-image-5", "image", "generation", "image", "2k")
 	assertHasPricingRule(t, rules, "firefly-image-5", "image", "generation", "image", "")
-	assertNoPricingRule(t, rules, "firefly-image-5", "image", "edit", "image", "")
+	assertHasPricingRule(t, rules, "firefly-image-5", "image", "edit", "image", "")
+}
+
+func TestDefaultModelOperationsIncludesOfficialEditableModels(t *testing.T) {
+	for _, modelName := range []string{"flux-klein-2", "firefly-image-5"} {
+		if got := defaultModelOperations(modelName, "image"); !reflect.DeepEqual(got, []string{"generation", "edit"}) {
+			t.Fatalf("defaultModelOperations(%q) = %#v", modelName, got)
+		}
+	}
 }
 
 func assertHasPricingRule(t *testing.T, rules []model.PricingRule, modelName string, modality string, operation string, unit string, resolutionTier string) {

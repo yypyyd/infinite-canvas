@@ -1,14 +1,45 @@
 "use client";
 
-import { Check, Download, Pencil, Trash2, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Check, Download, Images, Pencil, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button, Input } from "antd";
 
+import { resolveMediaUrl } from "@/services/file-storage";
+import { cn } from "@/lib/utils";
+import { CanvasNodeType } from "../types";
 import { useCanvasStore, type CanvasProject } from "../stores/use-canvas-store";
 import { useCanvasUiStore } from "../stores/use-canvas-ui-store";
 import { exportCanvasProjects } from "../utils/canvas-export";
 
-export function CanvasProjectCard({ project }: { project: CanvasProject }) {
+function useProjectCovers(project: CanvasProject) {
+    const [covers, setCovers] = useState<string[]>([]);
+    const joined = useMemo(
+        () =>
+            project.nodes
+                .filter((node) => node.type === CanvasNodeType.Image && node.metadata?.storageKey)
+                .slice(0, 4)
+                .map((node) => node.metadata!.storageKey!)
+                .join(","),
+        [project.nodes],
+    );
+    useEffect(() => {
+        let alive = true;
+        if (!joined) {
+            setCovers([]);
+            return;
+        }
+        void Promise.all(joined.split(",").map((key) => resolveMediaUrl(key))).then((urls) => {
+            if (alive) setCovers(urls.filter(Boolean));
+        });
+        return () => {
+            alive = false;
+        };
+    }, [joined]);
+    return covers;
+}
+
+export function CanvasProjectCard({ project, featured = false }: { project: CanvasProject; featured?: boolean }) {
     const router = useRouter();
     const renameProject = useCanvasStore((state) => state.renameProject);
     const selectedIds = useCanvasUiStore((state) => state.selectedProjectIds);
@@ -21,6 +52,7 @@ export function CanvasProjectCard({ project }: { project: CanvasProject }) {
     const setDeleteIds = useCanvasUiStore((state) => state.setDeleteProjectIds);
     const editing = editingId === project.id;
     const selected = selectedIds.includes(project.id);
+    const covers = useProjectCovers(project);
     const open = () => router.push(`/canvas/${project.id}`);
     const saveTitle = () => {
         renameProject(project.id, editingTitle);
@@ -28,16 +60,36 @@ export function CanvasProjectCard({ project }: { project: CanvasProject }) {
     };
 
     return (
-        <article className="group flex min-h-44 cursor-pointer flex-col justify-between rounded-2xl bg-[#f1eee8] p-5 transition hover:bg-[#ebe6dc] dark:bg-white/5 dark:hover:bg-white/10" onClick={() => !editing && open()}>
-            <div className="flex items-start gap-3">
+        <article
+            className={cn(
+                "group cursor-pointer overflow-hidden rounded-[22px] bg-white shadow-[0_2px_14px_rgba(29,29,31,.06)] ring-1 ring-black/[.04] transition hover:-translate-y-[3px] hover:shadow-[0_14px_44px_rgba(29,29,31,.12)] dark:bg-card dark:shadow-none dark:ring-border dark:hover:shadow-none dark:hover:ring-border-strong",
+                featured && "sm:col-span-2",
+            )}
+            onClick={() => !editing && open()}
+        >
+            <div className={cn("relative overflow-hidden bg-surface-2", featured ? "aspect-[16/9] sm:aspect-[16/8.2]" : "aspect-[4/3]")}>
+                {covers.length ? (
+                    <div className={cn("grid h-full gap-px", covers.length > 1 && "grid-cols-2", covers.length > 2 && "grid-rows-2")}>
+                        {covers.map((url) => (
+                            <img key={url} src={url} alt="" className="size-full object-cover" />
+                        ))}
+                    </div>
+                ) : (
+                    <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
+                        <Images className="size-6" />
+                        <span className="text-xs">生成图片后自动成为封面</span>
+                    </div>
+                )}
                 <input
                     type="checkbox"
                     checked={selected}
                     onClick={(event) => event.stopPropagation()}
                     onChange={(event) => toggleSelected(project.id, event.target.checked)}
-                    className="mt-1 size-4 accent-stone-950 dark:accent-stone-100"
+                    className="absolute left-3 top-3 z-10 size-[22px] cursor-pointer accent-primary"
                     aria-label={`选择 ${project.title}`}
                 />
+            </div>
+            <div className="flex items-end justify-between gap-3 px-[18px] py-4">
                 {editing ? (
                     <Input className="min-w-0" value={editingTitle} onClick={(event) => event.stopPropagation()} onChange={(event) => setEditingTitle(event.target.value)} onKeyDown={(event) => event.key === "Enter" && saveTitle()} autoFocus />
                 ) : (
@@ -49,16 +101,13 @@ export function CanvasProjectCard({ project }: { project: CanvasProject }) {
                             open();
                         }}
                     >
-                        <h2 className="truncate text-xl font-semibold">{project.title}</h2>
-                        <p className="mt-3 text-sm leading-6 text-stone-600 dark:text-stone-400">
-                            {project.nodes.length} 个节点 · {project.connections.length} 条连线
+                        <h2 className="truncate text-[15.5px] font-semibold tracking-[-.01em]">{project.title}</h2>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                            {project.nodes.length} 个节点 · {project.connections.length} 条连线 · 更新于 {new Date(project.updatedAt).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
                         </p>
                     </button>
                 )}
-            </div>
-            <div className="mt-8 flex items-end justify-between gap-3">
-                <p className="text-xs text-stone-500">更新于 {new Date(project.updatedAt).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</p>
-                <div className="flex items-center gap-1" onClick={(event) => event.stopPropagation()}>
+                <div className="flex shrink-0 items-center gap-1 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100" onClick={(event) => event.stopPropagation()}>
                     {editing ? (
                         <>
                             <Button type="text" size="small" shape="circle" icon={<Check className="size-4" />} onClick={saveTitle} aria-label="保存名称" />

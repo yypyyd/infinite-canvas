@@ -18,6 +18,7 @@ import { imageToDataUrl, uploadImage } from "@/services/image-storage";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { imageReferenceLabel } from "@/lib/image-reference-prompt";
+import { supportsImageQuality, supportsImageReferences } from "@/lib/image-model-capabilities";
 import type { ReferenceImage } from "@/types/image";
 import { DiaTextReveal } from "@/components/ui/dia-text-reveal";
 import { CanvasImageSettingsPopover } from "./canvas-image-settings-popover";
@@ -47,6 +48,7 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, sessions, activeS
     const effectiveConfig = useEffectiveConfig();
     const pricingRules = useConfigStore((state) => state.publicSettings?.modelChannel.pricingRules);
     const groupRatios = useConfigStore((state) => state.publicSettings?.modelChannel.groupRatios);
+    const managedModels = useConfigStore((state) => state.publicSettings?.modelChannel.models);
     const userGroup = useUserStore((state) => state.user?.group || "default");
     const cleanupImages = useAssetStore((state) => state.cleanupImages);
     const updateConfig = useConfigStore((state) => state.updateConfig);
@@ -61,9 +63,18 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, sessions, activeS
     const [deleteChatIds, setDeleteChatIds] = useState<string[]>([]);
     const [closing, setClosing] = useState(false);
     const [resizing, setResizing] = useState(false);
+    const [isMobile, setIsMobile] = useState(false);
     const [removedReferenceIds, setRemovedReferenceIds] = useState<Set<string>>(new Set());
     const [localSessions, setLocalSessions] = useState<CanvasAssistantSession[]>(() => (sessions.length ? sessions : [createSession()]));
     const [localActiveSessionId, setLocalActiveSessionId] = useState<string | null>(activeSessionId);
+
+    useEffect(() => {
+        const media = window.matchMedia("(max-width: 639px)");
+        const update = () => setIsMobile(media.matches);
+        update();
+        media.addEventListener("change", update);
+        return () => media.removeEventListener("change", update);
+    }, []);
 
     useEffect(() => {
         if (!sessions.length) return;
@@ -144,7 +155,8 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, sessions, activeS
     };
 
     const sendMessage = async (text: string, nextMode: AssistantMode, history: CanvasAssistantMessage[], savedReferences?: CanvasAssistantReference[]) => {
-        const requestConfig = { ...effectiveConfig, count: nextMode === "image" ? effectiveConfig.canvasImageCount || effectiveConfig.count : effectiveConfig.count, model: nextMode === "image" ? effectiveConfig.imageModel || effectiveConfig.model : effectiveConfig.textModel || effectiveConfig.model };
+        const activeModel = nextMode === "image" ? effectiveConfig.imageModel || effectiveConfig.model : effectiveConfig.textModel || effectiveConfig.model;
+        const requestConfig = { ...effectiveConfig, count: nextMode === "image" ? effectiveConfig.canvasImageCount || effectiveConfig.count : effectiveConfig.count, model: activeModel, quality: nextMode === "image" && !supportsImageQuality(activeModel) ? "auto" : effectiveConfig.quality };
         if (!isAiConfigReady(requestConfig, requestConfig.model)) {
             openConfigDialog(true);
             return;
@@ -156,7 +168,7 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, sessions, activeS
             setLocalActiveSessionId(session.id);
         }
 
-        const refs = savedReferences || selectedReferences;
+        const refs = nextMode === "image" && !supportsImageReferences(activeModel, managedModels) ? [] : savedReferences || selectedReferences;
         const userMessage: CanvasAssistantMessage = { id: nanoid(), role: "user", mode: nextMode, text, references: refs };
         const assistantId = nanoid();
         appendMessage(session.id, userMessage);
@@ -229,7 +241,7 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, sessions, activeS
         <motion.div
             className="flex shrink-0"
             initial={{ width: 0, opacity: 0 }}
-            animate={{ width: closing ? 0 : width + 1, opacity: closing ? 0 : 1 }}
+            animate={{ width: closing ? 0 : isMobile ? "100%" : width + 1, opacity: closing ? 0 : 1 }}
             transition={{ duration: resizing ? 0 : PANEL_MOTION_SECONDS, ease: [0.22, 1, 0.36, 1] }}
             style={{ overflow: "clip", pointerEvents: closing ? "none" : undefined }}
         >
@@ -238,9 +250,9 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, sessions, activeS
                 initial={{ x: 48 }}
                 animate={{ x: closing ? 28 : 0 }}
                 transition={{ duration: resizing ? 0 : PANEL_MOTION_SECONDS, ease: [0.22, 1, 0.36, 1] }}
-                style={{ width, background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.text }}
+                style={{ width: isMobile ? "100%" : width, background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.text }}
             >
-                <button type="button" className="absolute inset-y-0 left-0 z-40 w-4 -translate-x-1/2 cursor-col-resize" onMouseDown={startResize} aria-label="调整右侧面板宽度" />
+                <button type="button" className="absolute inset-y-0 left-0 z-40 hidden w-4 -translate-x-1/2 cursor-col-resize sm:block" onMouseDown={startResize} aria-label="调整右侧面板宽度" />
                 <div className="flex items-center justify-between border-b px-4 py-3" style={{ borderColor: theme.node.stroke }}>
                     <div className="flex items-center gap-2 text-sm font-medium">
                         <Sparkles className="size-4" />
@@ -402,14 +414,17 @@ function AssistantComposer({
     userGroup?: string;
 }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const managedModels = useConfigStore((state) => state.publicSettings?.modelChannel.models);
     const activeModel = mode === "image" ? config.imageModel || config.model : config.textModel || config.model;
+    const imageSupportsReferences = supportsImageReferences(activeModel, managedModels);
+    const visibleReferences = mode === "image" && !imageSupportsReferences ? [] : references;
     const creditQuote = requestCreditQuote({
         pricingRules,
         groupRatios,
         userGroup,
         model: activeModel,
         modality: mode === "image" ? "image" : "text",
-        operation: mode === "image" ? (references.some((item) => item.dataUrl) ? "edit" : "generation") : "completion",
+        operation: mode === "image" ? (imageSupportsReferences && visibleReferences.some((item) => item.dataUrl) ? "edit" : "generation") : "completion",
         unit: mode === "image" ? "image" : "request",
         count: mode === "image" ? config.count : 1,
         size: config.size,
@@ -417,10 +432,10 @@ function AssistantComposer({
 
     return (
         <div className="px-2 pb-2" onWheelCapture={(event) => event.stopPropagation()}>
-            {references.length ? (
+            {visibleReferences.length ? (
                 <div className="thin-scrollbar mb-1.5 flex max-w-full gap-1.5 overflow-x-auto px-1 pb-1">
-                    {references.map((item, index) => (
-                        <AssistantReferenceChip key={item.id} item={item} label={assistantImageReferenceLabel(references, index)} onRemove={() => onRemoveReference(item.id)} />
+                    {visibleReferences.map((item, index) => (
+                        <AssistantReferenceChip key={item.id} item={item} label={assistantImageReferenceLabel(visibleReferences, index)} onRemove={() => onRemoveReference(item.id)} />
                     ))}
                 </div>
             ) : null}
@@ -430,7 +445,7 @@ function AssistantComposer({
                     onChange={(event) => onPromptChange(event.target.value)}
                     onPaste={(event) => {
                         const file = Array.from(event.clipboardData.files).find((item) => item.type.startsWith("image/"));
-                        if (!file) return;
+                        if (!file || (mode === "image" && !imageSupportsReferences)) return;
                         event.preventDefault();
                         onPasteImage(file);
                     }}
@@ -450,7 +465,7 @@ function AssistantComposer({
                         {mode === "image" ? (
                             <>
                                 <ModelPicker className="h-8 shrink-0" config={config} value={config.imageModel || config.model} onChange={(model) => onConfigChange("imageModel", model)} capability="image" onMissingConfig={onMissingConfig} />
-                                <CanvasImageSettingsPopover config={config} placement="topRight" getPopupContainer={() => document.body} buttonClassName="canvas-composer-settings canvas-composer-icon !h-8 !min-w-8 !rounded-full !px-2" onConfigChange={onConfigChange} onMissingConfig={onMissingConfig} />
+                                <CanvasImageSettingsPopover config={config} model={activeModel} operation={visibleReferences.some((item) => item.dataUrl) ? "edit" : "generation"} placement="topRight" getPopupContainer={() => document.body} buttonClassName="canvas-composer-settings canvas-composer-icon !h-8 !min-w-8 !rounded-full !px-2" onConfigChange={onConfigChange} onMissingConfig={onMissingConfig} />
                             </>
                         ) : (
                             <ModelPicker className="h-8 shrink-0" config={config} value={config.textModel || config.model} onChange={(model) => onConfigChange("textModel", model)} capability="text" onMissingConfig={onMissingConfig} />

@@ -1,18 +1,28 @@
 "use client";
 
-import { ArrowRight, Check, Layers3, Play, ShoppingBag, Sparkles } from "lucide-react";
+import { ArrowRight, Check, Layers3, Play, ShoppingBag } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { App, Image } from "antd";
 
 import { commercePresets } from "@/constant/commerce-presets";
+import { TemplateScene, type TemplateSceneVariant } from "@/components/template-scene";
 import { fetchPrompts, type Prompt } from "@/services/api/prompts";
 
 const workflow = [
-    { step: "01", title: "上传商品", detail: "导入实拍、包装、Logo 与品牌参考" },
-    { step: "02", title: "选择任务", detail: "主图、场景图、详情页或活动视觉" },
-    { step: "03", title: "批量出图", detail: "在画布里对比、迭代并沉淀整套素材" },
+    { step: "01", title: "导入商品", detail: "上传实拍、包装、Logo 与品牌参考，建立可靠的商品上下文。" },
+    { step: "02", title: "选择用途", detail: "从主图、场景图、详情页到活动视觉，直接从任务开始。" },
+    { step: "03", title: "生成并交付", detail: "在画布中对比、审核与迭代，沉淀可复用的整套商品素材。" },
 ];
+
+const presetScenes: Record<string, TemplateSceneVariant> = {
+    "product-main": "main",
+    lifestyle: "lifestyle",
+    "selling-points": "detail",
+    promotion: "promo",
+    "apparel-model": "apparel",
+    "sku-series": "sku",
+};
 
 export default function IndexPage() {
     const { message } = App.useApp();
@@ -27,106 +37,89 @@ export default function IndexPage() {
     }, [message]);
 
     return (
-        <main className="h-full overflow-y-auto bg-background text-stone-950 dark:text-stone-100">
-            <section className="relative overflow-hidden border-b border-stone-200 dark:border-stone-800">
-                <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgba(120,113,108,.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(120,113,108,.08)_1px,transparent_1px)] bg-[size:48px_48px] [mask-image:linear-gradient(to_bottom,black,transparent_82%)]" />
-                <div className="relative mx-auto grid min-h-[610px] max-w-7xl items-center gap-12 px-6 py-16 lg:grid-cols-[1.05fr_.95fr]">
-                    <div>
-                        <div className="mb-7 inline-flex items-center gap-2 border border-stone-300 bg-background px-3 py-1.5 text-xs font-medium tracking-[.16em] text-stone-600 dark:border-stone-700 dark:text-stone-300">
-                            <ShoppingBag className="size-3.5" /> AI 电商视觉工作台
+        <main className="h-full overflow-y-auto bg-background text-foreground">
+            <section className="px-4 pb-4 pt-3 sm:px-6 lg:px-8">
+                <div className="hero-atmosphere relative mx-auto min-h-[680px] max-w-[1440px] overflow-hidden rounded-[32px] bg-[#f5f5f7] px-6 py-16 text-center sm:px-10 lg:py-20 dark:rounded-none dark:border-b dark:border-border dark:bg-transparent">
+                    <div className="relative z-10 mx-auto max-w-4xl">
+                        <div className="mb-6 inline-flex items-center gap-2 text-sm font-medium text-[#6e6e73] dark:text-[#a1a1a6]">
+                            <ShoppingBag className="size-4" /> AI 电商视觉工作台
                         </div>
-                        <h1 className="max-w-3xl text-balance text-5xl font-semibold leading-[1.05] tracking-[-.045em] sm:text-6xl lg:text-7xl">
-                            从一张商品图，
-                            <span className="text-stone-400 dark:text-stone-500">生成整套销售素材。</span>
+                        <h1 className="text-balance text-5xl font-semibold leading-[.98] tracking-[-.055em] sm:text-7xl lg:text-[88px]">
+                            商品上新，
+                            <span className="block text-[#6e6e73] dark:text-[#a1a1a6]">从一张好图开始。</span>
                         </h1>
-                        <p className="mt-7 max-w-xl text-base leading-8 text-stone-600 dark:text-stone-400">
-                            道生画境把商品主图、场景图、详情页视觉与营销视频放进同一张画布，让品牌、电商运营和设计团队更快完成上新。
+                        <p className="mx-auto mt-7 max-w-2xl text-balance text-lg leading-8 text-[#6e6e73] dark:text-[#a1a1a6] sm:text-xl">
+                            从商品主图、场景图到详情页与营销视频，在一处完成整套销售素材。
                         </p>
-                        <div className="mt-9 flex flex-wrap gap-3">
-                            <Link href="/image?preset=product-main" className="inline-flex h-11 items-center gap-2 bg-stone-950 px-5 text-sm font-medium text-white transition hover:bg-stone-700 dark:bg-stone-100 dark:text-stone-950 dark:hover:bg-white">
-                                生成商品主图 <ArrowRight className="size-4" />
+                        <div className="mt-8 flex flex-wrap justify-center gap-3">
+                            <Link href="/image?preset=product-main" className="inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-6 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2">
+                                制作商品主图 <ArrowRight className="size-4" />
                             </Link>
-                            <Link href="/canvas" className="inline-flex h-11 items-center gap-2 border border-stone-300 px-5 text-sm font-medium transition hover:bg-stone-100 dark:border-stone-700 dark:hover:bg-stone-900">
-                                <Layers3 className="size-4" /> 打开商品画布
+                            <Link href="/canvas" className="inline-flex min-h-11 items-center gap-2 rounded-full border border-primary px-6 text-sm font-medium text-primary transition hover:bg-primary hover:text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2">
+                                打开商品画布 <Layers3 className="size-4" />
                             </Link>
                         </div>
-                        <div className="mt-8 flex flex-wrap gap-x-6 gap-y-2 text-xs text-stone-500">
-                            {['保持商品一致性', '支持批量生成', '素材云端沉淀'].map((item) => <span key={item} className="inline-flex items-center gap-1.5"><Check className="size-3.5" />{item}</span>)}
+                        <div className="mt-7 flex flex-wrap justify-center gap-x-6 gap-y-2 text-xs text-[#6e6e73] dark:text-[#a1a1a6]">
+                            {["保持商品一致性", "支持批量生成", "素材云端沉淀"].map((item) => <span key={item} className="inline-flex items-center gap-1.5"><Check className="size-3.5" />{item}</span>)}
                         </div>
                     </div>
 
-                    <div className="relative mx-auto w-full max-w-xl border border-stone-300 bg-stone-100 p-3 dark:border-stone-700 dark:bg-stone-900">
-                        <div className="grid aspect-[4/3] grid-cols-2 gap-3">
-                            <div className="relative overflow-hidden bg-[linear-gradient(145deg,#e7e5e4,#fafaf9)] dark:bg-[linear-gradient(145deg,#292524,#0c0a09)]">
-                                <div className="absolute left-5 top-5 text-xs font-medium tracking-[.18em] text-stone-500">PRODUCT / 01</div>
-                                <div className="absolute inset-x-[22%] bottom-[16%] top-[25%] rounded-[40%_40%_28%_28%] bg-[#d9683a] shadow-[0_22px_45px_rgba(120,53,15,.28)]" />
-                                <div className="absolute inset-x-[31%] top-[18%] h-[11%] rounded-t-xl bg-stone-900" />
+                    <div className="relative mx-auto mt-12 aspect-[16/7] w-full max-w-5xl overflow-hidden rounded-[28px] bg-[linear-gradient(145deg,#e9e4dc,#fbfbfd_54%,#f5e0d5)] shadow-[0_34px_90px_rgba(29,29,31,.13)] dark:bg-[linear-gradient(145deg,#303033,#1d1d1f_54%,#3b2417)]">
+                        <div className="absolute left-[7%] top-[11%] text-left text-[10px] font-semibold tracking-[.18em] text-[#6e6e73]">NEW SEASON / PRODUCT 01</div>
+                        <div className="absolute bottom-[5%] left-[14%] h-[72%] w-[31%] rounded-[44%_44%_26%_26%] bg-[#d97143] shadow-[0_32px_65px_rgba(113,55,31,.3)]" />
+                        <div className="absolute left-[23%] top-[15%] h-[12%] w-[13%] rounded-t-2xl bg-[#242426]" />
+                        <div className="absolute right-[8%] top-[12%] w-[39%] rounded-[24px] bg-white/65 p-6 text-left backdrop-blur-xl dark:bg-black/25">
+                            <div className="text-sm font-medium">一套商品，完整交付</div>
+                            <div className="mt-5 grid grid-cols-2 gap-3">
+                                {["主图", "场景", "详情", "活动"].map((item, index) => <div key={item} className="aspect-[4/3] rounded-2xl bg-white/80 p-3 text-xs text-[#6e6e73] shadow-sm dark:bg-white/10 dark:text-[#a1a1a6]"><span className="tabular-nums">0{index + 1}</span><div className="mt-5 font-medium text-foreground">{item}视觉</div></div>)}
                             </div>
-                            <div className="grid grid-rows-2 gap-3">
-                                <div className="relative overflow-hidden bg-[#d7d8c4] dark:bg-[#303126]">
-                                    <div className="absolute -right-5 -top-8 size-32 rounded-full border-[22px] border-white/30" />
-                                    <div className="absolute bottom-0 left-[28%] h-[78%] w-[42%] rounded-t-full bg-[#d9683a] shadow-2xl" />
-                                    <span className="absolute bottom-3 left-3 text-[10px] font-medium tracking-[.16em] text-stone-700 dark:text-stone-200">LIFESTYLE</span>
-                                </div>
-                                <div className="relative overflow-hidden bg-stone-950 text-white">
-                                    <Sparkles className="absolute right-4 top-4 size-5 text-orange-400" />
-                                    <div className="absolute bottom-4 left-4">
-                                        <div className="text-3xl font-semibold tracking-[-.05em]">6×</div>
-                                        <div className="mt-1 text-[10px] tracking-[.18em] text-white/55">VISUAL VARIATIONS</div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <div className="flex items-center justify-between px-1 pt-3 text-[11px] tracking-[.12em] text-stone-500">
-                            <span>商品一致 · 场景扩展 · 批量交付</span><span>CANVAS 001</span>
                         </div>
                     </div>
                 </div>
             </section>
 
-            <section className="mx-auto max-w-7xl px-6 py-20">
-                <div className="mb-10 flex flex-wrap items-end justify-between gap-4">
-                    <div><p className="text-xs font-medium tracking-[.18em] text-stone-500">ECOMMERCE TASKS</p><h2 className="mt-3 text-3xl font-semibold tracking-tight">从明确的电商任务开始</h2></div>
-                    <p className="max-w-lg text-sm leading-7 text-stone-500">选择用途后自动带入专业提示词，再上传商品参考图即可生成。</p>
+            <section className="mx-auto max-w-[1440px] px-4 py-20 sm:px-6 lg:px-8">
+                <div className="mb-10 max-w-3xl">
+                    <p className="text-sm font-medium text-primary">从任务开始</p>
+                    <h2 className="mt-3 text-4xl font-semibold tracking-[-.04em] sm:text-5xl">每一种上新需求，都有清晰入口。</h2>
+                    <p className="mt-4 text-lg leading-8 text-muted-foreground">选择用途，带入专业提示词，再上传商品参考图即可开始。</p>
                 </div>
-                <div className="grid border-l border-t border-stone-200 sm:grid-cols-2 lg:grid-cols-3 dark:border-stone-800">
-                    {commercePresets.map((preset, index) => {
-                        const Icon = preset.icon;
-                        return (
-                            <Link key={preset.id} href={`/image?preset=${preset.id}`} className="group min-h-48 border-b border-r border-stone-200 p-6 transition hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-stone-900/60">
-                                <div className="flex items-start justify-between"><Icon className="size-5" /><span className="text-xs tabular-nums text-stone-400">0{index + 1}</span></div>
-                                <h3 className="mt-10 text-lg font-semibold">{preset.title}</h3>
-                                <p className="mt-2 text-sm leading-6 text-stone-500">{preset.description}</p>
-                                <span className="mt-5 inline-flex items-center gap-1 text-xs font-medium opacity-0 transition group-hover:opacity-100">立即制作 <ArrowRight className="size-3.5" /></span>
-                            </Link>
-                        );
-                    })}
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {commercePresets.map((preset, index) => (
+                        <Link key={preset.id} href={`/image?preset=${preset.id}`} className="group overflow-hidden rounded-[22px] bg-white shadow-[0_2px_14px_rgba(29,29,31,.06)] ring-1 ring-black/[.04] transition hover:-translate-y-[3px] hover:shadow-[0_14px_44px_rgba(29,29,31,.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:bg-card dark:shadow-none dark:ring-border dark:hover:shadow-none dark:hover:ring-border-strong">
+                            <span className="relative block aspect-[4/3] overflow-hidden">
+                                <TemplateScene variant={presetScenes[preset.id] ?? "main"} />
+                                <span className="absolute left-3 top-3 rounded-full bg-white/75 px-2.5 py-1 text-[11px] font-semibold tabular-nums backdrop-blur-md dark:bg-black/55">0{index + 1}</span>
+                            </span>
+                            <span className="block px-[18px] pb-[18px] pt-4">
+                                <span className="block text-[15.5px] font-semibold tracking-[-.01em]">{preset.title}</span>
+                                <span className="mt-1 block text-xs leading-5 text-muted-foreground">{preset.description}</span>
+                                <span className="mt-2.5 inline-flex items-center gap-1 text-[13px] font-medium text-primary">
+                                    立即制作 <ArrowRight className="size-3.5 transition group-hover:translate-x-0.5" />
+                                </span>
+                            </span>
+                        </Link>
+                    ))}
                 </div>
             </section>
 
-            <section className="border-y border-stone-200 bg-stone-950 text-white dark:border-stone-800">
-                <div className="mx-auto max-w-7xl px-6 py-16">
-                    <div className="grid gap-8 lg:grid-cols-[.8fr_2fr]">
-                        <div><Play className="size-6 text-orange-400" /><h2 className="mt-6 text-3xl font-semibold">一条更短的上新流程</h2></div>
-                        <div className="grid gap-px bg-white/15 md:grid-cols-3">
-                            {workflow.map((item) => <div key={item.step} className="bg-stone-950 p-6"><span className="text-xs text-orange-400">{item.step}</span><h3 className="mt-8 text-lg font-medium">{item.title}</h3><p className="mt-2 text-sm leading-6 text-white/55">{item.detail}</p></div>)}
-                        </div>
+            <section className="px-4 pb-4 sm:px-6 lg:px-8">
+                <div className="mx-auto max-w-[1440px] overflow-hidden rounded-[32px] bg-[#1d1d1f] px-6 py-16 text-white sm:px-10 lg:px-14">
+                    <div className="grid gap-12 lg:grid-cols-[.8fr_2fr]">
+                        <div><Play className="size-6 text-[#ff8f66]" /><h2 className="mt-6 text-4xl font-semibold tracking-[-.04em]">更短的上新流程。</h2><p className="mt-4 text-base leading-7 text-white/55">减少工具切换，把时间留给选片和创意判断。</p></div>
+                        <div className="grid gap-8 md:grid-cols-3">{workflow.map((item) => <div key={item.step} className="border-t border-white/20 pt-5"><span className="text-sm text-[#ff8f66]">{item.step}</span><h3 className="mt-8 text-xl font-medium">{item.title}</h3><p className="mt-3 text-sm leading-6 text-white/55">{item.detail}</p></div>)}</div>
                     </div>
                 </div>
             </section>
 
             {promptShowcase.length ? (
-                <section className="mx-auto max-w-7xl px-6 py-20">
-                    <div className="mb-8 flex items-end justify-between gap-4"><div><p className="text-xs font-medium tracking-[.18em] text-stone-500">INSPIRATION</p><h2 className="mt-3 text-3xl font-semibold">视觉灵感</h2></div><Link href="/prompts" className="inline-flex items-center gap-1 text-sm">查看全部 <ArrowRight className="size-4" /></Link></div>
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                        {promptShowcase.map((item, index) => <button key={item.id} type="button" onClick={() => { setPreviewIndex(index); setPreviewOpen(true); }} className="group relative aspect-[4/3] overflow-hidden bg-stone-100 text-left dark:bg-stone-900"><img src={item.coverUrl} alt={item.title} className="size-full object-cover transition duration-500 group-hover:scale-[1.03]" /><div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent p-5 pt-16 text-white"><h3 className="font-medium">{item.title}</h3></div></button>)}
-                    </div>
+                <section className="mx-auto max-w-[1440px] px-4 py-20 sm:px-6 lg:px-8">
+                    <div className="mb-9 flex flex-wrap items-end justify-between gap-4"><div><p className="text-sm font-medium text-primary">视觉灵感</p><h2 className="mt-3 text-4xl font-semibold tracking-[-.04em]">看看还能怎么呈现商品。</h2></div><Link href="/prompts" className="inline-flex items-center gap-1 text-sm text-primary">查看全部 <ArrowRight className="size-4" /></Link></div>
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{promptShowcase.map((item, index) => <button key={item.id} type="button" onClick={() => { setPreviewIndex(index); setPreviewOpen(true); }} className="group relative aspect-[4/3] overflow-hidden rounded-[22px] bg-muted text-left transition hover:-translate-y-[3px] hover:shadow-[0_14px_44px_rgba(29,29,31,.14)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"><img src={item.coverUrl} alt={item.title} className="size-full object-cover transition duration-700 group-hover:scale-[1.035]" /><div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent p-6 pt-20 text-white"><h3 className="font-medium">{item.title}</h3></div></button>)}</div>
                 </section>
             ) : null}
 
-            <Image.PreviewGroup preview={{ open: previewOpen, current: previewIndex, onOpenChange: setPreviewOpen, onChange: setPreviewIndex }}>
-                <div className="hidden">{promptShowcase.map((item) => <Image key={item.id} src={item.coverUrl} alt={item.title} />)}</div>
-            </Image.PreviewGroup>
+            <Image.PreviewGroup preview={{ open: previewOpen, current: previewIndex, onOpenChange: setPreviewOpen, onChange: setPreviewIndex }}><div className="hidden">{promptShowcase.map((item) => <Image key={item.id} src={item.coverUrl} alt={item.title} />)}</div></Image.PreviewGroup>
         </main>
     );
 }

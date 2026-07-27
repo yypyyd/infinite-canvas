@@ -22,12 +22,12 @@ export function AppTopNav() {
     return (
         <>
             {!hideHeader ? (
-                <header className="sticky top-0 z-20 h-16 shrink-0 border-b border-stone-200 bg-background/90 backdrop-blur-xl dark:border-stone-800">
-                    <div className="mx-auto flex h-full max-w-7xl items-stretch justify-between gap-5 px-6">
+                <header className="sticky top-0 z-20 h-13 shrink-0 border-b border-black/[.06] bg-background/80 backdrop-blur-2xl dark:border-white/10">
+                    <div className="mx-auto flex h-full max-w-[1440px] items-stretch justify-between gap-5 px-5 lg:px-8">
                         <div className="flex min-w-0 items-center">
-                            <Link href="/" className="flex h-full shrink-0 items-center gap-2 text-sm font-semibold leading-none tracking-tight text-stone-950 transition hover:text-stone-600 dark:text-stone-100 dark:hover:text-stone-300">
-                                <img src="/logo.png" alt="" className="size-7 shrink-0 rounded-full object-cover" />
-                                <span className="text-base font-medium">道生画境</span>
+                            <Link href="/" className="flex h-full shrink-0 items-center gap-2 text-sm font-semibold leading-none tracking-[-.01em] text-foreground transition hover:opacity-70">
+                                <img src="/logo.png" alt="" className="size-6 shrink-0 rounded-full object-cover" />
+                                <span className="text-[15px] font-semibold">道生画境</span>
                             </Link>
 
                             <OrganizationSwitcher />
@@ -42,15 +42,15 @@ export function AppTopNav() {
                                 <Menu className="size-5" />
                             </button>
 
-                            <nav className="hide-scrollbar ml-8 hidden h-16 min-w-0 items-center gap-7 overflow-x-auto md:flex">
+                            <nav className="hide-scrollbar ml-8 hidden h-13 min-w-0 items-center gap-7 overflow-x-auto md:flex">
                                 {navigationTools.map((tool) => {
                                     const Icon = tool.icon;
                                     const active = tool.slug === activeToolSlug;
                                     const className = cn(
-                                        "relative flex h-16 shrink-0 items-center gap-2 text-sm leading-6 transition after:absolute after:inset-x-0 after:bottom-0 after:h-px",
+                                        "relative flex h-13 shrink-0 items-center gap-1.5 text-[13px] leading-6 transition after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full",
                                         active
-                                            ? "font-medium text-stone-950 after:bg-stone-950 dark:text-stone-100 dark:after:bg-stone-100"
-                                            : "text-stone-500 after:bg-transparent hover:text-stone-950 dark:text-stone-400 dark:hover:text-stone-100",
+                                            ? "font-medium text-foreground after:bg-primary"
+                                            : "text-muted-foreground after:bg-transparent hover:text-foreground",
                                     );
 
                                     if ("href" in tool) {

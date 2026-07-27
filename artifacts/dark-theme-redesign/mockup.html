@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-variant="new" data-accent="coral">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>道生画境 · 暗色主题重设计稿 — 石墨 Graphite</title>
+<style>
+  /* ============================================================
+     变体:当前暗色(问题复刻) vs 新方案·石墨 Graphite
+     ============================================================ */
+  :root[data-variant="current"] {
+    --bg: #101013;
+    --nav-bg: #0a0a0b;
+    --s1: #1d1d1f;
+    --s2: #262628;
+    --s3: #2c2c2e;
+    --hair: rgba(255, 255, 255, 0.10);
+    --hair-s: rgba(255, 255, 255, 0.16);
+    --t1: #f5f5f7;
+    --t2: #a1a1a6;
+    --t3: #7a7a80;
+    --acc: #2997ff;
+    --acc-hover: #40a4ff;
+    --acc-soft: rgba(41, 151, 255, 0.12);
+    --acc-on: #0f1012;
+    --hero-bg: var(--s1);
+    --hero-radius: 30px;
+    --hero-border: none;
+    --hero-atmo: none;
+    --card-shadow: none;
+    --card-border: 1px solid transparent;
+    --project-bg: rgba(255, 255, 255, 0.05);
+  }
+
+  :root[data-variant="new"] {
+    /* 石墨 Graphite — oklch 阶梯的 hex 等价 */
+    --bg: #141519;            /* oklch(0.150 0.005 250) base */
+    --nav-bg: rgba(20, 21, 25, 0.72);
+    --s1: #1f2127;            /* oklch(0.205 0.006 250) 卡片 */
+    --s2: #282a32;            /* oklch(0.250 0.007 250) 浮起/hover */
+    --s3: #30323b;            /* oklch(0.290 0.008 250) 弹层 */
+    --hair: rgba(255, 255, 255, 0.06);
+    --hair-s: rgba(255, 255, 255, 0.12);
+    --t1: #f5f5f7;
+    --t2: #aeaeb2;
+    --t3: #86868b;
+    --acc: #ff8f66;         /* 已选定:暖橙(可用底部色板切换对比) */
+    --acc-hover: #ffa585;
+    --acc-soft: rgba(255, 143, 102, 0.14);
+    --acc-on: #26120a;
+    --acc-glow: rgba(255, 143, 102, 0.06);
+    --hero-bg: transparent;
+    --hero-radius: 0;
+    --hero-border: none;
+    --hero-atmo: radial-gradient(90% 130% at 82% -20%, var(--acc-glow), transparent 55%),
+                 radial-gradient(70% 100% at 12% -30%, rgba(245, 245, 247, 0.035), transparent 60%);
+    --card-shadow: none;
+    --card-border: 1px solid var(--hair);
+    --project-bg: var(--s1);
+  }
+
+  /* ---------- 强调色备选(仅新方案生效) ---------- */
+  :root[data-variant="new"][data-accent="amber"] { --acc: #e3a958; --acc-hover: #f2c179; --acc-soft: rgba(227,169,88,.15); --acc-on: #1c1508; --acc-glow: rgba(227,169,88,.07); }
+  :root[data-variant="new"][data-accent="jade"]  { --acc: #4cc38a; --acc-hover: #6ad3a1; --acc-soft: rgba(76,195,138,.14); --acc-on: #0c1f15; --acc-glow: rgba(76,195,138,.06); }
+  :root[data-variant="new"][data-accent="coral"] { --acc: #ff8f66; --acc-hover: #ffa585; --acc-soft: rgba(255,143,102,.14); --acc-on: #26120a; --acc-glow: rgba(255,143,102,.06); }
+  :root[data-variant="new"][data-accent="mono"]  { --acc: #f5f5f7; --acc-hover: #ffffff; --acc-soft: rgba(245,245,247,.12); --acc-on: #141519; --acc-glow: rgba(245,245,247,.05); }
+  :root[data-variant="new"][data-accent="blue"]  { --acc: #2997ff; --acc-hover: #4da6ff; --acc-soft: rgba(41,151,255,.14); --acc-on: #101013; --acc-glow: rgba(41,151,255,.07); }
+
+  /* ---------- 强调色切换面板 ---------- */
+  .accent-switch {
+    position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
+    z-index: 100; display: flex; align-items: center; gap: 10px;
+    padding: 9px 16px; border-radius: 999px;
+    background: rgba(28, 28, 30, 0.88); border: 1px solid rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  }
+  :root[data-variant="current"] .accent-switch { display: none; }
+  .accent-label { font-size: 12px; color: #86868b; }
+  .swatch {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--sw); border: 2px solid transparent;
+    transition: transform 0.15s ease, border-color 0.15s ease;
+    position: relative;
+  }
+  .swatch:hover { transform: scale(1.18); }
+  .swatch[aria-pressed="true"] { border-color: #f5f5f7; box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.4); }
+  .swatch .tip {
+    position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+    white-space: nowrap; font-size: 11px; color: #d6d3d1;
+    background: rgba(20, 20, 22, 0.95); padding: 3px 8px; border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    opacity: 0; pointer-events: none; transition: opacity 0.15s ease;
+  }
+  .swatch:hover .tip { opacity: 1; }
+  .accent-meta { font-size: 11.5px; color: #a1a1a6; min-width: 150px; }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { -webkit-font-smoothing: antialiased; }
+  body {
+    background: var(--bg);
+    color: var(--t1);
+    font-family: "SF Pro Text", "PingFang SC", "Microsoft YaHei", "Helvetica Neue", sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+    transition: background 0.35s ease;
+    min-height: 100vh;
+  }
+  button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+  svg { display: block; }
+
+  /* ---------- 变体切换器 ---------- */
+  .variant-switch {
+    position: fixed;
+    top: 14px;
+    right: 50%;
+    transform: translateX(50%);
+    z-index: 100;
+    display: flex;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 999px;
+    background: rgba(28, 28, 30, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(20px);
+  }
+  .variant-switch button {
+    padding: 6px 16px;
+    border-radius: 999px;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: #a1a1a6;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+  }
+  .variant-switch button[aria-pressed="true"] {
+    background: #f5f5f7;
+    color: #141519;
+  }
+
+  /* ---------- 顶部导航 ---------- */
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 0 28px;
+    background: var(--nav-bg);
+    border-bottom: 1px solid var(--hair);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    transition: background 0.35s ease, border-color 0.35s ease;
+  }
+  .brand { display: flex; align-items: center; gap: 9px; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+  .brand-mark {
+    width: 26px; height: 26px; border-radius: 8px;
+    display: grid; place-items: center;
+    background: var(--acc-soft);
+    border: 1px solid var(--hair-s);
+  }
+  .brand-mark svg { width: 13px; height: 13px; stroke: var(--acc); }
+  .org {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 13px; color: var(--t2);
+    padding: 5px 9px; border-radius: 8px;
+    transition: background 0.15s ease;
+  }
+  .org:hover { background: var(--hair); }
+  .org svg { width: 12px; height: 12px; stroke: var(--t3); }
+  .menu { display: flex; align-items: center; gap: 2px; margin-left: 4px; }
+  .menu button {
+    position: relative;
+    padding: 17px 11px 15px;
+    font-size: 13.5px;
+    color: var(--t2);
+    transition: color 0.15s ease;
+  }
+  .menu button:hover { color: var(--t1); }
+  .menu button.active { color: var(--t1); font-weight: 500; }
+  .menu button.active::after {
+    content: ""; position: absolute; left: 11px; right: 11px; bottom: -1px;
+    height: 2px; border-radius: 2px; background: var(--acc);
+  }
+  .nav-right { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+  .credit {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 13px; font-weight: 500; color: var(--t2);
+    padding: 5px 10px; border-radius: 8px;
+  }
+  .credit svg { width: 13px; height: 13px; stroke: #f5c518; fill: #f5c518; }
+  .nav-link { font-size: 13px; color: var(--acc); padding: 5px 8px; border-radius: 8px; }
+  .nav-link:hover { background: var(--acc-soft); }
+  .icon-btn {
+    width: 32px; height: 32px; border-radius: 8px;
+    display: grid; place-items: center; color: var(--t2);
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  .icon-btn:hover { background: var(--hair); color: var(--t1); }
+  .icon-btn svg { width: 16px; height: 16px; }
+  .avatar {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--s3); border: 1px solid var(--hair-s);
+    display: grid; place-items: center;
+    font-size: 12px; font-weight: 600; color: var(--t1);
+    margin-left: 4px;
+  }
+
+  /* ---------- 页面容器 ---------- */
+  .page { max-width: 1180px; margin: 0 auto; padding: 40px 32px 96px; }
+
+  /* ---------- Hero ---------- */
+  .hero {
+    position: relative;
+    background: var(--hero-bg);
+    border-radius: var(--hero-radius);
+    border: var(--hero-border);
+    padding: 44px 44px 40px;
+    overflow: hidden;
+    transition: background 0.35s ease, border-radius 0.35s ease, padding 0.35s ease;
+  }
+  :root[data-variant="new"] .hero { padding: 56px 0 44px; border-bottom: 1px solid var(--hair); }
+  .hero::before {
+    content: ""; position: absolute; inset: 0;
+    background: var(--hero-atmo);
+    pointer-events: none;
+  }
+  .hero-inner { position: relative; display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 28px; }
+  .kicker {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: 13px; font-weight: 500; color: var(--acc); letter-spacing: 0.01em;
+  }
+  .kicker::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--acc); }
+  :root[data-variant="current"] .kicker::before { display: none; }
+  .hero h1 {
+    margin-top: 14px;
+    font-size: clamp(38px, 4.6vw, 54px);
+    font-weight: 600;
+    letter-spacing: -0.04em;
+    line-height: 1.08;
+    color: var(--t1);
+  }
+  .hero .sub { margin-top: 14px; max-width: 520px; font-size: 15px; line-height: 1.7; color: var(--t2); }
+  .hero-actions { display: flex; align-items: center; gap: 10px; }
+
+  /* ---------- 按钮 ---------- */
+  .btn {
+    display: inline-flex; align-items: center; gap: 7px;
+    height: 40px; padding: 0 18px;
+    border-radius: 999px;
+    font-size: 14px; font-weight: 500;
+    transition: all 0.18s ease;
+  }
+  .btn svg { width: 15px; height: 15px; }
+  .btn:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+  .btn-primary { background: var(--acc); color: var(--acc-on); font-weight: 600; }
+  .btn-primary:hover { background: var(--acc-hover); }
+  :root[data-variant="current"] .btn-outline { background: var(--s3); color: var(--t1); }
+  :root[data-variant="current"] .btn-outline:hover { background: #3a3a3d; }
+  :root[data-variant="new"] .btn-outline { background: transparent; color: var(--t1); border: 1px solid var(--hair-s); }
+  :root[data-variant="new"] .btn-outline:hover { background: var(--s2); border-color: rgba(255,255,255,0.2); }
+  .btn-ghost { color: var(--t3); padding: 0 14px; }
+  .btn-ghost:hover { color: var(--t1); background: var(--hair); }
+  :root[data-variant="current"] .btn-ghost { background: var(--s3); color: var(--t1); }
+
+  /* ---------- 分区标题 ---------- */
+  .section-head {
+    display: flex; align-items: center; gap: 8px;
+    margin: 44px 0 16px;
+    font-size: 13.5px; font-weight: 600; color: var(--t1);
+    letter-spacing: 0.01em;
+  }
+  .section-head svg { width: 15px; height: 15px; stroke: var(--acc); }
+  .section-head .count { color: var(--t3); font-weight: 400; margin-left: 2px; }
+
+  /* ---------- 快速开始卡片 ---------- */
+  .quick-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .quick-card {
+    display: flex; align-items: center; gap: 15px;
+    min-height: 108px; padding: 20px 22px;
+    background: var(--s1);
+    border: var(--card-border);
+    border-radius: 20px;
+    box-shadow: var(--card-shadow);
+    text-align: left;
+    transition: all 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .quick-card:hover, .quick-card.demo-hover {
+    background: var(--s2);
+    border-color: var(--hair-s);
+    transform: translateY(-2px);
+  }
+  .quick-card:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+  .quick-icon {
+    flex-shrink: 0;
+    width: 46px; height: 46px; border-radius: 14px;
+    display: grid; place-items: center;
+    background: var(--acc-soft);
+  }
+  .quick-icon svg { width: 19px; height: 19px; stroke: var(--acc); }
+  :root[data-variant="current"] .quick-icon { background: var(--s3); border-radius: 50%; }
+  :root[data-variant="current"] .quick-icon svg { stroke: var(--t1); }
+  .quick-title { font-size: 14.5px; font-weight: 600; color: var(--t1); letter-spacing: -0.005em; }
+  .quick-detail { margin-top: 4px; font-size: 12.5px; line-height: 1.55; color: var(--t3); }
+
+  /* ---------- 项目卡片 ---------- */
+  .project-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .project-card {
+    position: relative;
+    display: flex; flex-direction: column; justify-content: space-between;
+    min-height: 158px; padding: 20px 20px 16px;
+    background: var(--project-bg);
+    border: var(--card-border);
+    border-radius: 18px;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .project-card:hover, .project-card.demo-hover { background: var(--s2); border-color: var(--hair-s); transform: translateY(-2px); }
+  .project-card.selected { border-color: var(--acc); box-shadow: 0 0 0 1px var(--acc), 0 0 24px rgba(41, 151, 255, 0.12); }
+  .project-top { display: flex; align-items: flex-start; gap: 12px; }
+  .checkbox {
+    flex-shrink: 0;
+    width: 17px; height: 17px; margin-top: 3px;
+    border-radius: 5px;
+    border: 1.5px solid var(--t3);
+    display: grid; place-items: center;
+    transition: all 0.15s ease;
+  }
+  .checkbox svg { width: 11px; height: 11px; stroke: var(--acc-on); opacity: 0; stroke-width: 3; }
+  .checkbox.on { background: var(--acc); border-color: var(--acc); }
+  .checkbox.on svg { opacity: 1; }
+  .project-title { font-size: 17px; font-weight: 600; letter-spacing: -0.015em; color: var(--t1); }
+  .project-meta { margin-top: 6px; font-size: 13px; color: var(--t2); }
+  .project-bottom { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; margin-top: 26px; }
+  .project-time { font-size: 12px; color: var(--t3); }
+  .project-actions { display: flex; align-items: center; gap: 2px; }
+  .project-actions .icon-btn { width: 30px; height: 30px; }
+  .project-actions .icon-btn svg { width: 14.5px; height: 14.5px; }
+  .project-actions .icon-btn.danger:hover { color: #ff6961; background: rgba(255, 105, 97, 0.1); }
+
+  /* ---------- 方案注解(仅新方案显示) ---------- */
+  .notes { display: none; margin-top: 56px; }
+  :root[data-variant="new"] .notes { display: block; }
+  .notes-title { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; color: var(--t3); text-transform: uppercase; margin-bottom: 14px; }
+  .notes-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .note {
+    padding: 16px 18px;
+    border: 1px dashed var(--hair-s);
+    border-radius: 14px;
+  }
+  .note b { display: block; font-size: 13px; font-weight: 600; color: var(--acc); margin-bottom: 5px; }
+  .note span { font-size: 12px; line-height: 1.6; color: var(--t3); }
+
+  .footnote { margin-top: 48px; text-align: center; font-size: 12px; color: var(--t3); }
+
+  @media (max-width: 900px) {
+    .menu { display: none; }
+    .quick-grid, .project-grid, .notes-grid { grid-template-columns: 1fr; }
+    .hero h1 { font-size: 34px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- 变体切换 -->
+<div class="variant-switch" role="group" aria-label="切换设计变体">
+  <button id="btn-current" aria-pressed="false" onclick="setVariant('current')">当前暗色</button>
+  <button id="btn-new" aria-pressed="true" onclick="setVariant('new')">新方案 · 石墨</button>
+</div>
+
+<!-- 强调色切换(仅新方案) -->
+<div class="accent-switch" role="group" aria-label="切换强调色">
+  <span class="accent-label">强调色</span>
+  <button class="swatch" data-accent="amber" style="--sw:#e3a958" aria-pressed="false" onclick="setAccent('amber')"><span class="tip">琥珀金</span></button>
+  <button class="swatch" data-accent="mono" style="--sw:#f5f5f7" aria-pressed="false" onclick="setAccent('mono')"><span class="tip">暖白 · 最克制</span></button>
+  <button class="swatch" data-accent="jade" style="--sw:#4cc38a" aria-pressed="false" onclick="setAccent('jade')"><span class="tip">翡翠绿</span></button>
+  <button class="swatch" data-accent="coral" style="--sw:#ff8f66" aria-pressed="true" onclick="setAccent('coral')"><span class="tip">暖橙 · 已选定</span></button>
+  <button class="swatch" data-accent="blue" style="--sw:#2997ff" aria-pressed="false" onclick="setAccent('blue')"><span class="tip">蓝 · 对照</span></button>
+  <span class="accent-meta" id="accentMeta">暖橙 · 7.5:1 AAA · 已选定</span>
+</div>
+
+<!-- 顶部导航 -->
+<nav class="nav">
+  <div class="brand">
+    <span class="brand-mark">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><circle cx="17.5" cy="17.5" r="3.5"/></svg>
+    </span>
+    道生画境
+  </div>
+  <button class="org">admin 的企业
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+  </button>
+  <div class="menu">
+    <button>企业中心</button>
+    <button class="active">商品画布</button>
+    <button>商品图生成</button>
+    <button>营销视频</button>
+    <button>灵感模板</button>
+    <button>商品素材</button>
+  </div>
+  <div class="nav-right">
+    <span class="credit">
+      <svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+      400
+    </span>
+    <button class="nav-link">购买</button>
+    <button class="icon-btn" aria-label="主题">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+    </button>
+    <button class="icon-btn" aria-label="通知">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+    </button>
+    <span class="avatar">A</span>
+  </div>
+</nav>
+
+<main class="page">
+
+  <!-- Hero -->
+  <header class="hero">
+    <div class="hero-inner">
+      <div>
+        <span class="kicker">商品创作空间</span>
+        <h1>每个商品,<br />都有自己的画布。</h1>
+        <p class="sub">按商品或活动管理参考图、生成过程与最终交付素材。</p>
+      </div>
+      <div class="hero-actions">
+        <button class="btn btn-ghost">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          删除全部
+        </button>
+        <button class="btn btn-outline">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></svg>
+          导入画布
+        </button>
+        <button class="btn btn-primary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          新建商品项目
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- 快速开始 -->
+  <div class="section-head">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="3" width="18" height="7" rx="1.5"/><rect x="3" y="14" width="9" height="7" rx="1.5"/><rect x="16" y="14" width="5" height="7" rx="1.5"/></svg>
+    快速开始
+  </div>
+  <div class="quick-grid">
+    <button class="quick-card">
+      <span class="quick-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+      </span>
+      <span>
+        <span class="quick-title">商品主图套系</span>
+        <span class="quick-detail" style="display:block">白底图、角度图与 SKU 系列</span>
+      </span>
+    </button>
+    <button class="quick-card demo-hover">
+      <span class="quick-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 9h6"/><path d="M7 13h10"/><path d="M7 17h7"/></svg>
+      </span>
+      <span>
+        <span class="quick-title">详情页视觉</span>
+        <span class="quick-detail" style="display:block">卖点拆解、材质特写与场景图</span>
+      </span>
+    </button>
+    <button class="quick-card">
+      <span class="quick-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z"/><path d="m15 9-6 6"/><circle cx="9.5" cy="9.5" r="0.5" fill="currentColor"/><circle cx="14.5" cy="14.5" r="0.5" fill="currentColor"/></svg>
+      </span>
+      <span>
+        <span class="quick-title">大促活动视觉</span>
+        <span class="quick-detail" style="display:block">活动主视觉、横幅与社媒素材</span>
+      </span>
+    </button>
+  </div>
+
+  <!-- 我的项目 -->
+  <div class="section-head">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+    我的项目 <span class="count">3</span>
+  </div>
+  <div class="project-grid">
+    <article class="project-card selected">
+      <div class="project-top">
+        <span class="checkbox on" aria-label="已选中">
+          <svg viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+        </span>
+        <div>
+          <h2 class="project-title">有点东西的</h2>
+          <p class="project-meta">15 个节点 · 16 条连线</p>
+        </div>
+      </div>
+      <div class="project-bottom">
+        <span class="project-time">更新于 07/26 20:27</span>
+        <div class="project-actions">
+          <button class="icon-btn" aria-label="导出"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg></button>
+          <button class="icon-btn" aria-label="重命名"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
+          <button class="icon-btn danger" aria-label="删除"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+        </div>
+      </div>
+    </article>
+    <article class="project-card demo-hover">
+      <div class="project-top">
+        <span class="checkbox" aria-label="未选中"><svg viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+        <div>
+          <h2 class="project-title">夏季新品防晒衣</h2>
+          <p class="project-meta">8 个节点 · 9 条连线</p>
+        </div>
+      </div>
+      <div class="project-bottom">
+        <span class="project-time">更新于 07/25 16:03</span>
+        <div class="project-actions">
+          <button class="icon-btn" aria-label="导出"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg></button>
+          <button class="icon-btn" aria-label="重命名"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
+          <button class="icon-btn danger" aria-label="删除"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+        </div>
+      </div>
+    </article>
+    <article class="project-card">
+      <div class="project-top">
+        <span class="checkbox" aria-label="未选中"><svg viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+        <div>
+          <h2 class="project-title">618 大促主会场</h2>
+          <p class="project-meta">23 个节点 · 31 条连线</p>
+        </div>
+      </div>
+      <div class="project-bottom">
+        <span class="project-time">更新于 07/22 11:40</span>
+        <div class="project-actions">
+          <button class="icon-btn" aria-label="导出"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg></button>
+          <button class="icon-btn" aria-label="重命名"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
+          <button class="icon-btn danger" aria-label="删除"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+        </div>
+      </div>
+    </article>
+  </div>
+
+  <!-- 方案注解 -->
+  <section class="notes">
+    <p class="notes-title">石墨 Graphite · 关键决策</p>
+    <div class="notes-grid">
+      <div class="note">
+        <b>4 级表面阶梯</b>
+        <span>oklch 亮度 0.150 → 0.205 → 0.250 → 0.290,每级 ΔL ≥ 0.04,卡片从背景中自然"浮起"。</span>
+      </div>
+      <div class="note">
+        <b>发丝线替代阴影</b>
+        <span>暗色下阴影失效,改用 6% / 12% 白色 hairline 表达层级与选中,克制成隐。</span>
+      </div>
+      <div class="note">
+        <b>开放式 Hero</b>
+        <span>拆掉 30px 圆角"大灰砖",标题直接落在氛围中,符合"大面积留白 + 清晰大标题"。</span>
+      </div>
+      <div class="note">
+        <b>WCAG AAA/AA</b>
+        <span>正文 15.3:1 / 次要 7.6:1 / 辅助 4.5:1;四款强调色对底色均 ≥ 7.5:1,主按钮深色文字 ≥ 7:1。</span>
+      </div>
+    </div>
+  </section>
+
+  <p class="footnote">设计稿仅示意暗色主题 · 浅色主题保持不变 · 道生画境 UI 设计方案</p>
+</main>
+
+<script>
+  function setVariant(v) {
+    document.documentElement.dataset.variant = v;
+    document.getElementById('btn-current').setAttribute('aria-pressed', v === 'current');
+    document.getElementById('btn-new').setAttribute('aria-pressed', v === 'new');
+  }
+
+  var ACCENT_META = {
+    amber: '琥珀金 · 8.0:1 AAA',
+    mono: '暖白 · 15.3:1 AAA',
+    jade: '翡翠绿 · 7.6:1 AAA',
+    coral: '暖橙 · 7.5:1 AAA',
+    blue: '蓝 · 6.4:1 AA'
+  };
+  function setAccent(a) {
+    document.documentElement.dataset.accent = a;
+    document.querySelectorAll('.swatch').forEach(function (s) {
+      s.setAttribute('aria-pressed', s.dataset.accent === a);
+    });
+    document.getElementById('accentMeta').textContent = ACCENT_META[a];
+  }
+</script>
+</body>
+</html>

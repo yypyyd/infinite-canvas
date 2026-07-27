@@ -24,7 +24,7 @@ func Fail(w http.ResponseWriter, msg string) {
 }
 
 func FailError(w http.ResponseWriter, err error) {
-	log.Printf("request failed: %v", err)
+	log.Printf("request failed request_id=%q: %v", w.Header().Get("X-Request-ID"), err)
 	if safe, ok := err.(interface{ SafeMessage() string }); ok {
 		Fail(w, safe.SafeMessage())
 		return
@@ -37,6 +37,12 @@ func writeJSON(w http.ResponseWriter, value any) {
 	_ = json.NewEncoder(w).Encode(value)
 }
 
+func writeJSONStatus(w http.ResponseWriter, status int, value any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(value)
+}
+
 func parseQuery(r *http.Request) model.Query {
 	q := r.URL.Query()
 	page, _ := strconv.Atoi(q.Get("page"))
@@ -46,6 +52,7 @@ func parseQuery(r *http.Request) model.Query {
 		Tags:     q["tag"],
 		Category: q.Get("category"),
 		Type:     q.Get("type"),
+		Brand:    q.Get("brand"),
 		Page:     page,
 		PageSize: pageSize,
 	}

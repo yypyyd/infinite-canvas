@@ -4,7 +4,7 @@ import { dataUrlToFile } from "@/lib/image-utils";
 import { getMediaBlob, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
 import { boolConfig, buildSeedancePromptText, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
-import { authorizationHeaders } from "@/services/api/request";
+import { authorizationHeaders, organizationHeaders } from "@/services/api/request";
 import type { AiConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import type { ReferenceImage } from "@/types/image";
@@ -30,7 +30,7 @@ function aiApiUrl(_config: AiConfig, path: string) {
 
 function aiHeaders(_config: AiConfig, contentType?: string) {
     const token = useUserStore.getState().token;
-    return { ...authorizationHeaders(token), ...(contentType ? { "Content-Type": contentType } : {}) };
+    return { ...authorizationHeaders(token), ...organizationHeaders(), "Idempotency-Key": crypto.randomUUID(), ...(contentType ? { "Content-Type": contentType } : {}) };
 }
 
 function refreshRemoteUser(_config: AiConfig) {
@@ -200,7 +200,7 @@ async function uploadReferenceMedia(file: File) {
     if (!token) throw new Error("使用本地参考素材需要先登录，并在服务端配置 PUBLIC_BASE_URL");
     const body = new FormData();
     body.append("file", file, file.name);
-    const response = await axios.post<ApiEnvelope<ReferenceMediaUploadResponse>>("/api/v1/media/references", body, { headers: authorizationHeaders(token) });
+    const response = await axios.post<ApiEnvelope<ReferenceMediaUploadResponse>>("/api/v1/media/references", body, { headers: { ...authorizationHeaders(token), ...organizationHeaders() } });
     const payload = unwrapEnvelope(response.data, "参考素材上传失败");
     if (!payload.url) throw new Error("参考素材上传后没有返回公网 URL");
     return payload.url;

@@ -1,0 +1,71 @@
+---
+title: 备份与恢复
+description: 备份和恢复数据库与七牛 Kodo 对象存储
+---
+
+# 备份与恢复
+
+应用镜像内置 `/app/ops-backup`，支持 SQLite、MySQL、PostgreSQL 和七牛 Kodo。备份会生成版本化 `manifest.json`，并为数据库快照和每个对象记录大小与 SHA-256。
+
+## 一致性边界
+
+数据库和 Kodo 无法形成跨系统原子快照。生产备份前必须停止 `app` 和 `batch-worker`，避免备份期间发生数据库写入或对象增删。命令先导出对象、最后创建数据库快照；恢复时先校验并恢复对象、最后恢复数据库。
+
+备份目录不能只保留在应用当前使用的 `./data` 卷。备份成功后应立即复制到加密的异机或独立对象存储，并按组织要求设置保留周期和访问权限。
+
+## 创建完整备份
+
+```bash
+docker compose stop app batch-worker
+docker compose run --rm app /app/ops-backup backup --output /app/data/backups
+docker compose up -d app batch-worker
+```
+
+成功日志中的 `directory` 是本次备份目录，例如：
+
+```text
+/app/data/backups/backup-20260725T120000Z-a1b2c3d4
+```
+
+仅在明确不需要媒体文件时才使用 `--skip-objects` 创建数据库单项备份：
+
+```bash
+docker compose run --rm app /app/ops-backup backup --output /app/data/backups --skip-objects
+```
+
+## 恢复
+
+恢复会覆盖数据库，必须先停止所有应用和 Worker 实例，并提供精确确认词 `RESTORE`：
+
+```bash
+docker compose stop app batch-worker
+docker compose run --rm app /app/ops-backup restore \
+  --input /app/data/backups/backup-20260725T120000Z-a1b2c3d4 \
+  --confirm RESTORE
+docker compose up -d app batch-worker
+```
+
+恢复开始前会验证 manifest、全部文件大小和 SHA-256，并预检 Kodo 中的同名对象：
+
+- 内容一致的对象直接跳过。
+- 同名但内容不同的对象默认使恢复失败。
+- 确认需要用备份覆盖冲突对象时，额外传入 `--overwrite-objects`。
+- 不会删除 Kodo 中未出现在备份内的其他对象。
+
+manifest 中的原空间名称用于审计；实际恢复目标以当前环境的 `QINIU_BUCKET` 为准，因此可以恢复到隔离演练空间或新的灾备空间。
+
+SQLite 恢复会先执行 `PRAGMA quick_check`，原数据库及其 WAL、SHM 文件以 `.pre-restore-*` 后缀保留。MySQL 和 PostgreSQL 分别使用镜像中的官方 `mysql`/`mysqldump` 与 `pg_restore`/`pg_dump` 客户端。
+
+## 恢复演练
+
+不要把首次恢复操作放在生产主机上。应定期在隔离环境中完成以下演练：
+
+1. 使用生产同版本镜像和独立数据库、Kodo 空间恢复最近备份。
+2. 启动应用，核对账号、企业、画布、素材、生成记录、批量任务和媒体读取。
+3. 人为修改一个备份文件，确认校验失败且数据库未被覆盖。
+4. 在目标 Kodo 创建同名不同内容对象，确认默认拒绝，再验证显式覆盖流程。
+5. 记录恢复耗时和结果，并确认异机副本可独立取回。
+
+## 日志与敏感信息
+
+命令输出 JSON 结构化日志，只记录阶段、对象数量、字节数和备份目录，不记录对象键。manifest 必须记录原始对象键以便恢复，但不会保存数据库 DSN、密码、七牛 AK/SK、上传令牌或签名 URL；MySQL 密码和 PostgreSQL DSN 只通过子进程环境变量传递。

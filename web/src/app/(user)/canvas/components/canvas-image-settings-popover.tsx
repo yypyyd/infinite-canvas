@@ -8,11 +8,13 @@ import { Button } from "antd";
 import type { PricingRule } from "@/constant/credits";
 import { ImageSettingsPanel, imageQualityLabel, imageSizeLabel } from "@/components/image-settings-panel";
 import { canvasThemes } from "@/lib/canvas-theme";
+import { supportsImageQuality } from "@/lib/image-model-capabilities";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useConfigStore, type AiConfig } from "@/stores/use-config-store";
 
 type CanvasImageSettingsPopoverProps = {
     config: AiConfig;
+    model?: string;
     onConfigChange: (key: keyof AiConfig, value: string) => void;
     onMissingConfig?: () => void;
     onOpenChange?: (open: boolean) => void;
@@ -20,9 +22,10 @@ type CanvasImageSettingsPopoverProps = {
     getPopupContainer?: (triggerNode: HTMLElement) => HTMLElement;
     placement?: "topLeft" | "top" | "topRight" | "bottomLeft" | "bottom" | "bottomRight";
     autoAdjustOverflow?: boolean;
+    operation?: "generation" | "edit";
 };
 
-export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChange, buttonClassName, placement = "topLeft" }: CanvasImageSettingsPopoverProps) {
+export function CanvasImageSettingsPopover({ config, model, onConfigChange, onOpenChange, buttonClassName, placement = "topLeft", operation = "generation" }: CanvasImageSettingsPopoverProps) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const pricingRules = useConfigStore((state) => state.publicSettings?.modelChannel.pricingRules);
     const managedModels = useConfigStore((state) => state.publicSettings?.modelChannel.models);
@@ -34,8 +37,9 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChang
     const quality = config.quality || "auto";
     const count = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const activeSize = config.size || "auto";
-    const activeModel = config.imageModel || config.model;
+    const activeModel = model || config.imageModel || config.model;
     const modelDefinition = managedModels?.find((item) => item.id === activeModel);
+    const showQuality = supportsImageQuality(activeModel);
     const updateOpen = (nextOpen: boolean) => {
         setOpen(nextOpen);
         onOpenChange?.(nextOpen);
@@ -76,8 +80,10 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChang
                 pricingRules={pricingRules}
                 onConfigChange={onConfigChange}
                 model={activeModel}
+                operation={operation}
                 supportedRatios={modelAspectRatios?.[activeModel]}
                 supportedResolutionTiers={modelDefinition?.resolutionTiers}
+                showQuality={showQuality}
             />
         ) : null;
 
@@ -98,7 +104,7 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChang
                     }}
                 >
                     <span className="truncate">
-                        {imageQualityLabel(quality)} · {imageSizeLabel(activeSize)} · {count} 张
+                        {[showQuality ? imageQualityLabel(quality) : "", imageSizeLabel(activeSize), `${count} 张`].filter(Boolean).join(" · ")}
                     </span>
                 </Button>
             </span>
@@ -116,8 +122,10 @@ function ImageSettingsPortal({
     pricingRules,
     onConfigChange,
     model,
+    operation,
     supportedRatios,
     supportedResolutionTiers,
+    showQuality,
 }: {
     buttonRect: DOMRect;
     panelRef: RefObject<HTMLDivElement | null>;
@@ -127,8 +135,10 @@ function ImageSettingsPortal({
     pricingRules?: PricingRule[];
     onConfigChange: (key: keyof AiConfig, value: string) => void;
     model: string;
+    operation: "generation" | "edit";
     supportedRatios?: string[];
     supportedResolutionTiers?: string[];
+    showQuality: boolean;
 }) {
     const width = 356;
     const gap = 8;
@@ -160,7 +170,7 @@ function ImageSettingsPortal({
             onMouseDown={(event) => event.stopPropagation()}
             onClick={(event) => event.stopPropagation()}
         >
-            <ImageSettingsPanel config={config} onConfigChange={(key, value) => onConfigChange(key, value)} theme={theme} className="space-y-4" pricingRules={pricingRules} model={model} operation="generation" supportedRatios={supportedRatios} supportedResolutionTiers={supportedResolutionTiers} />
+            <ImageSettingsPanel config={config} onConfigChange={(key, value) => onConfigChange(key, value)} theme={theme} className="space-y-4" pricingRules={pricingRules} model={model} operation={operation} supportedRatios={supportedRatios} supportedResolutionTiers={supportedResolutionTiers} showQuality={showQuality} />
         </div>,
         document.body,
     );

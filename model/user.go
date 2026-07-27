@@ -27,8 +27,9 @@ type User struct {
 	OrganizationID string  `json:"organizationId" gorm:"index"`
 	Role        UserRole   `json:"role"`
 	Group       string     `json:"group"`
-	Credits     int        `json:"credits"`
-	AffCode     string     `json:"affCode" gorm:"uniqueIndex"`
+	Credits         int        `json:"credits"`
+	ReservedCredits int        `json:"-" gorm:"not null;default:0"`
+	AffCode         string     `json:"affCode" gorm:"uniqueIndex"`
 	AffCount    int        `json:"affCount"`
 	InviterID   string     `json:"inviterId"`
 	GithubID    string     `json:"githubId"`
@@ -58,6 +59,8 @@ type AuthUser struct {
 	Role        UserRole `json:"role"`
 	Group       string   `json:"group"`
 	Credits     int      `json:"credits"`
+	EffectiveCredits int `json:"effectiveCredits"`
+	CreditMode OrganizationCreditMode `json:"creditMode"`
 	CreatedAt   string   `json:"createdAt"`
 	UpdatedAt   string   `json:"updatedAt"`
 }
@@ -79,6 +82,8 @@ func PublicUser(user User) AuthUser {
 		Role:        user.Role,
 		Group:       user.Group,
 		Credits:     user.Credits,
+		EffectiveCredits: user.Credits,
+		CreditMode: OrganizationCreditModePersonal,
 		CreatedAt:   user.CreatedAt,
 		UpdatedAt:   user.UpdatedAt,
 	}
@@ -93,12 +98,16 @@ const (
 	CreditLogTypeRedeem      CreditLogType = "redeem_code"
 	CreditLogTypeCheckIn     CreditLogType = "daily_check_in"
 	CreditLogTypeNewUser     CreditLogType = "new_user_reward"
+	CreditLogTypeOrganizationTransferOut CreditLogType = "organization_transfer_out"
+	CreditLogTypeOrganizationTransferIn  CreditLogType = "organization_transfer_in"
 )
 
 // CreditLog 用户算力点变更流水。
 type CreditLog struct {
 	ID        string        `json:"id" gorm:"primaryKey"`
 	UserID    string        `json:"userId" gorm:"index"`
+	OrganizationID string   `json:"organizationId" gorm:"index"`
+	CreditSource CreditSource `json:"creditSource" gorm:"size:16;not null;default:personal;index"`
 	Type      CreditLogType `json:"type"`
 	Amount    int           `json:"amount"`
 	Balance   int           `json:"balance"`

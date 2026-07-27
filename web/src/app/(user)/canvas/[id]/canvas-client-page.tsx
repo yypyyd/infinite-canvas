@@ -9,11 +9,14 @@ import { saveAs } from "file-saver";
 import { requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
 import { requestVideoGeneration, storeGeneratedVideo } from "@/services/api/video";
+import { workspaceFileUrl } from "@/services/api/workspace";
 import { defaultConfig, type AiConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { resolveImageUrl, uploadImage, type UploadedImage } from "@/services/image-storage";
 import { resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { nanoid } from "nanoid";
 import { getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
+import { supportsImageQuality, supportsImageReferences, type ImageModelDefinition } from "@/lib/image-model-capabilities";
+import { videoReferenceCapabilities } from "@/lib/seedance-video";
 import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { useAssetStore } from "@/stores/use-asset-store";
@@ -25,6 +28,8 @@ import { NODE_DEFAULT_SIZE, getNodeSpec } from "../constants";
 import { ActiveConnectionPath, ConnectionPath } from "../components/canvas-connections";
 import { CanvasConfigComposer } from "../components/canvas-config-composer";
 import { CanvasConfigNodePanel } from "../components/canvas-config-node-panel";
+import { CanvasCommercePackagePanel } from "../components/canvas-commerce-package-panel";
+import { buildCommercePackageBlueprint, type CommercePackageRequest } from "../components/canvas-commerce-package";
 import { CanvasAssistantPanel } from "../components/canvas-assistant-panel";
 import { CanvasNodeContextMenu } from "../components/canvas-context-menu";
 import { CanvasNodeAngleDialog, type CanvasImageAngleParams } from "../components/canvas-node-angle-dialog";
@@ -32,7 +37,7 @@ import { CanvasNodeCropDialog, type CanvasImageCropRect } from "../components/ca
 import { CanvasNodeMaskEditDialog, type CanvasImageMaskEditPayload } from "../components/canvas-node-mask-edit-dialog";
 import { CanvasNodeSplitDialog, type CanvasImageSplitParams } from "../components/canvas-node-split-dialog";
 import { CanvasNodeUpscaleDialog, type CanvasImageUpscaleParams } from "../components/canvas-node-upscale-dialog";
-import { buildNodeChatMessages, buildNodeGenerationContext, buildNodeGenerationInputs, hydrateNodeGenerationContext, type NodeGenerationInput } from "../components/canvas-node-generation";
+import { buildNodeChatMessages, buildNodeGenerationContext, buildNodeGenerationInputs, filterNodeGenerationInputs, hydrateNodeGenerationContext, type NodeGenerationInput, type NodeReferenceCapabilities } from "../components/canvas-node-generation";
 import { CanvasNodeHoverToolbar, CanvasNodeInfoModal } from "../components/canvas-node-hover-toolbar";
 import { InfiniteCanvas } from "../components/infinite-canvas";
 import { Minimap } from "../components/canvas-mini-map";
@@ -250,6 +255,7 @@ function InfiniteCanvasPage() {
 
     const config = useConfigStore((state) => state.config);
     const effectiveConfig = useEffectiveConfig();
+    const managedModels = useConfigStore((state) => state.publicSettings?.modelChannel.models);
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const addAsset = useAssetStore((state) => state.addAsset);
@@ -285,6 +291,7 @@ function InfiniteCanvasPage() {
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
     const [assetPickerOpen, setAssetPickerOpen] = useState(false);
+    const [commercePackageOpen, setCommercePackageOpen] = useState(false);
     const [assetPickerTab, setAssetPickerTab] = useState<AssetPickerTab>("my-assets");
     const [projectLoaded, setProjectLoaded] = useState(false);
     const [toolbarNodeId, setToolbarNodeId] = useState<string | null>(null);
@@ -791,10 +798,12 @@ function InfiniteCanvasPage() {
         const map = new Map<string, NodeGenerationInput[]>();
         nodes.forEach((node) => {
             if (node.type !== CanvasNodeType.Config) return;
-            map.set(node.id, buildNodeGenerationInputs(node.id, nodes, connections));
+            const mode = node.metadata?.generationMode || "image";
+            const nodeConfig = buildGenerationConfig(effectiveConfig, node, mode);
+            map.set(node.id, filterNodeGenerationInputs(buildNodeGenerationInputs(node.id, nodes, connections), nodeReferenceCapabilities(mode, nodeConfig.model, managedModels)));
         });
         return map;
-    }, [connections, nodes]);
+    }, [connections, effectiveConfig, managedModels, nodes]);
     const resourceContextNodeId = dialogNodeId || activeNodeId;
     const canvasResourceReferences = useMemo(() => buildCanvasResourceReferences(nodes, connections, resourceContextNodeId), [connections, nodes, resourceContextNodeId]);
     const resourceReferenceByNodeId = useMemo(() => new Map(canvasResourceReferences.map((reference) => [reference.nodeId, reference])), [canvasResourceReferences]);
@@ -1736,9 +1745,14 @@ function InfiniteCanvasPage() {
     const maskEditImageNode = useCallback(
         async (node: CanvasNodeData, payload: CanvasImageMaskEditPayload) => {
             if (!node.metadata?.content) return;
-            const generationConfig = { ...buildGenerationConfig(effectiveConfig, node, "image"), count: "1", size: node.metadata?.size || "auto" };
+            const generationConfig = normalizeGenerationConfig({ ...buildGenerationConfig(effectiveConfig, node, "image"), count: "1", size: node.metadata?.size || "auto" }, "image");
             if (!isAiConfigReady(generationConfig, generationConfig.model)) {
                 openConfigDialog(true);
+                return;
+            }
+            if (!supportsImageReferences(generationConfig.model, managedModels)) {
+                message.warning("当前模型不支持参考图编辑");
+                setMaskEditNodeId(null);
                 return;
             }
             const userPrompt = payload.prompt.trim();
@@ -1781,7 +1795,7 @@ function InfiniteCanvasPage() {
                 clearRunningNodeId(childId);
             }
         },
-        [clearRunningNodeId, effectiveConfig, finishGenerationRequest, isAiConfigReady, message, openConfigDialog, startGenerationRequest],
+        [clearRunningNodeId, effectiveConfig, finishGenerationRequest, isAiConfigReady, managedModels, message, openConfigDialog, startGenerationRequest],
     );
 
     const upscaleImageNode = useCallback(async (node: CanvasNodeData, params: CanvasImageUpscaleParams) => {
@@ -1812,9 +1826,14 @@ function InfiniteCanvasPage() {
     const generateAngleNode = useCallback(
         async (node: CanvasNodeData, params: CanvasImageAngleParams) => {
             if (!node.metadata?.content) return;
-            const generationConfig = { ...buildGenerationConfig(effectiveConfig, node, "image"), count: "1" };
+            const generationConfig = normalizeGenerationConfig({ ...buildGenerationConfig(effectiveConfig, node, "image"), count: "1" }, "image");
             if (!isAiConfigReady(generationConfig, generationConfig.model)) {
                 openConfigDialog(true);
+                return;
+            }
+            if (!supportsImageReferences(generationConfig.model, managedModels)) {
+                message.warning("当前模型不支持参考图编辑");
+                setAngleNodeId(null);
                 return;
             }
             const childId = nanoid();
@@ -1859,7 +1878,7 @@ function InfiniteCanvasPage() {
                 clearRunningNodeId(childId);
             }
         },
-        [clearRunningNodeId, effectiveConfig, finishGenerationRequest, openConfigDialog, startGenerationRequest],
+        [clearRunningNodeId, effectiveConfig, finishGenerationRequest, managedModels, message, openConfigDialog, startGenerationRequest],
     );
 
     const handleFontSizeChange = useCallback((nodeId: string, fontSize: number) => {
@@ -1992,7 +2011,8 @@ function InfiniteCanvasPage() {
     const handleGenerateNode = useCallback(
         async (nodeId: string, mode: CanvasNodeGenerationMode, prompt: string) => {
             const sourceNode = nodesRef.current.find((node) => node.id === nodeId);
-            const generationConfig = buildGenerationConfig(effectiveConfig, sourceNode, mode);
+            const generationConfig = normalizeGenerationConfig(buildGenerationConfig(effectiveConfig, sourceNode, mode), mode);
+            const referenceCapabilities = nodeReferenceCapabilities(mode, generationConfig.model, managedModels);
             if (!isAiConfigReady(generationConfig, generationConfig.model)) {
                 openConfigDialog(true);
                 return;
@@ -2003,7 +2023,7 @@ function InfiniteCanvasPage() {
             const sourceTextContent = sourceNode?.type === CanvasNodeType.Text ? sourceNode.metadata?.content?.trim() || "" : "";
             const editingTextNode = mode === "text" && Boolean(sourceTextContent);
             const generationContext = await hydrateNodeGenerationContext(
-                buildNodeGenerationContext(nodeId, nodesRef.current, connectionsRef.current, editingTextNode ? `请根据要求修改以下文本。\n\n原文：\n${sourceTextContent}\n\n修改要求：\n${prompt}` : prompt),
+                buildNodeGenerationContext(nodeId, nodesRef.current, connectionsRef.current, editingTextNode ? `请根据要求修改以下文本。\n\n原文：\n${sourceTextContent}\n\n修改要求：\n${prompt}` : prompt, referenceCapabilities),
             );
             const effectivePrompt = generationContext.prompt.trim();
             if (runController.signal.aborted) {
@@ -2028,10 +2048,10 @@ function InfiniteCanvasPage() {
                     const isImageNode = sourceNode?.type === CanvasNodeType.Image;
                     const isEmptyImageNode = isImageNode && !sourceNode?.metadata?.content;
                     const sourceReference =
-                        isImageNode && sourceNode?.metadata?.content
+                        referenceCapabilities.image && isImageNode && sourceNode?.metadata?.content
                             ? [{ id: sourceNode.id, name: `${sourceNode.title || sourceNode.id}.png`, type: sourceNode.metadata.mimeType || "image/png", dataUrl: sourceNode.metadata.content, storageKey: sourceNode.metadata.storageKey }]
                             : [];
-                    const referenceImages = sourceReference.length ? sourceReference : generationContext.referenceImages;
+                    const referenceImages = referenceCapabilities.image ? (sourceReference.length ? sourceReference : generationContext.referenceImages) : [];
                     const generationType = referenceImages.length ? ("edit" as const) : ("generation" as const);
                     const generationMetadata = buildImageGenerationMetadata(generationType, generationConfig, count, referenceImages);
                     const parentConfig = NODE_DEFAULT_SIZE[isConfigNode ? CanvasNodeType.Config : isImageNode ? CanvasNodeType.Image : CanvasNodeType.Text];
@@ -2308,7 +2328,56 @@ function InfiniteCanvasPage() {
                 clearRunningNodeId(nodeId);
             }
         },
-        [clearRunningNodeId, effectiveConfig, finishGenerationRequest, openConfigDialog, startGenerationRequest],
+        [clearRunningNodeId, effectiveConfig, finishGenerationRequest, managedModels, openConfigDialog, startGenerationRequest],
+    );
+
+    const createCommercePackage = useCallback(
+        async (request: CommercePackageRequest) => {
+            const selectedReferences = request.useSelectedImages
+                ? nodesRef.current.filter((node) => selectedNodeIdsRef.current.has(node.id) && node.type === CanvasNodeType.Image && node.metadata?.content).slice(0, 4)
+                : [];
+            const center = getCanvasCenter();
+            const origin = selectedReferences.length
+                ? { x: Math.max(...selectedReferences.map((node) => node.position.x + node.width)) + 180, y: Math.min(...selectedReferences.map((node) => node.position.y)) }
+                : { x: center.x - 400, y: center.y - 120 };
+            const skuReferenceNodes: CanvasNodeData[] = selectedReferences.length
+                ? []
+                : (request.sku?.imageStorageKeys || []).slice(0, 4).map((storageKey, index) => ({
+                      id: nanoid(),
+                      type: CanvasNodeType.Image,
+                      title: `${request.sku?.name || request.product.name} · 参考图 ${index + 1}`,
+                      position: { x: origin.x - 260, y: origin.y + index * 150 },
+                      width: 180,
+                      height: 120,
+                      metadata: { content: workspaceFileUrl(storageKey), storageKey, status: NODE_STATUS_SUCCESS, mimeType: "image/*" },
+                  }));
+            const referenceNodeIds = selectedReferences.length ? selectedReferences.map((node) => node.id) : skuReferenceNodes.map((node) => node.id);
+            const blueprint = buildCommercePackageBlueprint(request, origin, effectiveConfig, referenceNodeIds);
+            const nextNodes = [...nodesRef.current, ...skuReferenceNodes, ...blueprint.nodes];
+            const nextConnections = [...connectionsRef.current, ...blueprint.connections];
+            nodesRef.current = nextNodes;
+            connectionsRef.current = nextConnections;
+            setNodes(nextNodes);
+            setConnections(nextConnections);
+            setSelectedNodeIds(new Set(blueprint.rootIds));
+            setSelectedConnectionId(null);
+            setDialogNodeId(null);
+            setCommercePackageOpen(false);
+
+            if (!request.generateNow) {
+                message.success(`已编排 ${blueprint.tasks.length} 个素材生产节点`);
+                return;
+            }
+            message.success(`素材包已建立，开始生成 ${blueprint.tasks.length} 项内容`);
+            void (async () => {
+                for (const task of blueprint.tasks) {
+                    if (!nodesRef.current.some((node) => node.id === task.nodeId)) continue;
+                    await handleGenerateNode(task.nodeId, task.mode, task.prompt);
+                }
+                message.success("本次素材包生成流程已完成");
+            })();
+        },
+        [effectiveConfig, getCanvasCenter, handleGenerateNode, message],
     );
 
     const handleRetryNode = useCallback(
@@ -2317,7 +2386,8 @@ function InfiniteCanvasPage() {
             const batchRoot = node.metadata?.batchRootId ? nodesRef.current.find((item) => item.id === node.metadata?.batchRootId) : null;
             const savedImageMetadata = node.type === CanvasNodeType.Image ? { ...batchRoot?.metadata, ...node.metadata } : undefined;
             const hasSavedImageMetadata = Boolean(savedImageMetadata?.generationType);
-            const generationConfig =
+            const retryMode = node.type === CanvasNodeType.Text ? "text" : node.type === CanvasNodeType.Video ? "video" : node.type === CanvasNodeType.Audio ? "audio" : "image";
+            const generationConfig = normalizeGenerationConfig(
                 hasSavedImageMetadata && savedImageMetadata
                     ? {
                           ...effectiveConfig,
@@ -2326,22 +2396,25 @@ function InfiniteCanvasPage() {
                           size: savedImageMetadata.size || effectiveConfig.size,
                           count: "1",
                       }
-                    : { ...buildGenerationConfig(effectiveConfig, sourceNode, node.type === CanvasNodeType.Text ? "text" : node.type === CanvasNodeType.Video ? "video" : node.type === CanvasNodeType.Audio ? "audio" : "image"), count: "1" };
+                    : { ...buildGenerationConfig(effectiveConfig, sourceNode, retryMode), count: "1" },
+                retryMode,
+            );
+            const referenceCapabilities = nodeReferenceCapabilities(retryMode, generationConfig.model, managedModels);
             if (!isAiConfigReady(generationConfig, generationConfig.model)) {
                 openConfigDialog(true);
                 return;
             }
 
-            const context = hasSavedImageMetadata ? null : await hydrateNodeGenerationContext(buildNodeGenerationContext(sourceNode.id, nodesRef.current, connectionsRef.current, sourceNode.metadata?.prompt || node.metadata?.prompt || ""));
+            const context = hasSavedImageMetadata ? null : await hydrateNodeGenerationContext(buildNodeGenerationContext(sourceNode.id, nodesRef.current, connectionsRef.current, sourceNode.metadata?.prompt || node.metadata?.prompt || "", referenceCapabilities));
             const prompt = (savedImageMetadata?.prompt || context?.prompt || "").trim();
             if (!prompt) {
                 message.warning("找不到提示词，无法重试");
                 return;
             }
             const generationType = savedImageMetadata?.generationType;
-            const useReferenceImages = generationType ? generationType === "edit" : Boolean(context?.referenceImages.length);
+            const useReferenceImages = referenceCapabilities.image && (generationType ? generationType === "edit" : Boolean(context?.referenceImages.length));
             const retryReferenceImages =
-                hasSavedImageMetadata && savedImageMetadata ? await resolveMetadataReferences(savedImageMetadata) : useReferenceImages ? (context?.referenceImages.length ? context.referenceImages : sourceNodeReferenceImages(batchRoot || sourceNode)) : [];
+                useReferenceImages ? (hasSavedImageMetadata && savedImageMetadata ? await resolveMetadataReferences(savedImageMetadata) : context?.referenceImages.length ? context.referenceImages : sourceNodeReferenceImages(batchRoot || sourceNode)) : [];
             if (useReferenceImages && !retryReferenceImages) {
                 message.error("参考图片已丢失，无法继续重试");
                 setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails: "参考图片已丢失，无法继续重试" } } : item)));
@@ -2368,7 +2441,7 @@ function InfiniteCanvasPage() {
                     const video = await storeGeneratedVideo(await requestVideoGeneration(generationConfig, prompt, retryImages, context?.referenceVideos || [], context?.referenceAudios || [], { signal: controller.signal }));
                     throwIfGenerationCanceled(controller.signal);
                     const videoSize = fitNodeSize(video.width || node.width, video.height || node.height, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
-                    setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, width: videoSize.width, height: videoSize.height, position: { x: item.position.x + item.width / 2 - videoSize.width / 2, y: item.position.y + item.height / 2 - videoSize.height / 2 }, metadata: { ...item.metadata, ...videoMetadata(video), prompt, model: generationConfig.model, size: generationConfig.size, seconds: generationConfig.videoSeconds, vquality: generationConfig.vquality, generateAudio: generationConfig.videoGenerateAudio, watermark: generationConfig.videoWatermark } } : item)));
+                    setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, width: videoSize.width, height: videoSize.height, position: { x: item.position.x + item.width / 2 - videoSize.width / 2, y: item.position.y + item.height / 2 - videoSize.height / 2 }, metadata: { ...item.metadata, ...videoMetadata(video), prompt, model: generationConfig.model, size: generationConfig.size, seconds: generationConfig.videoSeconds, vquality: generationConfig.vquality, generateAudio: generationConfig.videoGenerateAudio, watermark: generationConfig.videoWatermark, references: context ? generationReferenceUrls(context) : [] } } : item)));
                     return;
                 }
                 if (node.type === CanvasNodeType.Audio) {
@@ -2384,7 +2457,7 @@ function InfiniteCanvasPage() {
                 const imageConfig = NODE_DEFAULT_SIZE[CanvasNodeType.Image];
                 const imageSize = fitNodeSize(uploadedImage.width, uploadedImage.height, imageConfig.width, imageConfig.height);
                 const generationMetadata = savedImageMetadata?.generationType
-                    ? { generationType: savedImageMetadata.generationType, model: generationConfig.model, size: generationConfig.size, quality: generationConfig.quality, count: savedImageMetadata.count || 1, references: savedImageMetadata.references }
+                    ? { generationType: useReferenceImages ? ("edit" as const) : ("generation" as const), model: generationConfig.model, size: generationConfig.size, quality: generationConfig.quality, count: savedImageMetadata.count || 1, references: useReferenceImages ? savedImageMetadata.references : [] }
                     : buildImageGenerationMetadata(useReferenceImages ? "edit" : "generation", generationConfig, 1, retryImages);
                 setNodes((prev) =>
                     prev.map((item) =>
@@ -2409,7 +2482,7 @@ function InfiniteCanvasPage() {
                 clearRunningNodeId(node.id);
             }
         },
-        [clearRunningNodeId, effectiveConfig, finishGenerationRequest, message, openConfigDialog, startGenerationRequest],
+        [clearRunningNodeId, effectiveConfig, finishGenerationRequest, managedModels, message, openConfigDialog, startGenerationRequest],
     );
 
     const generateImageFromTextNode = useCallback(
@@ -2692,6 +2765,7 @@ function InfiniteCanvasPage() {
 
                 <CanvasNodeHoverToolbar
                     node={isNodeDragging || nodeImageSettingsOpen ? null : toolbarNode}
+                    canEditImage={supportsImageReferences(toolbarNode?.metadata?.model || effectiveConfig.imageModel || effectiveConfig.model, managedModels)}
                     viewport={viewport}
                     onKeep={keepNodeToolbar}
                     onLeave={hideNodeToolbar}
@@ -2744,6 +2818,14 @@ function InfiniteCanvasPage() {
                         setAssetPickerTab("my-assets");
                         setAssetPickerOpen(true);
                     }}
+                    onOpenCommercePackage={() => setCommercePackageOpen(true)}
+                />
+
+                <CanvasCommercePackagePanel
+                    open={commercePackageOpen}
+                    selectedImageCount={nodes.filter((node) => selectedNodeIds.has(node.id) && node.type === CanvasNodeType.Image && node.metadata?.content).length}
+                    onClose={() => setCommercePackageOpen(false)}
+                    onCreate={createCommercePackage}
                 />
 
                 {isMiniMapOpen ? <Minimap nodes={nodes} viewport={viewport} viewportSize={size} onViewportChange={setViewport} /> : null}
@@ -2753,7 +2835,18 @@ function InfiniteCanvasPage() {
                 {contextMenu ? (
                     <CanvasNodeContextMenu
                         menu={contextMenu}
+                        isSelected={contextMenu.type === "node" && selectedNodeIds.has(contextMenu.nodeId)}
                         onClose={() => setContextMenu(null)}
+                        onToggleSelection={() => {
+                            if (contextMenu.type !== "node") return;
+                            setSelectedNodeIds((current) => {
+                                const next = new Set(current);
+                                if (next.has(contextMenu.nodeId)) next.delete(contextMenu.nodeId); else next.add(contextMenu.nodeId);
+                                return next;
+                            });
+                            setSelectedConnectionId(null);
+                            setContextMenu(null);
+                        }}
                         onDuplicate={() => {
                             if (contextMenu.type !== "node") return;
                             duplicateNode(contextMenu.nodeId);
@@ -3213,6 +3306,17 @@ function getInputSummary(inputs: NodeGenerationInput[]) {
         videoCount: inputs.filter((input) => input.type === "video").length,
         audioCount: inputs.filter((input) => input.type === "audio").length,
     };
+}
+
+function nodeReferenceCapabilities(mode: CanvasNodeGenerationMode, model: string, managedModels?: ImageModelDefinition[]): NodeReferenceCapabilities {
+    if (mode === "image") return { image: supportsImageReferences(model, managedModels), video: false, audio: false };
+    if (mode === "video") return videoReferenceCapabilities(model);
+    if (mode === "text") return { image: true, video: false, audio: false };
+    return { image: false, video: false, audio: false };
+}
+
+function normalizeGenerationConfig(config: AiConfig, mode: CanvasNodeGenerationMode) {
+    return mode === "image" && !supportsImageQuality(config.model) ? { ...config, quality: "auto" } : config;
 }
 
 function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | undefined, mode: CanvasNodeGenerationMode): AiConfig {

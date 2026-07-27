@@ -4,14 +4,14 @@ import { CheckCircleOutlined, DeleteOutlined, FormatPainterOutlined, PlusOutline
 import { json } from "@codemirror/lang-json";
 import { App, Button, Card, Col, Flex, Form, Input, InputNumber, Row, Segmented, Select, Space, Switch, Table, Tabs, Tag, Typography } from "antd";
 import dynamic from "next/dynamic";
-import { Boxes, Mail, Megaphone, RefreshCw, ShieldCheck } from "lucide-react";
+import { Activity, Boxes, Mail, Megaphone, RefreshCw, ShieldCheck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { EditorView } from "@uiw/react-codemirror";
 
 import { fetchAdminSettings, saveAdminSettings, type AdminChannelModel, type AdminManagedModel, type AdminModelChannel, type AdminPricingRule, type AdminSettings } from "@/services/api/admin";
 import { useUserStore } from "@/stores/use-user-store";
 import { ModelCatalogEditor } from "./components/model-catalog-editor";
-import { AccessAndRegistrationSettingsEditor, OperationSettingsEditor } from "./components/operation-settings-editor";
+import { AccessAndRegistrationSettingsEditor, OperationsAlertSettingsEditor, OperationSettingsEditor } from "./components/operation-settings-editor";
 import { EmailSettingsEditor } from "./components/email-settings-editor";
 import { inferModelModality, inferModelOperations, normalizeModelOperations } from "../model-capabilities";
 
@@ -52,10 +52,21 @@ const emptySettings: AdminSettings = {
         channels: [],
         promptSync: { enabled: true, cron: "*/5 * * * *" },
         email: { smtpHost: "", smtpPort: 587, smtpUsername: "", smtpPassword: "", smtpFromEmail: "", smtpFromName: "道生画境", smtpSecurity: "starttls", passwordConfigured: false },
+        operationsAlerts: {
+            enabled: true,
+            batchQueuedThreshold: 100,
+            batchExpiredLeasesThreshold: 1,
+            emailPendingThreshold: 50,
+            emailFailedThreshold: 1,
+            emailExpiredLeasesThreshold: 1,
+            objectDeletionPendingThreshold: 100,
+            objectDeletionFailedThreshold: 1,
+            objectDeletionExpiredLeasesThreshold: 1,
+        },
     },
 };
 type SettingsTabKey = "public" | "private";
-type SettingsSectionKey = "models" | "access" | "operations" | "email" | "sync";
+type SettingsSectionKey = "models" | "access" | "operations" | "monitoring" | "email" | "sync";
 type EditorMode = "visual" | "json";
 
 const modelAspectRatioOptions = ["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16"];
@@ -63,6 +74,7 @@ const settingsTabs = [
     { key: "models", label: <span className="inline-flex items-center gap-2"><Boxes className="size-4" />模型与计费</span> },
     { key: "access", label: <span className="inline-flex items-center gap-2"><ShieldCheck className="size-4" />访问与注册</span> },
     { key: "operations", label: <span className="inline-flex items-center gap-2"><Megaphone className="size-4" />运营设置</span> },
+    { key: "monitoring", label: <span className="inline-flex items-center gap-2"><Activity className="size-4" />运维告警</span> },
     { key: "email", label: <span className="inline-flex items-center gap-2"><Mail className="size-4" />邮件服务</span> },
     { key: "sync", label: <span className="inline-flex items-center gap-2"><RefreshCw className="size-4" />提示词同步</span> },
 ];
@@ -83,7 +95,7 @@ export default function AdminSettingsPage() {
     const managedModels = Form.useWatch(["public", "modelChannel", "models"], form) || [];
     const publicModels = enabledManagedModelIds(managedModels).length ? enabledManagedModelIds(managedModels) : rawPublicModels;
     const channelModels = useMemo(() => collectChannelModels(channels), [channels]);
-    const activeTab: SettingsTabKey = activeSection === "email" || activeSection === "sync" ? "private" : "public";
+    const activeTab: SettingsTabKey = activeSection === "monitoring" || activeSection === "email" || activeSection === "sync" ? "private" : "public";
     const activeMode = editorMode[activeTab];
     const activeJsonText = jsonText[activeTab];
     const jsonError = activeMode === "json" ? getJsonError(activeJsonText) : "";
@@ -299,6 +311,8 @@ export default function AdminSettingsPage() {
                                 <AccessAndRegistrationSettingsEditor />
                             ) : activeSection === "operations" ? (
                                 <OperationSettingsEditor />
+                            ) : activeSection === "monitoring" ? (
+                                <OperationsAlertSettingsEditor />
                             ) : activeSection === "email" ? (
                                 <EmailSettingsEditor />
                             ) : (
@@ -514,7 +528,22 @@ function normalizePrivateSetting(setting: Partial<AdminSettings["private"]> = {}
             smtpSecurity: setting.email?.smtpSecurity === "ssl" || setting.email?.smtpSecurity === "none" ? setting.email.smtpSecurity : "starttls",
             passwordConfigured: setting.email?.passwordConfigured === true,
         },
+        operationsAlerts: {
+            enabled: setting.operationsAlerts?.enabled !== false,
+            batchQueuedThreshold: normalizeAlertThreshold(setting.operationsAlerts?.batchQueuedThreshold, 100),
+            batchExpiredLeasesThreshold: normalizeAlertThreshold(setting.operationsAlerts?.batchExpiredLeasesThreshold, 1),
+            emailPendingThreshold: normalizeAlertThreshold(setting.operationsAlerts?.emailPendingThreshold, 50),
+            emailFailedThreshold: normalizeAlertThreshold(setting.operationsAlerts?.emailFailedThreshold, 1),
+            emailExpiredLeasesThreshold: normalizeAlertThreshold(setting.operationsAlerts?.emailExpiredLeasesThreshold, 1),
+            objectDeletionPendingThreshold: normalizeAlertThreshold(setting.operationsAlerts?.objectDeletionPendingThreshold, 100),
+            objectDeletionFailedThreshold: normalizeAlertThreshold(setting.operationsAlerts?.objectDeletionFailedThreshold, 1),
+            objectDeletionExpiredLeasesThreshold: normalizeAlertThreshold(setting.operationsAlerts?.objectDeletionExpiredLeasesThreshold, 1),
+        },
     };
+}
+
+function normalizeAlertThreshold(value: number | undefined, fallback: number) {
+    return value === undefined || value === null ? fallback : Math.max(0, Math.floor(Number(value) || 0));
 }
 
 function normalizeChannel(item: Partial<AdminModelChannel> = {}): AdminModelChannel {

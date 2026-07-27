@@ -2,7 +2,7 @@ import axios from "axios";
 
 import type { AiConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
-import { authorizationHeaders } from "@/services/api/request";
+import { authorizationHeaders, organizationHeaders } from "@/services/api/request";
 import { nanoid } from "nanoid";
 import { dataUrlToFile } from "@/lib/image-utils";
 import { buildImageReferencePromptText } from "@/lib/image-reference-prompt";
@@ -165,7 +165,7 @@ function aiApiUrl(_config: AiConfig, path: string) {
 
 function aiHeaders(_config: AiConfig, contentType?: string) {
     const token = useUserStore.getState().token;
-    return { ...authorizationHeaders(token), ...(contentType ? { "Content-Type": contentType } : {}) };
+    return { ...authorizationHeaders(token), ...organizationHeaders(), "Idempotency-Key": crypto.randomUUID(), ...(contentType ? { "Content-Type": contentType } : {}) };
 }
 
 function refreshRemoteUser(_config: AiConfig) {

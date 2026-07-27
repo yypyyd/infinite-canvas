@@ -8,14 +8,17 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/basketikun/infinite-canvas/model"
 	"github.com/basketikun/infinite-canvas/service"
 )
 
@@ -143,16 +146,14 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		return
 	}
 	request.Header.Set("Authorization", "Bearer "+channel.APIKey)
+	if requestID := strings.TrimSpace(r.Header.Get("X-Request-ID")); requestID != "" { request.Header.Set("X-Request-ID", requestID) }
 	if contentType != "" {
 		request.Header.Set("Content-Type", contentType)
 	}
-	if err := service.ConsumeUserCredits(user.ID, requestMeta.ModelName, credits, path); err != nil {
-		FailError(w, err)
-		return
-	}
-	task, taskErr := service.BeginGenerationTask(service.GenerationTaskInput{
+	task, err := service.BeginGenerationTask(service.GenerationTaskInput{
 		UserID:         user.ID,
 		OrganizationID: user.OrganizationID,
+		RequestID:      strings.TrimSpace(r.Header.Get("Idempotency-Key")),
 		Model:          requestMeta.ModelName,
 		UpstreamModel:  upstreamModel,
 		ChannelName:    channel.Name,
@@ -163,29 +164,32 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		Quantity:       pricingRequest.Quantity,
 		Credits:        credits,
 	})
-	if taskErr != nil {
-		log.Printf("AI proxy create generation task failed: user=%s model=%s err=%v", user.ID, requestMeta.ModelName, taskErr)
+	if err != nil {
+		log.Printf("AI proxy create generation task failed: user=%s model=%s err=%v", user.ID, requestMeta.ModelName, err)
+		FailError(w, err)
+		return
+	}
+	request.Header.Set("Idempotency-Key", task.RequestID)
+	finishTask := func(status model.GenerationTaskStatus, message string) {
+		if err := service.FinishGenerationTask(task, status, message); err != nil {
+			log.Printf("AI proxy finish generation task failed: task=%s status=%s err=%v", task.ID, status, err)
+		}
 	}
 	failed := false
 	onFailure := func(message string) {
 		failed = true
-		if err := service.RefundUserCredits(user.ID, requestMeta.ModelName, credits, path); err != nil {
-			log.Printf("AI proxy refund credits failed: user=%s model=%s credits=%d err=%v", user.ID, requestMeta.ModelName, credits, err)
-		}
-		if taskErr == nil {
-			service.FinishGenerationTask(task, "failed", message)
-		}
+		finishTask("failed", message)
 	}
 	if isChatGPT2APIImageTaskChannel(channel.BaseURL, originalPath) {
 		copyChatGPT2APIImageTaskResponse(w, channel.BaseURL, channel.APIKey, body, onFailure)
-		if !failed && taskErr == nil {
-			service.FinishGenerationTask(task, "success", "")
+		if !failed {
+			finishTask("success", "")
 		}
 		return
 	}
 	copyAIResponse(w, request, onFailure, aiResponseAdapter(channel.BaseURL, upstreamModel, originalPath), aiRetryPolicyForRequest(channel.BaseURL, upstreamModel, originalPath))
-	if !failed && taskErr == nil {
-		service.FinishGenerationTask(task, "success", "")
+	if !failed {
+		finishTask("success", "")
 	}
 }
 
@@ -479,7 +483,7 @@ func doAIRequestWithRetry(request *http.Request, retryPolicy *aiRetryPolicy) (*h
 }
 
 func aiRetryPolicyForRequest(baseURL string, modelName string, path string) *aiRetryPolicy {
-	if isVideoGenerationsAPI(baseURL, modelName) && path == "/videos" {
+	if (isVideoGenerationsAPI(baseURL, modelName) || isVividAI(baseURL)) && path == "/videos" {
 		return &aiRetryPolicy{MaxRetries: 2, Delay: 4 * time.Second}
 	}
 	return nil
@@ -844,12 +848,17 @@ func isArkSeedanceVideo(baseURL string, modelName string) bool {
 func isVideoGenerationsAPI(baseURL string, modelName string) bool {
 	base := strings.ToLower(baseURL)
 	model := strings.ToLower(modelName)
-	return strings.Contains(base, "vividai.run") || strings.Contains(base, "api.x.ai") || strings.Contains(model, "grok-imagine")
+	return strings.Contains(base, "api.x.ai") || strings.Contains(model, "grok-imagine")
 }
 
 func adaptAIRequestBody(baseURL string, modelName string, path string, body []byte, contentType string) ([]byte, string) {
-	if isVividAI(baseURL) && strings.HasPrefix(path, "/images/") {
-		return adaptVividAIImageRequestBody(modelName, body, contentType)
+	if isVividAI(baseURL) {
+		switch path {
+		case "/images/generations", "/images/edits":
+			return adaptVividAIImageRequestBody(body, contentType)
+		case "/videos":
+			return adaptVividAIVideoRequestBody(body, contentType)
+		}
 	}
 	if !isVideoGenerationsAPI(baseURL, modelName) || path != "/videos" {
 		return body, contentType
@@ -869,57 +878,307 @@ func isVividAI(baseURL string) bool {
 	return strings.Contains(strings.ToLower(baseURL), "vividai.run")
 }
 
-func adaptVividAIImageRequestBody(modelName string, body []byte, contentType string) ([]byte, string) {
+func adaptVividAIImageRequestBody(body []byte, contentType string) ([]byte, string) {
 	if strings.HasPrefix(contentType, "multipart/form-data") {
+		adapted, adaptedContentType, err := adaptVividAIImageMultipartBody(body, contentType)
+		if err == nil {
+			return adapted, adaptedContentType
+		}
 		return body, contentType
 	}
 	var payload map[string]any
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return body, contentType
 	}
-	if size := normalizeVividAIImageSize(modelName, payloadString(payload, "size", "ratio")); size != "" {
-		payload["size"] = size
+	result := map[string]any{}
+	copyStringField(result, payload, "model", "model")
+	copyStringField(result, payload, "prompt", "prompt")
+	if size := vividAIImageSize(payloadString(payload, "size", "ratio"), payloadString(payload, "resolution", "resolution_name", "resolutionTier", "quality")); size != "" {
+		result["size"] = size
 	}
-	if tier := normalizeVividAIImageResolution(modelName, payloadString(payload, "resolution", "resolution_name", "resolutionTier")); tier != "" {
-		payload["resolution"] = tier
-	}
-	encoded, err := json.Marshal(payload)
+	encoded, err := json.Marshal(result)
 	if err != nil {
 		return body, contentType
 	}
 	return encoded, "application/json"
 }
 
-func normalizeVividAIImageSize(modelName string, value string) string {
-	ratio := normalizeRatioName(value)
-	model := strings.ToLower(strings.TrimSpace(modelName))
-	allowed := []string{"1:1", "16:9", "9:16", "4:3", "3:4"}
-	if strings.Contains(model, "firefly-gpt-image") {
-		allowed = []string{"1:1", "5:4", "9:16", "21:9", "16:9", "4:3", "3:2", "4:5", "3:4", "2:3"}
+func adaptVividAIImageMultipartBody(body []byte, contentType string) ([]byte, string, error) {
+	form, err := readMultipartForm(body, contentType)
+	if err != nil {
+		return nil, "", err
 	}
-	if stringIn(ratio, allowed) {
-		return ratio
+	defer form.RemoveAll()
+	var buffer bytes.Buffer
+	writer := multipart.NewWriter(&buffer)
+	_ = writer.WriteField("model", firstFormValue(form, "model"))
+	_ = writer.WriteField("prompt", firstFormValue(form, "prompt"))
+	if size := vividAIImageSize(firstFormValue(form, "size", "ratio"), firstFormValue(form, "resolution", "resolution_name", "resolutionTier", "quality")); size != "" {
+		_ = writer.WriteField("size", size)
 	}
-	return "1:1"
+	for _, file := range form.File["image"] {
+		if err := copyMultipartFile(writer, "image", file); err != nil {
+			return nil, "", err
+		}
+	}
+	if err := writer.Close(); err != nil {
+		return nil, "", err
+	}
+	return buffer.Bytes(), writer.FormDataContentType(), nil
 }
 
-func normalizeVividAIImageResolution(modelName string, value string) string {
-	tier := strings.ToLower(strings.TrimSpace(value))
-	if strings.HasSuffix(tier, "p") {
-		tier = ""
+func adaptVividAIVideoRequestBody(body []byte, contentType string) ([]byte, string) {
+	if strings.HasPrefix(contentType, "multipart/form-data") {
+		adapted, adaptedContentType, err := adaptVividAIVideoMultipartBody(body, contentType)
+		if err == nil {
+			return adapted, adaptedContentType
+		}
+		return body, contentType
 	}
-	model := strings.ToLower(strings.TrimSpace(modelName))
-	allowed := []string{"1k"}
-	if strings.Contains(model, "firefly-image-5") {
-		allowed = []string{"1k", "2k"}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return body, contentType
 	}
-	if strings.Contains(model, "firefly-gpt-image") {
-		allowed = []string{"1k", "2k", "4k"}
+	result := vividAIVideoPayload(payloadString(payload, "model"), payloadString(payload, "prompt"), payloadString(payload, "seconds", "duration", "videoSeconds"), payloadString(payload, "size", "ratio", "aspect_ratio"), payloadString(payload, "resolution", "resolution_name", "vquality"), false)
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		return body, contentType
 	}
-	if stringIn(tier, allowed) {
-		return tier
+	return encoded, "application/json"
+}
+
+func adaptVividAIVideoMultipartBody(body []byte, contentType string) ([]byte, string, error) {
+	form, err := readMultipartForm(body, contentType)
+	if err != nil {
+		return nil, "", err
 	}
-	return allowed[0]
+	defer form.RemoveAll()
+	files := form.File["input_reference"]
+	if len(files) == 0 {
+		files = form.File["input_reference[]"]
+	}
+	fields := vividAIVideoPayload(firstFormValue(form, "model"), firstFormValue(form, "prompt"), firstFormValue(form, "seconds", "duration", "videoSeconds"), firstFormValue(form, "size", "ratio", "aspect_ratio"), firstFormValue(form, "resolution", "resolution_name", "vquality"), len(files) > 0)
+	if len(files) == 0 {
+		encoded, err := json.Marshal(fields)
+		return encoded, "application/json", err
+	}
+	var buffer bytes.Buffer
+	writer := multipart.NewWriter(&buffer)
+	for _, key := range []string{"model", "prompt", "seconds", "size"} {
+		if value := strings.TrimSpace(fmt.Sprint(fields[key])); value != "" && value != "<nil>" {
+			_ = writer.WriteField(key, value)
+		}
+	}
+	if err := copyMultipartFile(writer, "input_reference", files[0]); err != nil {
+		return nil, "", err
+	}
+	if err := writer.Close(); err != nil {
+		return nil, "", err
+	}
+	return buffer.Bytes(), writer.FormDataContentType(), nil
+}
+
+func vividAIVideoPayload(modelName string, prompt string, seconds string, size string, resolution string, hasReference bool) map[string]any {
+	result := map[string]any{"model": strings.TrimSpace(modelName), "prompt": strings.TrimSpace(prompt)}
+	seconds = normalizeVividAIVideoSeconds(modelName, seconds, hasReference)
+	if seconds != "" {
+		result["seconds"] = seconds
+	}
+	if size = vividAIVideoSize(modelName, size, resolution); size != "" {
+		result["size"] = size
+	}
+	return result
+}
+
+func normalizeVividAIVideoSeconds(modelName string, value string, hasReference bool) string {
+	value = strings.TrimSuffix(strings.TrimSpace(value), "s")
+	if value == "" {
+		return ""
+	}
+	seconds, err := strconv.Atoi(value)
+	if err != nil {
+		return value
+	}
+	name := strings.ToLower(modelName)
+	if strings.Contains(name, "gemini-veo31") {
+		if hasReference {
+			return "8"
+		}
+		return nearestVideoDuration(seconds, 4, 6, 8)
+	}
+	if strings.Contains(name, "firefly-video") {
+		return "5"
+	}
+	if strings.Contains(name, "firefly-ray") {
+		return nearestVideoDuration(seconds, 5, 9)
+	}
+	if strings.Contains(name, "grok-video") {
+		seconds = min(max(seconds, 1), 15)
+	}
+	return strconv.Itoa(seconds)
+}
+
+func nearestVideoDuration(value int, allowed ...int) string {
+	best := allowed[0]
+	for _, candidate := range allowed[1:] {
+		if absInt(value-candidate) <= absInt(value-best) {
+			best = candidate
+		}
+	}
+	return strconv.Itoa(best)
+}
+
+func absInt(value int) int {
+	if value < 0 {
+		return -value
+	}
+	return value
+}
+
+func readMultipartForm(body []byte, contentType string) (*multipart.Form, error) {
+	_, params, err := mime.ParseMediaType(contentType)
+	if err != nil || params["boundary"] == "" {
+		return nil, errors.New("multipart request is invalid")
+	}
+	return multipart.NewReader(bytes.NewReader(body), params["boundary"]).ReadForm(32 << 20)
+}
+
+func copyMultipartFile(writer *multipart.Writer, field string, header *multipart.FileHeader) error {
+	file, err := header.Open()
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	target, err := writer.CreateFormFile(field, header.Filename)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(target, file)
+	return err
+}
+
+var vividAIImageSizes = map[string]map[string]string{
+	"1:1":  {"1k": "1024x1024", "2k": "2048x2048", "4k": "4096x4096"},
+	"5:4":  {"1k": "1280x1024", "2k": "2560x2048", "4k": "3840x3072"},
+	"4:3":  {"1k": "1024x768", "2k": "2048x1536", "4k": "4096x3072"},
+	"3:2":  {"1k": "1200x800", "2k": "2400x1600", "4k": "3600x2400"},
+	"16:9": {"1k": "1280x720", "2k": "2048x1152", "4k": "4096x2304"},
+	"2:1":  {"1k": "1440x720", "2k": "2880x1440", "4k": "4096x2048"},
+	"21:9": {"1k": "1680x720", "2k": "2520x1080", "4k": "5040x2160"},
+	"3:1":  {"1k": "1536x512", "2k": "2304x768", "4k": "3840x1280"},
+	"4:1":  {"1k": "1728x432", "2k": "2880x720", "4k": "4096x1024"},
+	"8:1":  {"1k": "1728x216", "2k": "2880x360", "4k": "4096x512"},
+	"4:5":  {"1k": "1024x1280", "2k": "2048x2560", "4k": "3072x3840"},
+	"3:4":  {"1k": "768x1024", "2k": "1536x2048", "4k": "3072x4096"},
+	"2:3":  {"1k": "800x1200", "2k": "1600x2400", "4k": "2400x3600"},
+	"9:16": {"1k": "720x1280", "2k": "1152x2048", "4k": "2304x4096"},
+	"1:3":  {"1k": "512x1536", "2k": "768x2304", "4k": "1280x3840"},
+	"1:4":  {"1k": "432x1728", "2k": "720x2880", "4k": "1024x4096"},
+	"1:8":  {"1k": "216x1728", "2k": "360x2880", "4k": "512x4096"},
+}
+
+var vividAIVideoSizes = map[string]map[string]string{
+	"16:9": {"720p": "1280x720", "1080p": "1920x1080"},
+	"9:16": {"720p": "720x1280", "1080p": "1080x1920"},
+	"1:1":  {"720p": "720x720", "1080p": "1080x1080"},
+	"4:3":  {"720p": "960x720", "1080p": "1440x1080"},
+	"3:4":  {"720p": "720x960", "1080p": "1080x1440"},
+	"3:2":  {"720p": "1080x720", "1080p": "1620x1080"},
+	"2:3":  {"720p": "720x1080", "1080p": "1080x1620"},
+	"21:9": {"720p": "1680x720", "1080p": "2520x1080"},
+	"9:21": {"720p": "720x1680", "1080p": "1080x2520"},
+}
+
+func vividAIImageSize(size string, tier string) string {
+	if strings.TrimSpace(size) == "" && strings.TrimSpace(tier) == "" {
+		return ""
+	}
+	ratio := nearestVividAIRatio(size, vividAIImageSizes)
+	tier = normalizeVividAIImageTier(tier, size)
+	return vividAIImageSizes[ratio][tier]
+}
+
+func normalizeVividAIImageTier(value string, size string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "low", "standard", "1k":
+		return "1k"
+	case "medium", "hd", "2k":
+		return "2k"
+	case "high", "4k":
+		return "4k"
+	}
+	width, height, ok := parseVividAIRatio(size)
+	if !ok {
+		return "2k"
+	}
+	longEdge := math.Max(width, height)
+	if longEdge >= 3500 {
+		return "4k"
+	}
+	if longEdge >= 1800 {
+		return "2k"
+	}
+	return "1k"
+}
+
+func vividAIVideoSize(modelName string, size string, resolution string) string {
+	if strings.TrimSpace(size) == "" {
+		return ""
+	}
+	sizes := vividAIVideoSizes
+	ratio := ""
+	if strings.Contains(strings.ToLower(modelName), "gemini-veo31") {
+		sizes = map[string]map[string]string{
+			"16:9": vividAIVideoSizes["16:9"],
+			"9:16": vividAIVideoSizes["9:16"],
+		}
+		width, height, ok := parseVividAIRatio(size)
+		if ok && width < height {
+			ratio = "9:16"
+		} else {
+			ratio = "16:9"
+		}
+	} else {
+		ratio = nearestVividAIRatio(size, sizes)
+	}
+	tier := normalizeResolutionName(resolution)
+	if tier != "1080p" {
+		width, height, ok := parseVividAIRatio(size)
+		if ok && math.Min(width, height) >= 1080 {
+			tier = "1080p"
+		} else {
+			tier = "720p"
+		}
+	}
+	return sizes[ratio][tier]
+}
+
+func nearestVividAIRatio(value string, sizes map[string]map[string]string) string {
+	width, height, ok := parseVividAIRatio(value)
+	if !ok {
+		return "1:1"
+	}
+	target := width / height
+	best, bestDistance := "1:1", math.MaxFloat64
+	for candidate := range sizes {
+		candidateWidth, candidateHeight, _ := parseVividAIRatio(candidate)
+		distance := math.Abs(target - candidateWidth/candidateHeight)
+		if distance < bestDistance {
+			best, bestDistance = candidate, distance
+		}
+	}
+	return best
+}
+
+func parseVividAIRatio(value string) (float64, float64, bool) {
+	value = strings.ToLower(strings.TrimSpace(value))
+	value = strings.ReplaceAll(value, "×", "x")
+	value = strings.ReplaceAll(value, ":", "x")
+	var width, height float64
+	if _, err := fmt.Sscanf(value, "%fx%f", &width, &height); err != nil || width <= 0 || height <= 0 {
+		return 0, 0, false
+	}
+	return width, height, true
 }
 
 func videoGenerationsPayload(body []byte, contentType string) (map[string]any, bool) {

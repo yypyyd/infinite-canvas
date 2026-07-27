@@ -12,7 +12,7 @@ import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
 import { VideoSettingsPanel, normalizeVideoResolutionValue, normalizeVideoSizeValue, videoSizeLabel } from "@/components/video-settings-panel";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
-import { boolConfig, isSeedanceVideoConfig, normalizeSeedanceRatio, seedanceReferenceLabel, seedanceVideoReferenceError, seedanceVideoReferenceHint, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
+import { boolConfig, isSeedanceVideoConfig, normalizeSeedanceRatio, seedanceReferenceLabel, seedanceVideoReferenceError, seedanceVideoReferenceHint, SEEDANCE_REFERENCE_LIMITS, videoReferenceCapabilities } from "@/lib/seedance-video";
 import { deleteStoredMedia, resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
 import { deleteStoredGenerationRecord, GENERATION_HISTORY_CHANGED_EVENT, readStoredGenerationRecords, saveGenerationRecord } from "@/services/generation-history";
 import { resolveImageUrl, uploadImage } from "@/services/image-storage";
@@ -97,6 +97,8 @@ export default function VideoPage() {
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
     const model = effectiveConfig.videoModel || effectiveConfig.model;
+    const referenceCapabilities = videoReferenceCapabilities(model);
+    const referenceAccept = [referenceCapabilities.image ? "image/*" : "", referenceCapabilities.video ? "video/mp4,video/quicktime" : "", referenceCapabilities.audio ? "audio/mpeg,audio/wav,audio/x-wav,.mp3,.wav" : ""].filter(Boolean).join(",");
     const canGenerate = Boolean(prompt.trim());
 
     useEffect(() => {
@@ -120,14 +122,14 @@ export default function VideoPage() {
 
     const addReferences = async (files?: FileList | null) => {
         const selectedFiles = Array.from(files || []);
-        const unsupported = selectedFiles.filter((file) => !file.type.startsWith("image/") && !file.type.startsWith("video/") && !isSupportedAudioFile(file));
-        if (unsupported.length) message.warning("已忽略不支持的参考素材，请使用图片、mp4/mov 视频或 mp3/wav 音频");
-        const imageFiles = selectedFiles.filter((file) => file.type.startsWith("image/") && file.size <= SEEDANCE_REFERENCE_LIMITS.imageMaxBytes).slice(0, SEEDANCE_REFERENCE_LIMITS.images - references.length);
-        const videoFiles = selectedFiles.filter((file) => file.type.startsWith("video/") && file.size <= SEEDANCE_REFERENCE_LIMITS.videoMaxBytes).slice(0, SEEDANCE_REFERENCE_LIMITS.videos - videoReferences.length);
-        const audioFiles = selectedFiles.filter((file) => isSupportedAudioFile(file) && file.size <= SEEDANCE_REFERENCE_LIMITS.audioMaxBytes).slice(0, SEEDANCE_REFERENCE_LIMITS.audios - audioReferences.length);
-        if (selectedFiles.some((file) => file.type.startsWith("image/") && file.size > SEEDANCE_REFERENCE_LIMITS.imageMaxBytes)) message.warning("已忽略超过 30MB 的参考图");
-        if (selectedFiles.some((file) => file.type.startsWith("video/") && file.size > SEEDANCE_REFERENCE_LIMITS.videoMaxBytes)) message.warning("已忽略超过 50MB 的参考视频");
-        if (selectedFiles.some((file) => isSupportedAudioFile(file) && file.size > SEEDANCE_REFERENCE_LIMITS.audioMaxBytes)) message.warning("已忽略超过 15MB 的参考音频");
+        const unsupported = selectedFiles.filter((file) => (file.type.startsWith("image/") ? !referenceCapabilities.image : file.type.startsWith("video/") ? !referenceCapabilities.video : isSupportedAudioFile(file) ? !referenceCapabilities.audio : true));
+        if (unsupported.length) message.warning("已忽略当前模型不支持的参考素材");
+        const imageFiles = referenceCapabilities.image ? selectedFiles.filter((file) => file.type.startsWith("image/") && file.size <= SEEDANCE_REFERENCE_LIMITS.imageMaxBytes).slice(0, SEEDANCE_REFERENCE_LIMITS.images - references.length) : [];
+        const videoFiles = referenceCapabilities.video ? selectedFiles.filter((file) => file.type.startsWith("video/") && file.size <= SEEDANCE_REFERENCE_LIMITS.videoMaxBytes).slice(0, SEEDANCE_REFERENCE_LIMITS.videos - videoReferences.length) : [];
+        const audioFiles = referenceCapabilities.audio ? selectedFiles.filter((file) => isSupportedAudioFile(file) && file.size <= SEEDANCE_REFERENCE_LIMITS.audioMaxBytes).slice(0, SEEDANCE_REFERENCE_LIMITS.audios - audioReferences.length) : [];
+        if (referenceCapabilities.image && selectedFiles.some((file) => file.type.startsWith("image/") && file.size > SEEDANCE_REFERENCE_LIMITS.imageMaxBytes)) message.warning("已忽略超过 30MB 的参考图");
+        if (referenceCapabilities.video && selectedFiles.some((file) => file.type.startsWith("video/") && file.size > SEEDANCE_REFERENCE_LIMITS.videoMaxBytes)) message.warning("已忽略超过 50MB 的参考视频");
+        if (referenceCapabilities.audio && selectedFiles.some((file) => isSupportedAudioFile(file) && file.size > SEEDANCE_REFERENCE_LIMITS.audioMaxBytes)) message.warning("已忽略超过 15MB 的参考音频");
         const nextReferences = await Promise.all(
             imageFiles.map(async (file) => {
                 const image = await uploadImage(file);
@@ -156,6 +158,10 @@ export default function VideoPage() {
     };
 
     const addReferencesFromClipboard = async () => {
+        if (!referenceCapabilities.image) {
+            message.warning("当前模型不支持参考图");
+            return;
+        }
         try {
             const items = await navigator.clipboard.read();
             const blobs = await Promise.all(items.flatMap((item) => item.types.filter((type) => type.startsWith("image/")).map((type) => item.getType(type))));
@@ -220,12 +226,15 @@ export default function VideoPage() {
             openConfigDialog(true);
             return null;
         }
-        const videoReferenceError = seedanceVideoReferenceError(videoReferences);
+        const effectiveReferences = referenceCapabilities.image ? [...references] : [];
+        const effectiveVideoReferences = referenceCapabilities.video ? [...videoReferences] : [];
+        const effectiveAudioReferences = referenceCapabilities.audio ? [...audioReferences] : [];
+        const videoReferenceError = seedanceVideoReferenceError(effectiveVideoReferences);
         if (videoReferenceError) {
             message.error(`${videoReferenceError}。${seedanceVideoReferenceHint}`);
             return null;
         }
-        return { text, config: buildVideoConfig(effectiveConfig, model), references: [...references], videoReferences: [...videoReferences], audioReferences: [...audioReferences] };
+        return { text, config: buildVideoConfig(effectiveConfig, model), references: effectiveReferences, videoReferences: effectiveVideoReferences, audioReferences: effectiveAudioReferences };
     };
 
     const retryResult = () => {
@@ -252,11 +261,13 @@ export default function VideoPage() {
     const insertPickedAsset = async (payload: InsertAssetPayload) => {
         if (payload.kind === "text") {
             setPrompt(payload.content);
-        } else if (payload.kind === "image") {
+        } else if (payload.kind === "image" && referenceCapabilities.image) {
             const stored = await uploadImage(payload.dataUrl);
             setReferences((value) => [...value, { id: nanoid(), name: payload.title, type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey }].slice(0, SEEDANCE_REFERENCE_LIMITS.images));
-        } else if (payload.kind === "video") {
+        } else if (payload.kind === "video" && referenceCapabilities.video) {
             setVideoReferences((value) => [...value, { id: nanoid(), name: payload.title, type: "video/mp4", url: payload.url, storageKey: payload.storageKey, width: payload.width, height: payload.height }].slice(0, SEEDANCE_REFERENCE_LIMITS.videos));
+        } else {
+            message.warning("当前模型不支持该类型的参考素材");
         }
         setAssetPickerOpen(false);
     };
@@ -310,18 +321,19 @@ export default function VideoPage() {
     };
 
     return (
-        <div className="flex h-full flex-col overflow-hidden bg-stone-50 text-stone-900 dark:bg-stone-950 dark:text-stone-100">
-            <main className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto p-3 lg:grid-cols-[300px_minmax(0,1fr)] lg:overflow-hidden xl:grid-cols-[320px_minmax(0,1fr)]">
-                <aside className="thin-scrollbar hidden min-h-0 overflow-y-auto rounded-lg border border-stone-200 bg-card p-4 shadow-sm dark:border-stone-800 lg:block">
+        <div className="flex h-full flex-col overflow-hidden bg-background text-foreground">
+            <main className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[300px_minmax(0,1fr)] lg:overflow-hidden xl:grid-cols-[320px_minmax(0,1fr)] xl:p-6">
+                <aside className="thin-scrollbar hidden min-h-0 overflow-y-auto rounded-[24px] bg-card p-5 shadow-[0_16px_48px_rgba(29,29,31,.07)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border lg:block">
                     <LogPanel logs={logs} selectedLogIds={selectedLogIds} activeLogId={previewLog?.id} onSelectedLogIdsChange={setSelectedLogIds} onCreateSession={createSession} onDeleteSelected={() => setDeleteConfirmOpen(true)} onPreviewLog={previewGenerationLog} />
                 </aside>
 
-                <section className="grid gap-3 lg:min-h-0 lg:overflow-hidden xl:grid-cols-[420px_minmax(0,1fr)]">
-                    <div className="thin-scrollbar flex flex-col rounded-lg border border-stone-200 bg-card p-4 shadow-sm dark:border-stone-800 lg:min-h-0 lg:overflow-y-auto">
+                <section className="grid gap-4 lg:min-h-0 lg:overflow-hidden xl:grid-cols-[420px_minmax(0,1fr)]">
+                    <div className="thin-scrollbar flex flex-col rounded-[24px] bg-card p-5 shadow-[0_16px_48px_rgba(29,29,31,.07)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border lg:min-h-0 lg:overflow-y-auto lg:p-6">
                         <div className="flex items-start justify-between gap-3">
                             <div>
-                                <h1 className="text-2xl font-semibold text-stone-950 dark:text-stone-100">营销视频</h1>
-                                <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">用商品参考图制作上新短片、展示动画与社媒内容。</p>
+                                <div className="mb-2 text-xs font-medium text-primary">AI 动态影棚</div>
+                                <h1 className="text-3xl font-semibold tracking-[-.035em]">让商品动起来。</h1>
+                                <p className="mt-2 text-sm leading-6 text-muted-foreground">用商品参考图制作上新短片、展示动画与社媒内容。</p>
                             </div>
                             <div className="flex shrink-0 gap-2 lg:hidden">
                                 <Button icon={<History className="size-4" />} onClick={() => setLogsOpen(true)}>
@@ -349,7 +361,7 @@ export default function VideoPage() {
                                 <Input.TextArea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={7} placeholder="描述镜头运动、主体动作、场景氛围和画面风格" />
                             </div>
 
-                            <div className="min-w-0">
+                            {referenceCapabilities.image ? <div className="min-w-0">
                                 <div className="mb-2 flex items-center justify-between gap-3">
                                     <span className="text-base font-semibold">参考图</span>
                                     <div className="flex gap-2">
@@ -374,9 +386,9 @@ export default function VideoPage() {
                                     ))}
                                     {!references.length ? <div className="flex min-w-full items-center justify-center text-sm text-stone-500">暂无参考图，最多 9 张</div> : null}
                                 </div>
-                            </div>
+                            </div> : null}
 
-                            <div className="min-w-0">
+                            {referenceCapabilities.video ? <div className="min-w-0">
                                 <div className="mb-2 flex items-center justify-between gap-3">
                                     <span className="text-base font-semibold">参考视频</span>
                                     <Button size="small" icon={<Upload className="size-3.5" />} onClick={() => fileInputRef.current?.click()}>
@@ -396,9 +408,9 @@ export default function VideoPage() {
                                     ))}
                                     {!videoReferences.length ? <div className="flex min-w-full items-center justify-center text-sm text-stone-500">暂无参考视频，最多 3 个</div> : null}
                                 </div>
-                            </div>
+                            </div> : null}
 
-                            <div className="min-w-0">
+                            {referenceCapabilities.audio ? <div className="min-w-0">
                                 <div className="mb-2 flex items-center justify-between gap-3">
                                     <span className="text-base font-semibold">参考音频</span>
                                     <Button size="small" icon={<Upload className="size-3.5" />} onClick={() => fileInputRef.current?.click()}>
@@ -422,7 +434,7 @@ export default function VideoPage() {
                                     ))}
                                     {!audioReferences.length ? <div className="flex min-w-full items-center justify-center text-center text-sm text-stone-500">暂无参考音频，最多 3 个，mp3/wav，单个 15MB 内</div> : null}
                                 </div>
-                            </div>
+                            </div> : null}
 
                             <div className="flex items-center justify-between rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm dark:border-stone-800 dark:bg-stone-900 sm:hidden">
                                 <span className="truncate text-stone-500 dark:text-stone-400">
@@ -445,9 +457,9 @@ export default function VideoPage() {
                         </div>
                     </div>
 
-                    <div className="thin-scrollbar rounded-lg border border-stone-200 bg-card p-4 shadow-sm dark:border-stone-800 lg:min-h-0 lg:overflow-y-auto lg:p-5">
+                    <div className="thin-scrollbar rounded-[24px] bg-card p-5 shadow-[0_16px_48px_rgba(29,29,31,.07)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border lg:min-h-0 lg:overflow-y-auto lg:p-6">
                         <div className="mb-4 flex items-center justify-between gap-3">
-                            <h2 className="text-xl font-semibold">生成结果</h2>
+                            <div><div className="text-xs font-medium text-primary">实时结果</div><h2 className="mt-1 text-2xl font-semibold tracking-[-.03em]">营销视频</h2></div>
                             {running ? <Tag className="m-0 px-2 py-1">等待 {formatDuration(elapsedMs)}</Tag> : null}
                         </div>
                         {results.length ? (
@@ -466,7 +478,7 @@ export default function VideoPage() {
             <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*,video/mp4,video/quicktime,audio/mpeg,audio/wav,audio/x-wav,.mp3,.wav"
+                accept={referenceAccept || undefined}
                 multiple
                 className="hidden"
                 onChange={(event) => {

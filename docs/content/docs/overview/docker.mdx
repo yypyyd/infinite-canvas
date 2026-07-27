@@ -67,3 +67,19 @@ DATABASE_DSN=/app/data/infinite-canvas.db
 ```
 
 如果需要让火山方舟拉取本地上传的 Seedance 参考素材，还需要把 `PUBLIC_BASE_URL` 设置为公网可访问的站点地址。
+
+## 批量生产 Worker
+
+正式环境先配置 MySQL 或 PostgreSQL、七牛 Kodo、后台默认图片模型及对应计费规则，再启动独立 Worker：
+
+```bash
+docker compose --profile worker up -d
+```
+
+Worker 默认使用内置标准执行器：根据任务创建时固化的品牌、商品和 SKU 快照组装生产模板，普通任务调用默认图片模型的生图接口，有参考图时调用多图编辑接口；生成结果完成校验后归档到企业 Kodo 空间，并沿用生成任务的预扣、成功结算和失败退款规则。
+
+如需使用自有生产服务，可同时配置 `BATCH_WORKER_EXECUTOR_URL` 和 `BATCH_WORKER_TOKEN` 切换到外部执行器模式。外部执行器必须按请求中的 `Idempotency-Key` 幂等处理，并返回 `resultUrl`、`mimeType` 和 `size`。
+
+## 备份
+
+应用镜像内置数据库与七牛 Kodo 备份恢复命令。生产操作前必须停止应用和批量 Worker，完整命令、校验规则和恢复演练见[备份与恢复](./backup-restore)。

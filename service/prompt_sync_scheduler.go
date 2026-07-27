@@ -1,8 +1,8 @@
 package service
 
 import (
-	"log"
 	"sync"
+	"time"
 
 	"github.com/basketikun/infinite-canvas/model"
 	"github.com/basketikun/infinite-canvas/repository"
@@ -21,6 +21,7 @@ func StartPromptSyncScheduler() {
 	promptSyncOnce.Do(func() {
 		promptSyncCron = cron.New()
 		promptSyncCron.Start()
+		logWorkerInfo("prompt_sync", "scheduler_started")
 	})
 	RefreshPromptSyncScheduler()
 }
@@ -36,7 +37,7 @@ func RefreshPromptSyncScheduler() {
 	}
 	settings, err := repository.GetSettings()
 	if err != nil {
-		log.Printf("load prompt sync setting failed err=%v", err)
+		logWorkerError("prompt_sync", "settings_load_failed", err)
 		return
 	}
 	setting := normalizePromptSyncSetting(settings.Private.PromptSync)
@@ -44,8 +45,10 @@ func RefreshPromptSyncScheduler() {
 		return
 	}
 	if _, err := promptSyncCron.AddFunc(setting.Cron, SyncRemotePromptCategories); err != nil {
-		log.Printf("add prompt sync cron failed cron=%s err=%v", setting.Cron, err)
+		logWorkerError("prompt_sync", "schedule_update_failed", err, "cron", setting.Cron)
+		return
 	}
+	logWorkerInfo("prompt_sync", "schedule_updated", "cron", setting.Cron)
 }
 
 func SyncRemotePromptCategories() {
@@ -53,12 +56,13 @@ func SyncRemotePromptCategories() {
 		if !category.Remote {
 			continue
 		}
-		log.Printf("scheduled prompt sync start category=%s", category.Category)
+		startedAt := time.Now()
+		logWorkerInfo("prompt_sync", "category_sync_started", "category", category.Category)
 		if _, err := SyncPromptCategory(category.Category); err != nil {
-			log.Printf("scheduled prompt sync failed category=%s err=%v", category.Category, err)
+			logWorkerError("prompt_sync", "category_sync_failed", err, "category", category.Category, "duration_ms", time.Since(startedAt).Milliseconds())
 			continue
 		}
-		log.Printf("scheduled prompt sync done category=%s", category.Category)
+		logWorkerInfo("prompt_sync", "category_sync_completed", "category", category.Category, "duration_ms", time.Since(startedAt).Milliseconds())
 	}
 }
 

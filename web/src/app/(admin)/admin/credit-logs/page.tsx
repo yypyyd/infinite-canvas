@@ -18,6 +18,8 @@ const creditLogTypeLabels: Record<string, string> = {
     redeem_code: "兑换码充值",
     daily_check_in: "每日签到",
     new_user_reward: "新用户赠送",
+    organization_transfer_out: "转入企业",
+    organization_transfer_in: "企业收款",
 };
 
 export default function AdminCreditLogsPage() {
@@ -51,6 +53,12 @@ export default function AdminCreditLogsPage() {
             dataIndex: "type",
             width: 140,
             render: (_, item) => <Tag>{creditLogTypeLabels[item.type] || item.type || "-"}</Tag>,
+        },
+        {
+            title: "账本",
+            dataIndex: "creditSource",
+            width: 100,
+            render: (_, item) => <Tag color={item.creditSource === "organization" ? "blue" : undefined}>{item.creditSource === "organization" ? "企业" : "个人"}</Tag>,
         },
         {
             title: "变动",

@@ -13,6 +13,7 @@ import type { CanvasResourceReference } from "../utils/canvas-resource-reference
 
 type ResizeCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
 const selectionBlue = "#2f80ff";
+type CanvasMenuEvent = Pick<React.MouseEvent, "clientX" | "clientY" | "preventDefault" | "stopPropagation">;
 
 type CanvasNodeProps = {
     data: CanvasNodeData;
@@ -46,7 +47,7 @@ type CanvasNodeProps = {
     onRetry?: (node: CanvasNodeData) => void;
     onGenerateImage?: (node: CanvasNodeData) => void;
     onViewImage?: (node: CanvasNodeData) => void;
-    onContextMenu: (event: React.MouseEvent, nodeId: string) => void;
+    onContextMenu: (event: CanvasMenuEvent, nodeId: string) => void;
 };
 
 type NodeContentRendererProps = {
@@ -114,6 +115,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     const isActive = isConnectionTarget || isSelected || isFocusRelated;
     const imageBorderColor = isActive ? selectionBlue : isRelated && !isBatchChild ? theme.node.muted : "transparent";
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const longPressRef = useRef<{ timer: ReturnType<typeof setTimeout> | null; pointerId: number; x: number; y: number }>({ timer: null, pointerId: -1, x: 0, y: 0 });
     const resizeRef = useRef({
         isResizing: false,
         corner: "bottom-right" as ResizeCorner,
@@ -126,6 +128,39 @@ export const CanvasNode = React.memo(function CanvasNode({
         keepRatio: false,
         ratio: 1,
     });
+
+    useEffect(() => {
+        const cancelOnSecondPointer = (event: PointerEvent) => {
+            if (longPressRef.current.timer && event.pointerId !== longPressRef.current.pointerId) {
+                clearTimeout(longPressRef.current.timer);
+                longPressRef.current.timer = null;
+            }
+        };
+        window.addEventListener("pointerdown", cancelOnSecondPointer, true);
+        return () => {
+            window.removeEventListener("pointerdown", cancelOnSecondPointer, true);
+            if (longPressRef.current.timer) clearTimeout(longPressRef.current.timer);
+        };
+    }, []);
+
+    const cancelLongPress = () => {
+        if (longPressRef.current.timer) clearTimeout(longPressRef.current.timer);
+        longPressRef.current.timer = null;
+    };
+
+    const startLongPress = (event: React.PointerEvent) => {
+        if (event.pointerType !== "touch") return;
+        cancelLongPress();
+        longPressRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, timer: setTimeout(() => {
+            onContextMenu({ clientX: event.clientX, clientY: event.clientY, preventDefault: () => undefined, stopPropagation: () => undefined }, data.id);
+            longPressRef.current.timer = null;
+        }, 550) };
+    };
+
+    const moveLongPress = (event: React.PointerEvent) => {
+        if (event.pointerId !== longPressRef.current.pointerId) return;
+        if (Math.hypot(event.clientX - longPressRef.current.x, event.clientY - longPressRef.current.y) > 8) cancelLongPress();
+    };
 
     useEffect(() => {
         const textarea = textareaRef.current;
@@ -256,6 +291,10 @@ export const CanvasNode = React.memo(function CanvasNode({
                 onHoverEnd(data.id);
             }}
             onContextMenu={(event) => onContextMenu(event, data.id)}
+            onPointerDown={startLongPress}
+            onPointerMove={moveLongPress}
+            onPointerUp={cancelLongPress}
+            onPointerCancel={cancelLongPress}
         >
             <div
                 className="relative h-full w-full overflow-visible rounded-3xl border-2"

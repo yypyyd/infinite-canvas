@@ -1,7 +1,6 @@
 package service
 
 import (
-	"encoding/json"
 	"errors"
 	"log"
 	"net/url"
@@ -220,8 +219,26 @@ func CurrentAuthUser(tokenText string) (model.AuthUser, bool) {
 	if ensureErr != nil {
 		return model.AuthUser{}, false
 	}
-	authUser.OrganizationID = organization.ID
+	authUser = applyOrganizationCredits(authUser, organization)
 	return authUser, true
+}
+
+func ApplyEffectiveCredits(user model.AuthUser) (model.AuthUser, error) {
+	organization, ok, err := repository.GetOrganization(user.OrganizationID)
+	if err != nil { return user, err }
+	if !ok { return user, safeMessageError{message: "企业不存在或已停用"} }
+	return applyOrganizationCredits(user, organization), nil
+}
+
+func applyOrganizationCredits(user model.AuthUser, organization model.Organization) model.AuthUser {
+	user.OrganizationID = organization.ID
+	user.EffectiveCredits = user.Credits
+	user.CreditMode = model.OrganizationCreditModePersonal
+	if organization.CreditMode == model.OrganizationCreditModeShared {
+		user.EffectiveCredits = organization.Credits
+		user.CreditMode = model.OrganizationCreditModeShared
+	}
+	return user
 }
 
 func ListUsers(q model.Query) (model.UserList, error) {
@@ -410,56 +427,6 @@ func ChangePassword(userID string, currentPassword string, newPassword string) e
 	return err
 }
 
-func ConsumeUserCredits(userID string, modelName string, credits int, path string) error {
-	if credits <= 0 {
-		return nil
-	}
-	user, ok, err := repository.ConsumeUserCredits(userID, credits, now())
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return safeMessageError{message: "算力点不足"}
-	}
-	extra, _ := json.Marshal(map[string]string{"model": modelName, "path": path})
-	_, err = repository.SaveCreditLog(model.CreditLog{
-		ID:        newID("credit"),
-		UserID:    userID,
-		Type:      model.CreditLogTypeAIConsume,
-		Amount:    -credits,
-		Balance:   user.Credits,
-		Remark:    "调用模型 " + modelName,
-		Extra:     string(extra),
-		CreatedAt: now(),
-	})
-	return err
-}
-
-func RefundUserCredits(userID string, modelName string, credits int, path string) error {
-	if credits <= 0 {
-		return nil
-	}
-	user, ok, err := repository.RefundUserCredits(userID, credits, now())
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return safeMessageError{message: "用户不存在"}
-	}
-	extra, _ := json.Marshal(map[string]string{"model": modelName, "path": path})
-	_, err = repository.SaveCreditLog(model.CreditLog{
-		ID:        newID("credit"),
-		UserID:    userID,
-		Type:      model.CreditLogTypeAIRefund,
-		Amount:    credits,
-		Balance:   user.Credits,
-		Remark:    "模型调用失败返还 " + modelName,
-		Extra:     string(extra),
-		CreatedAt: now(),
-	})
-	return err
-}
-
 func ListCreditLogs(q model.Query) (model.CreditLogList, error) {
 	logs, total, err := repository.ListCreditLogs(q)
 	if err != nil {
@@ -506,7 +473,7 @@ func newSession(user model.User) (model.AuthSession, error) {
 	if err != nil {
 		return model.AuthSession{}, err
 	}
-	return model.AuthSession{Token: token, User: model.PublicUser(user)}, nil
+	return model.AuthSession{Token: token, User: applyOrganizationCredits(model.PublicUser(user), organization)}, nil
 }
 
 func newToken(user model.User) (string, error) {

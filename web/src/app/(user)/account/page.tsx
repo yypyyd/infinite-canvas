@@ -36,6 +36,8 @@ const creditTypeMeta: Record<string, { label: string; color?: string }> = {
     redeem_code: { label: "兑换码充值", color: "green" },
     daily_check_in: { label: "每日签到", color: "gold" },
     new_user_reward: { label: "新用户赠送", color: "purple" },
+    organization_transfer_out: { label: "转入企业", color: "orange" },
+    organization_transfer_in: { label: "企业收款", color: "geekblue" },
 };
 const modalityLabels: Record<string, string> = { image: "图片", video: "视频", text: "文本", audio: "音频" };
 
@@ -85,15 +87,13 @@ function AccountContent() {
     return (
         <main className="h-full overflow-y-auto bg-background">
             <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
-                <section className="relative overflow-hidden rounded-[28px] border border-border bg-card">
-                    <div className="pointer-events-none absolute -right-14 -top-20 size-64 rounded-full border border-border/70" />
-                    <div className="pointer-events-none absolute right-16 top-9 size-20 rounded-full border border-dashed border-border" />
+                <section className="relative overflow-hidden rounded-[30px] bg-[#f5f5f7] dark:bg-card dark:ring-1 dark:ring-border">
                     <div className="relative flex flex-col gap-5 px-5 py-6 sm:flex-row sm:items-center sm:px-7 sm:py-8">
                         <Avatar size={72} src={user.avatarUrl || undefined} className="shrink-0 border border-border bg-foreground text-xl font-semibold text-background">
                             {avatarText}
                         </Avatar>
                         <div className="min-w-0 flex-1">
-                            <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">Account / 个人工作台</div>
+                            <div className="mb-2 text-sm font-medium text-primary">个人工作台</div>
                             <div className="flex min-w-0 flex-wrap items-center gap-2">
                                 <h1 className="truncate text-2xl font-semibold tracking-tight sm:text-3xl">{userName}</h1>
                                 <Tag className="m-0">{user.role === "admin" ? "管理员" : "普通用户"}</Tag>
@@ -109,13 +109,13 @@ function AccountContent() {
                         </Button>
                     </div>
                     <div className="relative grid grid-cols-1 border-t border-border sm:grid-cols-3 sm:divide-x sm:divide-border">
-                        <AccountMetric icon={<Coins />} label="当前算力" value={user.credits.toLocaleString()} suffix="点" />
+                        <AccountMetric icon={<Coins />} label={user.creditMode === "shared" ? "企业共享算力" : "个人算力"} value={(user.effectiveCredits ?? user.credits).toLocaleString()} suffix="点" />
                         <AccountMetric icon={<History />} label="生成记录" value={historyCountQuery.isLoading ? "—" : String(historyCountQuery.data || 0)} suffix="条" />
                         <AccountMetric icon={<Clock3 />} label="加入时间" value={user.createdAt ? dayjs(user.createdAt).format("YYYY.MM.DD") : "—"} />
                     </div>
                 </section>
 
-                <div className="mt-6 rounded-2xl border border-border bg-card px-4 sm:px-6">
+                <div className="mt-6 rounded-[22px] bg-card px-4 shadow-[0_12px_36px_rgba(29,29,31,.06)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border sm:px-6">
                     <Tabs
                         activeKey={activeTab}
                         items={accountTabs}
@@ -604,6 +604,7 @@ function CreditsSection() {
     const columns = useMemo<TableColumnsType<CreditLog>>(() => [
         { title: "时间", dataIndex: "createdAt", width: 170, render: (value: string) => <span className="text-muted-foreground">{dayjs(value).format("YYYY-MM-DD HH:mm")}</span> },
         { title: "类型", dataIndex: "type", width: 130, render: (value: string) => <CreditTypeTag type={value} /> },
+        { title: "账本", dataIndex: "creditSource", width: 90, render: (value: CreditLog["creditSource"]) => <Tag color={value === "organization" ? "blue" : undefined}>{value === "organization" ? "企业" : "个人"}</Tag> },
         { title: "说明", dataIndex: "remark", render: (_: string, item) => { const extra = creditExtra(item.extra); return <div><div>{item.remark || "—"}</div>{extra.model ? <div className="mt-1 text-xs text-muted-foreground">{extra.model}</div> : null}</div>; } },
         { title: "变动", dataIndex: "amount", width: 110, align: "right", render: (value: number) => <Typography.Text strong type={value >= 0 ? "success" : "danger"}>{value > 0 ? "+" : ""}{value.toLocaleString()}</Typography.Text> },
         { title: "余额", dataIndex: "balance", width: 110, align: "right", render: (value: number) => value.toLocaleString() },
@@ -639,7 +640,7 @@ function CreditsSection() {
 
             <div className="my-5 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-muted px-4 py-3">
                 <span className="text-sm text-muted-foreground">共 {total.toLocaleString()} 条账户流水</span>
-                <span className="inline-flex items-center gap-1.5 font-semibold tabular-nums"><CreditSymbol />{credits.toLocaleString()}<span className="text-xs font-normal text-muted-foreground">当前余额</span></span>
+                <span className="inline-flex items-center gap-1.5 font-semibold tabular-nums"><CreditSymbol />{credits.toLocaleString()}<span className="text-xs font-normal text-muted-foreground">个人余额</span></span>
             </div>
 
             <div className="hidden md:block">
@@ -663,7 +664,7 @@ function CreditLogCard({ item }: { item: CreditLog }) {
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                 <span>{dayjs(item.createdAt).format("YYYY-MM-DD HH:mm")}</span>
-                <span className="text-right">余额 {item.balance.toLocaleString()}</span>
+                <span className="text-right">{item.creditSource === "organization" ? "企业" : "个人"}余额 {item.balance.toLocaleString()}</span>
                 {extra.model ? <span className="col-span-2 truncate">模型 {extra.model}</span> : null}
             </div>
         </article>

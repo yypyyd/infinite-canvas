@@ -13,6 +13,7 @@ import { CreditSymbol, requestCreditQuote, type PricingRule } from "@/constant/c
 import { commercePresets, findCommercePreset } from "@/constant/commerce-presets";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { imageReferenceLabel } from "@/lib/image-reference-prompt";
+import { supportsImageQuality, supportsImageReferences } from "@/lib/image-model-capabilities";
 import { useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { nanoid } from "nanoid";
@@ -102,7 +103,9 @@ export default function ImagePage() {
 
     const model = effectiveConfig.imageModel || effectiveConfig.model;
     const modelDefinition = managedModels?.find((item) => item.id === model);
-    const imageOperation = references.length ? "edit" : "generation";
+    const supportsReferences = supportsImageReferences(model, managedModels);
+    const supportsQuality = supportsImageQuality(model);
+    const imageOperation = supportsReferences && references.length ? "edit" : "generation";
     const canGenerate = Boolean(prompt.trim());
     const generationCount = Math.max(1, Math.min(10, Number(config.count) || 1));
     const creditQuote = requestCreditQuote({
@@ -263,12 +266,13 @@ export default function ImagePage() {
         if (payload.kind === "text") {
             setPrompt(payload.content);
         } else if (payload.kind === "image") {
-            if (payload.storageKey) {
-                setReferences((value) => [...value, { id: nanoid(), name: payload.title, type: "image/png", dataUrl: payload.dataUrl, storageKey: payload.storageKey }]);
-            } else {
-                const stored = await uploadImage(payload.dataUrl);
-                setReferences((value) => [...value, { id: nanoid(), name: payload.title, type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey }]);
+            if (!supportsReferences) {
+                message.warning("当前模型不支持参考图");
+                setAssetPickerOpen(false);
+                return;
             }
+            const stored = await uploadImage(payload.dataUrl);
+            setReferences((value) => [...value, { id: nanoid(), name: payload.title, type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey }]);
         } else {
             message.warning("商品图生成只能使用文本或图片素材");
         }
@@ -325,7 +329,7 @@ export default function ImagePage() {
             openConfigDialog(true);
             return null;
         }
-        return { text, config: { ...effectiveConfig, model, count: "1" }, references: [...references] };
+        return { text, config: { ...effectiveConfig, model, count: "1", quality: supportsQuality ? effectiveConfig.quality : "auto" }, references: supportsReferences ? [...references] : [] };
     };
 
     const runGenerationSlot = async (index: number, snapshot: { text: string; config: AiConfig; references: ReferenceImage[] }) => {
@@ -353,9 +357,9 @@ export default function ImagePage() {
     };
 
     return (
-        <div className="flex h-full flex-col overflow-hidden bg-stone-50 text-stone-900 dark:bg-stone-950 dark:text-stone-100">
-            <main className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto p-3 lg:grid-cols-[300px_minmax(0,1fr)] lg:overflow-hidden xl:grid-cols-[320px_minmax(0,1fr)]">
-                <aside className="thin-scrollbar hidden min-h-0 overflow-y-auto rounded-lg border border-stone-200 bg-card p-4 shadow-sm dark:border-stone-800 lg:block">
+        <div className="flex h-full flex-col overflow-hidden bg-background text-foreground">
+            <main className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[300px_minmax(0,1fr)] lg:overflow-hidden xl:grid-cols-[320px_minmax(0,1fr)] xl:p-6">
+                <aside className="thin-scrollbar hidden min-h-0 overflow-y-auto rounded-[24px] bg-card p-5 shadow-[0_16px_48px_rgba(29,29,31,.07)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border lg:block">
                     <LogPanel
                         logs={logs}
                         selectedLogIds={selectedLogIds}
@@ -367,13 +371,14 @@ export default function ImagePage() {
                     />
                 </aside>
 
-                <section className="grid gap-3 lg:min-h-0 lg:overflow-hidden xl:grid-cols-[420px_minmax(0,1fr)]">
-                    <div className="thin-scrollbar flex flex-col rounded-lg border border-stone-200 bg-card p-4 shadow-sm dark:border-stone-800 lg:min-h-0 lg:overflow-y-auto">
+                <section className="grid gap-4 lg:min-h-0 lg:overflow-hidden xl:grid-cols-[420px_minmax(0,1fr)]">
+                    <div className="thin-scrollbar flex flex-col rounded-[24px] bg-card p-5 shadow-[0_16px_48px_rgba(29,29,31,.07)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border lg:min-h-0 lg:overflow-y-auto lg:p-6">
                         <div>
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
-                                    <h1 className="text-2xl font-semibold text-stone-950 dark:text-stone-100">商品图生成</h1>
-                                    <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">上传商品参考图，快速制作可直接用于上新的视觉素材。</p>
+                                    <div className="mb-2 text-xs font-medium text-primary">AI 商品影棚</div>
+                                    <h1 className="text-3xl font-semibold tracking-[-.035em]">制作下一张商品好图。</h1>
+                                    <p className="mt-2 text-sm leading-6 text-muted-foreground">上传商品参考图，快速制作可直接用于上新的视觉素材。</p>
                                 </div>
                                 <div className="flex shrink-0 gap-2 lg:hidden">
                                     <Button icon={<History className="size-4" />} onClick={() => setLogsOpen(true)}>
@@ -396,7 +401,7 @@ export default function ImagePage() {
                                             <button
                                                 key={preset.id}
                                                 type="button"
-                                                className="inline-flex h-8 items-center gap-1.5 rounded-full border border-stone-300 px-3 text-xs transition hover:border-stone-950 hover:text-stone-950 dark:border-stone-700 dark:hover:border-stone-200 dark:hover:text-stone-100"
+                                                className="inline-flex min-h-9 items-center gap-1.5 rounded-full bg-muted px-3.5 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                                                 onClick={() => setPrompt(preset.prompt)}
                                                 title={preset.description}
                                             >
@@ -422,7 +427,7 @@ export default function ImagePage() {
                                 <Input.TextArea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={7} placeholder="描述商品、目标人群、使用场景、核心卖点与投放平台" />
                             </div>
 
-                            <div className="min-w-0">
+                            {supportsReferences ? <div className="min-w-0">
                                 <div className="mb-2 flex items-center justify-between gap-3">
                                     <span className="text-base font-semibold">参考图</span>
                                     <div className="flex gap-2">
@@ -459,11 +464,11 @@ export default function ImagePage() {
                                     ))}
                                     {!references.length ? <div className="flex min-w-full items-center justify-center text-sm text-stone-500">暂无参考图</div> : null}
                                 </div>
-                            </div>
+                            </div> : null}
 
                             <div className="flex items-center justify-between rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm dark:border-stone-800 dark:bg-stone-900 sm:hidden">
                                 <span className="truncate text-stone-500 dark:text-stone-400">
-                                    {model} · {effectiveConfig.size} · {effectiveConfig.quality}
+                                    {model} · {effectiveConfig.size}{supportsQuality ? ` · ${effectiveConfig.quality}` : ""}
                                 </span>
                                 <Button size="small" type="text" icon={<SlidersHorizontal className="size-4" />} onClick={() => setSettingsOpen(true)}>
                                     调整
@@ -471,7 +476,7 @@ export default function ImagePage() {
                             </div>
 
                             <div className="hidden gap-4 sm:grid sm:grid-cols-2">
-                                <GenerationSettings config={effectiveConfig} model={model} operation={imageOperation} pricingRules={pricingRules} supportedRatios={modelAspectRatios?.[model]} supportedResolutionTiers={modelDefinition?.resolutionTiers} updateConfig={updateConfig} openConfigDialog={openConfigDialog} />
+                                <GenerationSettings config={effectiveConfig} model={model} operation={imageOperation} pricingRules={pricingRules} supportedRatios={modelAspectRatios?.[model]} supportedResolutionTiers={modelDefinition?.resolutionTiers} showQuality={supportsQuality} updateConfig={updateConfig} openConfigDialog={openConfigDialog} />
                             </div>
                         </div>
 
@@ -491,10 +496,11 @@ export default function ImagePage() {
                         </div>
                     </div>
 
-                    <div className="thin-scrollbar rounded-lg border border-stone-200 bg-card p-4 shadow-sm dark:border-stone-800 lg:min-h-0 lg:overflow-y-auto lg:p-5">
+                    <div className="thin-scrollbar rounded-[24px] bg-card p-5 shadow-[0_16px_48px_rgba(29,29,31,.07)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border lg:min-h-0 lg:overflow-y-auto lg:p-6">
                         <div className="mb-4 flex items-center justify-between gap-3">
                             <div>
-                                <h2 className="text-xl font-semibold">商品视觉结果</h2>
+                                <div className="text-xs font-medium text-primary">实时结果</div>
+                                <h2 className="mt-1 text-2xl font-semibold tracking-[-.03em]">商品视觉</h2>
                             </div>
                             {running ? <Tag className="m-0 px-2 py-1">等待 {formatDuration(elapsedMs)}</Tag> : null}
                         </div>
@@ -502,7 +508,7 @@ export default function ImagePage() {
                             <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
                                 {results.map((result, index) =>
                                     result.status === "success" && result.image ? (
-                                        <ResultImageCard key={result.id} image={result.image} index={index} onEdit={addResultToReferences} onDownload={downloadImage} onSaveAsset={saveResultToAssets} />
+                                        <ResultImageCard key={result.id} image={result.image} index={index} canEdit={supportsReferences} onEdit={addResultToReferences} onDownload={downloadImage} onSaveAsset={saveResultToAssets} />
                                     ) : result.status === "failed" ? (
                                         <FailedImageCard key={result.id} error={result.error || "生成失败"} onRetry={() => retryResult(index)} />
                                     ) : (
@@ -543,7 +549,7 @@ export default function ImagePage() {
             </Drawer>
             <Drawer title="参数" placement="bottom" size="82vh" open={settingsOpen} onClose={() => setSettingsOpen(false)}>
                 <div className="grid grid-cols-2 gap-3 pb-4">
-                    <GenerationSettings config={effectiveConfig} model={model} operation={imageOperation} pricingRules={pricingRules} supportedRatios={modelAspectRatios?.[model]} supportedResolutionTiers={modelDefinition?.resolutionTiers} updateConfig={updateConfig} openConfigDialog={openConfigDialog} />
+                    <GenerationSettings config={effectiveConfig} model={model} operation={imageOperation} pricingRules={pricingRules} supportedRatios={modelAspectRatios?.[model]} supportedResolutionTiers={modelDefinition?.resolutionTiers} showQuality={supportsQuality} updateConfig={updateConfig} openConfigDialog={openConfigDialog} />
                 </div>
             </Drawer>
             <PromptSelectDialog open={promptDialogOpen} onOpenChange={setPromptDialogOpen} onSelect={setPrompt} />
@@ -562,6 +568,7 @@ function GenerationSettings({
     pricingRules,
     supportedRatios,
     supportedResolutionTiers,
+    showQuality,
     updateConfig,
     openConfigDialog,
 }: {
@@ -571,6 +578,7 @@ function GenerationSettings({
     pricingRules?: PricingRule[];
     supportedRatios?: string[];
     supportedResolutionTiers?: string[];
+    showQuality: boolean;
     updateConfig: UpdateAiConfig;
     openConfigDialog: (shouldPromptContinue?: boolean) => void;
 }) {
@@ -583,7 +591,7 @@ function GenerationSettings({
                 <ModelPicker config={config} value={model} onChange={(value) => updateConfig("imageModel", value)} capability="image" fullWidth onMissingConfig={() => openConfigDialog(false)} />
             </label>
             <div className="col-span-2">
-                <ImageSettingsPanel config={config} onConfigChange={(key, value) => updateConfig(key, value)} theme={theme} showTitle={false} className="space-y-4" maxCount={10} pricingRules={pricingRules} model={model} operation={operation} supportedRatios={supportedRatios} supportedResolutionTiers={supportedResolutionTiers} />
+                <ImageSettingsPanel config={config} onConfigChange={(key, value) => updateConfig(key, value)} theme={theme} showTitle={false} className="space-y-4" maxCount={10} pricingRules={pricingRules} model={model} operation={operation} supportedRatios={supportedRatios} supportedResolutionTiers={supportedResolutionTiers} showQuality={showQuality} />
             </div>
         </>
     );
@@ -592,12 +600,14 @@ function GenerationSettings({
 function ResultImageCard({
     image,
     index,
+    canEdit,
     onEdit,
     onDownload,
     onSaveAsset,
 }: {
     image: GeneratedImage;
     index: number;
+    canEdit: boolean;
     onEdit: (image: GeneratedImage, index: number) => void;
     onDownload: (image: GeneratedImage, index: number) => void;
     onSaveAsset: (image: GeneratedImage, index: number) => void;
@@ -621,17 +631,17 @@ function ResultImageCard({
                     <span>{formatBytes(image.bytes)}</span>
                     <span>{formatDuration(image.durationMs)}</span>
                 </div>
-                <div className="grid min-w-0 grid-cols-3 gap-2">
+                <div className={`grid min-w-0 gap-2 ${canEdit ? "grid-cols-3" : "grid-cols-2"}`}>
                     <Tooltip title="添加到素材">
                         <Button className={RESULT_ACTION_BUTTON_CLASS} size="small" icon={<FolderPlus className="size-3.5" />} onClick={() => void onSaveAsset(image, index)}>
                             添加到素材
                         </Button>
                     </Tooltip>
-                    <Tooltip title="加入参考图">
+                    {canEdit ? <Tooltip title="加入参考图">
                         <Button className={RESULT_ACTION_BUTTON_CLASS} size="small" icon={<PenLine className="size-3.5" />} onClick={() => void onEdit(image, index)}>
                             加入参考图
                         </Button>
-                    </Tooltip>
+                    </Tooltip> : null}
                     <Tooltip title="下载">
                         <Button className={RESULT_ACTION_BUTTON_CLASS} size="small" icon={<Download className="size-3.5" />} onClick={() => onDownload(image, index)}>
                             下载

@@ -116,9 +116,22 @@ type CheckInSetting struct {
 
 // PrivateSetting stores backend-only settings.
 type PrivateSetting struct {
-	Channels   []ModelChannel    `json:"channels"`
-	PromptSync PromptSyncSetting `json:"promptSync"`
-	Email      EmailSetting      `json:"email"`
+	Channels         []ModelChannel         `json:"channels"`
+	PromptSync       PromptSyncSetting      `json:"promptSync"`
+	Email            EmailSetting           `json:"email"`
+	OperationsAlerts OperationsAlertSetting `json:"operationsAlerts"`
+}
+
+type OperationsAlertSetting struct {
+	Enabled                             *bool  `json:"enabled"`
+	BatchQueuedThreshold                *int64 `json:"batchQueuedThreshold"`
+	BatchExpiredLeasesThreshold         *int64 `json:"batchExpiredLeasesThreshold"`
+	EmailPendingThreshold               *int64 `json:"emailPendingThreshold"`
+	EmailFailedThreshold                *int64 `json:"emailFailedThreshold"`
+	EmailExpiredLeasesThreshold         *int64 `json:"emailExpiredLeasesThreshold"`
+	ObjectDeletionPendingThreshold      *int64 `json:"objectDeletionPendingThreshold"`
+	ObjectDeletionFailedThreshold       *int64 `json:"objectDeletionFailedThreshold"`
+	ObjectDeletionExpiredLeasesThreshold *int64 `json:"objectDeletionExpiredLeasesThreshold"`
 }
 
 type EmailSetting struct {

@@ -1,6 +1,7 @@
 package model
 
 type GenerationTaskStatus string
+type CreditSource string
 
 const (
 	GenerationTaskStatusRunning GenerationTaskStatus = "running"
@@ -8,11 +9,19 @@ const (
 	GenerationTaskStatusFailed  GenerationTaskStatus = "failed"
 )
 
+const (
+	CreditSourcePersonal     CreditSource = "personal"
+	CreditSourceOrganization CreditSource = "organization"
+)
+
 // GenerationTask records backend model requests for user task center and admin operations.
 type GenerationTask struct {
 	ID             string               `json:"id" gorm:"primaryKey"`
-	OrganizationID string               `json:"organizationId" gorm:"index"`
-	UserID         string               `json:"userId" gorm:"index"`
+	OrganizationID string               `json:"organizationId" gorm:"index;uniqueIndex:idx_generation_task_request"`
+	UserID         string               `json:"userId" gorm:"index;uniqueIndex:idx_generation_task_request"`
+	RequestID      string               `json:"requestId" gorm:"size:191;uniqueIndex:idx_generation_task_request"`
+	BatchJobID     string               `json:"batchJobId,omitempty" gorm:"index"`
+	BatchItemID    string               `json:"batchItemId,omitempty" gorm:"index"`
 	Model          string               `json:"model" gorm:"index"`
 	UpstreamModel  string               `json:"upstreamModel"`
 	ChannelName    string               `json:"channelName" gorm:"index"`
@@ -22,6 +31,7 @@ type GenerationTask struct {
 	ResolutionTier string               `json:"resolutionTier"`
 	Quantity       int                  `json:"quantity"`
 	Credits        int                  `json:"credits"`
+	CreditSource   CreditSource         `json:"creditSource" gorm:"size:16;not null;default:personal;index"`
 	Status         GenerationTaskStatus `json:"status" gorm:"index"`
 	ErrorMessage   string               `json:"errorMessage" gorm:"type:text"`
 	DurationMs     int64                `json:"durationMs"`

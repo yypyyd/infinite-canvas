@@ -76,5 +76,7 @@ func RedeemCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result.OrganizationID = user.OrganizationID
+	result, err = service.ApplyEffectiveCredits(result)
+	if err != nil { FailError(w, err); return }
 	OK(w, result)
 }

@@ -3,7 +3,7 @@
 import { useRef } from "react";
 import { useRouter } from "next/navigation";
 import { App, Button } from "antd";
-import { BadgePercent, Download, FileUp, Images, LayoutTemplate, Plus, ScanText } from "lucide-react";
+import { ArrowRight, Download, FileUp, Plus } from "lucide-react";
 
 import { readZip } from "@/lib/zip";
 import { setMediaBlob } from "@/services/file-storage";
@@ -57,13 +57,13 @@ export default function CanvasPage() {
     };
 
     return (
-        <main className="h-full overflow-auto bg-background text-stone-950 dark:text-stone-100">
-            <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-6 py-10">
-                <header className="flex flex-wrap items-end justify-between gap-4 border-b border-stone-200 pb-6 dark:border-stone-800">
+        <main className="h-full overflow-auto bg-background text-foreground">
+            <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-10 px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
+                <header className="hero-atmosphere flex flex-wrap items-end justify-between gap-6 py-8 sm:py-10 dark:border-b dark:border-border">
                     <div>
-                        <p className="text-xs font-medium tracking-[.14em] text-stone-500">PRODUCT WORKSPACES</p>
-                        <h1 className="mt-3 text-3xl font-semibold">商品画布</h1>
-                        <p className="mt-2 text-sm text-stone-500">按商品或活动管理参考图、生成过程与最终交付素材。</p>
+                        <p className="flex items-center gap-2 text-sm font-medium text-primary"><span className="size-1.5 rounded-full bg-primary" />商品创作空间</p>
+                        <h1 className="mt-3 text-5xl font-semibold tracking-[-.045em] sm:text-6xl">每个商品，都有自己的画布。</h1>
+                        <p className="mt-4 max-w-2xl text-base leading-7 text-muted-foreground">按商品或活动管理参考图、生成过程与最终交付素材。</p>
                     </div>
                     <div className="flex items-center gap-2">
                         {selectedIds.length ? (
@@ -77,11 +77,11 @@ export default function CanvasPage() {
                             </>
                         ) : null}
                         {projects.length ? (
-                            <Button disabled={!hydrated} onClick={() => setDeleteIds(projects.map((project) => project.id))}>
+                            <Button disabled={!hydrated} type="text" className="text-muted-foreground" onClick={() => setDeleteIds(projects.map((project) => project.id))}>
                                 删除全部
                             </Button>
                         ) : null}
-                        <Button disabled={!hydrated} icon={<FileUp className="size-4" />} onClick={() => inputRef.current?.click()}>
+                        <Button disabled={!hydrated} type="text" icon={<FileUp className="size-4" />} onClick={() => inputRef.current?.click()}>
                             导入画布
                         </Button>
                         <Button disabled={!hydrated} type="primary" icon={<Plus className="size-4" />} onClick={() => createAndEnter()}>
@@ -91,31 +91,45 @@ export default function CanvasPage() {
                 </header>
 
                 <section>
-                    <div className="mb-3 flex items-center gap-2 text-sm font-medium"><LayoutTemplate className="size-4" /> 快速开始</div>
-                    <div className="grid gap-3 sm:grid-cols-3">
+                    <h2 className="mb-[18px] text-[22px] font-semibold tracking-[-.02em]">从模板开始</h2>
+                    <div className="grid gap-4 sm:grid-cols-3">
                         {[
-                            { title: "商品主图套系", detail: "白底图、角度图与 SKU 系列", icon: Images },
-                            { title: "详情页视觉", detail: "卖点拆解、材质特写与场景图", icon: ScanText },
-                            { title: "大促活动视觉", detail: "活动主视觉、横幅与社媒素材", icon: BadgePercent },
-                        ].map((item) => {
-                            const Icon = item.icon;
-                            return <button key={item.title} type="button" disabled={!hydrated} onClick={() => createAndEnter(item.title)} className="group flex items-center gap-4 border border-stone-200 p-4 text-left transition hover:border-stone-400 hover:bg-stone-50 disabled:opacity-50 dark:border-stone-800 dark:hover:border-stone-600 dark:hover:bg-stone-900"><span className="grid size-10 shrink-0 place-items-center bg-stone-100 dark:bg-stone-800"><Icon className="size-4" /></span><span><span className="block text-sm font-medium">{item.title}</span><span className="mt-1 block text-xs text-stone-500">{item.detail}</span></span></button>;
-                        })}
+                            { title: "商品主图套系", detail: "白底图、角度图与 SKU 系列", tag: "主图套系", cover: "/tpl-main.jpg" },
+                            { title: "详情页视觉", detail: "卖点拆解、材质特写与场景图", tag: "详情页视觉", cover: "/tpl-detail.jpg" },
+                            { title: "大促活动视觉", detail: "活动主视觉、横幅与社媒素材", tag: "大促活动视觉", cover: "/tpl-promo.jpg" },
+                        ].map((item) => (
+                            <button key={item.title} type="button" disabled={!hydrated} onClick={() => createAndEnter(item.title)} className="group overflow-hidden rounded-[22px] bg-white text-left shadow-[0_2px_14px_rgba(29,29,31,.06)] ring-1 ring-black/[.04] transition hover:-translate-y-[3px] hover:shadow-[0_14px_44px_rgba(29,29,31,.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50 dark:bg-card dark:shadow-none dark:ring-border dark:hover:shadow-none dark:hover:ring-border-strong">
+                                <span className="relative block aspect-[4/3] overflow-hidden">
+                                    <img src={item.cover} alt="" className="size-full object-cover transition duration-500 group-hover:scale-[1.03]" />
+                                    <span className="absolute left-3 top-3 rounded-full bg-white/75 px-2.5 py-1 text-[11px] font-semibold backdrop-blur-md dark:bg-black/55">{item.tag}</span>
+                                </span>
+                                <span className="block px-[18px] pb-[18px] pt-4">
+                                    <span className="block text-[15.5px] font-semibold tracking-[-.01em]">{item.title}</span>
+                                    <span className="mt-1 block text-xs leading-5 text-muted-foreground">{item.detail}</span>
+                                    <span className="mt-2.5 inline-flex items-center gap-1 text-[13px] font-medium text-primary">
+                                        开始创作 <ArrowRight className="size-3.5 transition group-hover:translate-x-0.5" />
+                                    </span>
+                                </span>
+                            </button>
+                        ))}
                     </div>
                 </section>
 
                 {!hydrated ? (
-                    <section className="flex min-h-[360px] items-center justify-center border-y border-stone-200 text-sm text-stone-500 dark:border-stone-800">正在加载画布...</section>
+                    <section className="flex min-h-[360px] items-center justify-center border-y border-border text-sm text-muted-foreground">正在加载画布...</section>
                 ) : projects.length ? (
-                    <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-                        {projects.map((project) => (
-                            <CanvasProjectCard key={project.id} project={project} />
-                        ))}
-                    </div>
+                    <section>
+                        <h2 className="mb-[18px] text-[22px] font-semibold tracking-[-.02em]">我的项目</h2>
+                        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                            {projects.map((project, index) => (
+                                <CanvasProjectCard key={project.id} project={project} featured={index === 0} />
+                            ))}
+                        </div>
+                    </section>
                 ) : (
-                    <section className="flex min-h-[360px] flex-col items-center justify-center border-y border-stone-200 text-center dark:border-stone-800">
+                    <section className="flex min-h-[360px] flex-col items-center justify-center rounded-[28px] bg-[#f5f5f7] p-8 text-center dark:bg-transparent dark:border dark:border-dashed dark:border-border-strong">
                         <h2 className="text-xl font-medium">还没有商品项目</h2>
-                        <p className="mt-3 text-sm text-stone-500">为一个商品或一次营销活动建立独立画布，集中管理全部视觉素材。</p>
+                        <p className="mt-3 text-sm text-muted-foreground">为一个商品或一次营销活动建立独立画布，集中管理全部视觉素材。</p>
                         <Button type="primary" className="mt-6" icon={<Plus className="size-4" />} onClick={() => createAndEnter()}>
                             新建商品项目
                         </Button>

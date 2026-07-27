@@ -1,7 +1,7 @@
 import axios from "axios";
 
 import { audioMimeType, normalizeAudioFormatValue, normalizeAudioSpeedValue, normalizeAudioVoiceValue } from "@/lib/audio-generation";
-import { authorizationHeaders } from "@/services/api/request";
+import { authorizationHeaders, organizationHeaders } from "@/services/api/request";
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import type { AiConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
@@ -14,7 +14,7 @@ function aiApiUrl(_config: AiConfig, path: string) {
 
 function aiHeaders(_config: AiConfig) {
     const token = useUserStore.getState().token;
-    return { ...authorizationHeaders(token), "Content-Type": "application/json" };
+    return { ...authorizationHeaders(token), ...organizationHeaders(), "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() };
 }
 
 function refreshRemoteUser(_config: AiConfig) {

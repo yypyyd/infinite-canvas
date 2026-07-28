@@ -3,8 +3,6 @@
 import { create } from "zustand";
 
 import { nanoid } from "nanoid";
-import { cleanupUnusedImages } from "@/services/image-storage";
-import { cleanupUnusedMedia } from "@/services/file-storage";
 import { stageWorkspaceDelete, stageWorkspaceRecord } from "@/services/workspace-changes";
 
 export type AssetKind = "text" | "image" | "video";
@@ -38,7 +36,6 @@ type AssetStore = {
     updateAsset: (id: string, patch: Partial<Omit<Asset, "id" | "createdAt">>) => void;
     removeAsset: (id: string) => void;
     replaceAssets: (assets: Asset[]) => void;
-    cleanupImages: (extra?: unknown) => void;
 };
 
 export const useAssetStore = create<AssetStore>()((set, get) => ({
@@ -75,23 +72,10 @@ export const useAssetStore = create<AssetStore>()((set, get) => ({
     },
     removeAsset: (id) => {
         const removed = get().assets.find((asset) => asset.id === id);
-        set((state) => {
-            const assets = state.assets.filter((asset) => asset.id !== id);
-            get().cleanupImages({ assets });
-            return ownerAssetsState(state, assets);
-        });
+        set((state) => ownerAssetsState(state, state.assets.filter((asset) => asset.id !== id)));
         if (removed) stageWorkspaceDelete(get().ownerId, "asset", id, removed.version || 0);
     },
     replaceAssets: (assets) => set((state) => ownerAssetsState(state, assets)),
-    cleanupImages: (extra) => {
-        window.setTimeout(async () => {
-            const { useCanvasStore } = await import("@/app/(user)/canvas/stores/use-canvas-store");
-            const assets = Object.values(get().assetsByOwner).flat();
-            const projects = Object.values(useCanvasStore.getState().projectsByOwner).flat();
-            await cleanupUnusedImages({ assets, projects, extra });
-            await cleanupUnusedMedia({ assets, projects, extra });
-        }, 0);
-    },
 }));
 
 function ownerAssetsState(state: AssetStore, assets: Asset[]) {

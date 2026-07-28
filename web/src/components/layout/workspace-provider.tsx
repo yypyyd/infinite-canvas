@@ -4,9 +4,9 @@ import { useEffect } from "react";
 
 import type { CanvasProject } from "@/app/(user)/canvas/stores/use-canvas-store";
 import { useCanvasStore } from "@/app/(user)/canvas/stores/use-canvas-store";
-import { clearMediaMemory, getMediaBlob, resolveMediaUrl } from "@/services/file-storage";
+import { getMediaBlob, resolveMediaUrl } from "@/services/file-storage";
 import { applyGenerationRecordSnapshot, clearGenerationRecordMemory } from "@/services/generation-history";
-import { clearImageMemory, getImageBlob, resolveImageUrl } from "@/services/image-storage";
+import { getImageBlob, resolveImageUrl } from "@/services/image-storage";
 import { fetchWorkspace, fetchWorkspaceStorageStatus, saveWorkspaceChanges, uploadWorkspaceFile, workspaceFileExists, type WorkspaceRecord } from "@/services/api/workspace";
 import { commitWorkspaceChanges, hasPendingWorkspaceChanges, readPendingWorkspaceChanges, workspaceOwnerId, WORKSPACE_CHANGES_UPDATED_EVENT, type PendingWorkspaceChange } from "@/services/workspace-changes";
 import type { Asset } from "@/stores/use-asset-store";
@@ -114,8 +114,6 @@ export function WorkspaceProvider() {
             if (activeWorkspaceFlush === flush) activeWorkspaceFlush = null;
             if (!readPendingWorkspaceChanges(ownerId, userId).length) {
                 clearGenerationRecordMemory(ownerId);
-                clearImageMemory();
-                clearMediaMemory();
                 useCanvasStore.getState().replaceOwnerProjects(ownerId, []);
                 useAssetStore.getState().replaceOwnerAssets(ownerId, []);
             }

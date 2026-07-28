@@ -20,7 +20,7 @@ import { nanoid } from "nanoid";
 import { formatBytes, formatDuration, getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
 import { requestEdit, requestGeneration } from "@/services/api/image";
 import { deleteStoredGenerationRecord, GENERATION_HISTORY_CHANGED_EVENT, readStoredGenerationRecords, saveGenerationRecord } from "@/services/generation-history";
-import { deleteStoredImages, resolveImageUrl, resolveImageVariantUrl, uploadImage } from "@/services/image-storage";
+import { resolveImageUrl, resolveImageVariantUrl, uploadImage } from "@/services/image-storage";
 import { workspaceOwnerId } from "@/services/workspace-changes";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useUserStore } from "@/stores/use-user-store";
@@ -292,8 +292,7 @@ export default function ImagePage() {
     };
 
     const deleteSelectedLogs = () => {
-        const imageKeys = logs.filter((log) => selectedLogIds.includes(log.id)).flatMap((log) => log.images.map((image) => image.storageKey).filter((key): key is string => Boolean(key)));
-        void Promise.all([deleteStoredImages(imageKeys), ...selectedLogIds.map((id) => deleteStoredGenerationRecord(historyOwnerId, "image", id))]).then(refreshLogs);
+        void Promise.all(selectedLogIds.map((id) => deleteStoredGenerationRecord(historyOwnerId, "image", id))).then(refreshLogs);
         if (previewLog && selectedLogIds.includes(previewLog.id)) {
             setPreviewLog(null);
             setResults([]);

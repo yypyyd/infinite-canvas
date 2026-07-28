@@ -22,8 +22,30 @@ export function buildCanvasResourceReferences(nodes: CanvasNodeData[], connectio
     return globalReferences.map((reference) => activeByNodeId.get(reference.nodeId) || reference);
 }
 
-export function buildNodeMentionReferences(node: CanvasNodeData, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
-    return labelResourceNodes(getMentionResourceNodes(node.id, nodes, connections), true);
+export function buildNodeMentionReferenceMap(nodes: CanvasNodeData[], connections: CanvasConnection[], nodeIds: Iterable<string>) {
+    const nodeById = new Map(nodes.map((node) => [node.id, node]));
+    const inputsByTargetId = new Map<string, CanvasNodeData[]>();
+    const configTargetBySourceId = new Map<string, string>();
+    connections.forEach((connection) => {
+        const source = nodeById.get(connection.fromNodeId);
+        const target = nodeById.get(connection.toNodeId);
+        if (source && isResourceNode(source)) {
+            const inputs = inputsByTargetId.get(connection.toNodeId);
+            if (inputs) inputs.push(source);
+            else inputsByTargetId.set(connection.toNodeId, [source]);
+        }
+        if (target?.type === CanvasNodeType.Config && !configTargetBySourceId.has(connection.fromNodeId)) configTargetBySourceId.set(connection.fromNodeId, connection.toNodeId);
+    });
+
+    const references = new Map<string, CanvasResourceReference[]>();
+    for (const nodeId of nodeIds) {
+        const configInputs = (inputsByTargetId.get(configTargetBySourceId.get(nodeId) || "") || []).filter((node) => node.id !== nodeId);
+        const ownInputs = inputsByTargetId.get(nodeId) || [];
+        const node = nodeById.get(nodeId);
+        const inputs = configInputs.length ? configInputs : ownInputs.length ? ownInputs : node && isResourceNode(node) ? [node] : [];
+        references.set(nodeId, labelResourceNodes(inputs, true));
+    }
+    return references;
 }
 
 export function getMentionResourceNodes(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {

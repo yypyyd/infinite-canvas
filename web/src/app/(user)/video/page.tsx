@@ -13,7 +13,7 @@ import { VideoSettingsPanel, normalizeVideoResolutionValue, normalizeVideoSizeVa
 import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { boolConfig, isSeedanceVideoConfig, normalizeSeedanceRatio, seedanceReferenceLabel, seedanceVideoReferenceError, seedanceVideoReferenceHint, SEEDANCE_REFERENCE_LIMITS, videoReferenceCapabilities } from "@/lib/seedance-video";
-import { deleteStoredMedia, resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
+import { resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
 import { deleteStoredGenerationRecord, GENERATION_HISTORY_CHANGED_EVENT, readStoredGenerationRecords, saveGenerationRecord } from "@/services/generation-history";
 import { resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { workspaceOwnerId } from "@/services/workspace-changes";
@@ -310,11 +310,7 @@ export default function VideoPage() {
     };
 
     const deleteSelectedLogs = () => {
-        const mediaKeys = logs
-            .filter((log) => selectedLogIds.includes(log.id))
-            .map((log) => log.video?.storageKey)
-            .filter((key): key is string => Boolean(key));
-        void Promise.all([deleteStoredMedia(mediaKeys), ...selectedLogIds.map((id) => deleteStoredGenerationRecord(historyOwnerId, "video", id))]).then(refreshLogs);
+        void Promise.all(selectedLogIds.map((id) => deleteStoredGenerationRecord(historyOwnerId, "video", id))).then(refreshLogs);
         if (previewLog && selectedLogIds.includes(previewLog.id)) {
             setPreviewLog(null);
             setResults([]);

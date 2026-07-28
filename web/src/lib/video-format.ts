@@ -2,6 +2,30 @@ export const defaultVideoRatios = ["16:9", "9:16"];
 export const defaultVideoResolutions = ["720p"];
 export const defaultVideoDurations = [6, 10];
 
+export type VideoModelDefinition = {
+    id: string;
+    aspectRatios?: string[];
+    resolutionTiers?: string[];
+    durations?: number[];
+};
+
+export function resolveVideoSettings(config: { size: string; vquality: string; videoSeconds: string }, definition?: VideoModelDefinition) {
+    const ratios = definition?.aspectRatios?.length ? definition.aspectRatios : defaultVideoRatios;
+    const resolutions = definition?.resolutionTiers?.length ? definition.resolutionTiers : defaultVideoResolutions;
+    const durations = definition?.durations?.length ? definition.durations : defaultVideoDurations;
+    const normalizedRatio = normalizeVideoRatio(config.size);
+    const normalizedResolution = normalizeVideoResolution(config.vquality);
+    const duration = Number(config.videoSeconds);
+    return {
+        ratios,
+        resolutions,
+        durations,
+        ratio: ratios.includes(normalizedRatio) ? normalizedRatio : ratios[0],
+        resolution: resolutions.includes(normalizedResolution) ? normalizedResolution : resolutions[0],
+        seconds: durations.includes(duration) ? duration : durations[0],
+    };
+}
+
 export function normalizeVideoRatio(value: string) {
     if (/^\d+:\d+$/.test(value || "")) return value;
     const match = String(value || "").match(/^(\d+)x(\d+)$/);

@@ -19,6 +19,7 @@ import { CanvasResourceMentionTextarea } from "./canvas-resource-mention-textare
 import { CanvasVideoSettingsPopover } from "./canvas-video-settings-popover";
 import { CanvasNodeType, type CanvasGenerationMode, type CanvasNodeData } from "../types";
 import type { CanvasResourceReference } from "../utils/canvas-resource-references";
+import { canvasVideoModelPatch, resolveCanvasVideoConfig } from "../utils/canvas-video-config";
 
 export type CanvasNodeGenerationMode = CanvasGenerationMode;
 
@@ -42,7 +43,8 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const mode = defaultMode(node.type);
-    const config = buildNodeConfig(globalConfig, node, mode);
+    const baseConfig = buildNodeConfig(globalConfig, node, mode);
+    const config = mode === "video" ? resolveCanvasVideoConfig(baseConfig, managedModels) : baseConfig;
     const imageSupportsReferences = supportsImageReferences(config.model, managedModels);
     const referenceCapabilities = mode === "video" ? videoReferenceCapabilities(config.model) : { image: mode === "text" || (mode === "image" && imageSupportsReferences), video: false, audio: false };
     const visibleMentionReferences = mentionReferences.filter(
@@ -118,7 +120,7 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
                         </>
                     ) : mode === "video" ? (
                         <>
-                            <ModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} capability="video" onMissingConfig={() => openConfigDialog(true)} />
+                            <ModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, canvasVideoModelPatch(config, model, managedModels))} capability="video" onMissingConfig={() => openConfigDialog(true)} />
                             <CanvasVideoSettingsPopover config={config} buttonClassName="!h-10 !max-w-[170px] !justify-start !rounded-full !px-3" onConfigChange={(key, value) => onConfigChange(node.id, videoConfigPatch(key, value))} />
                         </>
                     ) : mode === "audio" ? (

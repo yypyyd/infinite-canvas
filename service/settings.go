@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1068,11 +1069,11 @@ func fetchAdminChannelModels(channel model.ModelChannel) ([]model.DiscoveredMode
 	var payload struct {
 		Object string `json:"object"`
 		Data []struct {
-			ID                   string   `json:"id"`
-			Kind                 string   `json:"kind"`
-			SupportedRatios      []string `json:"supported_ratios"`
-			SupportedResolutions []string `json:"supported_resolutions"`
-			SupportedDurations   []int    `json:"supported_durations"`
+			ID                   string            `json:"id"`
+			Kind                 string            `json:"kind"`
+			SupportedRatios      []string          `json:"supported_ratios"`
+			SupportedResolutions []string          `json:"supported_resolutions"`
+			SupportedDurations   []json.RawMessage `json:"supported_durations"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil || payload.Object != "list" || payload.Data == nil {
@@ -1096,10 +1097,29 @@ func fetchAdminChannelModels(channel model.ModelChannel) ([]model.DiscoveredMode
 				ratios = normalizeStringList(append(ratios, ratio), normalizePricingToken)
 			}
 		}
-		result = append(result, model.DiscoveredModel{ID: item.ID, Kind: strings.TrimSpace(item.Kind), Modality: modality, SupportedRatios: ratios, SupportedResolutions: resolutions, SupportedDurations: normalizeDurations(item.SupportedDurations)})
+		result = append(result, model.DiscoveredModel{ID: item.ID, Kind: strings.TrimSpace(item.Kind), Modality: modality, SupportedRatios: ratios, SupportedResolutions: resolutions, SupportedDurations: parseSupportedDurations(item.SupportedDurations)})
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
 	return result, nil
+}
+
+func parseSupportedDurations(values []json.RawMessage) []int {
+	durations := make([]int, 0, len(values))
+	for _, raw := range values {
+		var seconds int
+		if json.Unmarshal(raw, &seconds) == nil {
+			durations = append(durations, seconds)
+			continue
+		}
+		var text string
+		if json.Unmarshal(raw, &text) == nil {
+			seconds, err := strconv.Atoi(strings.TrimSuffix(strings.ToLower(strings.TrimSpace(text)), "s"))
+			if err == nil {
+				durations = append(durations, seconds)
+			}
+		}
+	}
+	return normalizeDurations(durations)
 }
 
 func testAdminChannelModel(channel model.ModelChannel, modelName string) (string, error) {

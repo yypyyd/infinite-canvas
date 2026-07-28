@@ -36,7 +36,7 @@ func TestFetchAdminChannelModelsParsesOpenAIModels(t *testing.T) {
 			t.Fatalf("unexpected query: %s", r.URL.RawQuery)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"z-model","kind":"text"},{"id":"a-model","kind":"video","supported_ratios":["16:9"],"supported_resolutions":["1280x720","1080p"],"supported_durations":[10,5,10]},{"id":""}]}`))
+		_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"z-model","kind":"text"},{"id":"a-model","kind":"video","supported_ratios":["16:9"],"supported_resolutions":["1280x720","1080p"],"supported_durations":["10s",5,"5s","invalid"]},{"id":""}]}`))
 	}))
 	defer server.Close()
 

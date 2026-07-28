@@ -112,6 +112,31 @@ func New() *gin.Engine {
 	v1.POST("/audio/speech", gin.WrapF(handler.AIAudioSpeech))
 	v1.POST("/videos", gin.WrapF(handler.AIVideos))
 	v1.POST("/media/references", gin.WrapF(handler.UploadReferenceMedia))
+	v1.POST("/agent/sessions", gin.WrapF(handler.CreateAgentSession))
+	v1.POST("/agent/sessions/:id/messages", func(c *gin.Context) {
+		handler.SubmitAgentMessage(c.Writer, c.Request, c.Param("id"))
+	})
+	v1.GET("/agent/runs/:id", func(c *gin.Context) {
+		handler.GetAgentRun(c.Writer, c.Request, c.Param("id"))
+	})
+	v1.GET("/agent/runs/:id/events", func(c *gin.Context) {
+		handler.AgentRunEvents(c.Writer, c.Request, c.Param("id"))
+	})
+	v1.POST("/agent/runs/:id/tool-results", func(c *gin.Context) {
+		handler.SubmitAgentToolResult(c.Writer, c.Request, c.Param("id"))
+	})
+	v1.GET("/agent/runs/:id/tool-results/:callId", func(c *gin.Context) {
+		handler.GetAgentToolResultReceipt(c.Writer, c.Request, c.Param("id"), c.Param("callId"))
+	})
+	v1.POST("/agent/runs/:id/tool-claims", func(c *gin.Context) {
+		handler.ClaimAgentToolExecution(c.Writer, c.Request, c.Param("id"))
+	})
+	v1.POST("/agent/runs/:id/confirmation", func(c *gin.Context) {
+		handler.ConfirmAgentTool(c.Writer, c.Request, c.Param("id"))
+	})
+	v1.POST("/agent/runs/:id/cancel", func(c *gin.Context) {
+		handler.CancelAgentRun(c.Writer, c.Request, c.Param("id"))
+	})
 	v1.GET("/videos/:id", func(c *gin.Context) {
 		handler.AIVideo(c.Writer, c.Request, c.Param("id"))
 	})

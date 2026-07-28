@@ -19,6 +19,8 @@ import { supportsImageQuality, supportsImageReferences, type ImageModelDefinitio
 import { videoReferenceCapabilities } from "@/lib/seedance-video";
 import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
+import { flushActiveWorkspaceChanges } from "@/components/layout/workspace-provider";
+import type { AgentToolName, AgentToolResult } from "@/services/api/agent";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { cropDataUrl, splitDataUrl, upscaleDataUrl } from "../utils/canvas-image-data";
@@ -52,6 +54,7 @@ import {
     CanvasNodeType,
     type CanvasAssistantImage,
     type CanvasAssistantSession,
+    type CanvasAssistantVideo,
     type CanvasConnection,
     type CanvasImageGenerationType,
     type CanvasNodeData,
@@ -571,6 +574,13 @@ function InfiniteCanvasPage() {
     useEffect(() => {
         if (!dialogNodeId) setNodeImageSettingsOpen(false);
     }, [dialogNodeId]);
+
+    useEffect(() => {
+        if (!projectLoaded) return;
+        if (chatSessions.some((session) => session.messages.some((item) => item.role === "assistant" && item.runId))) {
+            setAssistantMounted(true);
+        }
+    }, [chatSessions, projectLoaded]);
 
     useLayoutEffect(() => {
         nodesRef.current = nodes;
@@ -1991,6 +2001,18 @@ function InfiniteCanvasPage() {
         setActiveChatId(activeId);
     }, []);
 
+    const persistAssistantSessions = useCallback(async (sessions: CanvasAssistantSession[], activeId: string | null) => {
+        setChatSessions(sessions);
+        setActiveChatId(activeId);
+        updateProject(projectId, {
+            nodes: nodesRef.current,
+            connections: connectionsRef.current,
+            chatSessions: sessions,
+            activeChatId: activeId,
+        });
+        await flushActiveWorkspaceChanges();
+    }, [projectId, updateProject]);
+
     const startTitleEditing = useCallback(() => {
         setTitleDraft(currentProject?.title || "未命名画布");
         setTitleEditing(true);
@@ -2547,19 +2569,190 @@ function InfiniteCanvasPage() {
         [screenToCanvas, size.height, size.width],
     );
 
-    const insertAssistantText = useCallback(
-        (text: string) => {
+    const insertAssistantImages = useCallback(
+        async (images: CanvasAssistantImage[]) => {
+            const stored = await Promise.all(
+                images.map(async (image) => {
+                    const storedImage = image.storageKey ? { url: image.dataUrl, storageKey: image.storageKey, width: 1, height: 1, bytes: 0, mimeType: "image/png" } : await uploadImage(image.dataUrl);
+                    const meta = storedImage.width === 1 && storedImage.height === 1 ? await readImageMeta(storedImage.url) : storedImage;
+                    return { image, storedImage, meta, size: fitNodeSize(meta.width, meta.height) };
+                }),
+            );
             const center = screenToCanvas((containerRef.current?.getBoundingClientRect().left || 0) + size.width / 2, (containerRef.current?.getBoundingClientRect().top || 0) + size.height / 2);
+            const gap = 32;
+            const totalWidth = stored.reduce((sum, item) => sum + item.size.width, 0) + Math.max(0, stored.length - 1) * gap;
+            let x = center.x - totalWidth / 2;
+            const created = stored.map(({ image, storedImage, meta, size: nodeSize }) => {
+                const id = nanoid();
+                const node: CanvasNodeData = {
+                    id,
+                    type: CanvasNodeType.Image,
+                    title: image.prompt.slice(0, 32) || "Generated Image",
+                    position: { x, y: center.y - nodeSize.height / 2 },
+                    width: nodeSize.width,
+                    height: nodeSize.height,
+                    metadata: { ...imageMetadata({ ...storedImage, width: meta.width, height: meta.height }), prompt: image.prompt, agentRunId: image.agentRunId, agentToolCallId: image.agentToolCallId },
+                };
+                x += nodeSize.width + gap;
+                return node;
+            });
+            const nextNodes = [...nodesRef.current, ...created];
+            nodesRef.current = nextNodes;
+            setNodes(nextNodes);
+            setSelectedNodeIds(new Set(created.map((node) => node.id)));
+            setSelectedConnectionId(null);
+            if (created[0]) setDialogNodeId(created[0].id);
+            return created.map((node, index) => ({ nodeId: node.id, storageKey: stored[index].storedImage.storageKey }));
+        },
+        [screenToCanvas, size.height, size.width],
+    );
+
+    const insertAssistantVideo = useCallback(
+        async (video: UploadedFile & CanvasAssistantVideo) => {
+            if (!video.storageKey) throw new Error("视频尚未保存到工作区");
+            const center = screenToCanvas((containerRef.current?.getBoundingClientRect().left || 0) + size.width / 2, (containerRef.current?.getBoundingClientRect().top || 0) + size.height / 2);
+            const selected = nodesRef.current.filter((node) => selectedNodeIds.has(node.id));
+            const nodeSize = fitNodeSize(video.width || 1280, video.height || 720, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
+            const position = selected.length
+                ? { x: Math.max(...selected.map((node) => node.position.x + node.width)) + 40, y: Math.min(...selected.map((node) => node.position.y)) }
+                : { x: center.x - nodeSize.width / 2, y: center.y - nodeSize.height / 2 };
+            const node: CanvasNodeData = {
+                id: nanoid(),
+                type: CanvasNodeType.Video,
+                title: video.prompt.slice(0, 32) || "Generated Video",
+                position,
+                width: nodeSize.width,
+                height: nodeSize.height,
+                metadata: { ...videoMetadata(video), prompt: video.prompt, agentRunId: video.agentRunId, agentToolCallId: video.agentToolCallId },
+            };
+            const nextNodes = [...nodesRef.current, node];
+            nodesRef.current = nextNodes;
+            setNodes(nextNodes);
+            setSelectedNodeIds(new Set([node.id]));
+            setSelectedConnectionId(null);
+            setDialogNodeId(node.id);
+            return { nodeId: node.id, storageKey: video.storageKey };
+        },
+        [screenToCanvas, selectedNodeIds, size.height, size.width],
+    );
+
+    const arrangeAssistantNodes = useCallback((nodeIds: string[], mode: "horizontal" | "vertical" | "grid", gap: number) => {
+        const requested = new Set(nodeIds);
+        const targets = nodeIds.map((id) => nodesRef.current.find((node) => node.id === id));
+        if (targets.some((node) => !node)) throw new Error("待排列节点已不存在");
+        if (targets.some((node) => node?.metadata?.isBatchRoot || node?.metadata?.batchRootId)) throw new Error("批次节点暂不支持自动排列");
+        if (nodeIds.some((id) => !selectedNodeIds.has(id))) throw new Error("只能排列当前仍选中的节点");
+
+        const resolved = targets as CanvasNodeData[];
+        const originX = Math.min(...resolved.map((node) => node.position.x));
+        const originY = Math.min(...resolved.map((node) => node.position.y));
+        const columns = mode === "grid" ? Math.ceil(Math.sqrt(resolved.length)) : resolved.length;
+        const columnWidths = Array.from({ length: columns }, (_, column) => Math.max(...resolved.filter((_, index) => index % columns === column).map((node) => node.width)));
+        const rows = Math.ceil(resolved.length / columns);
+        const rowHeights = Array.from({ length: rows }, (_, row) => Math.max(...resolved.slice(row * columns, (row + 1) * columns).map((node) => node.height)));
+        const positions = resolved.map((node, index) => {
+            if (mode === "horizontal") return { nodeId: node.id, x: originX + resolved.slice(0, index).reduce((sum, item) => sum + item.width + gap, 0), y: originY };
+            if (mode === "vertical") return { nodeId: node.id, x: originX, y: originY + resolved.slice(0, index).reduce((sum, item) => sum + item.height + gap, 0) };
+            const column = index % columns;
+            const row = Math.floor(index / columns);
+            return {
+                nodeId: node.id,
+                x: originX + columnWidths.slice(0, column).reduce((sum, width) => sum + width + gap, 0),
+                y: originY + rowHeights.slice(0, row).reduce((sum, height) => sum + height + gap, 0),
+            };
+        });
+        const positionById = new Map(positions.map((position) => [position.nodeId, position]));
+        const nextNodes = nodesRef.current.map((node) => requested.has(node.id) ? { ...node, position: { x: positionById.get(node.id)!.x, y: positionById.get(node.id)!.y } } : node);
+        nodesRef.current = nextNodes;
+        setNodes(nextNodes);
+        setSelectedNodeIds(new Set(nodeIds));
+        setSelectedConnectionId(null);
+        return positions;
+    }, [selectedNodeIds]);
+
+    const restoreAssistantToolResult = useCallback((runId: string, callId: string) => useCanvasStore.getState().openProject(projectId)?.agentToolReceipts?.[`${runId}:${callId}`]?.result, [projectId]);
+
+    const persistAssistantToolResult = useCallback(async (runId: string, callId: string, name: AgentToolName, result: AgentToolResult) => {
+        const key = `${runId}:${callId}`;
+        const project = useCanvasStore.getState().openProject(projectId);
+        if (!project) throw new Error("当前画布项目不存在");
+        const saved = project.agentToolReceipts?.[key];
+        if (saved) return saved.result;
+        updateProject(projectId, {
+            nodes: nodesRef.current,
+            connections: connectionsRef.current,
+            agentToolReceipts: { ...project.agentToolReceipts, [key]: { name, result, appliedAt: new Date().toISOString() } },
+        });
+        await flushActiveWorkspaceChanges();
+        return result;
+    }, [projectId, updateProject]);
+
+    const applyDestructiveAssistantTool = useCallback(async (runId: string, callId: string, name: "canvas.delete" | "canvas.update_text", argumentsValue: { nodeIds: string[] } | { nodeId: string; text: string }): Promise<AgentToolResult> => {
+        const key = `${runId}:${callId}`;
+        const saved = useCanvasStore.getState().openProject(projectId)?.agentToolReceipts?.[key];
+        if (saved) return saved.result;
+
+        let result: AgentToolResult;
+        let nextNodes = nodesRef.current;
+        let nextConnections = connectionsRef.current;
+        if (name === "canvas.delete" && "nodeIds" in argumentsValue) {
+            const targets = argumentsValue.nodeIds.map((id) => nodesRef.current.find((node) => node.id === id));
+            if (targets.some((node) => !node)) throw new Error("待删除节点已不存在");
+            if (targets.some((node) => node?.metadata?.isBatchRoot || node?.metadata?.batchRootId)) throw new Error("批次节点暂不支持助手删除");
+            if (argumentsValue.nodeIds.some((id) => !selectedNodeIdsRef.current.has(id))) throw new Error("只能删除当前仍选中的节点");
+            const deleted = new Set(argumentsValue.nodeIds);
+            nextNodes = nodesRef.current.filter((node) => !deleted.has(node.id));
+            nextConnections = connectionsRef.current.filter((connection) => !deleted.has(connection.fromNodeId) && !deleted.has(connection.toNodeId));
+            result = { callId, status: "success", nodeIds: argumentsValue.nodeIds };
+            setSelectedNodeIds(new Set());
+        } else if (name === "canvas.update_text" && "nodeId" in argumentsValue) {
+            const node = nodesRef.current.find((item) => item.id === argumentsValue.nodeId);
+            if (!node) throw new Error("待修改节点已不存在");
+            if (!selectedNodeIdsRef.current.has(argumentsValue.nodeId)) throw new Error("只能修改当前仍选中的节点");
+            if (node.type !== CanvasNodeType.Text) throw new Error("只能修改文本节点");
+            if (node.metadata?.isBatchRoot || node.metadata?.batchRootId) throw new Error("批次节点暂不支持助手修改");
+            nextNodes = nodesRef.current.map((item) => item.id === argumentsValue.nodeId ? { ...item, title: argumentsValue.text.slice(0, 32) || "文本", metadata: { ...item.metadata, content: argumentsValue.text } } : item);
+            result = { callId, status: "success", nodeId: argumentsValue.nodeId, text: argumentsValue.text };
+        } else {
+            throw new Error("破坏性工具参数无效");
+        }
+
+        const project = useCanvasStore.getState().openProject(projectId);
+        if (!project) throw new Error("当前画布项目不存在");
+        nodesRef.current = nextNodes;
+        connectionsRef.current = nextConnections;
+        setNodes(nextNodes);
+        setConnections(nextConnections);
+        updateProject(projectId, {
+            nodes: nextNodes,
+            connections: nextConnections,
+            agentToolReceipts: { ...project.agentToolReceipts, [key]: { name, result, appliedAt: new Date().toISOString() } },
+        });
+        await flushActiveWorkspaceChanges();
+        return result;
+    }, [projectId, updateProject]);
+
+    const insertAssistantText = useCallback(
+        (text: string, placement: "center" | "right_of_selection" = "center", agentMeta?: { runId: string; callId: string }) => {
+            const center = screenToCanvas((containerRef.current?.getBoundingClientRect().left || 0) + size.width / 2, (containerRef.current?.getBoundingClientRect().top || 0) + size.height / 2);
+            const selected = nodesRef.current.filter((node) => selectedNodeIds.has(node.id));
+            const textSpec = getNodeSpec(CanvasNodeType.Text);
+            const position = placement === "right_of_selection" && selected.length
+                ? { x: Math.max(...selected.map((node) => node.position.x + node.width)) + 40 + textSpec.width / 2, y: Math.min(...selected.map((node) => node.position.y)) + textSpec.height / 2 }
+                : center;
             const node = {
-                ...createCanvasNode(CanvasNodeType.Text, center, { content: text, status: NODE_STATUS_SUCCESS }),
+                ...createCanvasNode(CanvasNodeType.Text, position, { content: text, status: NODE_STATUS_SUCCESS, agentRunId: agentMeta?.runId, agentToolCallId: agentMeta?.callId }),
                 title: text.slice(0, 32) || "Assistant Text",
             };
 
-            setNodes((prev) => [...prev, node]);
+            const nextNodes = [...nodesRef.current, node];
+            nodesRef.current = nextNodes;
+            setNodes(nextNodes);
             setSelectedNodeIds(new Set([node.id]));
             setSelectedConnectionId(null);
+            return node.id;
         },
-        [screenToCanvas, size.height, size.width],
+        [screenToCanvas, selectedNodeIds, size.height, size.width],
     );
 
     const handleAssetInsert = useCallback(
@@ -2920,17 +3113,26 @@ function InfiniteCanvasPage() {
             </section>
             {assistantMounted ? (
                 <CanvasAssistantPanel
+                    projectId={projectId}
                     nodes={nodes}
                     selectedNodeIds={selectedNodeIds}
                     sessions={chatSessions}
                     activeSessionId={activeChatId}
                     onSelectNodeIds={setSelectedNodeIds}
                     onSessionsChange={handleAssistantSessionsChange}
+                    onPersistSessions={persistAssistantSessions}
                     onInsertImage={insertAssistantImage}
+                    onInsertImages={insertAssistantImages}
+                    onInsertVideo={insertAssistantVideo}
+                    onArrangeNodes={arrangeAssistantNodes}
                     onInsertText={insertAssistantText}
+                    onPersistToolResult={persistAssistantToolResult}
+                    onApplyDestructiveTool={applyDestructiveAssistantTool}
+                    onRestoreToolResult={restoreAssistantToolResult}
                     onPasteImage={pasteAssistantImage}
+                    collapsed={assistantCollapsed}
                     onCollapseStart={() => setAssistantCollapsed(true)}
-                    onCollapse={() => setAssistantMounted(false)}
+                    onCollapse={() => undefined}
                 />
             ) : null}
         </main>

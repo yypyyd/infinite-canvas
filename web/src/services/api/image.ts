@@ -20,7 +20,7 @@ type ImageApiResponse = {
     code?: number;
     msg?: string;
 };
-type RequestOptions = { signal?: AbortSignal };
+type RequestOptions = { signal?: AbortSignal; idempotencyKey?: string };
 
 const QUALITY_BASE: Record<string, number> = {
     low: 1024,
@@ -163,9 +163,9 @@ function aiApiUrl(_config: AiConfig, path: string) {
     return `/api/v1${path}`;
 }
 
-function aiHeaders(_config: AiConfig, contentType?: string) {
+function aiHeaders(_config: AiConfig, contentType?: string, idempotencyKey?: string) {
     const token = useUserStore.getState().token;
-    return { ...authorizationHeaders(token), ...organizationHeaders(), "Idempotency-Key": crypto.randomUUID(), ...(contentType ? { "Content-Type": contentType } : {}) };
+    return { ...authorizationHeaders(token), ...organizationHeaders(), "Idempotency-Key": idempotencyKey || crypto.randomUUID(), ...(contentType ? { "Content-Type": contentType } : {}) };
 }
 
 function refreshRemoteUser(_config: AiConfig) {
@@ -194,7 +194,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
                 output_format: IMAGE_OUTPUT_FORMAT,
             },
             {
-                headers: aiHeaders(config, "application/json"),
+                headers: aiHeaders(config, "application/json", options?.idempotencyKey),
                 signal: options?.signal,
             },
         );
@@ -228,7 +228,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     if (mask) formData.set("mask", dataUrlToFile(mask));
 
     try {
-        const response = await axios.post<ImageApiResponse>(aiApiUrl(config, "/images/edits"), formData, { headers: aiHeaders(config), signal: options?.signal });
+        const response = await axios.post<ImageApiResponse>(aiApiUrl(config, "/images/edits"), formData, { headers: aiHeaders(config, undefined, options?.idempotencyKey), signal: options?.signal });
         const images = parseImagePayload(response.data);
         refreshRemoteUser(config);
         return images;

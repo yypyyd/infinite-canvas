@@ -40,6 +40,11 @@ description: 当前后端主要数据表与字段说明
 - `credit_logs`
 - `check_ins`
 - `generation_tasks`
+- `agent_sessions`
+- `agent_messages`
+- `agent_runs`
+- `agent_steps`
+- `agent_events`
 - `user_projects`
 - `user_assets`
 - `user_generation_records`
@@ -55,6 +60,10 @@ description: 当前后端主要数据表与字段说明
 - `settings`
 
 后续新增表时再同步补充本文档，未实际使用的规划表不提前写入。
+
+### agent_sessions / agent_messages / agent_runs / agent_steps / agent_events
+
+画布 Agent 的持久执行骨架。`agent_sessions` 按企业、用户和画布项目保存会话；`agent_messages` 保存有序消息；`agent_runs` 保存对应用户消息编号、`running`、`waiting_confirmation`、`waiting_tool` 与完成、失败、取消状态，并在隐藏 `context` 中固化本轮授权选区；`agent_steps` 保存 completion/tool 输入输出、工具调用编号、确认决定，以及模型步骤和画布工具的执行租约；`agent_events` 保存可恢复 SSE 事件。所有访问同时校验 `organization_id + user_id`。客户端会预分配会话与运行编号并先随画布保存，服务端对同编号同请求进行幂等重放、对冲突请求明确拒绝；Completion Step 由数据库原子认领，Tool Step 使用 90 秒租约并由执行页面每 30 秒续租，避免多实例或多标签页重复规划、生成、扣费和修改画布，执行页面失联后仍可接管。当前开放图片/视频生成、节点排列、文本插入、节点删除和文本覆盖；删除与覆盖只有持久化批准后才转入 `waiting_tool`，拒绝则记录未执行 observation。媒体结果只保存节点编号和私有 `storageKey`，不保存二进制或签名 URL。`waiting_tool` 超过 15 分钟会定时或惰性回收，`waiting_confirmation` 则保持等待用户明确决定。
 
 ### organizations / organization_members
 
@@ -377,7 +386,7 @@ description: 当前后端主要数据表与字段说明
 | `created_at` | string | 创建时间 |
 | `updated_at` | string | 最近保存时间 |
 
-工作区变更接口必须提交读取时的 `version`。后端使用 `organization_id + id + version` 条件更新并检查影响行数；其他成员已经写入新版本时拒绝覆盖。当前页面保存期间产生的后续修改会在前端自动前移 expected version，断网修改只保留在页面内存并阻止切换企业或退出登录。
+工作区变更接口必须提交读取时的 `version`。后端使用 `organization_id + id + version` 条件更新并检查影响行数；其他成员已经写入新版本时拒绝覆盖。当前页面保存期间产生的后续修改会在前端自动前移 expected version，断网修改只保留在页面内存并阻止切换企业或退出登录。画布助手会在该 JSON 中保存助手消息的未完成 `runId`、最后 SSE 事件序号，以及 `${runId}:${callId}` 工具执行回执；图片/视频插入、节点排列、文本插入、节点删除和文本覆盖的画布副作用均与回执同次写入并在 Tool Result 回传前强制同步，用于刷新后只补交结果而不重复执行。该增强未新增数据库表或列。
 
 ### user_assets
 

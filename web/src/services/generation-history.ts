@@ -1,7 +1,7 @@
 "use client";
 
-import { deleteStoredMedia, resolveMediaUrl } from "@/services/file-storage";
-import { deleteStoredImages, resolveImageUrl } from "@/services/image-storage";
+import { resolveMediaUrl } from "@/services/file-storage";
+import { resolveImageUrl } from "@/services/image-storage";
 import type { WorkspaceRecord } from "@/services/api/workspace";
 import { stageWorkspaceDelete, stageWorkspaceRecord, type PendingWorkspaceChange } from "@/services/workspace-changes";
 
@@ -81,7 +81,7 @@ export async function countGenerationHistory(ownerId: string) {
 }
 
 export async function deleteGenerationHistory(item: GenerationHistoryItem) {
-    await Promise.all([deleteStoredGenerationRecord(item.ownerId, item.kind, item.id), item.kind === "image" ? deleteStoredImages(item.storageKeys) : deleteStoredMedia(item.storageKeys)]);
+    await deleteStoredGenerationRecord(item.ownerId, item.kind, item.id);
 }
 
 export async function saveGenerationRecord(ownerId: string, kind: GenerationKind, log: RawGenerationLog) {

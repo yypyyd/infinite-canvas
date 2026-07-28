@@ -18,7 +18,6 @@ import { requestVideoGeneration, storeGeneratedVideo } from "@/services/api/vide
 import { claimAgentToolExecution, confirmAgentTool, createAgentSession, getAgentRun, getAgentToolResultReceipt, streamAgentRun, submitAgentMessage, submitAgentToolResult, type AgentEvent, type AgentToolResult } from "@/services/api/agent";
 import type { UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl, uploadImage } from "@/services/image-storage";
-import { useAssetStore } from "@/stores/use-asset-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { imageReferenceLabel } from "@/lib/image-reference-prompt";
 import { supportsImageQuality, supportsImageReferences } from "@/lib/image-model-capabilities";
@@ -84,7 +83,6 @@ export function CanvasAssistantPanel({
     const groupRatios = useConfigStore((state) => state.publicSettings?.modelChannel.groupRatios);
     const managedModels = useConfigStore((state) => state.publicSettings?.modelChannel.models);
     const userGroup = useUserStore((state) => state.user?.group || "default");
-    const cleanupImages = useAssetStore((state) => state.cleanupImages);
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
@@ -223,7 +221,6 @@ export function CanvasAssistantPanel({
             setLocalSessions(next);
             setLocalActiveSessionId(localActiveSessionId && ids.includes(localActiveSessionId) ? next[0].id : localActiveSessionId);
         }
-        cleanupImages({ sessions: next });
         setCheckedChatIds((prev) => prev.filter((id) => !ids.includes(id)));
     };
 
@@ -232,7 +229,6 @@ export function CanvasAssistantPanel({
         setLocalSessions([session]);
         setLocalActiveSessionId(session.id);
         setCheckedChatIds([]);
-        cleanupImages({ sessions: [session] });
     };
 
     const followAgentRun = useCallback(

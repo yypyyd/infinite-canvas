@@ -42,10 +42,17 @@ export function readFileAsDataUrl(file: File) {
 export function readImageMeta(dataUrl: string) {
     return new Promise<{ width: number; height: number; mimeType: string }>((resolve) => {
         const image = new Image();
-        const done = () => resolve({ width: image.naturalWidth || 1024, height: image.naturalHeight || 1024, mimeType: dataUrl.match(/^data:([^;]+)/)?.[1] || "image/png" });
+        const timer = window.setTimeout(done, 3000);
+        function done() {
+            window.clearTimeout(timer);
+            const result = { width: image.naturalWidth || 1024, height: image.naturalHeight || 1024, mimeType: dataUrl.match(/^data:([^;]+)/)?.[1] || "image/png" };
+            image.onload = null;
+            image.onerror = null;
+            image.src = "";
+            resolve(result);
+        }
         image.onload = done;
         image.onerror = done;
-        setTimeout(done, 3000);
         image.src = dataUrl;
     });
 }

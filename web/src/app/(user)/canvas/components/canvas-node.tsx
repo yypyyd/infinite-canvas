@@ -17,7 +17,7 @@ type CanvasMenuEvent = Pick<React.MouseEvent, "clientX" | "clientY" | "preventDe
 
 type CanvasNodeProps = {
     data: CanvasNodeData;
-    scale: number;
+    getScale: () => number;
     isSelected: boolean;
     isRelated: boolean;
     isFocusRelated: boolean;
@@ -72,7 +72,7 @@ type NodeContentRendererProps = {
 
 export const CanvasNode = React.memo(function CanvasNode({
     data,
-    scale,
+    getScale,
     isSelected,
     isRelated,
     isFocusRelated,
@@ -207,6 +207,7 @@ export const CanvasNode = React.memo(function CanvasNode({
         (event: MouseEvent) => {
             if (!resizeRef.current.isResizing) return;
 
+            const scale = getScale();
             const dx = (event.clientX - resizeRef.current.startX) / scale;
             const dy = (event.clientY - resizeRef.current.startY) / scale;
             const minWidth = 220;
@@ -241,7 +242,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                 y: fromTop ? startBottom - height : resizeRef.current.startTop,
             });
         },
-        [data.id, onResize, scale],
+        [data.id, getScale, onResize],
     );
 
     const handleResizeUp = useCallback(() => {

@@ -113,6 +113,35 @@ func TestNormalizeSettingsAddsNewChannelModelsToExistingCatalog(t *testing.T) {
 	assertHasPricingRule(t, settings.Public.ModelChannel.PricingRules, "gpt-image-2", "image", "generation", "image", "")
 }
 
+func TestNormalizeSettingsMergesEnabledChannelCapabilitiesIntoCatalog(t *testing.T) {
+	settings := normalizeSettings(model.Settings{
+		Public: model.PublicSetting{ModelChannel: model.PublicModelChannelSetting{Models: []model.ModelDefinition{{
+			ID: "firefly-ray", Name: "Firefly Ray", Modality: "video", Enabled: true, Sort: 7,
+			AspectRatios: []string{"4:3"}, ResolutionTiers: []string{"480p"}, Durations: []int{4}, Remark: "public model",
+		}}}},
+		Private: model.PrivateSetting{Channels: []model.ModelChannel{
+			{Enabled: true, Models: []model.ChannelModel{{Model: "firefly-ray", Modality: "video", AspectRatios: []string{"16:9", "21:9"}, ResolutionTiers: []string{"720p"}, Durations: []int{5}}}},
+			{Enabled: true, Models: []model.ChannelModel{{Model: "firefly-ray", Modality: "video", AspectRatios: []string{"9:16", "16:9"}, ResolutionTiers: []string{"1080p"}, Durations: []int{10, 5}}}},
+			{Enabled: true, Models: []model.ChannelModel{{Model: "firefly-ray", Modality: "image", Operations: []string{"edit"}, AspectRatios: []string{"3:2"}, ResolutionTiers: []string{"2k"}}}},
+			{Enabled: false, Models: []model.ChannelModel{{Model: "firefly-ray", Modality: "video", AspectRatios: []string{"1:1"}, ResolutionTiers: []string{"480p"}, Durations: []int{20}}}},
+		}},
+	})
+
+	got := settings.Public.ModelChannel.Models[0]
+	if got.Name != "Firefly Ray" || got.Modality != "video" || !reflect.DeepEqual(got.Operations, []string{"generation"}) || got.Sort != 7 || got.Remark != "public model" || !got.Enabled {
+		t.Fatalf("model metadata changed: %#v", got)
+	}
+	if want := []string{"16:9", "21:9", "9:16"}; !reflect.DeepEqual(got.AspectRatios, want) {
+		t.Fatalf("aspect ratios = %#v, want %#v", got.AspectRatios, want)
+	}
+	if want := []string{"720p", "1080p"}; !reflect.DeepEqual(got.ResolutionTiers, want) {
+		t.Fatalf("resolution tiers = %#v, want %#v", got.ResolutionTiers, want)
+	}
+	if want := []int{5, 10}; !reflect.DeepEqual(got.Durations, want) {
+		t.Fatalf("durations = %#v, want %#v", got.Durations, want)
+	}
+}
+
 func TestNormalizeSettingsAppendsDefaultPricingRulesForEnabledModels(t *testing.T) {
 	settings := normalizeSettings(model.Settings{
 		Public: model.PublicSetting{

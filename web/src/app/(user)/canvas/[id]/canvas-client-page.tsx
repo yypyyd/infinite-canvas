@@ -1126,9 +1126,8 @@ function InfiniteCanvasPage() {
 
     const deleteCurrentProject = useCallback(() => {
         deleteProjects([projectId]);
-        cleanupAssetImages();
         router.push("/canvas");
-    }, [cleanupAssetImages, deleteProjects, projectId, router]);
+    }, [deleteProjects, projectId, router]);
 
     const handleCanvasMouseDown = useCallback(
         (event: ReactPointerEvent<HTMLDivElement>) => {

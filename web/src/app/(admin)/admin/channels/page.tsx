@@ -389,7 +389,7 @@ export default function AdminChannelsPage() {
                             </Button>
                         </Space.Compact>
                     </Flex>
-                    <Typography.Text type="secondary">如果上游不提供 OpenAI /models 模型列表接口，请在这里手动增加模型名称。</Typography.Text>
+                    <Typography.Text type="secondary">系统通过 OpenAI /models?extended=true 拉取模型及能力；上游不支持时，请在这里手动增加并配置模型。</Typography.Text>
                     <Tabs
                         activeKey={modelSelectTab}
                         onChange={(key) => setModelSelectTab(key as ModelSelectTabKey)}

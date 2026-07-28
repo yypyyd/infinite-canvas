@@ -1051,7 +1051,7 @@ func resolveAdminChannel(index *int, channel model.ModelChannel) (model.ModelCha
 }
 
 func fetchAdminChannelModels(channel model.ModelChannel) ([]model.DiscoveredModel, error) {
-	request, err := http.NewRequest(http.MethodGet, BuildModelChannelURL(channel, "/models"), nil)
+	request, err := http.NewRequest(http.MethodGet, BuildModelChannelURL(channel, "/models?extended=true"), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1076,7 +1076,7 @@ func fetchAdminChannelModels(channel model.ModelChannel) ([]model.DiscoveredMode
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil || payload.Object != "list" || payload.Data == nil {
-		return nil, safeMessageError{message: "读取模型失败：上游返回的不是 OpenAI 兼容 /models 格式"}
+		return nil, safeMessageError{message: "读取模型失败：上游返回的不是 OpenAI 兼容 /models?extended=true 格式"}
 	}
 	result := make([]model.DiscoveredModel, 0, len(payload.Data))
 	for _, item := range payload.Data {
@@ -1116,10 +1116,10 @@ func testAdminChannelModel(channel model.ModelChannel, modelName string) (string
 	}
 	for _, item := range models {
 		if item.ID == targetModel {
-			return fmt.Sprintf("OpenAI /models 校验成功（%s）", item.Modality), nil
+			return fmt.Sprintf("OpenAI /models?extended=true 校验成功（%s）", item.Modality), nil
 		}
 	}
-	return "", safeMessageError{message: "测试失败：上游 /models 未返回该模型"}
+	return "", safeMessageError{message: "测试失败：上游 /models?extended=true 未返回该模型"}
 }
 
 func discoveredModelModality(kind string, modelName string) string {

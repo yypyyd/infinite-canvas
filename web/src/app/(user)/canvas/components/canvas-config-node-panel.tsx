@@ -10,7 +10,7 @@ import { CreditSymbol, requestCreditQuote } from "@/constant/credits";
 import { useUserStore } from "@/stores/use-user-store";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { supportsImageReferences } from "@/lib/image-model-capabilities";
-import { videoReferenceCapabilities } from "@/lib/seedance-video";
+import { videoReferenceCapabilities } from "@/lib/video-reference";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasImageSettingsPopover } from "./canvas-image-settings-popover";
 import { CanvasAudioSettingsPopover, type CanvasAudioSettingKey } from "./canvas-audio-settings-popover";

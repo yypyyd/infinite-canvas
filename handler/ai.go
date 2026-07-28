@@ -69,7 +69,8 @@ func AIVideoContent(w http.ResponseWriter, r *http.Request, id string) {
 func proxyAIGetRequest(w http.ResponseWriter, r *http.Request, path string) {
 	modelName := r.URL.Query().Get("model")
 	if strings.TrimSpace(modelName) == "" {
-		modelName = "grok-imagine-video"
+		FailError(w, errMissingModel)
+		return
 	}
 	selection, err := service.SelectModelChannel(service.PricingRequest{Model: modelName})
 	if err != nil {

@@ -72,7 +72,7 @@ description: settings 表中 public 和 private 配置结构说明
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `availableModels` | string[] | 系统可用模型，由模型中心中已启用的模型生成 |
-| `models` | object[] | 模型中心配置，包含模型名称、类型、支持操作、启用状态、排序、宽高比和分辨率档；已启用渠道的新模型会自动补入，图片默认 1K、视频默认 720P |
+| `models` | object[] | 模型中心配置，包含模型名称、类型、支持操作、启用状态、排序、宽高比、分辨率档和视频时长；渠道 `/models` 返回的能力可同步到这里 |
 | `pricingRules` | object[] | 模型算力点配置，后端模型接口调用前按模型预扣，上游失败时返还；新增模型会按模型能力自动生成默认规则 |
 | `groupRatios` | object | 用户分组倍率，例如 `default`、`vip`、`svip` |
 | `defaultModel` | string | 默认模型，从 `availableModels` 中选择；为空或失效时优先选择文本模型 |
@@ -89,12 +89,13 @@ description: settings 表中 public 和 private 配置结构说明
 | `operation` | string | 内部操作类型，由模型中心的 `operations` 自动展开；图片模型会按能力注册表区分生成与编辑，识别错误时可在模型信息中修正 |
 | `unit` | string | 内部计费单位，由模型类型自动生成：图片按张、视频按秒、文本和音频按请求 |
 | `resolutionTier` | string | 分辨率价格档，例如 `1k`、`2k`、`4k`、`720p`；为空时是默认价格 |
+| `durationSeconds` | number | 视频时长条件；大于 0 时只匹配该秒数，0 表示不限制时长 |
 | `billingMode` | string | 计费模式：`fixed` 固定单价，`ratio` 倍率计费 |
 | `credits` | number | 固定计费模式下的基础单价 |
 | `modelRatio` | number | 倍率计费模式下的模型倍率 |
 | `completionRatio` | number | 补全倍率，预留给后续 token usage 结算 |
 
-用户端统一请求同源后端 `/api/v1/*`，后端按模型名、操作和分辨率档匹配 `private.value.channels` 中的可用渠道。浏览器不保存上游 Base URL 或 API Key。
+用户端统一请求同源后端 `/api/v1/*`，后端按模型名、类型、操作、比例、分辨率档和视频时长匹配 `private.value.channels` 中的可用渠道。浏览器不保存上游 Base URL 或 API Key。
 
 `auth` 字段：
 
@@ -201,10 +202,13 @@ description: settings 表中 public 和 private 配置结构说明
 | --- | --- | --- |
 | `model` | string | 前端和计费规则使用的对外模型名 |
 | `upstreamModel` | string | 发往当前渠道的真实模型名；为空时使用 `model` |
+| `modality` | string | 模型类型：`image`、`video`、`text` 或 `audio` |
 | `operations` | string[] | 当前渠道支持的操作，例如 `generation`、`edit`、`completion`、`speech` |
+| `aspectRatios` | string[] | 图片或视频支持的宽高比；视频路由会据此筛选渠道 |
 | `resolutionTiers` | string[] | 当前渠道支持的分辨率档，例如图片的 `1k`、`2k`、`4k` 或视频的 `480p`、`720p`、`1080p`；文本、音频等无分辨率模型为空 |
+| `durations` | number[] | 视频支持的时长秒数；非视频模型为空 |
 
-后端调用模型时，会先按对外模型名、操作和分辨率档筛选已启用且密钥完整的渠道，再在能力相符的渠道中按 `weight` 加权随机选择。用户价格始终读取公开模型的 `pricingRules`，不会因随机命中不同上游渠道而变化；请求发送前会把 `model` 替换为所选渠道的 `upstreamModel`。
+后端调用模型时，会先按对外模型名、类型、操作和请求规格筛选已启用且密钥完整的渠道，再在能力相符的渠道中按 `weight` 加权随机选择。用户价格始终读取公开模型的 `pricingRules`，不会因随机命中不同上游渠道而变化；请求发送前会把 `model` 替换为所选渠道的 `upstreamModel`。
 
 `promptSync` 字段：
 

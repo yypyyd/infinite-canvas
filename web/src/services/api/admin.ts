@@ -308,8 +308,20 @@ export type AdminModelChannel = {
 export type AdminChannelModel = {
     model: string;
     upstreamModel: string;
+    modality: string;
     operations: string[];
+    aspectRatios: string[];
     resolutionTiers: string[];
+    durations: number[];
+};
+
+export type AdminDiscoveredModel = {
+    id: string;
+    kind: string;
+    modality: string;
+    supportedRatios: string[];
+    supportedResolutions: string[];
+    supportedDurations: number[];
 };
 
 export type AdminPublicModelChannelSettings = {
@@ -334,6 +346,7 @@ export type AdminManagedModel = {
     sort: number;
     aspectRatios: string[];
     resolutionTiers: string[];
+    durations: number[];
     remark: string;
 };
 
@@ -343,6 +356,7 @@ export type AdminPricingRule = {
     operation: string;
     unit: string;
     resolutionTier: string;
+    durationSeconds: number;
     billingMode: "fixed" | "ratio";
     credits: number;
     minCredits: number;
@@ -434,7 +448,7 @@ export type AdminChannelActionRequest = {
 };
 
 export async function fetchChannelModels(token: string, payload: AdminChannelActionRequest) {
-    return apiPost<string[]>("/api/admin/settings/channel-models", payload, token);
+    return apiPost<AdminDiscoveredModel[]>("/api/admin/settings/channel-models", payload, token);
 }
 
 export async function testChannelModel(token: string, payload: AdminChannelActionRequest) {

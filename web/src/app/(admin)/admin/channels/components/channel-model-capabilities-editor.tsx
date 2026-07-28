@@ -15,6 +15,8 @@ const operationOptions = [
 ];
 const imageResolutionOptions = ["1k", "2k", "4k"];
 const videoResolutionOptions = ["480p", "720p", "1080p"];
+const videoDurationOptions = [4, 5, 6, 8, 10, 12, 15, 16, 20];
+const videoRatioOptions = ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"];
 
 export function ChannelModelCapabilitiesEditor({ managedModels }: { managedModels: AdminManagedModel[] }) {
     const channelModels = (Form.useWatch("models") || []) as AdminChannelModel[];
@@ -22,7 +24,7 @@ export function ChannelModelCapabilitiesEditor({ managedModels }: { managedModel
 
     return (
         <Flex vertical gap={12}>
-            <Alert type="info" showIcon title="渠道只声明上游能力" description="模型售价和对外开放的分辨率仍在模型中心统一维护；这里配置当前渠道实际能处理的操作和分辨率，路由会先匹配能力再按渠道权重选择。" />
+            <Alert type="info" showIcon title="渠道只声明上游能力" description="模型售价和对外开放能力仍在模型中心统一维护；这里配置当前渠道实际能处理的类型、操作、比例、分辨率和时长，路由会先匹配能力再按渠道权重选择。" />
             <Form.List name="models">
                 {(fields, { remove }) =>
                     fields.length ? (
@@ -31,7 +33,7 @@ export function ChannelModelCapabilitiesEditor({ managedModels }: { managedModel
                                 const channelModel = channelModels[field.name];
                                 const modelName = channelModel?.model || "";
                                 const managedModel = managedModelMap.get(modelName);
-                                const modality = managedModel?.modality || inferModelModality(modelName);
+                                const modality = managedModel?.modality || channelModel?.modality || inferModelModality(modelName);
                                 const supportsResolution = modality === "image" || modality === "video";
                                 const allowedOperations = new Set(allowedModelOperations(modality));
                                 const modelOperationOptions = managedModel ? operationOptions.filter((item) => allowedOperations.has(item.value)) : operationOptions;
@@ -58,6 +60,9 @@ export function ChannelModelCapabilitiesEditor({ managedModels }: { managedModel
                                         <Form.Item name={[field.name, "model"]} hidden>
                                             <Input />
                                         </Form.Item>
+                                        <Form.Item name={[field.name, "modality"]} hidden>
+                                            <Input />
+                                        </Form.Item>
                                         <Row gutter={12}>
                                             <Col xs={24} md={12}>
                                                 <Form.Item name={[field.name, "upstreamModel"]} label="上游模型名" rules={[{ required: true, whitespace: true, message: "请输入上游模型名" }]} extra="请求发往该渠道时使用的真实模型名">
@@ -80,6 +85,20 @@ export function ChannelModelCapabilitiesEditor({ managedModels }: { managedModel
                                                         <Select mode="tags" tokenSeparators={[",", "\n"]} options={resolutionOptions} />
                                                     </Form.Item>
                                                 </Col>
+                                            ) : null}
+                                            {modality === "video" ? (
+                                                <>
+                                                    <Col xs={24} md={12}>
+                                                        <Form.Item name={[field.name, "aspectRatios"]} label="支持比例" rules={[{ required: true, message: "请选择至少一个视频比例" }]}>
+                                                            <Select mode="tags" tokenSeparators={[",", "\n"]} options={videoRatioOptions.map((value) => ({ label: value, value }))} />
+                                                        </Form.Item>
+                                                    </Col>
+                                                    <Col xs={24} md={12}>
+                                                        <Form.Item name={[field.name, "durations"]} label="支持时长" rules={[{ required: true, message: "请选择至少一个视频时长" }]} extra="单位为秒；路由只会把请求发送到支持该时长的渠道。">
+                                                            <Select mode="tags" tokenSeparators={[",", "\n"]} options={videoDurationOptions.map((value) => ({ label: `${value} 秒`, value }))} />
+                                                        </Form.Item>
+                                                    </Col>
+                                                </>
                                             ) : null}
                                         </Row>
                                     </Card>

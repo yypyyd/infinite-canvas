@@ -311,7 +311,7 @@ export default function AdminSettingsPage() {
                                     <Col span={24}>
                                         <Form.Item name={["public", "modelChannel", "models"]} style={{ marginBottom: 16 }}>
                                             <ModelCatalogEditor
-                                                candidateModels={uniqueModels([...channelModels, ...knownModels])}
+                                                candidateModels={uniqueModels([...channelModels.map((item) => item.model), ...knownModels])}
                                                 channelModels={channelModels}
                                                 pricingRules={pricingRules}
                                                 onPricingRulesChange={(items) => setPricingRulesValue(form, setPricingRules, items)}
@@ -508,6 +508,7 @@ function normalizeManagedModels(items: Partial<AdminManagedModel>[], availableMo
                   sort: index,
                   aspectRatios: aspectRatios[model] || inferModelAspectRatios(model),
                   resolutionTiers: defaultResolutionTiers(modality),
+                  durations: [],
                   remark: "",
               };
           });
@@ -528,6 +529,7 @@ function normalizeManagedModels(items: Partial<AdminManagedModel>[], availableMo
                 sort: Number(item.sort ?? index) || 0,
                 aspectRatios: supportsResolution ? Array.from(new Set((item.aspectRatios || []).map(normalizePricingToken).filter(Boolean))) : [],
                 resolutionTiers: supportsResolution ? Array.from(new Set((item.resolutionTiers || []).map(normalizeResolutionTier).filter(Boolean))) : [],
+                durations: modality === "video" ? normalizeDurations(item.durations) : [],
                 remark: item.remark || "",
             } as AdminManagedModel;
         })
@@ -577,6 +579,7 @@ function normalizePricingRules(items: Partial<AdminSettings["public"]["modelChan
             operation: normalizePricingToken(item.operation || "generation"),
             unit: normalizePricingToken(item.unit || (item.modality === "video" ? "second" : "image")),
             resolutionTier: normalizePricingToken(item.resolutionTier || ""),
+            durationSeconds: Math.max(0, Math.floor(Number(item.durationSeconds) || 0)),
             billingMode: item.billingMode === "ratio" ? "ratio" : "fixed",
             credits: Math.max(0, Number(item.credits) || 0),
             minCredits: Math.max(0, Number(item.minCredits) || 0),
@@ -645,8 +648,11 @@ function normalizeChannelModels(items: Partial<AdminChannelModel>[] = []): Admin
             {
                 model,
                 upstreamModel: item.upstreamModel?.trim() || model,
+                modality: normalizePricingToken(item.modality || inferModelModality(model)),
                 operations: Array.from(new Set((item.operations || []).map(normalizePricingToken).filter(Boolean))),
+                aspectRatios: Array.from(new Set((item.aspectRatios || []).map(normalizePricingToken).filter(Boolean))),
                 resolutionTiers: Array.from(new Set((item.resolutionTiers || []).map(normalizeResolutionTier).filter(Boolean))),
+                durations: normalizeDurations(item.durations),
             },
         ];
     });
@@ -699,7 +705,19 @@ function mergeChannelApiKeys(currentChannels: AdminModelChannel[], saved: AdminS
 }
 
 function collectChannelModels(channels: AdminModelChannel[]) {
-    return uniqueModels(channels.filter((channel) => channel.enabled).flatMap((channel) => channelModelNames(channel.models || [])));
+    const models = new Map<string, AdminChannelModel>();
+    for (const item of channels.filter((channel) => channel.enabled).flatMap((channel) => channel.models || [])) {
+        const current = models.get(item.model);
+        models.set(item.model, current ? {
+            ...current,
+            modality: current.modality || item.modality,
+            operations: Array.from(new Set([...current.operations, ...item.operations])),
+            aspectRatios: Array.from(new Set([...current.aspectRatios, ...item.aspectRatios])),
+            resolutionTiers: Array.from(new Set([...current.resolutionTiers, ...item.resolutionTiers])),
+            durations: normalizeDurations([...current.durations, ...item.durations]),
+        } : item);
+    }
+    return [...models.values()];
 }
 
 function collectKnownModels(settings: AdminSettings) {
@@ -745,10 +763,14 @@ async function collectSettings(form: any, editorMode: Record<SettingsTabKey, Edi
         }
         values.private = privateSetting;
     }
-    values.public.modelChannel.models = normalizeManagedModels(values.public.modelChannel.models || [], collectChannelModels(values.private.channels), values.public.modelChannel.modelAspectRatios);
+    values.public.modelChannel.models = normalizeManagedModels(values.public.modelChannel.models || [], collectChannelModels(values.private.channels).map((item) => item.model), values.public.modelChannel.modelAspectRatios);
     values.public.modelChannel.availableModels = enabledManagedModelIds(values.public.modelChannel.models);
     values.public.modelChannel.modelAspectRatios = modelAspectRatiosFromManagedModels(values.public.modelChannel.models, values.public.modelChannel.modelAspectRatios);
     return normalizeSettings(values);
+}
+
+function normalizeDurations(items: number[] = []) {
+    return Array.from(new Set(items.map((item) => Math.floor(Number(item))).filter((item) => item > 0))).sort((a, b) => a - b);
 }
 
 function getJsonError(value: string) {

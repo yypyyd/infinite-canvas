@@ -44,7 +44,7 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
         return requestSeedanceGeneration(config, model, prompt, references, videoReferences, audioReferences, options);
     }
     if (videoReferences.length || audioReferences.length) {
-        throw new Error("当前视频接口不支持参考视频或参考音频，请切换到 Seedance 2.0 / 火山 Agent Plan 模型，或移除参考素材");
+        throw new Error("OpenAI 兼容视频接口不支持参考视频或参考音频，请移除对应参考素材");
     }
     return requestOpenAIVideoGeneration(config, model, prompt, references, options);
 }

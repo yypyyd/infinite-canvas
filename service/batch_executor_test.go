@@ -104,30 +104,6 @@ func TestBuildStandardBatchEditUsesDocumentedImageArrayField(t *testing.T) {
 	}
 }
 
-func TestBuildStandardBatchEditUsesVividAIImageField(t *testing.T) {
-	image := append([]byte("\x89PNG\r\n\x1a\n"), bytes.Repeat([]byte{0}, 32)...)
-	client := &http.Client{Transport: batchWorkerRoundTripFunc(func(request *http.Request) (*http.Response, error) {
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(image)), Request: request}, nil
-	})}
-	selection := ModelChannelSelection{Channel: model.ModelChannel{BaseURL: "https://api.vividai.run"}, Model: model.ChannelModel{UpstreamModel: "image-model"}}
-	body, contentType, err := buildStandardBatchRequest(context.Background(), client, selection, "生成商品图", []string{"https://cdn.example.com/reference.png"}, standardBatchImageSize)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, params, err := mime.ParseMediaType(contentType)
-	if err != nil {
-		t.Fatal(err)
-	}
-	form, err := multipart.NewReader(bytes.NewReader(body), params["boundary"]).ReadForm(int64(len(body)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer form.RemoveAll()
-	if len(form.File["image"]) != 1 || len(form.File["image[]"]) != 0 {
-		t.Fatalf("unexpected VividAI multipart files: %#v", form.File)
-	}
-}
-
 func TestStandardBatchUpstreamClientDoesNotFollowBearerRedirect(t *testing.T) {
 	targetReached := make(chan struct{}, 1)
 	server := httptest.NewTLSServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {

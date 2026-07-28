@@ -461,7 +461,7 @@ export default function AdminChannelsPage() {
                 destroyOnHidden
             >
                 <Flex vertical gap={12}>
-                    <Typography.Text type="secondary">普通文本模型会发送一条 hi；Agent Plan / Seedance 视频模型只做配置格式检查，不会发起视频生成。</Typography.Text>
+                    <Typography.Text type="secondary">模型测试统一通过 OpenAI 兼容的 `/chat/completions` 发送一条 hi。</Typography.Text>
                     <Input.Search placeholder="搜索模型..." allowClear value={testKeyword} onChange={(event) => setTestKeyword(event.target.value)} />
                     <Table
                         rowKey="model"

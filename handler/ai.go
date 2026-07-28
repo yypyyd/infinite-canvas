@@ -67,15 +67,9 @@ func AIVideoContent(w http.ResponseWriter, r *http.Request, id string) {
 }
 
 func proxyAIGetRequest(w http.ResponseWriter, r *http.Request, path string) {
-	originalPath := path
 	modelName := r.URL.Query().Get("model")
 	if strings.TrimSpace(modelName) == "" {
 		modelName = "grok-imagine-video"
-	}
-	if isCachedVideoPath(originalPath) {
-		if serveCachedVideoGeneration(w, originalPath) {
-			return
-		}
 	}
 	selection, err := service.SelectModelChannel(service.PricingRequest{Model: modelName})
 	if err != nil {
@@ -84,23 +78,16 @@ func proxyAIGetRequest(w http.ResponseWriter, r *http.Request, path string) {
 		return
 	}
 	channel := selection.Channel
-	upstreamModel := selection.Model.UpstreamModel
-	path = resolveAIProxyPath(channel.BaseURL, upstreamModel, path)
 	request, err := http.NewRequest(http.MethodGet, service.BuildModelChannelURL(channel, path), nil)
 	if err != nil {
 		Fail(w, "AI 接口请求失败")
 		return
 	}
 	request.Header.Set("Authorization", "Bearer "+channel.APIKey)
-	if isVideoGenerationsAPI(channel.BaseURL, upstreamModel) && strings.HasSuffix(originalPath, "/content") {
-		copyVideoGenerationsContent(w, request)
-		return
-	}
-	copyAIResponse(w, request, nil, aiResponseAdapter(channel.BaseURL, upstreamModel, originalPath), nil)
+	copyAIResponse(w, request, nil, nil, nil)
 }
 
 func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
-	originalPath := path
 	body, contentType, requestMeta, err := readAIRequest(r)
 	if err != nil {
 		log.Printf("AI proxy request read failed: %v", err)
@@ -137,8 +124,6 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		Fail(w, "AI 接口请求失败")
 		return
 	}
-	path = resolveAIProxyPath(channel.BaseURL, upstreamModel, path)
-	body, contentType = adaptAIRequestBody(channel.BaseURL, upstreamModel, originalPath, body, contentType)
 	request, err := http.NewRequest(http.MethodPost, service.BuildModelChannelURL(channel, path), bytes.NewReader(body))
 	if err != nil {
 		log.Printf("AI proxy build request failed: url=%s err=%v", service.BuildModelChannelURL(channel, path), err)
@@ -180,14 +165,7 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		failed = true
 		finishTask("failed", message)
 	}
-	if isChatGPT2APIImageTaskChannel(channel.BaseURL, originalPath) {
-		copyChatGPT2APIImageTaskResponse(w, channel.BaseURL, channel.APIKey, body, onFailure)
-		if !failed {
-			finishTask("success", "")
-		}
-		return
-	}
-	copyAIResponse(w, request, onFailure, aiResponseAdapter(channel.BaseURL, upstreamModel, originalPath), aiRetryPolicyForRequest(channel.BaseURL, upstreamModel, originalPath))
+	copyAIResponse(w, request, onFailure, nil, nil)
 	if !failed {
 		finishTask("success", "")
 	}

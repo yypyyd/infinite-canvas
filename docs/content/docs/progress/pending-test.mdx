@@ -119,7 +119,7 @@ description: 当前版本已实现但仍需人工或自动化验证的变更项
 
 ### 模型与渠道管理
 
-- 验证 OpenAI 兼容视频闭环：渠道模型拉取应读取 `/models?extended=true` 的 `kind`、`supported_ratios`、`supported_resolutions`、`supported_durations`，同步到模型中心后用户端只展示对应比例、分辨率和时长；创建请求只发送 `model`、`prompt`、`seconds`、`size` 和最多一个 `input_reference`，任务查询与内容下载分别使用 `GET /videos/{id}`、`GET /videos/{id}/content`，不再出现 Seedance、VividAI、火山或 xAI 私有字段和路径。
+- 验证 OpenAI 兼容视频闭环：渠道模型拉取应读取 `/models?extended=true` 的 `kind`、`supported_ratios`、`supported_resolutions`、`supported_durations`，时长同时接受数字及 `4s`、`10s` 等字符串表示；同步到模型中心后用户端只展示对应比例、分辨率和时长；创建请求只发送 `model`、`prompt`、`seconds`、`size` 和最多一个 `input_reference`，任务查询与内容下载分别使用 `GET /videos/{id}`、`GET /videos/{id}/content`，不再出现 Seedance、VividAI、火山或 xAI 私有字段和路径。
 - 验证视频渠道选路与计费：同一对外模型配置多个渠道时，按类型、操作、比例、分辨率、时长筛选；模型中心按“分辨率 × 时长”维护每秒单价，特定时长规则优先于默认规则，预扣、成功结算、失败退款和前端费用预估一致。渠道测试只读取 `/models?extended=true`，不得创建生成任务或产生上游费用。
 - 验证渠道新增、编辑、模型拉取、手工补充、API Key 留空沿用旧值和模型测试；公开可用模型由已启用渠道合并，失效默认模型自动修复。
 - 验证逐模型的对外名称、上游名称、支持操作、比例、时长、分辨率和权重选路；两个同名渠道能力不同时，请求必须进入满足操作和规格要求的渠道。

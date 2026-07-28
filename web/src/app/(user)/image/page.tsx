@@ -84,7 +84,7 @@ export default function ImagePage() {
     const managedModels = useConfigStore((state) => state.publicSettings?.modelChannel.models);
     const modelAspectRatios = useConfigStore((state) => state.publicSettings?.modelChannel.modelAspectRatios);
     const userGroup = useUserStore((state) => state.user?.group || "default");
-	const historyOwnerId = useUserStore((state) => state.user ? workspaceOwnerId(state.user.id, state.user.organizationId) : "guest");
+    const historyOwnerId = useUserStore((state) => (state.user ? workspaceOwnerId(state.user.id, state.user.organizationId) : "guest"));
     const addAsset = useAssetStore((state) => state.addAsset);
     const [prompt, setPrompt] = useState("");
     const [references, setReferences] = useState<ReferenceImage[]>([]);
@@ -214,10 +214,12 @@ export default function ImagePage() {
                 }),
             );
             const storedImages = new Map(logImages.map((image) => [image.id, image]));
-            setResults((value) => value.map((result) => {
-                const stored = result.image ? storedImages.get(result.image.id) : undefined;
-                return stored ? { ...result, image: stored } : result;
-            }));
+            setResults((value) =>
+                value.map((result) => {
+                    const stored = result.image ? storedImages.get(result.image.id) : undefined;
+                    return stored ? { ...result, image: stored } : result;
+                }),
+            );
             saveLog(
                 buildLog({
                     ownerId: historyOwnerId,
@@ -427,48 +429,51 @@ export default function ImagePage() {
                                 <Input.TextArea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={7} placeholder="描述商品、目标人群、使用场景、核心卖点与投放平台" />
                             </div>
 
-                            {supportsReferences ? <div className="min-w-0">
-                                <div className="mb-2 flex items-center justify-between gap-3">
-                                    <span className="text-base font-semibold">参考图</span>
-                                    <div className="flex gap-2">
-                                        <Button size="small" icon={<ClipboardPaste className="size-3.5" />} onClick={() => void addReferencesFromClipboard()}>
-                                            剪切板
-                                        </Button>
-                                        <Button size="small" icon={<Upload className="size-3.5" />} onClick={() => fileInputRef.current?.click()}>
-                                            上传
-                                        </Button>
+                            {supportsReferences ? (
+                                <div className="min-w-0">
+                                    <div className="mb-2 flex items-center justify-between gap-3">
+                                        <span className="text-base font-semibold">参考图</span>
+                                        <div className="flex gap-2">
+                                            <Button size="small" icon={<ClipboardPaste className="size-3.5" />} onClick={() => void addReferencesFromClipboard()}>
+                                                剪切板
+                                            </Button>
+                                            <Button size="small" icon={<Upload className="size-3.5" />} onClick={() => fileInputRef.current?.click()}>
+                                                上传
+                                            </Button>
+                                        </div>
+                                    </div>
+                                    <div
+                                        className="hover-scrollbar hover-scrollbar-hint flex min-h-24 w-full min-w-0 max-w-full gap-2 overflow-x-scroll overflow-y-hidden rounded-lg border border-dashed border-stone-300 p-2 pb-3 overscroll-x-contain dark:border-stone-700"
+                                        onWheel={(event) => {
+                                            if (event.currentTarget.scrollWidth <= event.currentTarget.clientWidth) return;
+                                            event.preventDefault();
+                                            event.currentTarget.scrollLeft += event.deltaY;
+                                        }}
+                                    >
+                                        {references.map((item, index) => (
+                                            <div key={item.id} className="group relative size-20 shrink-0 overflow-hidden rounded-md border border-stone-200 dark:border-stone-800">
+                                                <img src={resolveImageVariantUrl(item.storageKey, item.dataUrl, "thumb")} alt={item.name} loading="lazy" decoding="async" className="size-full object-cover" />
+                                                <span className="absolute left-1 top-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">{imageReferenceLabel(index)}</span>
+                                                <ReferenceOrderButtons index={index} total={references.length} onMove={(offset) => setReferences((value) => moveListItem(value, index, offset))} />
+                                                <button
+                                                    type="button"
+                                                    className="absolute right-1 top-1 hidden size-6 items-center justify-center rounded bg-black/60 text-white group-hover:flex"
+                                                    onClick={() => setReferences((value) => value.filter((ref) => ref.id !== item.id))}
+                                                    aria-label="移除参考图"
+                                                >
+                                                    <Trash2 className="size-3.5" />
+                                                </button>
+                                            </div>
+                                        ))}
+                                        {!references.length ? <div className="flex min-w-full items-center justify-center text-sm text-stone-500">暂无参考图</div> : null}
                                     </div>
                                 </div>
-                                <div
-                                    className="hover-scrollbar hover-scrollbar-hint flex min-h-24 w-full min-w-0 max-w-full gap-2 overflow-x-scroll overflow-y-hidden rounded-lg border border-dashed border-stone-300 p-2 pb-3 overscroll-x-contain dark:border-stone-700"
-                                    onWheel={(event) => {
-                                        if (event.currentTarget.scrollWidth <= event.currentTarget.clientWidth) return;
-                                        event.preventDefault();
-                                        event.currentTarget.scrollLeft += event.deltaY;
-                                    }}
-                                >
-                                    {references.map((item, index) => (
-                                        <div key={item.id} className="group relative size-20 shrink-0 overflow-hidden rounded-md border border-stone-200 dark:border-stone-800">
-                                            <img src={resolveImageVariantUrl(item.storageKey, item.dataUrl, "thumb")} alt={item.name} loading="lazy" decoding="async" className="size-full object-cover" />
-                                            <span className="absolute left-1 top-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">{imageReferenceLabel(index)}</span>
-                                            <ReferenceOrderButtons index={index} total={references.length} onMove={(offset) => setReferences((value) => moveListItem(value, index, offset))} />
-                                            <button
-                                                type="button"
-                                                className="absolute right-1 top-1 hidden size-6 items-center justify-center rounded bg-black/60 text-white group-hover:flex"
-                                                onClick={() => setReferences((value) => value.filter((ref) => ref.id !== item.id))}
-                                                aria-label="移除参考图"
-                                            >
-                                                <Trash2 className="size-3.5" />
-                                            </button>
-                                        </div>
-                                    ))}
-                                    {!references.length ? <div className="flex min-w-full items-center justify-center text-sm text-stone-500">暂无参考图</div> : null}
-                                </div>
-                            </div> : null}
+                            ) : null}
 
                             <div className="flex items-center justify-between rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm dark:border-stone-800 dark:bg-stone-900 sm:hidden">
                                 <span className="truncate text-stone-500 dark:text-stone-400">
-                                    {model} · {effectiveConfig.size}{supportsQuality ? ` · ${effectiveConfig.quality}` : ""}
+                                    {model} · {effectiveConfig.size}
+                                    {supportsQuality ? ` · ${effectiveConfig.quality}` : ""}
                                 </span>
                                 <Button size="small" type="text" icon={<SlidersHorizontal className="size-4" />} onClick={() => setSettingsOpen(true)}>
                                     调整
@@ -476,7 +481,17 @@ export default function ImagePage() {
                             </div>
 
                             <div className="hidden gap-4 sm:grid sm:grid-cols-2">
-                                <GenerationSettings config={effectiveConfig} model={model} operation={imageOperation} pricingRules={pricingRules} supportedRatios={modelAspectRatios?.[model]} supportedResolutionTiers={modelDefinition?.resolutionTiers} showQuality={supportsQuality} updateConfig={updateConfig} openConfigDialog={openConfigDialog} />
+                                <GenerationSettings
+                                    config={effectiveConfig}
+                                    model={model}
+                                    operation={imageOperation}
+                                    pricingRules={pricingRules}
+                                    supportedRatios={modelAspectRatios?.[model]}
+                                    supportedResolutionTiers={modelDefinition?.resolutionTiers}
+                                    showQuality={supportsQuality}
+                                    updateConfig={updateConfig}
+                                    openConfigDialog={openConfigDialog}
+                                />
                             </div>
                         </div>
 
@@ -549,7 +564,17 @@ export default function ImagePage() {
             </Drawer>
             <Drawer title="参数" placement="bottom" size="82vh" open={settingsOpen} onClose={() => setSettingsOpen(false)}>
                 <div className="grid grid-cols-2 gap-3 pb-4">
-                    <GenerationSettings config={effectiveConfig} model={model} operation={imageOperation} pricingRules={pricingRules} supportedRatios={modelAspectRatios?.[model]} supportedResolutionTiers={modelDefinition?.resolutionTiers} showQuality={supportsQuality} updateConfig={updateConfig} openConfigDialog={openConfigDialog} />
+                    <GenerationSettings
+                        config={effectiveConfig}
+                        model={model}
+                        operation={imageOperation}
+                        pricingRules={pricingRules}
+                        supportedRatios={modelAspectRatios?.[model]}
+                        supportedResolutionTiers={modelDefinition?.resolutionTiers}
+                        showQuality={supportsQuality}
+                        updateConfig={updateConfig}
+                        openConfigDialog={openConfigDialog}
+                    />
                 </div>
             </Drawer>
             <PromptSelectDialog open={promptDialogOpen} onOpenChange={setPromptDialogOpen} onSelect={setPrompt} />
@@ -591,7 +616,20 @@ function GenerationSettings({
                 <ModelPicker config={config} value={model} onChange={(value) => updateConfig("imageModel", value)} capability="image" fullWidth onMissingConfig={() => openConfigDialog(false)} />
             </label>
             <div className="col-span-2">
-                <ImageSettingsPanel config={config} onConfigChange={(key, value) => updateConfig(key, value)} theme={theme} showTitle={false} className="space-y-4" maxCount={10} pricingRules={pricingRules} model={model} operation={operation} supportedRatios={supportedRatios} supportedResolutionTiers={supportedResolutionTiers} showQuality={showQuality} />
+                <ImageSettingsPanel
+                    config={config}
+                    onConfigChange={(key, value) => updateConfig(key, value)}
+                    theme={theme}
+                    showTitle={false}
+                    className="space-y-4"
+                    maxCount={10}
+                    pricingRules={pricingRules}
+                    model={model}
+                    operation={operation}
+                    supportedRatios={supportedRatios}
+                    supportedResolutionTiers={supportedResolutionTiers}
+                    showQuality={showQuality}
+                />
             </div>
         </>
     );
@@ -617,7 +655,11 @@ function ResultImageCard({
             <Image
                 src={resolveImageVariantUrl(image.storageKey, image.dataUrl, "preview")}
                 preview={{ src: image.dataUrl }}
-                placeholder={<div className="grid aspect-square place-items-center bg-stone-100 text-stone-400 dark:bg-stone-900"><LoaderCircle className="size-5 animate-spin" /></div>}
+                placeholder={
+                    <div className="grid aspect-square place-items-center bg-stone-100 text-stone-400 dark:bg-stone-900">
+                        <LoaderCircle className="size-5 animate-spin" />
+                    </div>
+                }
                 alt={`生成结果 ${index + 1}`}
                 loading="lazy"
                 decoding="async"
@@ -637,11 +679,13 @@ function ResultImageCard({
                             添加到素材
                         </Button>
                     </Tooltip>
-                    {canEdit ? <Tooltip title="加入参考图">
-                        <Button className={RESULT_ACTION_BUTTON_CLASS} size="small" icon={<PenLine className="size-3.5" />} onClick={() => void onEdit(image, index)}>
-                            加入参考图
-                        </Button>
-                    </Tooltip> : null}
+                    {canEdit ? (
+                        <Tooltip title="加入参考图">
+                            <Button className={RESULT_ACTION_BUTTON_CLASS} size="small" icon={<PenLine className="size-3.5" />} onClick={() => void onEdit(image, index)}>
+                                加入参考图
+                            </Button>
+                        </Tooltip>
+                    ) : null}
                     <Tooltip title="下载">
                         <Button className={RESULT_ACTION_BUTTON_CLASS} size="small" icon={<Download className="size-3.5" />} onClick={() => onDownload(image, index)}>
                             下载

@@ -63,7 +63,7 @@ export default function AssetLibraryPage() {
                     metadata: { source: "asset-library", assetId: asset.id },
                 });
             } else if (asset.type === "video") {
-				const video = await uploadMediaFile(asset.url, "video");
+                const video = await uploadMediaFile(asset.url, "video");
                 addAsset({
                     kind: "video",
                     title: asset.title,
@@ -108,7 +108,10 @@ export default function AssetLibraryPage() {
             <main className="min-h-0 flex-1 overflow-y-auto px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
                 <div className="pb-10">
                     <div className="mx-auto max-w-5xl text-center">
-                        <div className="mb-3 inline-flex items-center gap-2 text-sm font-medium text-primary"><span className="size-1.5 rounded-full bg-primary" />团队精选</div>
+                        <div className="mb-3 inline-flex items-center gap-2 text-sm font-medium text-primary">
+                            <span className="size-1.5 rounded-full bg-primary" />
+                            团队精选
+                        </div>
                         <h1 className="text-5xl font-semibold tracking-[-.045em] sm:text-6xl">好素材，让创作更快开始。</h1>
                         <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-muted-foreground">挑选团队素材，加入我的素材后继续编辑和使用。</p>
                     </div>

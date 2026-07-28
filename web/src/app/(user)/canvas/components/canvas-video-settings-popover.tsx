@@ -111,14 +111,7 @@ function VideoSettingsPortal({
     } as const;
 
     return createPortal(
-        <div
-            ref={panelRef}
-            className="canvas-image-settings-popover"
-            style={style}
-            onPointerDown={(event) => event.stopPropagation()}
-            onMouseDown={(event) => event.stopPropagation()}
-            onClick={(event) => event.stopPropagation()}
-        >
+        <div ref={panelRef} className="canvas-image-settings-popover" style={style} onPointerDown={(event) => event.stopPropagation()} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
             <VideoSettingsPanel config={config} onConfigChange={(key, value) => onConfigChange(key, value)} theme={theme} className="space-y-4" />
         </div>,
         document.body,

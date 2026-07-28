@@ -582,14 +582,40 @@ func legacyCreateBatchProductionJob(user model.AuthUser, input model.CreateBatch
 	deliverySpec, err := resolveProductionDeliverySpec(input.DeliverySpecID)
 	if err != nil { return model.BatchProductionJob{}, err }
 	if input.BrandID != "" { if _, ok, err := repository.GetBrand(organization.ID, input.BrandID); err != nil { return model.BatchProductionJob{}, err } else if !ok { return model.BatchProductionJob{}, safeMessageError{message: "任务品牌不存在"} } }
-	for _, productID := range input.ProductIDs { if _, ok, err := repository.GetProduct(organization.ID, productID); err != nil || !ok { if err != nil { return model.BatchProductionJob{}, err }; return model.BatchProductionJob{}, safeMessageError{message: "任务包含无效商品"} } }
+	itemOperations := map[string]string{}
+	for _, productID := range input.ProductIDs {
+		if _, ok, err := repository.GetProduct(organization.ID, productID); err != nil || !ok { if err != nil { return model.BatchProductionJob{}, err }; return model.BatchProductionJob{}, safeMessageError{message: "任务包含无效商品"} }
+		totalSKUs := 0
+		for page := 1; ; page++ {
+			skus, total, err := repository.ListProductSKUs(organization.ID, productID, model.Query{Page: page, PageSize: model.MaxPageSize})
+			if err != nil { return model.BatchProductionJob{}, err }
+			totalSKUs += len(skus)
+			for _, sku := range skus { operation := "generation"; if len(sku.ImageStorageKeys) > 0 { operation = "edit" }; itemOperations[productID+"\x00"+sku.ID] = operation }
+			if totalSKUs >= int(total) { break }
+		}
+		if totalSKUs == 0 { itemOperations[productID+"\x00"] = "generation" }
+	}
+	settings, err := PublicSettings()
+	if err != nil { return model.BatchProductionJob{}, err }
+	modelName := strings.TrimSpace(settings.ModelChannel.DefaultImageModel)
+	if modelName == "" { return model.BatchProductionJob{}, safeMessageError{message: "默认图片模型未配置，无法估算任务价格"} }
+	creditsByOperation, itemEstimatedCredits := map[string]int{}, make(map[string]int, len(itemOperations))
+	for key, operation := range itemOperations {
+		credits, ok := creditsByOperation[operation]
+		if !ok { credits, err = CalculateRequestCreditsForGroup(standardBatchPricingRequest(modelName, operation, deliverySpec), user.Group); if err != nil { return model.BatchProductionJob{}, err }; creditsByOperation[operation] = credits }
+		if credits <= 0 { return model.BatchProductionJob{}, safeMessageError{message: "默认图片模型计费规则无效"} }
+		itemEstimatedCredits[key] = credits
+	}
 	timestamp, jobID := now(), newID("batch")
 	job := model.BatchProductionJob{ID: jobID, OrganizationID: organization.ID, RequestID: input.RequestID, RequestHash: requestHash, ArchiveToken: newID("archive"), BrandID: input.BrandID, Name: input.Name, PresetID: input.PresetID, PresetVersion: presetVersion, PresetPrompt: presetPrompt, DeliverySpec: deliverySpec, ProductIDs: input.ProductIDs, Status: model.BatchProductionStatusQueued, CreatedBy: user.ID, CreatedAt: timestamp, UpdatedAt: timestamp}
-	result, err := repository.CreateBatchProductionJob(job, newAuditLog(user.ID, organization.ID, "batch.create", "batch_job", job.ID, job.Name, timestamp))
+	result, err := repository.CreateBatchProductionJob(job, itemEstimatedCredits, newAuditLog(user.ID, organization.ID, "batch.create", "batch_job", job.ID, job.Name, timestamp))
 	if errors.Is(err, repository.ErrBatchProductionItemsTooLarge) { return model.BatchProductionJob{}, safeMessageError{message: "单个批量任务最多生成 5000 个生产项"} }
 	if errors.Is(err, repository.ErrBatchProductionSnapshotTooLarge) { return model.BatchProductionJob{}, safeMessageError{message: "批量任务输入快照总量不能超过 16MB"} }
 	if errors.Is(err, repository.ErrBatchProductionRequestConflict) { return model.BatchProductionJob{}, safeMessageError{message: "任务请求编号已用于不同的请求内容"} }
 	if errors.Is(err, repository.ErrBatchProductionOrganizationQueueFull) { return model.BatchProductionJob{}, safeMessageError{message: "企业待生产项目已达上限，请等待现有任务完成"} }
+	if errors.Is(err, repository.ErrInsufficientUserCredits) { return result, safeMessageError{message: "个人算力余额不足"} }
+	if errors.Is(err, repository.ErrInsufficientOrganizationCredits) { return result, safeMessageError{message: "企业共享算力余额不足"} }
+	if errors.Is(err, repository.ErrOrganizationCreditBudgetExceeded) { return result, safeMessageError{message: "企业本月算力预算不足"} }
 	return result, err
 }
 

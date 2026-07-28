@@ -421,7 +421,7 @@ type BatchProductionItem struct {
 	OrganizationID string                `json:"organizationId" gorm:"not null;index;index:idx_batch_ready,priority:1;index:idx_batch_retry,priority:1;index:idx_batch_running,priority:1;index:idx_batch_expired,priority:4"`
 	JobID          string                `json:"jobId" gorm:"not null;index"`
 	ProductID      string                `json:"productId" gorm:"not null;index"`
-	SKUID          string                `json:"skuId" gorm:"not null;index"`
+	SKUID          string                `json:"skuId" gorm:"column:sku_id;not null;index"`
 	TemplateSelectionID string           `json:"templateSelectionId" gorm:"index"`
 	TemplateID     string                `json:"templateId" gorm:"index"`
 	TemplateVersion int                  `json:"templateVersion"`

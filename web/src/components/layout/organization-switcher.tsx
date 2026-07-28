@@ -15,8 +15,8 @@ export function OrganizationSwitcher() {
     const queryClient = useQueryClient();
     const user = useUserStore((state) => state.user);
     const refreshUser = useUserStore((state) => state.refreshUser);
-	const setOrganizationId = useUserStore((state) => state.setOrganizationId);
-	const [switching, setSwitching] = useState(false);
+    const setOrganizationId = useUserStore((state) => state.setOrganizationId);
+    const [switching, setSwitching] = useState(false);
     const query = useQuery({ queryKey: commerceQueryKeys.workspace(user?.organizationId || ""), queryFn: fetchCommerceWorkspace, enabled: Boolean(user?.organizationId) });
 
     if (!user || !query.data) return null;
@@ -28,16 +28,27 @@ export function OrganizationSwitcher() {
                 variant="borderless"
                 size="small"
                 value={query.data.organization.id}
-				disabled={switching}
+                disabled={switching}
                 className="max-w-40"
                 popupMatchSelectWidth={240}
                 options={query.data.organizations.map((item) => ({ value: item.id, label: item.name }))}
-				onChange={(organizationId) => { if (switching || organizationId === user.organizationId) return; const previousOrganizationId = user.organizationId; setSwitching(true); void flushActiveWorkspaceChanges()
-					.then(() => queryClient.cancelQueries({ queryKey: commerceQueryKeys.root(previousOrganizationId), exact: false }))
-					.then(() => switchOrganization(organizationId))
-					.then(async () => { setOrganizationId(organizationId); queryClient.removeQueries({ queryKey: commerceQueryKeys.root(previousOrganizationId), exact: false }); await refreshUser(); await queryClient.invalidateQueries({ queryKey: commerceQueryKeys.root(organizationId), exact: false }); await queryClient.refetchQueries({ queryKey: commerceQueryKeys.root(organizationId), exact: false, type: "active" }); })
-					.catch((error) => message.error(error instanceof Error ? error.message : "切换企业失败"))
-					.finally(() => setSwitching(false)); }}
+                onChange={(organizationId) => {
+                    if (switching || organizationId === user.organizationId) return;
+                    const previousOrganizationId = user.organizationId;
+                    setSwitching(true);
+                    void flushActiveWorkspaceChanges()
+                        .then(() => queryClient.cancelQueries({ queryKey: commerceQueryKeys.root(previousOrganizationId), exact: false }))
+                        .then(() => switchOrganization(organizationId))
+                        .then(async () => {
+                            setOrganizationId(organizationId);
+                            queryClient.removeQueries({ queryKey: commerceQueryKeys.root(previousOrganizationId), exact: false });
+                            await refreshUser();
+                            await queryClient.invalidateQueries({ queryKey: commerceQueryKeys.root(organizationId), exact: false });
+                            await queryClient.refetchQueries({ queryKey: commerceQueryKeys.root(organizationId), exact: false, type: "active" });
+                        })
+                        .catch((error) => message.error(error instanceof Error ? error.message : "切换企业失败"))
+                        .finally(() => setSwitching(false));
+                }}
             />
         </div>
     );

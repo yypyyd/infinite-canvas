@@ -47,13 +47,13 @@ export default function PromptsPage() {
 
     return (
         <div className="flex h-full flex-col overflow-hidden bg-background text-foreground">
-            <main
-                className="min-h-0 flex-1 overflow-y-auto px-4 py-10 sm:px-6 lg:px-8 lg:py-14"
-                onScroll={handleListScroll}
-            >
+            <main className="min-h-0 flex-1 overflow-y-auto px-4 py-10 sm:px-6 lg:px-8 lg:py-14" onScroll={handleListScroll}>
                 <div className="pb-10">
                     <div className="mx-auto max-w-5xl text-center">
-                        <div className="mb-3 inline-flex items-center gap-2 text-sm font-medium text-primary"><span className="size-1.5 rounded-full bg-primary" />创意灵感库</div>
+                        <div className="mb-3 inline-flex items-center gap-2 text-sm font-medium text-primary">
+                            <span className="size-1.5 rounded-full bg-primary" />
+                            创意灵感库
+                        </div>
                         <h1 className="text-5xl font-semibold tracking-[-.045em] sm:text-6xl">为商品找到更好的表达。</h1>
                         <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-muted-foreground">从 {totalPrompts} 条视觉模板中，按标题、标签与分类找到适合商品的创作方向。</p>
                     </div>

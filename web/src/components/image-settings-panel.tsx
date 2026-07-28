@@ -53,9 +53,7 @@ const tierAspectOptions: AspectOption[] = [
     { value: "9:16-4k", label: "9:16(4k)", size: "2160x3840", width: 2160, height: 3840, icon: "portrait", ratio: "9:16", resolutionTier: "4k" },
 ];
 
-const autoAspectOption: AspectOption[] = [
-    { value: "auto", label: "auto", width: 0, height: 0, icon: "auto" },
-];
+const autoAspectOption: AspectOption[] = [{ value: "auto", label: "auto", width: 0, height: 0, icon: "auto" }];
 
 type ImageSettingsPanelProps = {
     config: AiConfig;
@@ -73,7 +71,21 @@ type ImageSettingsPanelProps = {
     showQuality?: boolean;
 };
 
-export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5", maxCount = 15, quickCount = 10, pricingRules, model, operation = "generation", supportedRatios, supportedResolutionTiers, showQuality = true }: ImageSettingsPanelProps) {
+export function ImageSettingsPanel({
+    config,
+    onConfigChange,
+    theme,
+    showTitle = true,
+    className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5",
+    maxCount = 15,
+    quickCount = 10,
+    pricingRules,
+    model,
+    operation = "generation",
+    supportedRatios,
+    supportedResolutionTiers,
+    showQuality = true,
+}: ImageSettingsPanelProps) {
     const [snapDimensionToStep, setSnapDimensionToStep] = useState(true);
     const quality = config.quality || "auto";
     const count = Math.max(1, Math.min(maxCount, Math.floor(Math.abs(Number(config.count)) || 1)));
@@ -81,7 +93,13 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
     const activeRatios = normalizeSupportedRatios(supportedRatios);
     const activeResolutionTiers = supportedResolutionTiers ? normalizeSupportedResolutionTiers(supportedResolutionTiers) : null;
     const baseOptions = baseAspectOptions.filter((item) => activeRatios.includes(item.value) && hasResolutionTier(activeResolutionTiers, item.resolutionTier || "1k"));
-    const aspectOptions = [...baseOptions, ...tierAspectOptions.filter((item) => item.ratio && item.resolutionTier && activeRatios.includes(item.ratio) && hasResolutionTier(activeResolutionTiers, item.resolutionTier) && hasPricingTier(pricingRules, { model, operation, resolutionTier: item.resolutionTier })), ...autoAspectOption];
+    const aspectOptions = [
+        ...baseOptions,
+        ...tierAspectOptions.filter(
+            (item) => item.ratio && item.resolutionTier && activeRatios.includes(item.ratio) && hasResolutionTier(activeResolutionTiers, item.resolutionTier) && hasPricingTier(pricingRules, { model, operation, resolutionTier: item.resolutionTier }),
+        ),
+        ...autoAspectOption,
+    ];
     const selectedAspect = aspectOptions.find((item) => (item.size || item.value) === activeSize || item.value === activeSize);
     const dimensions = readSizeDimensions(activeSize, selectedAspect || aspectOptions[0]);
     const selectAspect = (value: string) => {

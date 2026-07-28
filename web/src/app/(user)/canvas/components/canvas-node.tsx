@@ -151,10 +151,15 @@ export const CanvasNode = React.memo(function CanvasNode({
     const startLongPress = (event: React.PointerEvent) => {
         if (event.pointerType !== "touch") return;
         cancelLongPress();
-        longPressRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, timer: setTimeout(() => {
-            onContextMenu({ clientX: event.clientX, clientY: event.clientY, preventDefault: () => undefined, stopPropagation: () => undefined }, data.id);
-            longPressRef.current.timer = null;
-        }, 550) };
+        longPressRef.current = {
+            pointerId: event.pointerId,
+            x: event.clientX,
+            y: event.clientY,
+            timer: setTimeout(() => {
+                onContextMenu({ clientX: event.clientX, clientY: event.clientY, preventDefault: () => undefined, stopPropagation: () => undefined }, data.id);
+                longPressRef.current.timer = null;
+            }, 550),
+        };
     };
 
     const moveLongPress = (event: React.PointerEvent) => {
@@ -461,11 +466,7 @@ function TextContent({ node, theme, isEditingContent, textareaRef, mentionRefere
                     onWheel={(event) => event.stopPropagation()}
                 />
             ) : (
-                <div
-                    className="thin-scrollbar block h-full w-full overflow-y-auto whitespace-pre-wrap break-words bg-transparent pl-4 pr-14 pt-0 pb-4 font-mono"
-                    style={textStyle}
-                    onWheel={(event) => event.stopPropagation()}
-                >
+                <div className="thin-scrollbar block h-full w-full overflow-y-auto whitespace-pre-wrap break-words bg-transparent pl-4 pr-14 pt-0 pb-4 font-mono" style={textStyle} onWheel={(event) => event.stopPropagation()}>
                     {node.metadata?.content || <span style={{ color: theme.node.placeholder }}>双击编辑文字</span>}
                 </div>
             )}
@@ -474,11 +475,7 @@ function TextContent({ node, theme, isEditingContent, textareaRef, mentionRefere
 }
 
 function ResourceLabelBadge({ reference }: { reference: CanvasResourceReference }) {
-    return (
-        <span className={`pointer-events-none absolute right-2 top-2 z-30 rounded-md px-1.5 py-0.5 text-[10px] font-medium ${reference.active ? "bg-[#2f80ff] text-white shadow-sm" : "bg-black/35 text-white/75"}`}>
-            {reference.label}
-        </span>
-    );
+    return <span className={`pointer-events-none absolute right-2 top-2 z-30 rounded-md px-1.5 py-0.5 text-[10px] font-medium ${reference.active ? "bg-[#2f80ff] text-white shadow-sm" : "bg-black/35 text-white/75"}`}>{reference.label}</span>;
 }
 
 function ImageNodeContent(props: NodeContentRendererProps) {

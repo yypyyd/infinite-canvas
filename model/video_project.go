@@ -68,7 +68,7 @@ type VideoProject struct {
 	ID                string             `json:"id" gorm:"primaryKey"`
 	OrganizationID    string             `json:"organizationId" gorm:"not null;index"`
 	ProductID         string             `json:"productId" gorm:"index"`
-	SKUID             string             `json:"skuId" gorm:"index"`
+	SKUID             string             `json:"skuId" gorm:"column:sku_id;index"`
 	Name              string             `json:"name" gorm:"index"`
 	Description       string             `json:"description" gorm:"type:text"`
 	DraftTimelineJSON string             `json:"-" gorm:"type:text"`

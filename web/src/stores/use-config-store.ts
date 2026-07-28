@@ -32,7 +32,25 @@ export type AiConfig = {
     canvasImageCount: string;
 };
 
-const AI_PREFERENCE_KEYS = ["model", "imageModel", "videoModel", "textModel", "audioModel", "audioVoice", "audioFormat", "audioSpeed", "audioInstructions", "videoSeconds", "vquality", "videoGenerateAudio", "videoWatermark", "quality", "size", "count", "canvasImageCount"] as const;
+const AI_PREFERENCE_KEYS = [
+    "model",
+    "imageModel",
+    "videoModel",
+    "textModel",
+    "audioModel",
+    "audioVoice",
+    "audioFormat",
+    "audioSpeed",
+    "audioInstructions",
+    "videoSeconds",
+    "vquality",
+    "videoGenerateAudio",
+    "videoWatermark",
+    "quality",
+    "size",
+    "count",
+    "canvasImageCount",
+] as const;
 type AiPreferenceKey = (typeof AI_PREFERENCE_KEYS)[number];
 export type AiPreferences = Pick<AiConfig, AiPreferenceKey>;
 
@@ -132,7 +150,20 @@ function isVideoModelName(model: string) {
 
 function isImageModelName(model: string) {
     const value = model.toLowerCase();
-    return !isVideoModelName(model) && !isAudioModelName(model) && (value.includes("seedream") || value.includes("gpt-image") || value.includes("image") || value.includes("dall-e") || value.includes("dalle") || value.includes("imagen") || value.includes("flux") || value.includes("sdxl") || value.includes("stable-diffusion") || value.includes("midjourney"));
+    return (
+        !isVideoModelName(model) &&
+        !isAudioModelName(model) &&
+        (value.includes("seedream") ||
+            value.includes("gpt-image") ||
+            value.includes("image") ||
+            value.includes("dall-e") ||
+            value.includes("dalle") ||
+            value.includes("imagen") ||
+            value.includes("flux") ||
+            value.includes("sdxl") ||
+            value.includes("stable-diffusion") ||
+            value.includes("midjourney"))
+    );
 }
 
 function isAudioModelName(model: string) {
@@ -170,33 +201,33 @@ function isAiConfigReady(_config: AiConfig, model: string) {
 }
 
 export const useConfigStore = create<ConfigStore>()((set, get) => ({
-            config: defaultConfig,
-            publicSettings: null,
-            isPublicSettingsLoading: false,
-            isConfigOpen: false,
-            shouldPromptContinue: false,
-            updateConfig: (key, value) =>
-                set((state) => ({
-                    config: {
-                        ...state.config,
-                        [key]: value,
-                    },
-                })),
-            applyAiPreferences: (preferences) => set((state) => ({ config: { ...state.config, ...normalizeAiPreferences(preferences) } })),
-            loadPublicSettings: async () => {
-                if (get().isPublicSettingsLoading) return;
-                set({ isPublicSettingsLoading: true });
-                try {
-                    set({ publicSettings: await apiGet<AdminPublicSettings>("/api/settings") });
-                } finally {
-                    set({ isPublicSettingsLoading: false });
-                }
+    config: defaultConfig,
+    publicSettings: null,
+    isPublicSettingsLoading: false,
+    isConfigOpen: false,
+    shouldPromptContinue: false,
+    updateConfig: (key, value) =>
+        set((state) => ({
+            config: {
+                ...state.config,
+                [key]: value,
             },
-            isAiConfigReady: (config, model) => isAiConfigReady(config, model),
-            openConfigDialog: (shouldPromptContinue = false) => set({ isConfigOpen: true, shouldPromptContinue }),
-            setConfigDialogOpen: (isConfigOpen) => set({ isConfigOpen }),
-            clearPromptContinue: () => set({ shouldPromptContinue: false }),
-        }));
+        })),
+    applyAiPreferences: (preferences) => set((state) => ({ config: { ...state.config, ...normalizeAiPreferences(preferences) } })),
+    loadPublicSettings: async () => {
+        if (get().isPublicSettingsLoading) return;
+        set({ isPublicSettingsLoading: true });
+        try {
+            set({ publicSettings: await apiGet<AdminPublicSettings>("/api/settings") });
+        } finally {
+            set({ isPublicSettingsLoading: false });
+        }
+    },
+    isAiConfigReady: (config, model) => isAiConfigReady(config, model),
+    openConfigDialog: (shouldPromptContinue = false) => set({ isConfigOpen: true, shouldPromptContinue }),
+    setConfigDialogOpen: (isConfigOpen) => set({ isConfigOpen }),
+    clearPromptContinue: () => set({ shouldPromptContinue: false }),
+}));
 
 export function useEffectiveConfig() {
     const config = useConfigStore((state) => state.config);

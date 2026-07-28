@@ -48,9 +48,7 @@ export function AppTopNav() {
                                     const active = tool.slug === activeToolSlug;
                                     const className = cn(
                                         "relative flex h-13 shrink-0 items-center gap-1.5 text-[13px] leading-6 transition after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full",
-                                        active
-                                            ? "font-medium text-foreground after:bg-primary"
-                                            : "text-muted-foreground after:bg-transparent hover:text-foreground",
+                                        active ? "font-medium text-foreground after:bg-primary" : "text-muted-foreground after:bg-transparent hover:text-foreground",
                                     );
 
                                     if ("href" in tool) {

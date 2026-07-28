@@ -233,12 +233,18 @@ export default function AdminChannelsPage() {
             <Card variant="borderless" loading={isLoading}>
                 <Flex justify="space-between" align="center" gap={16} wrap style={{ marginBottom: 16 }}>
                     <div>
-                        <Typography.Title level={5} style={{ margin: 0 }}>模型渠道</Typography.Title>
+                        <Typography.Title level={5} style={{ margin: 0 }}>
+                            模型渠道
+                        </Typography.Title>
                         <Typography.Text type="secondary">配置上游接口、模型映射、渠道能力和路由权重。</Typography.Text>
                     </div>
                     <Space>
-                        <Button icon={<ReloadOutlined />} loading={isLoading} onClick={() => void loadChannels()}>刷新</Button>
-                        <Button type="primary" icon={<PlusOutlined />} disabled={!settings} onClick={() => openChannelDrawer(null)}>新增渠道</Button>
+                        <Button icon={<ReloadOutlined />} loading={isLoading} onClick={() => void loadChannels()}>
+                            刷新
+                        </Button>
+                        <Button type="primary" icon={<PlusOutlined />} disabled={!settings} onClick={() => openChannelDrawer(null)}>
+                            新增渠道
+                        </Button>
                     </Space>
                 </Flex>
                 <Table
@@ -249,7 +255,15 @@ export default function AdminChannelsPage() {
                         { title: "名称", dataIndex: "name", render: (value) => value || "未命名渠道" },
                         { title: "协议", dataIndex: "protocol", width: 96, render: (value) => <Tag>{value || "openai"}</Tag> },
                         { title: "状态", dataIndex: "enabled", width: 96, render: (value) => <Tag color={value ? "success" : "default"}>{value ? "已启用" : "已停用"}</Tag> },
-                        { title: "模型", dataIndex: "models", render: (value: AdminChannelModel[]) => <Typography.Text ellipsis style={{ maxWidth: 360 }}>{modelSummary(channelModelNames(value || []))}</Typography.Text> },
+                        {
+                            title: "模型",
+                            dataIndex: "models",
+                            render: (value: AdminChannelModel[]) => (
+                                <Typography.Text ellipsis style={{ maxWidth: 360 }}>
+                                    {modelSummary(channelModelNames(value || []))}
+                                </Typography.Text>
+                            ),
+                        },
                         { title: "权重", dataIndex: "weight", width: 88 },
                         {
                             title: "操作",
@@ -258,8 +272,12 @@ export default function AdminChannelsPage() {
                             align: "right",
                             render: (_, item) => (
                                 <Space size={4}>
-                                    <Button size="small" onClick={() => openTestDialog(item._index)}>测试</Button>
-                                    <Button size="small" onClick={() => openChannelDrawer(item._index)}>编辑</Button>
+                                    <Button size="small" onClick={() => openTestDialog(item._index)}>
+                                        测试
+                                    </Button>
+                                    <Button size="small" onClick={() => openChannelDrawer(item._index)}>
+                                        编辑
+                                    </Button>
                                     <Button danger size="small" loading={isSaving} icon={<DeleteOutlined />} onClick={() => void persistChannels(channels.filter((_, index) => index !== item._index))} />
                                 </Space>
                             ),
@@ -268,52 +286,180 @@ export default function AdminChannelsPage() {
                 />
             </Card>
 
-            <Drawer title={editingChannelIndex === null ? "新增渠道" : "编辑渠道"} open={isChannelDrawerOpen} size={720} onClose={closeChannelDrawer} extra={<Space><Button onClick={closeChannelDrawer}>取消</Button><Button type="primary" loading={isSaving} onClick={() => void saveChannel()}>保存</Button></Space>} destroyOnHidden>
+            <Drawer
+                title={editingChannelIndex === null ? "新增渠道" : "编辑渠道"}
+                open={isChannelDrawerOpen}
+                size={720}
+                onClose={closeChannelDrawer}
+                extra={
+                    <Space>
+                        <Button onClick={closeChannelDrawer}>取消</Button>
+                        <Button type="primary" loading={isSaving} onClick={() => void saveChannel()}>
+                            保存
+                        </Button>
+                    </Space>
+                }
+                destroyOnHidden
+            >
                 <Form form={channelForm} layout="vertical" requiredMark={false} initialValues={emptyChannel}>
                     <Row gutter={16}>
-                        <Col span={12}><Form.Item name="name" label="渠道名称" rules={[{ required: true, message: "请输入渠道名称" }]}><Input /></Form.Item></Col>
-                        <Col span={12}><Form.Item name="protocol" label="协议"><Select options={[{ label: "OpenAI", value: "openai" }]} /></Form.Item></Col>
-                        <Col span={12}><Form.Item name="weight" label="权重"><InputNumber min={1} step={1} className="!w-full" /></Form.Item></Col>
-                        <Col span={12}><Form.Item name="enabled" label="启用" valuePropName="checked"><Switch /></Form.Item></Col>
-                        <Col span={24}><Form.Item name="baseUrl" label="接口地址" rules={[{ required: true, message: "请输入接口地址" }]}><Input /></Form.Item></Col>
-                        <Col span={24}><Form.Item name="apiKey" label="API Key" rules={editingChannelIndex === null ? [{ required: true, message: "请输入 API Key" }] : []}><Input.Password placeholder={editingChannelIndex === null ? "" : "留空则沿用已保存的 API Key"} /></Form.Item></Col>
-                        <Col span={24}>
-                            <Form.Item label="渠道可用模型" extra="先选择模型，再为每个模型声明当前渠道实际支持的操作和分辨率。">
-                                <Flex align="center" gap={12} wrap><Button onClick={() => openChannelModelSelector()}>选择模型</Button><Typography.Text type="secondary">{modelSummary(channelModelNames(channelFormModels))}</Typography.Text></Flex>
+                        <Col span={12}>
+                            <Form.Item name="name" label="渠道名称" rules={[{ required: true, message: "请输入渠道名称" }]}>
+                                <Input />
                             </Form.Item>
                         </Col>
-                        <Col span={24}><ChannelModelCapabilitiesEditor managedModels={managedModels} /></Col>
-                        <Col span={24}><Form.Item name="remark" label="备注"><Input.TextArea rows={3} /></Form.Item></Col>
+                        <Col span={12}>
+                            <Form.Item name="protocol" label="协议">
+                                <Select options={[{ label: "OpenAI", value: "openai" }]} />
+                            </Form.Item>
+                        </Col>
+                        <Col span={12}>
+                            <Form.Item name="weight" label="权重">
+                                <InputNumber min={1} step={1} className="!w-full" />
+                            </Form.Item>
+                        </Col>
+                        <Col span={12}>
+                            <Form.Item name="enabled" label="启用" valuePropName="checked">
+                                <Switch />
+                            </Form.Item>
+                        </Col>
+                        <Col span={24}>
+                            <Form.Item name="baseUrl" label="接口地址" rules={[{ required: true, message: "请输入接口地址" }]}>
+                                <Input />
+                            </Form.Item>
+                        </Col>
+                        <Col span={24}>
+                            <Form.Item name="apiKey" label="API Key" rules={editingChannelIndex === null ? [{ required: true, message: "请输入 API Key" }] : []}>
+                                <Input.Password placeholder={editingChannelIndex === null ? "" : "留空则沿用已保存的 API Key"} />
+                            </Form.Item>
+                        </Col>
+                        <Col span={24}>
+                            <Form.Item label="渠道可用模型" extra="先选择模型，再为每个模型声明当前渠道实际支持的操作和分辨率。">
+                                <Flex align="center" gap={12} wrap>
+                                    <Button onClick={() => openChannelModelSelector()}>选择模型</Button>
+                                    <Typography.Text type="secondary">{modelSummary(channelModelNames(channelFormModels))}</Typography.Text>
+                                </Flex>
+                            </Form.Item>
+                        </Col>
+                        <Col span={24}>
+                            <ChannelModelCapabilitiesEditor managedModels={managedModels} />
+                        </Col>
+                        <Col span={24}>
+                            <Form.Item name="remark" label="备注">
+                                <Input.TextArea rows={3} />
+                            </Form.Item>
+                        </Col>
                     </Row>
                 </Form>
             </Drawer>
 
-            <Modal title={<Space size={12}>选择渠道模型<Typography.Text type="secondary">已选择 {modelSelectSelected.length} / {uniqueModels([...modelSelectSource, ...modelSelectExisting]).length}</Typography.Text></Space>} open={isModelSelectorOpen} width={960} onCancel={closeChannelModelSelector} footer={<Space><Button onClick={closeChannelModelSelector}>取消</Button><Button type="primary" onClick={confirmChannelModelSelector}>确定</Button></Space>} destroyOnHidden>
+            <Modal
+                title={
+                    <Space size={12}>
+                        选择渠道模型
+                        <Typography.Text type="secondary">
+                            已选择 {modelSelectSelected.length} / {uniqueModels([...modelSelectSource, ...modelSelectExisting]).length}
+                        </Typography.Text>
+                    </Space>
+                }
+                open={isModelSelectorOpen}
+                width={960}
+                onCancel={closeChannelModelSelector}
+                footer={
+                    <Space>
+                        <Button onClick={closeChannelModelSelector}>取消</Button>
+                        <Button type="primary" onClick={confirmChannelModelSelector}>
+                            确定
+                        </Button>
+                    </Space>
+                }
+                destroyOnHidden
+            >
                 <Flex vertical gap={14}>
                     <Flex gap={12} wrap>
                         <Input.Search placeholder="搜索模型" allowClear value={modelSelectKeyword} onChange={(event) => setModelSelectKeyword(event.target.value)} style={{ flex: "1 1 260px" }} />
                         <Space.Compact style={{ flex: "1 1 320px" }}>
                             <Input value={modelSelectNewModel} placeholder="输入模型名称" onChange={(event) => setModelSelectNewModel(event.target.value)} onPressEnter={addModelInSelector} />
                             <Button onClick={addModelInSelector}>增加模型</Button>
-                            <Button icon={<ReloadOutlined />} loading={isFetchingChannelModels} onClick={() => void fetchChannelModelList()}>拉取模型列表</Button>
+                            <Button icon={<ReloadOutlined />} loading={isFetchingChannelModels} onClick={() => void fetchChannelModelList()}>
+                                拉取模型列表
+                            </Button>
                         </Space.Compact>
                     </Flex>
                     <Typography.Text type="secondary">如果上游不提供 OpenAI /models 模型列表接口，请在这里手动增加模型名称。</Typography.Text>
-                    <Tabs activeKey={modelSelectTab} onChange={(key) => setModelSelectTab(key as ModelSelectTabKey)} items={[{ key: "new", label: "新获取的模型 (" + modelSelectGroups.new.length + ")" }, { key: "current", label: "已有的模型 (" + modelSelectGroups.current.length + ")" }]} />
+                    <Tabs
+                        activeKey={modelSelectTab}
+                        onChange={(key) => setModelSelectTab(key as ModelSelectTabKey)}
+                        items={[
+                            { key: "new", label: "新获取的模型 (" + modelSelectGroups.new.length + ")" },
+                            { key: "current", label: "已有的模型 (" + modelSelectGroups.current.length + ")" },
+                        ]}
+                    />
                     <Flex justify="space-between" align="center" gap={12} wrap>
-                        <Typography.Text type="secondary">当前列表已选择 {activeSelectedCount} / {activeModelSelectModels.length}</Typography.Text>
+                        <Typography.Text type="secondary">
+                            当前列表已选择 {activeSelectedCount} / {activeModelSelectModels.length}
+                        </Typography.Text>
                         <Space size={8}>
-                            <Button size="small" disabled={!activeModelSelectModels.length || activeSelectedCount === activeModelSelectModels.length} onClick={() => setModelSelectSelected((current) => uniqueModels([...current, ...activeModelSelectModels]))}>全选当前列表</Button>
-                            <Button size="small" disabled={!activeSelectedCount} onClick={() => { const active = new Set(activeModelSelectModels); setModelSelectSelected((current) => current.filter((model) => !active.has(model))); }}>取消当前列表</Button>
+                            <Button
+                                size="small"
+                                disabled={!activeModelSelectModels.length || activeSelectedCount === activeModelSelectModels.length}
+                                onClick={() => setModelSelectSelected((current) => uniqueModels([...current, ...activeModelSelectModels]))}
+                            >
+                                全选当前列表
+                            </Button>
+                            <Button
+                                size="small"
+                                disabled={!activeSelectedCount}
+                                onClick={() => {
+                                    const active = new Set(activeModelSelectModels);
+                                    setModelSelectSelected((current) => current.filter((model) => !active.has(model)));
+                                }}
+                            >
+                                取消当前列表
+                            </Button>
                         </Space>
                     </Flex>
                     <div style={{ maxHeight: 420, overflowY: "auto", borderTop: "1px solid var(--ant-color-border-secondary)", paddingTop: 12 }}>
-                        {activeModelSelectModels.length ? <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", columnGap: 24, rowGap: 12 }}>{activeModelSelectModels.map((model) => <Checkbox key={model} checked={modelSelectSelected.includes(model)} onChange={(event) => setModelSelectSelected((current) => event.target.checked ? uniqueModels([...current, model]) : current.filter((item) => item !== model))}><Typography.Text style={{ wordBreak: "break-all" }}>{model}</Typography.Text></Checkbox>)}</div> : <div style={{ padding: "48px 0", textAlign: "center" }}><Typography.Text type="secondary">没有匹配的模型</Typography.Text></div>}
+                        {activeModelSelectModels.length ? (
+                            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", columnGap: 24, rowGap: 12 }}>
+                                {activeModelSelectModels.map((model) => (
+                                    <Checkbox
+                                        key={model}
+                                        checked={modelSelectSelected.includes(model)}
+                                        onChange={(event) => setModelSelectSelected((current) => (event.target.checked ? uniqueModels([...current, model]) : current.filter((item) => item !== model)))}
+                                    >
+                                        <Typography.Text style={{ wordBreak: "break-all" }}>{model}</Typography.Text>
+                                    </Checkbox>
+                                ))}
+                            </div>
+                        ) : (
+                            <div style={{ padding: "48px 0", textAlign: "center" }}>
+                                <Typography.Text type="secondary">没有匹配的模型</Typography.Text>
+                            </div>
+                        )}
                     </div>
                 </Flex>
             </Modal>
 
-            <Modal title={<Space>{testChannel?.name || "渠道"} 模型测试<Typography.Text type="secondary">共 {testChannel?.models.length || 0} 个模型</Typography.Text></Space>} open={testChannelIndex !== null} width={920} onCancel={closeTestDialog} footer={<Space><Button onClick={closeTestDialog}>取消</Button><Button type="primary" disabled={!selectedTestModels.length || testingModels.length > 0} onClick={() => void batchTestModels()}>批量测试 {selectedTestModels.length} 个模型</Button></Space>} destroyOnHidden>
+            <Modal
+                title={
+                    <Space>
+                        {testChannel?.name || "渠道"} 模型测试<Typography.Text type="secondary">共 {testChannel?.models.length || 0} 个模型</Typography.Text>
+                    </Space>
+                }
+                open={testChannelIndex !== null}
+                width={920}
+                onCancel={closeTestDialog}
+                footer={
+                    <Space>
+                        <Button onClick={closeTestDialog}>取消</Button>
+                        <Button type="primary" disabled={!selectedTestModels.length || testingModels.length > 0} onClick={() => void batchTestModels()}>
+                            批量测试 {selectedTestModels.length} 个模型
+                        </Button>
+                    </Space>
+                }
+                destroyOnHidden
+            >
                 <Flex vertical gap={12}>
                     <Typography.Text type="secondary">普通文本模型会发送一条 hi；Agent Plan / Seedance 视频模型只做配置格式检查，不会发起视频生成。</Typography.Text>
                     <Input.Search placeholder="搜索模型..." allowClear value={testKeyword} onChange={(event) => setTestKeyword(event.target.value)} />
@@ -326,8 +472,35 @@ export default function AdminChannelsPage() {
                         columns={[
                             { title: "对外模型", dataIndex: "model", render: (value) => <Typography.Text strong>{value}</Typography.Text> },
                             { title: "上游模型", dataIndex: "upstreamModel", render: (value) => <Typography.Text type="secondary">{value}</Typography.Text> },
-                            { title: "状态", dataIndex: "model", width: 260, render: (value) => { if (testingModels.includes(value)) return <Tag icon={<LoadingOutlined className="animate-spin" />}>测试中</Tag>; const result = testResults[value]; if (!result) return <Tag>未开始</Tag>; return result.status === "success" ? <Space size={6} wrap><Tag color="success">成功</Tag><Typography.Text type="secondary">请求时长: {result.duration}</Typography.Text></Space> : <Typography.Text type="danger">{result.message}</Typography.Text>; } },
-                            { title: "操作", key: "actions", width: 120, align: "right", render: (_, item) => <Button size="small" loading={testingModels.includes(item.model)} onClick={() => void testModelOnline(item.model)}>测试</Button> },
+                            {
+                                title: "状态",
+                                dataIndex: "model",
+                                width: 260,
+                                render: (value) => {
+                                    if (testingModels.includes(value)) return <Tag icon={<LoadingOutlined className="animate-spin" />}>测试中</Tag>;
+                                    const result = testResults[value];
+                                    if (!result) return <Tag>未开始</Tag>;
+                                    return result.status === "success" ? (
+                                        <Space size={6} wrap>
+                                            <Tag color="success">成功</Tag>
+                                            <Typography.Text type="secondary">请求时长: {result.duration}</Typography.Text>
+                                        </Space>
+                                    ) : (
+                                        <Typography.Text type="danger">{result.message}</Typography.Text>
+                                    );
+                                },
+                            },
+                            {
+                                title: "操作",
+                                key: "actions",
+                                width: 120,
+                                align: "right",
+                                render: (_, item) => (
+                                    <Button size="small" loading={testingModels.includes(item.model)} onClick={() => void testModelOnline(item.model)}>
+                                        测试
+                                    </Button>
+                                ),
+                            },
                         ]}
                     />
                 </Flex>
@@ -355,14 +528,28 @@ function normalizeChannelModels(items: Partial<AdminChannelModel>[] = []): Admin
         const model = item.model?.trim() || "";
         if (!model || seen.has(model)) return [];
         seen.add(model);
-        return [{ model, upstreamModel: item.upstreamModel?.trim() || model, operations: Array.from(new Set((item.operations || []).map(normalizeToken).filter(Boolean))), resolutionTiers: Array.from(new Set((item.resolutionTiers || []).map(normalizeResolutionTier).filter(Boolean))) }];
+        return [
+            {
+                model,
+                upstreamModel: item.upstreamModel?.trim() || model,
+                operations: Array.from(new Set((item.operations || []).map(normalizeToken).filter(Boolean))),
+                resolutionTiers: Array.from(new Set((item.resolutionTiers || []).map(normalizeResolutionTier).filter(Boolean))),
+            },
+        ];
     });
 }
 
 function createChannelModel(model: string, managedModels: AdminManagedModel[]): AdminChannelModel {
     const managedModel = managedModels.find((item) => item.id === model);
     const modality = managedModel?.modality || inferModelModality(model);
-    return normalizeChannelModels([{ model, upstreamModel: model, operations: managedModel?.operations?.length ? managedModel.operations : inferModelOperations(model, modality), resolutionTiers: managedModel?.resolutionTiers?.length ? managedModel.resolutionTiers : modality === "image" ? ["1k"] : modality === "video" ? ["720p"] : [] }])[0];
+    return normalizeChannelModels([
+        {
+            model,
+            upstreamModel: model,
+            operations: managedModel?.operations?.length ? managedModel.operations : inferModelOperations(model, modality),
+            resolutionTiers: managedModel?.resolutionTiers?.length ? managedModel.resolutionTiers : modality === "image" ? ["1k"] : modality === "video" ? ["720p"] : [],
+        },
+    ])[0];
 }
 
 function collectKnownModels(settings: AdminSettings) {

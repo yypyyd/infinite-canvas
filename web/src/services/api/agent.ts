@@ -115,7 +115,10 @@ export async function streamAgentRun(runId: string, onEvent: (event: AgentEvent)
         const blocks = buffer.split("\n\n");
         buffer = blocks.pop() || "";
         for (const block of blocks) {
-            const data = block.split("\n").find((line) => line.startsWith("data: "))?.slice(6);
+            const data = block
+                .split("\n")
+                .find((line) => line.startsWith("data: "))
+                ?.slice(6);
             if (data) await onEvent(JSON.parse(data) as AgentEvent);
         }
     }

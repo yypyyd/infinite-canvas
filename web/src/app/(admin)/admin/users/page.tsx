@@ -132,14 +132,7 @@ export default function AdminUsersPage() {
                         <Row gutter={16} align="bottom">
                             <Col flex="360px">
                                 <Form.Item label="关键词">
-                                    <Input.Search
-                                        value={keywordText}
-                                        placeholder="搜索用户名、昵称或邮箱"
-                                        allowClear
-                                        enterButton={<SearchOutlined />}
-                                        onSearch={() => searchUsers(keywordText)}
-                                        onChange={(event) => setKeywordText(event.target.value)}
-                                    />
+                                    <Input.Search value={keywordText} placeholder="搜索用户名、昵称或邮箱" allowClear enterButton={<SearchOutlined />} onSearch={() => searchUsers(keywordText)} onChange={(event) => setKeywordText(event.target.value)} />
                                 </Form.Item>
                             </Col>
                             <Col flex="none">

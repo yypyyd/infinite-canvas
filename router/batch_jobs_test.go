@@ -9,8 +9,30 @@ import (
 	"github.com/basketikun/infinite-canvas/repository"
 )
 
+func prepareRouterLegacyBatchBilling(t *testing.T, tenant routerTestTenant) {
+	t.Helper()
+	database, err := repository.DB()
+	if err != nil { t.Fatal(err) }
+	saved, err := repository.GetSettings()
+	if err != nil { t.Fatal(err) }
+	settings := saved
+	settings.Public.ModelChannel = model.PublicModelChannelSetting{
+		AvailableModels: []string{"router-batch-image"},
+		Models: []model.ModelDefinition{{ID: "router-batch-image", Name: "Router Batch Image", Modality: "image", Operations: []string{"generation", "edit"}, Enabled: true, ResolutionTiers: []string{"1k"}}},
+		PricingRules: []model.PricingRule{
+			{Model: "router-batch-image", Modality: "image", Operation: "generation", Unit: "image", BillingMode: "fixed", Credits: 1, Enabled: true},
+			{Model: "router-batch-image", Modality: "image", Operation: "edit", Unit: "image", BillingMode: "fixed", Credits: 1, Enabled: true},
+		},
+		DefaultImageModel: "router-batch-image",
+	}
+	if _, err := repository.SaveSettings(settings, "router-batch-billing"); err != nil { t.Fatal(err) }
+	if err := database.Model(&model.User{}).Where("id = ?", tenant.User.ID).Update("credits", 100).Error; err != nil { t.Fatal(err) }
+	t.Cleanup(func() { _, _ = repository.SaveSettings(saved, "router-batch-billing-cleanup") })
+}
+
 func TestBatchJobHTTPCreateIsIdempotentAndTenantScoped(t *testing.T) {
 	tenant := seedRouterTestTenant(t, "batch-create")
+	prepareRouterLegacyBatchBilling(t, tenant)
 	database, err := repository.DB()
 	if err != nil {
 		t.Fatal(err)
@@ -93,6 +115,7 @@ func TestBatchJobHTTPCreateIsIdempotentAndTenantScoped(t *testing.T) {
 
 func TestBatchJobHTTPCancelAndRetryRespectTenantAndState(t *testing.T) {
 	tenant := seedRouterTestTenant(t, "batch-state")
+	prepareRouterLegacyBatchBilling(t, tenant)
 	database, err := repository.DB()
 	if err != nil {
 		t.Fatal(err)
@@ -189,6 +212,7 @@ func TestBatchJobHTTPCancelAndRetryRespectTenantAndState(t *testing.T) {
 
 func TestBatchItemHTTPReviewRetryAndPrimaryWorkflow(t *testing.T) {
 	tenant := seedRouterTestTenant(t, "batch-review")
+	prepareRouterLegacyBatchBilling(t, tenant)
 	database, err := repository.DB()
 	if err != nil { t.Fatal(err) }
 	product := model.Product{ID: "product-router-batch-review", OrganizationID: tenant.Organization.ID, Code: "router-batch-review", Name: "Router Review Product", Status: model.ProductStatusActive, Version: 1, CreatedBy: tenant.User.ID, CreatedAt: "1", UpdatedAt: "1"}

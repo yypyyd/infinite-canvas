@@ -37,9 +37,10 @@ export function UserOperationActions({ variant = "default" }: { variant?: "defau
     const checkInSetting = publicSettings?.checkIn;
     const canvasTheme = canvasThemes[theme];
     const iconStyle: CSSProperties | undefined = variant === "canvas" ? { color: canvasTheme.node.text } : undefined;
-    const iconClass = variant === "canvas"
-        ? "inline-flex size-7 shrink-0 items-center justify-center opacity-75 transition hover:opacity-100 disabled:cursor-default disabled:opacity-40 [&_svg]:size-4"
-        : "inline-flex size-7 shrink-0 items-center justify-center text-stone-600 transition hover:text-stone-950 disabled:cursor-default disabled:text-stone-300 dark:text-stone-300 dark:hover:text-white dark:disabled:text-stone-700 [&_svg]:size-4";
+    const iconClass =
+        variant === "canvas"
+            ? "inline-flex size-7 shrink-0 items-center justify-center opacity-75 transition hover:opacity-100 disabled:cursor-default disabled:opacity-40 [&_svg]:size-4"
+            : "inline-flex size-7 shrink-0 items-center justify-center text-stone-600 transition hover:text-stone-950 disabled:cursor-default disabled:text-stone-300 dark:text-stone-300 dark:hover:text-white dark:disabled:text-stone-700 [&_svg]:size-4";
 
     useEffect(() => {
         if (!latestAnnouncementKey) {
@@ -56,7 +57,9 @@ export function UserOperationActions({ variant = "default" }: { variant?: "defau
             setCheckInStatus(null);
             return;
         }
-        void fetchCheckInStatus(token).then(setCheckInStatus).catch(() => setCheckInStatus(null));
+        void fetchCheckInStatus(token)
+            .then(setCheckInStatus)
+            .catch(() => setCheckInStatus(null));
     }, [checkInSetting?.enabled, token, user?.id]);
 
     const closeAnnouncements = () => {
@@ -71,7 +74,7 @@ export function UserOperationActions({ variant = "default" }: { variant?: "defau
         try {
             const result = await checkIn(token);
             setSession(token, result.user);
-            setCheckInStatus((current) => current ? { ...current, checkedInToday: true, checkInDate: result.checkInDate } : current);
+            setCheckInStatus((current) => (current ? { ...current, checkedInToday: true, checkInDate: result.checkInDate } : current));
             message.success(result.rewardCredits > 0 ? `签到成功，获得 ${result.rewardCredits.toLocaleString()} 点额度` : "签到成功");
         } catch (error) {
             message.error(error instanceof Error ? error.message : "签到失败");
@@ -98,14 +101,30 @@ export function UserOperationActions({ variant = "default" }: { variant?: "defau
                     </button>
                 </Tooltip>
             ) : null}
-            <Modal title={<Flex align="center" gap={8}><Megaphone className="size-4" />平台公告</Flex>} open={announcementOpen} onCancel={closeAnnouncements} footer={null} width={620} destroyOnHidden>
+            <Modal
+                title={
+                    <Flex align="center" gap={8}>
+                        <Megaphone className="size-4" />
+                        平台公告
+                    </Flex>
+                }
+                open={announcementOpen}
+                onCancel={closeAnnouncements}
+                footer={null}
+                width={620}
+                destroyOnHidden
+            >
                 <Flex vertical gap={12} className="max-h-[60vh] overflow-y-auto pr-1">
                     {announcements.map((item) => {
                         const meta = announcementTypeMeta[item.type] || announcementTypeMeta.info;
                         return (
                             <Card key={item.id} size="small" title={item.title} extra={<Tag color={meta.color}>{meta.label}</Tag>}>
                                 <Typography.Paragraph style={{ whiteSpace: "pre-wrap", marginBottom: 8 }}>{item.content}</Typography.Paragraph>
-                                {item.publishAt ? <Typography.Text type="secondary" className="text-xs">{dayjs(item.publishAt).format("YYYY-MM-DD HH:mm")}</Typography.Text> : null}
+                                {item.publishAt ? (
+                                    <Typography.Text type="secondary" className="text-xs">
+                                        {dayjs(item.publishAt).format("YYYY-MM-DD HH:mm")}
+                                    </Typography.Text>
+                                ) : null}
                             </Card>
                         );
                     })}

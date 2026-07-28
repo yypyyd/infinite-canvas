@@ -39,27 +39,27 @@ export default function AdminDashboardPage() {
         <main style={{ padding: 24 }}>
             <Flex vertical gap={16}>
                 <Row gutter={[16, 16]}>
-                    {query.isLoading ? (
-                        Array.from({ length: 6 }, (_, index) => (
-                            <Col key={index} xs={24} sm={12} xl={8} xxl={4}>
-                                <Card variant="borderless"><Skeleton active paragraph={{ rows: 1 }} /></Card>
-                            </Col>
-                        ))
-                    ) : (
-                        (data?.metrics || []).map((item) => (
-                            <Col key={item.key} xs={24} sm={12} xl={8} xxl={4}>
-                                <Card variant="borderless">
-                                    <Flex align="center" gap={12}>
-                                        <span className="flex size-10 items-center justify-center rounded-lg bg-slate-100 text-lg text-slate-700 dark:bg-slate-800 dark:text-slate-200">{metricIcons[item.key] || <BarChartOutlined />}</span>
-                                        <div>
-                                            <Typography.Text type="secondary">{item.label}</Typography.Text>
-                                            <div className="mt-1 text-2xl font-semibold tabular-nums">{item.key === "failureRate" ? `${item.value}%` : item.value.toLocaleString()}</div>
-                                        </div>
-                                    </Flex>
-                                </Card>
-                            </Col>
-                        ))
-                    )}
+                    {query.isLoading
+                        ? Array.from({ length: 6 }, (_, index) => (
+                              <Col key={index} xs={24} sm={12} xl={8} xxl={4}>
+                                  <Card variant="borderless">
+                                      <Skeleton active paragraph={{ rows: 1 }} />
+                                  </Card>
+                              </Col>
+                          ))
+                        : (data?.metrics || []).map((item) => (
+                              <Col key={item.key} xs={24} sm={12} xl={8} xxl={4}>
+                                  <Card variant="borderless">
+                                      <Flex align="center" gap={12}>
+                                          <span className="flex size-10 items-center justify-center rounded-lg bg-slate-100 text-lg text-slate-700 dark:bg-slate-800 dark:text-slate-200">{metricIcons[item.key] || <BarChartOutlined />}</span>
+                                          <div>
+                                              <Typography.Text type="secondary">{item.label}</Typography.Text>
+                                              <div className="mt-1 text-2xl font-semibold tabular-nums">{item.key === "failureRate" ? `${item.value}%` : item.value.toLocaleString()}</div>
+                                          </div>
+                                      </Flex>
+                                  </Card>
+                              </Col>
+                          ))}
                 </Row>
 
                 <Row gutter={[16, 16]}>
@@ -115,7 +115,16 @@ function RankCard({ title, items, empty, danger = false }: { title: string; item
 function TaskTable({ tasks, loading }: { tasks: AdminGenerationTask[]; loading: boolean }) {
     const columns: TableColumnsType<AdminGenerationTask> = [
         { title: "时间", dataIndex: "createdAt", width: 150, render: (value: string) => <Typography.Text type="secondary">{dayjs(value).format("MM-DD HH:mm:ss")}</Typography.Text> },
-        { title: "用户", dataIndex: "userId", width: 150, render: (value: string) => <Typography.Text copyable ellipsis style={{ maxWidth: 140 }}>{value}</Typography.Text> },
+        {
+            title: "用户",
+            dataIndex: "userId",
+            width: 150,
+            render: (value: string) => (
+                <Typography.Text copyable ellipsis style={{ maxWidth: 140 }}>
+                    {value}
+                </Typography.Text>
+            ),
+        },
         { title: "模型", dataIndex: "model", ellipsis: true },
         { title: "渠道", dataIndex: "channelName", width: 140, ellipsis: true },
         { title: "类型", dataIndex: "modality", width: 90, render: (_: string, item) => <Tag>{item.modality || item.path}</Tag> },

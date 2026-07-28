@@ -12,6 +12,7 @@ import (
 
 func TestProductionTemplateHTTPVersionsPreviewAndBatchSnapshot(t *testing.T) {
 	tenant := seedRouterTestTenant(t, "production-template")
+	prepareRouterLegacyBatchBilling(t, tenant)
 	database, err := repository.DB()
 	if err != nil { t.Fatal(err) }
 	brand := model.Brand{ID: "brand-router-template", OrganizationID: tenant.Organization.ID, Name: "路由品牌", Tone: "克制专业", Guidelines: "使用暖色柔光", ProhibitedTerms: []string{"夸大宣传"}, Version: 1, CreatedBy: tenant.User.ID, CreatedAt: "1", UpdatedAt: "1"}
@@ -23,13 +24,19 @@ func TestProductionTemplateHTTPVersionsPreviewAndBatchSnapshot(t *testing.T) {
 
 	client, baseURL := loginRouterTestClient(t, tenant.User.Username)
 	headers := map[string]string{"X-Organization-ID": tenant.Organization.ID}
-	createdResponse := routerTestJSON(t, client, http.MethodPost, baseURL+"/api/commerce/production-templates", model.SaveProductionTemplateInput{Name: "企业棚拍", Description: "统一棚拍语言", Status: model.ProductionTemplateStatusActive, Prompt: "模板版本一"}, headers)
+	createdResponse := routerTestJSON(t, client, http.MethodPost, baseURL+"/api/commerce/production-templates", model.SaveProductionTemplateInput{Name: "企业棚拍", Description: "统一棚拍语言", Status: model.ProductionTemplateStatusDraft, Prompt: "模板版本一"}, headers)
 	var template model.ProductionTemplate
-	if createdResponse.Code != 0 || json.Unmarshal(createdResponse.Data, &template) != nil || template.CurrentVersion != 1 || template.Version != 1 || template.CurrentPrompt != "模板版本一" { t.Fatalf("create template response: %#v, template=%#v", createdResponse, template) }
-	updatedResponse := routerTestJSON(t, client, http.MethodPost, baseURL+"/api/commerce/production-templates", model.SaveProductionTemplateInput{ID: template.ID, Name: template.Name, Description: template.Description, Status: model.ProductionTemplateStatusActive, Prompt: "模板版本二", Version: template.Version}, headers)
+	if createdResponse.Code != 0 || json.Unmarshal(createdResponse.Data, &template) != nil || template.CurrentVersion != 0 || template.Version != 1 { t.Fatalf("create template response: %#v, template=%#v", createdResponse, template) }
+	firstPublishResponse := routerTestJSON(t, client, http.MethodPost, baseURL+"/api/commerce/production-templates/"+template.ID+"/publish", model.PublishProductionTemplateInput{ExpectedVersion: template.Version}, headers)
+	var firstPublished model.ProductionTemplate
+	if firstPublishResponse.Code != 0 || json.Unmarshal(firstPublishResponse.Data, &firstPublished) != nil || firstPublished.CurrentVersion != 1 || firstPublished.Version != 2 || firstPublished.CurrentPrompt != "模板版本一" { t.Fatalf("first publish response: %#v, template=%#v", firstPublishResponse, firstPublished) }
+	updatedResponse := routerTestJSON(t, client, http.MethodPost, baseURL+"/api/commerce/production-templates", model.SaveProductionTemplateInput{ID: template.ID, Name: template.Name, Description: template.Description, Status: model.ProductionTemplateStatusDraft, Prompt: "模板版本二", Version: firstPublished.Version}, headers)
 	var updated model.ProductionTemplate
-	if updatedResponse.Code != 0 || json.Unmarshal(updatedResponse.Data, &updated) != nil || updated.CurrentVersion != 2 || updated.Version != 2 || updated.CurrentPrompt != "模板版本二" { t.Fatalf("update template response: %#v, template=%#v", updatedResponse, updated) }
-	if stale := routerTestJSON(t, client, http.MethodPost, baseURL+"/api/commerce/production-templates", model.SaveProductionTemplateInput{ID: template.ID, Name: template.Name, Status: model.ProductionTemplateStatusActive, Prompt: "过期覆盖", Version: 1}, headers); stale.Code != 1 { t.Fatalf("stale template response: %#v", stale) }
+	if updatedResponse.Code != 0 || json.Unmarshal(updatedResponse.Data, &updated) != nil || updated.CurrentVersion != 1 || updated.Version != 3 { t.Fatalf("update template response: %#v, template=%#v", updatedResponse, updated) }
+	secondPublishResponse := routerTestJSON(t, client, http.MethodPost, baseURL+"/api/commerce/production-templates/"+template.ID+"/publish", model.PublishProductionTemplateInput{ExpectedVersion: updated.Version}, headers)
+	var secondPublished model.ProductionTemplate
+	if secondPublishResponse.Code != 0 || json.Unmarshal(secondPublishResponse.Data, &secondPublished) != nil || secondPublished.CurrentVersion != 2 || secondPublished.Version != 4 || secondPublished.CurrentPrompt != "模板版本二" { t.Fatalf("second publish response: %#v, template=%#v", secondPublishResponse, secondPublished) }
+	if stale := routerTestJSON(t, client, http.MethodPost, baseURL+"/api/commerce/production-templates", model.SaveProductionTemplateInput{ID: template.ID, Name: template.Name, Status: model.ProductionTemplateStatusDraft, Prompt: "过期覆盖", Version: 1}, headers); stale.Code != 1 { t.Fatalf("stale template response: %#v", stale) }
 	versionsResponse := routerTestJSON(t, client, http.MethodGet, baseURL+"/api/commerce/production-templates/"+template.ID+"/versions", nil, headers)
 	var versions []model.ProductionTemplateVersion
 	if versionsResponse.Code != 0 || json.Unmarshal(versionsResponse.Data, &versions) != nil || len(versions) != 2 || versions[0].Version != 2 || versions[1].Prompt != "模板版本一" { t.Fatalf("template versions response: %#v, versions=%#v", versionsResponse, versions) }

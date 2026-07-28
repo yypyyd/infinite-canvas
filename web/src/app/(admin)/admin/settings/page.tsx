@@ -71,12 +71,60 @@ type EditorMode = "visual" | "json";
 
 const modelAspectRatioOptions = ["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16"];
 const settingsTabs = [
-    { key: "models", label: <span className="inline-flex items-center gap-2"><Boxes className="size-4" />模型与计费</span> },
-    { key: "access", label: <span className="inline-flex items-center gap-2"><ShieldCheck className="size-4" />访问与注册</span> },
-    { key: "operations", label: <span className="inline-flex items-center gap-2"><Megaphone className="size-4" />运营设置</span> },
-    { key: "monitoring", label: <span className="inline-flex items-center gap-2"><Activity className="size-4" />运维告警</span> },
-    { key: "email", label: <span className="inline-flex items-center gap-2"><Mail className="size-4" />邮件服务</span> },
-    { key: "sync", label: <span className="inline-flex items-center gap-2"><RefreshCw className="size-4" />提示词同步</span> },
+    {
+        key: "models",
+        label: (
+            <span className="inline-flex items-center gap-2">
+                <Boxes className="size-4" />
+                模型与计费
+            </span>
+        ),
+    },
+    {
+        key: "access",
+        label: (
+            <span className="inline-flex items-center gap-2">
+                <ShieldCheck className="size-4" />
+                访问与注册
+            </span>
+        ),
+    },
+    {
+        key: "operations",
+        label: (
+            <span className="inline-flex items-center gap-2">
+                <Megaphone className="size-4" />
+                运营设置
+            </span>
+        ),
+    },
+    {
+        key: "monitoring",
+        label: (
+            <span className="inline-flex items-center gap-2">
+                <Activity className="size-4" />
+                运维告警
+            </span>
+        ),
+    },
+    {
+        key: "email",
+        label: (
+            <span className="inline-flex items-center gap-2">
+                <Mail className="size-4" />
+                邮件服务
+            </span>
+        ),
+    },
+    {
+        key: "sync",
+        label: (
+            <span className="inline-flex items-center gap-2">
+                <RefreshCw className="size-4" />
+                提示词同步
+            </span>
+        ),
+    },
 ];
 
 export default function AdminSettingsPage() {
@@ -204,13 +252,7 @@ export default function AdminSettingsPage() {
             <Flex vertical gap={16}>
                 <Card variant="borderless">
                     <Flex justify="space-between" align="center" gap={16} wrap>
-                        <Tabs
-                            activeKey={activeSection}
-                            onChange={(key) => setActiveSection(key as SettingsSectionKey)}
-                            items={settingsTabs}
-                            tabBarStyle={{ margin: 0 }}
-                            className="min-w-0 flex-1"
-                        />
+                        <Tabs activeKey={activeSection} onChange={(key) => setActiveSection(key as SettingsSectionKey)} items={settingsTabs} tabBarStyle={{ margin: 0 }} className="min-w-0 flex-1" />
                         <Space>
                             <Button icon={<ReloadOutlined />} loading={isLoading} onClick={() => void loadSettings()}>
                                 刷新
@@ -362,9 +404,28 @@ function GroupRatioEditor({ value, onChange }: { value?: Record<string, number>;
                 pagination={false}
                 dataSource={tableRows}
                 columns={[
-                    { title: "分组", dataIndex: "group", render: (_: unknown, item: { group: string; ratio: number; _index: number }) => <Input value={item.group} disabled={item.group === "default"} onChange={(event) => updateRows(rows.map((row, index) => (index === item._index ? { ...row, group: normalizePricingToken(event.target.value) } : row)))} /> },
-                    { title: "倍率", dataIndex: "ratio", width: 180, render: (_: unknown, item: { group: string; ratio: number; _index: number }) => <InputNumber min={0.0001} step={0.1} className="!w-full" value={item.ratio} onChange={(next) => updateRows(rows.map((row, index) => (index === item._index ? { ...row, ratio: Number(next) || 1 } : row)))} /> },
-                    { title: "操作", width: 80, render: (_: unknown, item: { group: string; _index: number }) => <Button danger size="small" disabled={item.group === "default"} icon={<DeleteOutlined />} onClick={() => updateRows(rows.filter((_, index) => index !== item._index))} /> },
+                    {
+                        title: "分组",
+                        dataIndex: "group",
+                        render: (_: unknown, item: { group: string; ratio: number; _index: number }) => (
+                            <Input value={item.group} disabled={item.group === "default"} onChange={(event) => updateRows(rows.map((row, index) => (index === item._index ? { ...row, group: normalizePricingToken(event.target.value) } : row)))} />
+                        ),
+                    },
+                    {
+                        title: "倍率",
+                        dataIndex: "ratio",
+                        width: 180,
+                        render: (_: unknown, item: { group: string; ratio: number; _index: number }) => (
+                            <InputNumber min={0.0001} step={0.1} className="!w-full" value={item.ratio} onChange={(next) => updateRows(rows.map((row, index) => (index === item._index ? { ...row, ratio: Number(next) || 1 } : row)))} />
+                        ),
+                    },
+                    {
+                        title: "操作",
+                        width: 80,
+                        render: (_: unknown, item: { group: string; _index: number }) => (
+                            <Button danger size="small" disabled={item.group === "default"} icon={<DeleteOutlined />} onClick={() => updateRows(rows.filter((_, index) => index !== item._index))} />
+                        ),
+                    },
                 ]}
             />
         </Flex>
@@ -434,10 +495,22 @@ function normalizeModelAspectRatios(items: Record<string, string[]>): Record<str
 }
 
 function normalizeManagedModels(items: Partial<AdminManagedModel>[], availableModels: string[] = [], aspectRatios: Record<string, string[]> = {}): AdminManagedModel[] {
-    const seedModels = items.length ? items : availableModels.map((model, index) => {
-        const modality = inferModelModality(model);
-        return { id: model, name: model, modality, operations: inferModelOperations(model, modality), enabled: true, sort: index, aspectRatios: aspectRatios[model] || inferModelAspectRatios(model), resolutionTiers: defaultResolutionTiers(modality), remark: "" };
-    });
+    const seedModels = items.length
+        ? items
+        : availableModels.map((model, index) => {
+              const modality = inferModelModality(model);
+              return {
+                  id: model,
+                  name: model,
+                  modality,
+                  operations: inferModelOperations(model, modality),
+                  enabled: true,
+                  sort: index,
+                  aspectRatios: aspectRatios[model] || inferModelAspectRatios(model),
+                  resolutionTiers: defaultResolutionTiers(modality),
+                  remark: "",
+              };
+          });
     const seen = new Set<string>();
     return seedModels
         .map((item, index) => {
@@ -473,7 +546,10 @@ function normalizeGroupRatios(items: Record<string, number>): Record<string, num
 }
 
 function enabledManagedModelIds(items: Partial<AdminManagedModel>[] = []) {
-    return items.filter((item) => item.enabled !== false && item.id).sort((a, b) => (Number(a.sort) || 0) - (Number(b.sort) || 0)).map((item) => item.id || "");
+    return items
+        .filter((item) => item.enabled !== false && item.id)
+        .sort((a, b) => (Number(a.sort) || 0) - (Number(b.sort) || 0))
+        .map((item) => item.id || "");
 }
 
 function modelAspectRatiosFromManagedModels(items: AdminManagedModel[], fallback: Record<string, string[]>) {
@@ -565,12 +641,14 @@ function normalizeChannelModels(items: Partial<AdminChannelModel>[] = []): Admin
         const model = item.model?.trim() || "";
         if (!model || seen.has(model)) return [];
         seen.add(model);
-        return [{
-            model,
-            upstreamModel: item.upstreamModel?.trim() || model,
-            operations: Array.from(new Set((item.operations || []).map(normalizePricingToken).filter(Boolean))),
-            resolutionTiers: Array.from(new Set((item.resolutionTiers || []).map(normalizeResolutionTier).filter(Boolean))),
-        }];
+        return [
+            {
+                model,
+                upstreamModel: item.upstreamModel?.trim() || model,
+                operations: Array.from(new Set((item.operations || []).map(normalizePricingToken).filter(Boolean))),
+                resolutionTiers: Array.from(new Set((item.resolutionTiers || []).map(normalizeResolutionTier).filter(Boolean))),
+            },
+        ];
     });
 }
 

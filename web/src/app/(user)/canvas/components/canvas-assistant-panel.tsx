@@ -56,7 +56,28 @@ type CanvasAssistantPanelProps = {
     onCollapse: () => void;
 };
 
-export function CanvasAssistantPanel({ projectId, nodes, selectedNodeIds, sessions, activeSessionId, onSelectNodeIds, onSessionsChange, onPersistSessions, onInsertImage, onInsertImages, onInsertVideo, onArrangeNodes, onInsertText, onPersistToolResult, onApplyDestructiveTool, onRestoreToolResult, onPasteImage, collapsed, onCollapseStart, onCollapse }: CanvasAssistantPanelProps) {
+export function CanvasAssistantPanel({
+    projectId,
+    nodes,
+    selectedNodeIds,
+    sessions,
+    activeSessionId,
+    onSelectNodeIds,
+    onSessionsChange,
+    onPersistSessions,
+    onInsertImage,
+    onInsertImages,
+    onInsertVideo,
+    onArrangeNodes,
+    onInsertText,
+    onPersistToolResult,
+    onApplyDestructiveTool,
+    onRestoreToolResult,
+    onPasteImage,
+    collapsed,
+    onCollapseStart,
+    onCollapse,
+}: CanvasAssistantPanelProps) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const effectiveConfig = useEffectiveConfig();
     const pricingRules = useConfigStore((state) => state.publicSettings?.modelChannel.pricingRules);
@@ -136,38 +157,51 @@ export function CanvasAssistantPanel({ projectId, nodes, selectedNodeIds, sessio
     }, [selectedNodeKey]);
 
     const updateSession = useCallback((sessionId: string, updater: (session: CanvasAssistantSession) => CanvasAssistantSession) => {
-        const nextSessions = localSessionsRef.current.map((session) => session.id === sessionId ? updater(session) : session);
+        const nextSessions = localSessionsRef.current.map((session) => (session.id === sessionId ? updater(session) : session));
         localSessionsRef.current = nextSessions;
         setLocalSessions(nextSessions);
     }, []);
 
-    const appendMessage = useCallback((sessionId: string, message: CanvasAssistantMessage) => {
-        updateSession(sessionId, (session) => ({
-            ...session,
-            title: session.messages.length ? session.title : message.text.slice(0, 18) || "新对话",
-            messages: [...session.messages, message],
-            updatedAt: new Date().toISOString(),
-        }));
-    }, [updateSession]);
+    const appendMessage = useCallback(
+        (sessionId: string, message: CanvasAssistantMessage) => {
+            updateSession(sessionId, (session) => ({
+                ...session,
+                title: session.messages.length ? session.title : message.text.slice(0, 18) || "新对话",
+                messages: [...session.messages, message],
+                updatedAt: new Date().toISOString(),
+            }));
+        },
+        [updateSession],
+    );
 
-    const updateMessage = useCallback((sessionId: string, messageId: string, patch: Partial<CanvasAssistantMessage>) => {
-        updateSession(sessionId, (session) => ({
-            ...session,
-            messages: session.messages.map((message) => (message.id === messageId ? { ...message, ...patch } : message)),
-            updatedAt: new Date().toISOString(),
-        }));
-    }, [updateSession]);
+    const updateMessage = useCallback(
+        (sessionId: string, messageId: string, patch: Partial<CanvasAssistantMessage>) => {
+            updateSession(sessionId, (session) => ({
+                ...session,
+                messages: session.messages.map((message) => (message.id === messageId ? { ...message, ...patch } : message)),
+                updatedAt: new Date().toISOString(),
+            }));
+        },
+        [updateSession],
+    );
 
-    const persistMessagePatch = useCallback(async (sessionId: string, messageId: string, patch: Partial<CanvasAssistantMessage>, activeId: string | null) => {
-        const nextSessions = localSessionsRef.current.map((session) => session.id === sessionId ? {
-            ...session,
-            messages: session.messages.map((message) => message.id === messageId ? { ...message, ...patch } : message),
-            updatedAt: new Date().toISOString(),
-        } : session);
-        localSessionsRef.current = nextSessions;
-        setLocalSessions(nextSessions);
-        await onPersistSessions(nextSessions, activeId);
-    }, [onPersistSessions]);
+    const persistMessagePatch = useCallback(
+        async (sessionId: string, messageId: string, patch: Partial<CanvasAssistantMessage>, activeId: string | null) => {
+            const nextSessions = localSessionsRef.current.map((session) =>
+                session.id === sessionId
+                    ? {
+                          ...session,
+                          messages: session.messages.map((message) => (message.id === messageId ? { ...message, ...patch } : message)),
+                          updatedAt: new Date().toISOString(),
+                      }
+                    : session,
+            );
+            localSessionsRef.current = nextSessions;
+            setLocalSessions(nextSessions);
+            await onPersistSessions(nextSessions, activeId);
+        },
+        [onPersistSessions],
+    );
 
     const startChatSession = () => {
         if (activeSession && activeSession.messages.length === 0) {
@@ -201,179 +235,195 @@ export function CanvasAssistantPanel({ projectId, nodes, selectedNodeIds, sessio
         cleanupImages({ sessions: [session] });
     };
 
-    const followAgentRun = useCallback(async (runId: string, sessionId: string, assistantMessageId: string, refs: CanvasAssistantReference[], after = 0) => {
-        if (inFlightRuns.current.has(runId)) return;
-        inFlightRuns.current.add(runId);
-        checkedRecoveryRuns.current.add(runId);
-        setIsRunning(true);
-        try {
-            await streamAgentRun(runId, async (event) => {
-                const advanceEvent = (patch: Partial<CanvasAssistantMessage> = {}) => updateMessage(sessionId, assistantMessageId, { ...patch, lastEventSequence: event.sequence });
-                if (event.type === "message.delta") {
-                    advanceEvent({ text: event.data.content || "", isLoading: false });
-                    return;
-                }
-                if (event.type === "run.completed") {
-                    advanceEvent({ isLoading: false, runId: undefined });
-                    return;
-                }
-                if (event.type === "run.failed") {
-                    advanceEvent({ text: event.data.error || "助手请求失败", isLoading: false, runId: undefined });
-                    return;
-                }
-                if (event.type === "run.cancelled") {
-                    advanceEvent({ text: "已取消", isLoading: false, runId: undefined });
-                    return;
-                }
-                if (event.type === "tool.confirmation_required" && event.data.callId && event.data.arguments) {
-                    if (event.data.name === "canvas.delete" && "nodeIds" in event.data.arguments && !("mode" in event.data.arguments)) {
-                        advanceEvent({ text: `请求删除 ${event.data.arguments.nodeIds.length} 个节点`, confirmation: { runId, callId: event.data.callId, name: "canvas.delete", arguments: { nodeIds: event.data.arguments.nodeIds }, status: "pending" }, isLoading: false });
-                        return;
-                    }
-                    if (event.data.name === "canvas.update_text" && "nodeId" in event.data.arguments && "text" in event.data.arguments) {
-                        advanceEvent({ text: `请求修改文本节点 ${event.data.arguments.nodeId}`, confirmation: { runId, callId: event.data.callId, name: "canvas.update_text", arguments: { nodeId: event.data.arguments.nodeId, text: event.data.arguments.text }, status: "pending" }, isLoading: false });
-                        return;
-                    }
-                }
-                if (event.type === "tool.completed" && event.data.callId) {
-                    advanceEvent({ confirmation: undefined, isLoading: event.data.status !== "rejected" });
-                    return;
-                }
-                if (event.type !== "tool.call" || !event.data.name || !event.data.callId || !event.data.arguments) {
-                    advanceEvent();
-                    return;
-                }
+    const followAgentRun = useCallback(
+        async (runId: string, sessionId: string, assistantMessageId: string, refs: CanvasAssistantReference[], after = 0) => {
+            if (inFlightRuns.current.has(runId)) return;
+            inFlightRuns.current.add(runId);
+            checkedRecoveryRuns.current.add(runId);
+            setIsRunning(true);
+            try {
+                await streamAgentRun(
+                    runId,
+                    async (event) => {
+                        const advanceEvent = (patch: Partial<CanvasAssistantMessage> = {}) => updateMessage(sessionId, assistantMessageId, { ...patch, lastEventSequence: event.sequence });
+                        if (event.type === "message.delta") {
+                            advanceEvent({ text: event.data.content || "", isLoading: false });
+                            return;
+                        }
+                        if (event.type === "run.completed") {
+                            advanceEvent({ isLoading: false, runId: undefined });
+                            return;
+                        }
+                        if (event.type === "run.failed") {
+                            advanceEvent({ text: event.data.error || "助手请求失败", isLoading: false, runId: undefined });
+                            return;
+                        }
+                        if (event.type === "run.cancelled") {
+                            advanceEvent({ text: "已取消", isLoading: false, runId: undefined });
+                            return;
+                        }
+                        if (event.type === "tool.confirmation_required" && event.data.callId && event.data.arguments) {
+                            if (event.data.name === "canvas.delete" && "nodeIds" in event.data.arguments && !("mode" in event.data.arguments)) {
+                                advanceEvent({
+                                    text: `请求删除 ${event.data.arguments.nodeIds.length} 个节点`,
+                                    confirmation: { runId, callId: event.data.callId, name: "canvas.delete", arguments: { nodeIds: event.data.arguments.nodeIds }, status: "pending" },
+                                    isLoading: false,
+                                });
+                                return;
+                            }
+                            if (event.data.name === "canvas.update_text" && "nodeId" in event.data.arguments && "text" in event.data.arguments) {
+                                advanceEvent({
+                                    text: `请求修改文本节点 ${event.data.arguments.nodeId}`,
+                                    confirmation: { runId, callId: event.data.callId, name: "canvas.update_text", arguments: { nodeId: event.data.arguments.nodeId, text: event.data.arguments.text }, status: "pending" },
+                                    isLoading: false,
+                                });
+                                return;
+                            }
+                        }
+                        if (event.type === "tool.completed" && event.data.callId) {
+                            advanceEvent({ confirmation: undefined, isLoading: event.data.status !== "rejected" });
+                            return;
+                        }
+                        if (event.type !== "tool.call" || !event.data.name || !event.data.callId || !event.data.arguments) {
+                            advanceEvent();
+                            return;
+                        }
 
-                const callId = event.data.callId;
-                const toolKey = `${runId}:${callId}`;
-                if (handledToolCalls.current.has(toolKey)) return;
-                const toolName = event.data.name;
-                const toolArguments = event.data.arguments;
-                const serverReceipt = await getAgentToolResultReceipt(runId, callId);
-                if (serverReceipt.status === "completed" && serverReceipt.result) {
-                    completedToolResults.set(toolKey, serverReceipt.result);
-                    advanceEvent();
-                    return;
-                }
-                if (serverReceipt.status !== "pending") {
-                    advanceEvent({ isLoading: false });
-                    return;
-                }
-                const completedResult = completedToolResults.get(toolKey) || onRestoreToolResult(runId, callId) || restoreAgentToolResult(runId, callId, toolName, toolArguments, nodesRef.current);
-                if (completedResult) {
-                    await claimAgentToolExecution(runId, callId, toolExecutorToken.current);
-                    const persistedResult = await onPersistToolResult(runId, callId, toolName, completedResult);
-                    completedToolResults.set(toolKey, persistedResult);
-                    await claimAgentToolExecution(runId, callId, toolExecutorToken.current);
-                    await submitAgentToolResult(runId, toolExecutorToken.current, persistedResult);
-                    advanceEvent();
-                    return;
-                }
-                handledToolCalls.current.add(toolKey);
-                try {
-                    await claimAgentToolExecution(runId, callId, toolExecutorToken.current);
-                } catch (error) {
-                    handledToolCalls.current.delete(toolKey);
-                    throw error;
-                }
-                const toolAbortController = new AbortController();
-                const leaseHeartbeat = window.setInterval(() => {
-                    void claimAgentToolExecution(runId, callId, toolExecutorToken.current).catch(() => toolAbortController.abort());
-                }, 30_000);
-                let result: AgentToolResult;
-                try {
-                    if (toolName === "image.generate" && "count" in toolArguments) {
-                        updateMessage(sessionId, assistantMessageId, { text: "正在调用生图工具", isLoading: true });
-                        const imageModel = effectiveConfig.imageModel || effectiveConfig.model;
-                        const toolConfig: AiConfig = { ...effectiveConfig, model: imageModel, count: String(toolArguments.count), quality: supportsImageQuality(imageModel) ? effectiveConfig.quality : "auto" };
-                        if (!isAiConfigReady(toolConfig, imageModel)) throw new Error("请先配置可用的图片模型");
-                        const toolReferences = supportsImageReferences(imageModel, managedModels) ? refs.filter((item) => item.dataUrl) : [];
-                        const referenceImages: ReferenceImage[] = await Promise.all(
-                            toolReferences.map(async (item) => ({ id: item.id, name: `${item.title}.png`, type: "image/png", dataUrl: await imageToDataUrl(item), storageKey: item.storageKey })),
-                        );
-                        const idempotencyKey = `agent:${runId}:${callId}`;
-                        const generated = referenceImages.length ? await requestEdit(toolConfig, toolArguments.prompt, referenceImages, undefined, { signal: toolAbortController.signal, idempotencyKey }) : await requestGeneration(toolConfig, toolArguments.prompt, { signal: toolAbortController.signal, idempotencyKey });
-                        const stored = await Promise.all(generated.map((image) => uploadImage(image.dataUrl)));
-                        const canvasImages = stored.map((image, index) => ({ id: generated[index].id, dataUrl: image.url, storageKey: image.storageKey, prompt: toolArguments.prompt, agentRunId: runId, agentToolCallId: callId }));
-                        await claimAgentToolExecution(runId, callId, toolExecutorToken.current);
-                        const inserted = await onInsertImages(canvasImages);
-                        updateMessage(sessionId, assistantMessageId, { text: `已生成并插入 ${inserted.length} 张图片，正在整理结果`, images: canvasImages, isLoading: true });
-                        result = { callId, status: "success", images: inserted };
-                    } else if (toolName === "video.generate" && "duration" in toolArguments) {
-                        updateMessage(sessionId, assistantMessageId, { text: "正在生成视频", isLoading: true });
-                        const videoModel = effectiveConfig.videoModel || effectiveConfig.model;
-                        const toolConfig: AiConfig = { ...effectiveConfig, model: videoModel, videoSeconds: String(toolArguments.duration) };
-                        if (!isAiConfigReady(toolConfig, videoModel)) throw new Error("请先配置可用的视频模型");
-                        const reference = toolArguments.imageNodeId ? refs.find((item) => item.id === toolArguments.imageNodeId && item.type === CanvasNodeType.Image && item.dataUrl) : undefined;
-                        if (toolArguments.imageNodeId && !reference) throw new Error("未找到指定的本轮参考图片节点");
-                        const referenceImages: ReferenceImage[] = reference
-                            ? [{ id: reference.id, name: `${reference.title}.png`, type: "image/png", dataUrl: await imageToDataUrl(reference), storageKey: reference.storageKey }]
-                            : [];
-                        const stored = await storeGeneratedVideo(await requestVideoGeneration(toolConfig, toolArguments.prompt, referenceImages, [], [], { signal: toolAbortController.signal, idempotencyKey: `agent:${runId}:${callId}` }));
-                        if (!stored.storageKey) throw new Error("生成的视频未保存到工作区");
-                        await claimAgentToolExecution(runId, callId, toolExecutorToken.current);
-                        const video = await onInsertVideo({ ...stored, prompt: toolArguments.prompt, agentRunId: runId, agentToolCallId: callId });
-                        updateMessage(sessionId, assistantMessageId, { text: "已生成并插入视频，正在整理结果", isLoading: true });
-                        result = { callId, status: "success", video };
-                    } else if (toolName === "canvas.arrange" && "nodeIds" in toolArguments && "mode" in toolArguments) {
-                        updateMessage(sessionId, assistantMessageId, { text: "正在排列选中节点", isLoading: true });
-                        await claimAgentToolExecution(runId, callId, toolExecutorToken.current);
-                        const positions = onArrangeNodes(toolArguments.nodeIds, toolArguments.mode, toolArguments.gap);
-                        result = { callId, status: "success", nodeIds: toolArguments.nodeIds, positions };
-                    } else if (toolName === "canvas.add_text" && "placement" in toolArguments) {
-                        updateMessage(sessionId, assistantMessageId, { text: "正在插入文本节点", isLoading: true });
-                        await claimAgentToolExecution(runId, callId, toolExecutorToken.current);
-                        const nodeId = onInsertText(toolArguments.text, toolArguments.placement, { runId, callId });
-                        result = { callId, status: "success", nodeId, placement: toolArguments.placement };
-                    } else if (toolName === "canvas.delete" && "nodeIds" in toolArguments && !("mode" in toolArguments)) {
-                        if (toolArguments.nodeIds.some((id) => !selectedNodeIdsRef.current.has(id) || !nodesRef.current.some((node) => node.id === id))) throw new Error("只能删除当前仍选中的节点");
-                        updateMessage(sessionId, assistantMessageId, { text: "正在删除已授权节点", isLoading: true });
-                        await claimAgentToolExecution(runId, callId, toolExecutorToken.current);
-                        result = await onApplyDestructiveTool(runId, callId, toolName, { nodeIds: toolArguments.nodeIds });
-                    } else if (toolName === "canvas.update_text" && "nodeId" in toolArguments && "text" in toolArguments) {
-                        if (!selectedNodeIdsRef.current.has(toolArguments.nodeId) || !nodesRef.current.some((node) => node.id === toolArguments.nodeId && node.type === CanvasNodeType.Text)) throw new Error("只能修改当前仍选中的文本节点");
-                        updateMessage(sessionId, assistantMessageId, { text: "正在更新文本节点", isLoading: true });
-                        await claimAgentToolExecution(runId, callId, toolExecutorToken.current);
-                        result = await onApplyDestructiveTool(runId, callId, toolName, { nodeId: toolArguments.nodeId, text: toolArguments.text });
-                    } else {
-                        throw new Error("不支持的画布工具调用");
-                    }
-                } catch (error) {
-                    window.clearInterval(leaseHeartbeat);
-                    const appliedResult = onRestoreToolResult(runId, callId);
-                    handledToolCalls.current.delete(toolKey);
-                    if (appliedResult) {
-                        completedToolResults.set(toolKey, appliedResult);
-                        throw new Error("画布操作已完成，但结果尚未确认保存；请刷新页面恢复运行，系统不会重复执行该工具");
-                    }
-                    const errorMessage = error instanceof Error ? error.message : "工具执行失败";
-                    const failedResult: AgentToolResult = { callId, status: "failed", error: errorMessage };
-                    await submitAgentToolResult(runId, toolExecutorToken.current, failedResult);
-                    completedToolResults.set(toolKey, failedResult);
-                    handledToolCalls.current.delete(toolKey);
-                    advanceEvent();
-                    return;
-                }
-                try {
-                    await claimAgentToolExecution(runId, callId, toolExecutorToken.current);
-                    result = await onPersistToolResult(runId, callId, toolName, result);
-                    completedToolResults.set(toolKey, result);
-                    await claimAgentToolExecution(runId, callId, toolExecutorToken.current);
-                    await submitAgentToolResult(runId, toolExecutorToken.current, result);
-                } catch {
-                    handledToolCalls.current.delete(toolKey);
-                    throw new Error("画布操作已完成，但结果保存或回传失败；请刷新页面恢复运行，系统不会重复执行该工具");
-                } finally {
-                    window.clearInterval(leaseHeartbeat);
-                }
-                handledToolCalls.current.delete(toolKey);
-                advanceEvent();
-            }, undefined, after);
-        } finally {
-            inFlightRuns.current.delete(runId);
-            setIsRunning(inFlightRuns.current.size > 0);
-        }
-    }, [effectiveConfig, isAiConfigReady, managedModels, onApplyDestructiveTool, onArrangeNodes, onInsertImages, onInsertText, onInsertVideo, onPersistToolResult, onRestoreToolResult, updateMessage]);
+                        const callId = event.data.callId;
+                        const toolKey = `${runId}:${callId}`;
+                        if (handledToolCalls.current.has(toolKey)) return;
+                        const toolName = event.data.name;
+                        const toolArguments = event.data.arguments;
+                        const serverReceipt = await getAgentToolResultReceipt(runId, callId);
+                        if (serverReceipt.status === "completed" && serverReceipt.result) {
+                            completedToolResults.set(toolKey, serverReceipt.result);
+                            advanceEvent();
+                            return;
+                        }
+                        if (serverReceipt.status !== "pending") {
+                            advanceEvent({ isLoading: false });
+                            return;
+                        }
+                        const completedResult = completedToolResults.get(toolKey) || onRestoreToolResult(runId, callId) || restoreAgentToolResult(runId, callId, toolName, toolArguments, nodesRef.current);
+                        if (completedResult) {
+                            await claimAgentToolExecution(runId, callId, toolExecutorToken.current);
+                            const persistedResult = await onPersistToolResult(runId, callId, toolName, completedResult);
+                            completedToolResults.set(toolKey, persistedResult);
+                            await claimAgentToolExecution(runId, callId, toolExecutorToken.current);
+                            await submitAgentToolResult(runId, toolExecutorToken.current, persistedResult);
+                            advanceEvent();
+                            return;
+                        }
+                        handledToolCalls.current.add(toolKey);
+                        try {
+                            await claimAgentToolExecution(runId, callId, toolExecutorToken.current);
+                        } catch (error) {
+                            handledToolCalls.current.delete(toolKey);
+                            throw error;
+                        }
+                        const toolAbortController = new AbortController();
+                        const leaseHeartbeat = window.setInterval(() => {
+                            void claimAgentToolExecution(runId, callId, toolExecutorToken.current).catch(() => toolAbortController.abort());
+                        }, 30_000);
+                        let result: AgentToolResult;
+                        try {
+                            if (toolName === "image.generate" && "count" in toolArguments) {
+                                updateMessage(sessionId, assistantMessageId, { text: "正在调用生图工具", isLoading: true });
+                                const imageModel = effectiveConfig.imageModel || effectiveConfig.model;
+                                const toolConfig: AiConfig = { ...effectiveConfig, model: imageModel, count: String(toolArguments.count), quality: supportsImageQuality(imageModel) ? effectiveConfig.quality : "auto" };
+                                if (!isAiConfigReady(toolConfig, imageModel)) throw new Error("请先配置可用的图片模型");
+                                const toolReferences = supportsImageReferences(imageModel, managedModels) ? refs.filter((item) => item.dataUrl) : [];
+                                const referenceImages: ReferenceImage[] = await Promise.all(
+                                    toolReferences.map(async (item) => ({ id: item.id, name: `${item.title}.png`, type: "image/png", dataUrl: await imageToDataUrl(item), storageKey: item.storageKey })),
+                                );
+                                const idempotencyKey = `agent:${runId}:${callId}`;
+                                const generated = referenceImages.length
+                                    ? await requestEdit(toolConfig, toolArguments.prompt, referenceImages, undefined, { signal: toolAbortController.signal, idempotencyKey })
+                                    : await requestGeneration(toolConfig, toolArguments.prompt, { signal: toolAbortController.signal, idempotencyKey });
+                                const stored = await Promise.all(generated.map((image) => uploadImage(image.dataUrl)));
+                                const canvasImages = stored.map((image, index) => ({ id: generated[index].id, dataUrl: image.url, storageKey: image.storageKey, prompt: toolArguments.prompt, agentRunId: runId, agentToolCallId: callId }));
+                                await claimAgentToolExecution(runId, callId, toolExecutorToken.current);
+                                const inserted = await onInsertImages(canvasImages);
+                                updateMessage(sessionId, assistantMessageId, { text: `已生成并插入 ${inserted.length} 张图片，正在整理结果`, images: canvasImages, isLoading: true });
+                                result = { callId, status: "success", images: inserted };
+                            } else if (toolName === "video.generate" && "duration" in toolArguments) {
+                                updateMessage(sessionId, assistantMessageId, { text: "正在生成视频", isLoading: true });
+                                const videoModel = effectiveConfig.videoModel || effectiveConfig.model;
+                                const toolConfig: AiConfig = { ...effectiveConfig, model: videoModel, videoSeconds: String(toolArguments.duration) };
+                                if (!isAiConfigReady(toolConfig, videoModel)) throw new Error("请先配置可用的视频模型");
+                                const reference = toolArguments.imageNodeId ? refs.find((item) => item.id === toolArguments.imageNodeId && item.type === CanvasNodeType.Image && item.dataUrl) : undefined;
+                                if (toolArguments.imageNodeId && !reference) throw new Error("未找到指定的本轮参考图片节点");
+                                const referenceImages: ReferenceImage[] = reference ? [{ id: reference.id, name: `${reference.title}.png`, type: "image/png", dataUrl: await imageToDataUrl(reference), storageKey: reference.storageKey }] : [];
+                                const stored = await storeGeneratedVideo(await requestVideoGeneration(toolConfig, toolArguments.prompt, referenceImages, [], [], { signal: toolAbortController.signal, idempotencyKey: `agent:${runId}:${callId}` }));
+                                if (!stored.storageKey) throw new Error("生成的视频未保存到工作区");
+                                await claimAgentToolExecution(runId, callId, toolExecutorToken.current);
+                                const video = await onInsertVideo({ ...stored, prompt: toolArguments.prompt, agentRunId: runId, agentToolCallId: callId });
+                                updateMessage(sessionId, assistantMessageId, { text: "已生成并插入视频，正在整理结果", isLoading: true });
+                                result = { callId, status: "success", video };
+                            } else if (toolName === "canvas.arrange" && "nodeIds" in toolArguments && "mode" in toolArguments) {
+                                updateMessage(sessionId, assistantMessageId, { text: "正在排列选中节点", isLoading: true });
+                                await claimAgentToolExecution(runId, callId, toolExecutorToken.current);
+                                const positions = onArrangeNodes(toolArguments.nodeIds, toolArguments.mode, toolArguments.gap);
+                                result = { callId, status: "success", nodeIds: toolArguments.nodeIds, positions };
+                            } else if (toolName === "canvas.add_text" && "placement" in toolArguments) {
+                                updateMessage(sessionId, assistantMessageId, { text: "正在插入文本节点", isLoading: true });
+                                await claimAgentToolExecution(runId, callId, toolExecutorToken.current);
+                                const nodeId = onInsertText(toolArguments.text, toolArguments.placement, { runId, callId });
+                                result = { callId, status: "success", nodeId, placement: toolArguments.placement };
+                            } else if (toolName === "canvas.delete" && "nodeIds" in toolArguments && !("mode" in toolArguments)) {
+                                if (toolArguments.nodeIds.some((id) => !selectedNodeIdsRef.current.has(id) || !nodesRef.current.some((node) => node.id === id))) throw new Error("只能删除当前仍选中的节点");
+                                updateMessage(sessionId, assistantMessageId, { text: "正在删除已授权节点", isLoading: true });
+                                await claimAgentToolExecution(runId, callId, toolExecutorToken.current);
+                                result = await onApplyDestructiveTool(runId, callId, toolName, { nodeIds: toolArguments.nodeIds });
+                            } else if (toolName === "canvas.update_text" && "nodeId" in toolArguments && "text" in toolArguments) {
+                                if (!selectedNodeIdsRef.current.has(toolArguments.nodeId) || !nodesRef.current.some((node) => node.id === toolArguments.nodeId && node.type === CanvasNodeType.Text)) throw new Error("只能修改当前仍选中的文本节点");
+                                updateMessage(sessionId, assistantMessageId, { text: "正在更新文本节点", isLoading: true });
+                                await claimAgentToolExecution(runId, callId, toolExecutorToken.current);
+                                result = await onApplyDestructiveTool(runId, callId, toolName, { nodeId: toolArguments.nodeId, text: toolArguments.text });
+                            } else {
+                                throw new Error("不支持的画布工具调用");
+                            }
+                        } catch (error) {
+                            window.clearInterval(leaseHeartbeat);
+                            const appliedResult = onRestoreToolResult(runId, callId);
+                            handledToolCalls.current.delete(toolKey);
+                            if (appliedResult) {
+                                completedToolResults.set(toolKey, appliedResult);
+                                throw new Error("画布操作已完成，但结果尚未确认保存；请刷新页面恢复运行，系统不会重复执行该工具");
+                            }
+                            const errorMessage = error instanceof Error ? error.message : "工具执行失败";
+                            const failedResult: AgentToolResult = { callId, status: "failed", error: errorMessage };
+                            await submitAgentToolResult(runId, toolExecutorToken.current, failedResult);
+                            completedToolResults.set(toolKey, failedResult);
+                            handledToolCalls.current.delete(toolKey);
+                            advanceEvent();
+                            return;
+                        }
+                        try {
+                            await claimAgentToolExecution(runId, callId, toolExecutorToken.current);
+                            result = await onPersistToolResult(runId, callId, toolName, result);
+                            completedToolResults.set(toolKey, result);
+                            await claimAgentToolExecution(runId, callId, toolExecutorToken.current);
+                            await submitAgentToolResult(runId, toolExecutorToken.current, result);
+                        } catch {
+                            handledToolCalls.current.delete(toolKey);
+                            throw new Error("画布操作已完成，但结果保存或回传失败；请刷新页面恢复运行，系统不会重复执行该工具");
+                        } finally {
+                            window.clearInterval(leaseHeartbeat);
+                        }
+                        handledToolCalls.current.delete(toolKey);
+                        advanceEvent();
+                    },
+                    undefined,
+                    after,
+                );
+            } finally {
+                inFlightRuns.current.delete(runId);
+                setIsRunning(inFlightRuns.current.size > 0);
+            }
+        },
+        [effectiveConfig, isAiConfigReady, managedModels, onApplyDestructiveTool, onArrangeNodes, onInsertImages, onInsertText, onInsertVideo, onPersistToolResult, onRestoreToolResult, updateMessage],
+    );
 
     useEffect(() => {
         for (const session of localSessions) {
@@ -398,7 +448,12 @@ export function CanvasAssistantPanel({ projectId, nodes, selectedNodeIds, sessio
 
     const sendMessage = async (text: string, nextMode: AssistantMode, savedReferences?: CanvasAssistantReference[]) => {
         const activeModel = nextMode === "image" ? effectiveConfig.imageModel || effectiveConfig.model : effectiveConfig.textModel || effectiveConfig.model;
-        const requestConfig = { ...effectiveConfig, count: nextMode === "image" ? effectiveConfig.canvasImageCount || effectiveConfig.count : effectiveConfig.count, model: activeModel, quality: nextMode === "image" && !supportsImageQuality(activeModel) ? "auto" : effectiveConfig.quality };
+        const requestConfig = {
+            ...effectiveConfig,
+            count: nextMode === "image" ? effectiveConfig.canvasImageCount || effectiveConfig.count : effectiveConfig.count,
+            model: activeModel,
+            quality: nextMode === "image" && !supportsImageQuality(activeModel) ? "auto" : effectiveConfig.quality,
+        };
         if (!isAiConfigReady(requestConfig, requestConfig.model)) {
             openConfigDialog(true);
             return;
@@ -436,7 +491,7 @@ export function CanvasAssistantPanel({ projectId, nodes, selectedNodeIds, sessio
             let agentSessionId = session.agentSessionId;
             if (!agentSessionId) {
                 agentSessionId = `agent-session-${crypto.randomUUID()}`;
-                const nextSessions = localSessionsRef.current.map((current) => current.id === session.id ? { ...current, agentSessionId } : current);
+                const nextSessions = localSessionsRef.current.map((current) => (current.id === session.id ? { ...current, agentSessionId } : current));
                 localSessionsRef.current = nextSessions;
                 setLocalSessions(nextSessions);
                 await onPersistSessions(nextSessions, localActiveSessionId || session.id);
@@ -732,19 +787,22 @@ function AssistantComposer({
                         {mode === "image" ? (
                             <>
                                 <ModelPicker className="h-8 shrink-0" config={config} value={config.imageModel || config.model} onChange={(model) => onConfigChange("imageModel", model)} capability="image" onMissingConfig={onMissingConfig} />
-                                <CanvasImageSettingsPopover config={config} model={activeModel} operation={visibleReferences.some((item) => item.dataUrl) ? "edit" : "generation"} placement="topRight" getPopupContainer={() => document.body} buttonClassName="canvas-composer-settings canvas-composer-icon !h-8 !min-w-8 !rounded-full !px-2" onConfigChange={onConfigChange} onMissingConfig={onMissingConfig} />
+                                <CanvasImageSettingsPopover
+                                    config={config}
+                                    model={activeModel}
+                                    operation={visibleReferences.some((item) => item.dataUrl) ? "edit" : "generation"}
+                                    placement="topRight"
+                                    getPopupContainer={() => document.body}
+                                    buttonClassName="canvas-composer-settings canvas-composer-icon !h-8 !min-w-8 !rounded-full !px-2"
+                                    onConfigChange={onConfigChange}
+                                    onMissingConfig={onMissingConfig}
+                                />
                             </>
                         ) : (
                             <ModelPicker className="h-8 shrink-0" config={config} value={config.textModel || config.model} onChange={(model) => onConfigChange("textModel", model)} capability="text" onMissingConfig={onMissingConfig} />
                         )}
                     </div>
-                    <Button
-                        type="primary"
-                        className="!h-10 !min-w-16 shrink-0 !rounded-full !px-3"
-                        disabled={isRunning || !prompt.trim()}
-                        onClick={() => void onSubmit()}
-                        aria-label="发送"
-                    >
+                    <Button type="primary" className="!h-10 !min-w-16 shrink-0 !rounded-full !px-3" disabled={isRunning || !prompt.trim()} onClick={() => void onSubmit()} aria-label="发送">
                         <span className="flex items-center gap-1.5">
                             {creditQuote.matched ? (
                                 <span className="inline-flex items-center gap-1 text-xs font-medium tabular-nums">
@@ -832,13 +890,27 @@ function AssistantMessages({
                     {message.confirmation ? (
                         <div className="w-[250px] rounded-xl border p-3" style={{ background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.text }}>
                             <div className="text-xs font-medium">需要你的确认</div>
-                            <div className="mt-1 text-xs opacity-60">{message.confirmation.name === "canvas.delete" ? `删除 ${"nodeIds" in message.confirmation.arguments ? message.confirmation.arguments.nodeIds.length : 0} 个节点` : "覆盖所选文本节点内容"}</div>
+                            <div className="mt-1 text-xs opacity-60">
+                                {message.confirmation.name === "canvas.delete" ? `删除 ${"nodeIds" in message.confirmation.arguments ? message.confirmation.arguments.nodeIds.length : 0} 个节点` : "覆盖所选文本节点内容"}
+                            </div>
                             {message.confirmation.status === "pending" || message.confirmation.status === "approving" || message.confirmation.status === "failed" ? (
                                 <div className="mt-3 flex gap-2">
-                                    <Button size="small" danger={message.confirmation.name === "canvas.delete"} type="primary" loading={message.confirmation.status === "approving"} onClick={() => onConfirm({ ...message, confirmation: { ...message.confirmation!, status: "pending" } }, "approved")}>允许执行</Button>
-                                    <Button size="small" disabled={message.confirmation.status === "approving"} onClick={() => onConfirm({ ...message, confirmation: { ...message.confirmation!, status: "pending" } }, "rejected")}>拒绝</Button>
+                                    <Button
+                                        size="small"
+                                        danger={message.confirmation.name === "canvas.delete"}
+                                        type="primary"
+                                        loading={message.confirmation.status === "approving"}
+                                        onClick={() => onConfirm({ ...message, confirmation: { ...message.confirmation!, status: "pending" } }, "approved")}
+                                    >
+                                        允许执行
+                                    </Button>
+                                    <Button size="small" disabled={message.confirmation.status === "approving"} onClick={() => onConfirm({ ...message, confirmation: { ...message.confirmation!, status: "pending" } }, "rejected")}>
+                                        拒绝
+                                    </Button>
                                 </div>
-                            ) : <div className="mt-2 text-xs opacity-60">{message.confirmation.status === "approved" ? "已允许执行" : "已拒绝，未执行"}</div>}
+                            ) : (
+                                <div className="mt-2 text-xs opacity-60">{message.confirmation.status === "approved" ? "已允许执行" : "已拒绝，未执行"}</div>
+                            )}
                         </div>
                     ) : null}
                     {message.isLoading ? <ImageGenerationPending compact label={message.mode === "image" ? "正在生成图片" : "正在回答"} className="w-[250px] rounded-2xl border" /> : null}

@@ -20,8 +20,10 @@ import (
 func TestBatchProductionPromptIncludesFrozenCommerceInput(t *testing.T) {
 	brand := &model.Brand{Name: "测试品牌", Tone: "克制", Guidelines: "保持蓝色", ProhibitedTerms: []string{"夸大"}}
 	sku := &model.ProductSKU{Name: "蓝色款", Attributes: map[string]string{"尺寸": "大", "颜色": "蓝"}}
+	preset, ok := findBuiltinProductionTemplate("product-main")
+	if !ok { t.Fatal("product-main production template is missing") }
 	input := BatchProductionExecution{
-		Job: model.BatchProductionJob{PresetID: "product-main", PresetPrompt: commerceProductionPresets["product-main"]},
+		Job: model.BatchProductionJob{PresetID: "product-main", PresetPrompt: preset.Prompt},
 		Product: model.Product{Name: "测试商品", Category: "家居", Description: "商品描述", SellingPoints: []string{"耐用", "轻巧"}},
 		Brand: brand,
 		SKU: sku,

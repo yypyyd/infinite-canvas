@@ -38,7 +38,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
     const user = useUserStore((state) => state.user);
     const setSession = useUserStore((state) => state.setSession);
     const refreshUser = useUserStore((state) => state.refreshUser);
-	const logout = useUserStore((state) => state.clearSession);
+    const logout = useUserStore((state) => state.clearSession);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const canvasTheme = canvasThemes[theme];
     const userName = user?.displayName || user?.username || "";
@@ -77,7 +77,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
         };
     }, [refreshUser, token, user?.id]);
 
-	const submitRedeemCode = async () => {
+    const submitRedeemCode = async () => {
         if (!token) return;
         const value = await redeemForm.validateFields();
         setRedeeming(true);
@@ -92,16 +92,16 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
         } finally {
             setRedeeming(false);
         }
-	};
+    };
 
-	const submitLogout = async () => {
-		try {
-			await flushActiveWorkspaceChanges();
-			logout();
-		} catch (error) {
-			message.error(error instanceof Error ? error.message : "当前数据尚未保存，无法退出登录");
-		}
-	};
+    const submitLogout = async () => {
+        try {
+            await flushActiveWorkspaceChanges();
+            logout();
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "当前数据尚未保存，无法退出登录");
+        }
+    };
 
     const menuItems: ItemType[] = [
         {
@@ -110,7 +110,9 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
             label: (
                 <div className="min-w-0 py-0.5">
                     <div className="truncate font-medium text-current">{userName}</div>
-                    <div className="mt-0.5 truncate text-xs text-muted-foreground">@{user?.username} · {user?.group || "default"}</div>
+                    <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                        @{user?.username} · {user?.group || "default"}
+                    </div>
                 </div>
             ),
         },
@@ -120,11 +122,19 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
         { key: "history", icon: <History className="size-4" />, label: <Link href="/account?tab=history">生成记录</Link> },
         { key: "credits", icon: <ReceiptText className="size-4" />, label: <Link href="/account?tab=credits">算力明细</Link> },
         ...(user?.role === "admin" ? [{ key: "admin", icon: <Shield className="size-4" />, label: <Link href="/admin">管理后台</Link> }] : []),
-        { key: "purchase", icon: <ShoppingCart className="size-4" />, label: <a href={CREDIT_PURCHASE_URL} target="_blank" rel="noreferrer">购买算力</a> },
+        {
+            key: "purchase",
+            icon: <ShoppingCart className="size-4" />,
+            label: (
+                <a href={CREDIT_PURCHASE_URL} target="_blank" rel="noreferrer">
+                    购买算力
+                </a>
+            ),
+        },
         { key: "redeem", icon: <Gift className="size-4" />, label: "兑换码", onClick: () => setRedeemOpen(true) },
         ...(onOpenShortcuts ? [{ key: "shortcuts", icon: <Keyboard className="size-4" />, label: "快捷键", onClick: onOpenShortcuts }] : []),
         { type: "divider" },
-		{ key: "logout", icon: <LogOut className="size-4" />, label: "退出登录", onClick: () => void submitLogout() },
+        { key: "logout", icon: <LogOut className="size-4" />, label: "退出登录", onClick: () => void submitLogout() },
     ];
 
     return (
@@ -151,7 +161,14 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
                         <Settings2 className="size-4" />
                     </button>
                 ) : null}
-                <AnimatedThemeToggler theme={theme} onThemeChange={setTheme} className={naturalIconClass} style={iconStyle} aria-label={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"} title={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"} />
+                <AnimatedThemeToggler
+                    theme={theme}
+                    onThemeChange={setTheme}
+                    className={naturalIconClass}
+                    style={iconStyle}
+                    aria-label={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"}
+                    title={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"}
+                />
                 <UserOperationActions variant={variant} />
                 {!user && onOpenShortcuts ? (
                     <button type="button" className={naturalIconClass} style={iconStyle} onClick={onOpenShortcuts} aria-label="快捷键" title="快捷键">
@@ -184,7 +201,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
             <Modal title="兑换码" open={redeemOpen} onCancel={() => setRedeemOpen(false)} onOk={() => void submitRedeemCode()} okText="兑换" cancelText="取消" confirmLoading={redeeming} destroyOnHidden>
                 <Form form={redeemForm} layout="vertical" requiredMark={false}>
                     <Form.Item name="code" label="兑换码" extra="兑换码会充值到个人余额；企业共享模式可在企业中心继续转入共享池。" rules={[{ required: true, message: "请输入兑换码" }]}>
-						<Input autoFocus placeholder="请输入购买后获得的兑换码" onPressEnter={() => void submitRedeemCode()} />
+                        <Input autoFocus placeholder="请输入购买后获得的兑换码" onPressEnter={() => void submitRedeemCode()} />
                     </Form.Item>
                 </Form>
             </Modal>

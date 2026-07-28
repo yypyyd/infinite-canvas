@@ -23,5 +23,11 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
         if (!isLoginPage) void hydrateUser();
     }, [hydrateUser, isLoginPage]);
 
-    return <><WorkspaceProvider /><UserPreferencesProvider />{children}</>;
+    return (
+        <>
+            <WorkspaceProvider />
+            <UserPreferencesProvider />
+            {children}
+        </>
+    );
 }

@@ -50,7 +50,7 @@ function currentAdminKey(pathname: string) {
 }
 
 export function AdminLayoutClient({ children }: { children: ReactNode }) {
-	const { message } = App.useApp();
+    const { message } = App.useApp();
     const { token: antToken } = theme.useToken();
     const router = useRouter();
     const pathname = usePathname();
@@ -61,14 +61,14 @@ export function AdminLayoutClient({ children }: { children: ReactNode }) {
     const hydrateUser = useUserStore((state) => state.hydrateUser);
     const activeKey = currentAdminKey(pathname);
     const pageTitle = pageTitles[activeKey] || "用户管理";
-	const submitLogout = async () => {
-		try {
-			await flushActiveWorkspaceChanges();
-			logout();
-		} catch (error) {
-			message.error(error instanceof Error ? error.message : "当前数据尚未保存，无法退出登录");
-		}
-	};
+    const submitLogout = async () => {
+        try {
+            await flushActiveWorkspaceChanges();
+            logout();
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "当前数据尚未保存，无法退出登录");
+        }
+    };
 
     useEffect(() => {
         if (!isReady) {
@@ -126,7 +126,7 @@ export function AdminLayoutClient({ children }: { children: ReactNode }) {
                     <Button block icon={<HomeOutlined />} href="/canvas" target="_blank" rel="noreferrer">
                         前往画布
                     </Button>
-					<Button block icon={<LogoutOutlined />} onClick={() => void submitLogout()}>
+                    <Button block icon={<LogoutOutlined />} onClick={() => void submitLogout()}>
                         退出登录
                     </Button>
                 </Flex>

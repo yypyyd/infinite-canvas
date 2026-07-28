@@ -45,7 +45,9 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
     const config = buildNodeConfig(globalConfig, node, mode);
     const imageSupportsReferences = supportsImageReferences(config.model, managedModels);
     const referenceCapabilities = mode === "video" ? videoReferenceCapabilities(config.model) : { image: mode === "text" || (mode === "image" && imageSupportsReferences), video: false, audio: false };
-    const visibleMentionReferences = mentionReferences.filter((reference) => reference.kind === "text" || (reference.kind === "image" && referenceCapabilities.image) || (reference.kind === "video" && referenceCapabilities.video) || (reference.kind === "audio" && referenceCapabilities.audio));
+    const visibleMentionReferences = mentionReferences.filter(
+        (reference) => reference.kind === "text" || (reference.kind === "image" && referenceCapabilities.image) || (reference.kind === "video" && referenceCapabilities.video) || (reference.kind === "audio" && referenceCapabilities.audio),
+    );
     const hasTextContent = node.type === CanvasNodeType.Text && Boolean(node.metadata?.content?.trim());
     const hasImageContent = node.type === CanvasNodeType.Image && Boolean(node.metadata?.content);
     const isEditingExistingContent = hasTextContent || hasImageContent;

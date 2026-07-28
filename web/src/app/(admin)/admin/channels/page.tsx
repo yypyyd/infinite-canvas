@@ -71,6 +71,7 @@ export default function AdminChannelsPage() {
     const openChannelDrawer = (index: number | null) => {
         setEditingChannelIndex(index);
         setIsChannelDrawerOpen(true);
+        setDiscoveredModels({});
         const channel = index === null ? emptyChannel : normalizeChannel(channels[index]);
         channelForm.setFieldsValue(channel);
         rememberModels(channelModelNames(channel.models));
@@ -79,6 +80,7 @@ export default function AdminChannelsPage() {
     const closeChannelDrawer = () => {
         setIsChannelDrawerOpen(false);
         setEditingChannelIndex(null);
+        setDiscoveredModels({});
         channelForm.resetFields();
     };
 
@@ -130,7 +132,7 @@ export default function AdminChannelsPage() {
             const models = await fetchChannelModels(token, { index: editingChannelIndex ?? undefined, channel: normalizeChannel(channel) });
             const modelNames = models.map((item) => item.id);
             const current = isModelSelectorOpen ? uniqueModels(modelSelectSelected) : channelModelNames(channelForm.getFieldValue("models") || []);
-            setDiscoveredModels((value) => ({ ...value, ...Object.fromEntries(models.map((item) => [item.id, item])) }));
+            setDiscoveredModels(Object.fromEntries(models.map((item) => [item.id, item])));
             rememberModels(modelNames);
             if (!models.length) {
                 message.warning("上游未返回模型列表，请手动输入模型名称");
@@ -172,7 +174,21 @@ export default function AdminChannelsPage() {
     const confirmChannelModelSelector = () => {
         const currentModels = normalizeChannelModels(channelForm.getFieldValue("models") || []);
         const currentModelMap = new Map(currentModels.map((item) => [item.model, item]));
-        const models = uniqueModels(modelSelectSelected).map((model) => currentModelMap.get(model) || createChannelModel(model, managedModels, discoveredModels[model]));
+        const models = uniqueModels(modelSelectSelected).map((model) => {
+            const current = currentModelMap.get(model);
+            const discovered = discoveredModels[model];
+            if (!current) return createChannelModel(model, managedModels, discovered);
+            if (!discovered) return current;
+            return normalizeChannelModels([
+                {
+                    ...current,
+                    modality: discovered.modality || current.modality,
+                    aspectRatios: discovered.supportedRatios || [],
+                    resolutionTiers: discovered.supportedResolutions || [],
+                    durations: discovered.supportedDurations || [],
+                },
+            ])[0];
+        });
         channelForm.setFieldValue("models", models);
         rememberModels(channelModelNames(models));
         closeChannelModelSelector();
@@ -558,9 +574,9 @@ function createChannelModel(model: string, managedModels: AdminManagedModel[], d
             upstreamModel: model,
             modality,
             operations: managedModel?.operations?.length ? managedModel.operations : inferModelOperations(model, modality),
-            aspectRatios: discovered?.supportedRatios?.length ? discovered.supportedRatios : managedModel?.aspectRatios || [],
-            resolutionTiers: discovered?.supportedResolutions?.length ? discovered.supportedResolutions : managedModel?.resolutionTiers?.length ? managedModel.resolutionTiers : modality === "image" ? ["1k"] : modality === "video" ? ["720p"] : [],
-            durations: discovered?.supportedDurations?.length ? discovered.supportedDurations : managedModel?.durations || [],
+            aspectRatios: discovered ? discovered.supportedRatios || [] : managedModel?.aspectRatios || [],
+            resolutionTiers: discovered ? discovered.supportedResolutions || [] : managedModel?.resolutionTiers?.length ? managedModel.resolutionTiers : modality === "image" ? ["1k"] : modality === "video" ? ["720p"] : [],
+            durations: discovered ? discovered.supportedDurations || [] : managedModel?.durations || [],
         },
     ])[0];
 }

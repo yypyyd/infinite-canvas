@@ -269,16 +269,12 @@ func buildStandardBatchRequest(ctx context.Context, client *http.Client, selecti
 			return nil, "", err
 		}
 	}
-	fieldName := "image[]"
-	if strings.Contains(strings.ToLower(selection.Channel.BaseURL), "vividai.run") {
-		fieldName = "image"
-	}
 	for index, referenceURL := range references {
 		data, mimeType, err := downloadStandardBatchImage(ctx, client, referenceURL, maxStandardBatchReferenceBytes)
 		if err != nil {
 			return nil, "", err
 		}
-		part, err := writer.CreateFormFile(fieldName, fmt.Sprintf("reference-%d%s", index+1, assetFileExt(mimeType)))
+		part, err := writer.CreateFormFile("image[]", fmt.Sprintf("reference-%d%s", index+1, assetFileExt(mimeType)))
 		if err != nil {
 			return nil, "", err
 		}

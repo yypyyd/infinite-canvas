@@ -33,13 +33,15 @@ export function ChannelModelCapabilitiesEditor({ managedModels }: { managedModel
                                 const channelModel = channelModels[field.name];
                                 const modelName = channelModel?.model || "";
                                 const managedModel = managedModelMap.get(modelName);
-                                const modality = managedModel?.modality || channelModel?.modality || inferModelModality(modelName);
+                                const modality = channelModel?.modality || managedModel?.modality || inferModelModality(modelName);
                                 const supportsResolution = modality === "image" || modality === "video";
                                 const allowedOperations = new Set(allowedModelOperations(modality));
                                 const modelOperationOptions = managedModel ? operationOptions.filter((item) => allowedOperations.has(item.value)) : operationOptions;
                                 const canConfigureResolution = !managedModel || supportsResolution;
                                 const presetTiers = modality === "image" ? imageResolutionOptions : modality === "video" ? videoResolutionOptions : [...imageResolutionOptions, ...videoResolutionOptions];
                                 const resolutionOptions = Array.from(new Set([...(managedModel?.resolutionTiers || []), ...(channelModel?.resolutionTiers || []), ...presetTiers])).map((value) => ({ label: value.toUpperCase(), value }));
+                                const ratioOptions = Array.from(new Set([...(channelModel?.aspectRatios || []), ...videoRatioOptions])).map((value) => ({ label: value, value }));
+                                const durationOptions = Array.from(new Set([...(channelModel?.durations || []), ...videoDurationOptions])).map((value) => ({ label: `${value} 秒`, value }));
                                 return (
                                     <Card
                                         key={field.key}
@@ -90,12 +92,12 @@ export function ChannelModelCapabilitiesEditor({ managedModels }: { managedModel
                                                 <>
                                                     <Col xs={24} md={12}>
                                                         <Form.Item name={[field.name, "aspectRatios"]} label="支持比例" rules={[{ required: true, message: "请选择至少一个视频比例" }]}>
-                                                            <Select mode="tags" tokenSeparators={[",", "\n"]} options={videoRatioOptions.map((value) => ({ label: value, value }))} />
+                                                            <Select mode="tags" tokenSeparators={[",", "\n"]} options={ratioOptions} />
                                                         </Form.Item>
                                                     </Col>
                                                     <Col xs={24} md={12}>
                                                         <Form.Item name={[field.name, "durations"]} label="支持时长" rules={[{ required: true, message: "请选择至少一个视频时长" }]} extra="单位为秒；路由只会把请求发送到支持该时长的渠道。">
-                                                            <Select mode="tags" tokenSeparators={[",", "\n"]} options={videoDurationOptions.map((value) => ({ label: `${value} 秒`, value }))} />
+                                                            <Select mode="tags" tokenSeparators={[",", "\n"]} options={durationOptions} />
                                                         </Form.Item>
                                                     </Col>
                                                 </>

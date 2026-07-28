@@ -104,6 +104,7 @@ func normalizePublicSettingWithChannels(setting model.PublicSetting, channels []
 	}
 	enabledModels := enabledChannelModels(channels)
 	setting.ModelChannel.Models = normalizeModelDefinitions(setting.ModelChannel.Models, setting.ModelChannel.AvailableModels, setting.ModelChannel.ModelAspectRatios, enabledModels)
+	setting.ModelChannel.Models = mergeEnabledChannelCapabilities(setting.ModelChannel.Models, channels)
 	setting.ModelChannel.PricingRules = appendDefaultPricingRulesForModels(normalizePricingRules(setting.ModelChannel.PricingRules), setting.ModelChannel.Models)
 	setting.ModelChannel.GroupRatios = normalizeGroupRatios(setting.ModelChannel.GroupRatios)
 	setting.ModelChannel.ModelAspectRatios = normalizeModelAspectRatios(modelAspectRatiosFromDefinitions(setting.ModelChannel.Models, setting.ModelChannel.ModelAspectRatios))
@@ -404,6 +405,63 @@ func normalizeModelDefinitions(items []model.ModelDefinition, availableModels []
 		return result[i].Sort < result[j].Sort
 	})
 	return result
+}
+
+func mergeEnabledChannelCapabilities(items []model.ModelDefinition, channels []model.ModelChannel) []model.ModelDefinition {
+	type capabilities struct {
+		modality        string
+		operations      []string
+		aspectRatios    []string
+		resolutionTiers []string
+		durations       []int
+	}
+
+	merged := map[string]capabilities{}
+	for _, channel := range channels {
+		if !channel.Enabled {
+			continue
+		}
+		for _, channelModel := range channel.Models {
+			modelID := strings.TrimSpace(channelModel.Model)
+			modality := normalizePricingToken(channelModel.Modality)
+			if modelID == "" {
+				continue
+			}
+			if modality == "" {
+				modality = defaultModelModality(modelID)
+			}
+			current, exists := merged[modelID]
+			if exists && current.modality != modality {
+				continue
+			}
+			current.modality = modality
+			current.operations = append(current.operations, channelModel.Operations...)
+			current.aspectRatios = append(current.aspectRatios, channelModel.AspectRatios...)
+			current.resolutionTiers = append(current.resolutionTiers, channelModel.ResolutionTiers...)
+			current.durations = append(current.durations, channelModel.Durations...)
+			merged[modelID] = current
+		}
+	}
+
+	for index := range items {
+		capability, ok := merged[items[index].ID]
+		if !ok {
+			continue
+		}
+		items[index].Modality = capability.modality
+		items[index].Operations = normalizeModelOperations(capability.operations, items[index].ID, capability.modality)
+		items[index].AspectRatios = normalizeStringList(capability.aspectRatios, normalizePricingToken)
+		items[index].ResolutionTiers = normalizeStringList(capability.resolutionTiers, normalizeResolutionTier)
+		items[index].Durations = normalizeDurations(capability.durations)
+		if capability.modality != "image" && capability.modality != "video" {
+			items[index].AspectRatios = []string{}
+			items[index].ResolutionTiers = []string{}
+			items[index].Durations = []int{}
+		} else if capability.modality != "video" {
+			items[index].Durations = []int{}
+		}
+	}
+	return items
 }
 
 func defaultModelResolutionTiers(modality string) []string {

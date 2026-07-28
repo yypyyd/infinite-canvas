@@ -72,7 +72,7 @@ description: settings 表中 public 和 private 配置结构说明
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `availableModels` | string[] | 系统可用模型，由模型中心中已启用的模型生成 |
-| `models` | object[] | 模型中心配置，包含模型名称、类型、支持操作、启用状态、排序、宽高比、分辨率档和视频时长；渠道 `/models?extended=true` 返回的能力可同步到这里，默认 `/models` 保持严格 OpenAI 字段 |
+| `models` | object[] | 模型中心配置，包含模型名称、类型、支持操作、启用状态、排序、宽高比、分辨率档和视频时长；保存设置时按对外模型名汇总所有同类型启用渠道的能力并集，默认 `/models` 保持严格 OpenAI 字段 |
 | `pricingRules` | object[] | 模型算力点配置，后端模型接口调用前按模型预扣，上游失败时返还；新增模型会按模型能力自动生成默认规则 |
 | `groupRatios` | object | 用户分组倍率，例如 `default`、`vip`、`svip` |
 | `defaultModel` | string | 默认模型，从 `availableModels` 中选择；为空或失效时优先选择文本模型 |

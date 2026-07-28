@@ -4,7 +4,7 @@ import { type ReactNode } from "react";
 
 import { ImageSettingsTheme } from "@/components/image-settings-panel";
 import { type CanvasTheme } from "@/lib/canvas-theme";
-import { defaultVideoDurations, defaultVideoRatios, defaultVideoResolutions, normalizeVideoRatio, normalizeVideoResolution, videoOutputSize, videoRatioLabel } from "@/lib/video-format";
+import { normalizeVideoRatio, normalizeVideoResolution, resolveVideoSettings, videoOutputSize, videoRatioLabel } from "@/lib/video-format";
 import { useConfigStore, type AiConfig } from "@/stores/use-config-store";
 
 type VideoSettingsPanelProps = {
@@ -18,12 +18,7 @@ type VideoSettingsPanelProps = {
 export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5" }: VideoSettingsPanelProps) {
     const model = config.videoModels.includes(config.model) ? config.model : config.videoModel || config.model;
     const definition = useConfigStore((state) => state.publicSettings?.modelChannel.models?.find((item) => item.id === model));
-    const ratios = definition?.aspectRatios?.length ? definition.aspectRatios : defaultVideoRatios;
-    const resolutions = definition?.resolutionTiers?.length ? definition.resolutionTiers : defaultVideoResolutions;
-    const durations = definition?.durations?.length ? definition.durations : defaultVideoDurations;
-    const ratio = ratios.includes(normalizeVideoRatio(config.size)) ? normalizeVideoRatio(config.size) : ratios[0];
-    const resolution = resolutions.includes(normalizeVideoResolution(config.vquality)) ? normalizeVideoResolution(config.vquality) : resolutions[0];
-    const seconds = durations.includes(Number(config.videoSeconds)) ? Number(config.videoSeconds) : durations[0];
+    const { ratios, resolutions, durations, ratio, resolution, seconds } = resolveVideoSettings(config, definition);
 
     return (
         <ImageSettingsTheme theme={theme}>

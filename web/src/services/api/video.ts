@@ -20,7 +20,7 @@ type SeedanceTask = {
 };
 type ApiEnvelope<T> = T | { code?: number; data?: T | null; msg?: string };
 type ReferenceMediaUploadResponse = { id: string; url: string; mimeType: string; bytes: number };
-type RequestOptions = { signal?: AbortSignal };
+type RequestOptions = { signal?: AbortSignal; idempotencyKey?: string };
 
 export type VideoGenerationResult = { blob?: Blob; url?: string; mimeType?: string };
 
@@ -28,9 +28,9 @@ function aiApiUrl(_config: AiConfig, path: string) {
     return `/api/v1${path}`;
 }
 
-function aiHeaders(_config: AiConfig, contentType?: string) {
+function aiHeaders(_config: AiConfig, contentType?: string, idempotencyKey?: string) {
     const token = useUserStore.getState().token;
-    return { ...authorizationHeaders(token), ...organizationHeaders(), "Idempotency-Key": crypto.randomUUID(), ...(contentType ? { "Content-Type": contentType } : {}) };
+    return { ...authorizationHeaders(token), ...organizationHeaders(), "Idempotency-Key": idempotencyKey || crypto.randomUUID(), ...(contentType ? { "Content-Type": contentType } : {}) };
 }
 
 function refreshRemoteUser(_config: AiConfig) {
@@ -66,7 +66,7 @@ async function requestOpenAIVideoGeneration(config: AiConfig, model: string, pro
     const files = await Promise.all(references.slice(0, 7).map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
     files.forEach((file) => body.append("input_reference[]", file));
     try {
-        const created = unwrapVideoResponse((await axios.post<ApiVideoResponse>(aiApiUrl(config, "/videos"), body, { headers: aiHeaders(config), signal: options?.signal })).data);
+        const created = unwrapVideoResponse((await axios.post<ApiVideoResponse>(aiApiUrl(config, "/videos"), body, { headers: aiHeaders(config, undefined, options?.idempotencyKey), signal: options?.signal })).data);
         if (!created.id) throw new Error("视频接口没有返回任务 ID");
         for (let attempt = 0; attempt < 120; attempt += 1) {
             if (options?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
@@ -104,7 +104,7 @@ async function requestSeedanceGeneration(config: AiConfig, model: string, prompt
     };
 
     try {
-        const created = unwrapSeedanceTask((await axios.post<ApiEnvelope<SeedanceTask>>(seedanceApiUrl(config), payload, { headers: aiHeaders(config, "application/json"), signal: options?.signal })).data);
+        const created = unwrapSeedanceTask((await axios.post<ApiEnvelope<SeedanceTask>>(seedanceApiUrl(config), payload, { headers: aiHeaders(config, "application/json", options?.idempotencyKey), signal: options?.signal })).data);
         if (!created.id) throw new Error("Seedance 接口没有返回任务 ID");
         for (let attempt = 0; attempt < 120; attempt += 1) {
             if (options?.signal?.aborted) throw new DOMException("Aborted", "AbortError");

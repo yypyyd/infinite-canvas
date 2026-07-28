@@ -3,7 +3,14 @@ import { create } from "zustand";
 import { nanoid } from "nanoid";
 import type { CanvasBackgroundMode } from "@/lib/canvas-theme";
 import { stageWorkspaceDelete, stageWorkspaceRecord } from "@/services/workspace-changes";
+import type { AgentToolName, AgentToolResult } from "@/services/api/agent";
 import type { CanvasAssistantSession, CanvasConnection, CanvasNodeData, ViewportTransform } from "../types";
+
+export type CanvasAgentToolReceipt = {
+    name: AgentToolName;
+    result: AgentToolResult;
+    appliedAt: string;
+};
 
 export type CanvasProject = {
     id: string;
@@ -17,6 +24,7 @@ export type CanvasProject = {
     backgroundMode: CanvasBackgroundMode;
     showImageInfo: boolean;
     autoSaveEnabled?: boolean;
+    agentToolReceipts?: Record<string, CanvasAgentToolReceipt>;
     viewport: ViewportTransform;
     version?: number;
 };
@@ -35,7 +43,7 @@ type CanvasStore = {
     renameProject: (id: string, title: string) => void;
     deleteProjects: (ids: string[]) => void;
     replaceProjects: (projects: CanvasProject[]) => void;
-    updateProject: (id: string, patch: Partial<Pick<CanvasProject, "nodes" | "connections" | "chatSessions" | "activeChatId" | "backgroundMode" | "showImageInfo" | "autoSaveEnabled" | "viewport">>) => void;
+    updateProject: (id: string, patch: Partial<Pick<CanvasProject, "nodes" | "connections" | "chatSessions" | "activeChatId" | "backgroundMode" | "showImageInfo" | "autoSaveEnabled" | "agentToolReceipts" | "viewport">>) => void;
 };
 
 const initialViewport: ViewportTransform = { x: 0, y: 0, k: 1 };
@@ -95,6 +103,7 @@ export const useCanvasStore = create<CanvasStore>()((set, get) => ({
             activeChatId: source.activeChatId || null,
             backgroundMode: source.backgroundMode || "lines",
             showImageInfo: source.showImageInfo || false,
+            agentToolReceipts: source.agentToolReceipts || {},
             viewport: source.viewport || initialViewport,
         };
         set((state) => ownerProjectsState(state, [project, ...state.projects]));

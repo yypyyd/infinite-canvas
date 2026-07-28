@@ -56,6 +56,8 @@ export type CanvasNodeMetadata = {
     mimeType?: string;
     bytes?: number;
     durationMs?: number;
+    agentRunId?: string;
+    agentToolCallId?: string;
     splitFromNodeId?: string;
     splitRow?: number;
     splitColumn?: number;
@@ -95,6 +97,24 @@ export type CanvasAssistantImage = {
     dataUrl: string;
     storageKey?: string;
     prompt: string;
+    agentRunId?: string;
+    agentToolCallId?: string;
+};
+
+export type CanvasAssistantVideo = {
+    url: string;
+    storageKey: string;
+    prompt: string;
+    agentRunId: string;
+    agentToolCallId: string;
+};
+
+export type CanvasAssistantConfirmation = {
+    runId: string;
+    callId: string;
+    name: "canvas.delete" | "canvas.update_text";
+    arguments: { nodeIds: string[] } | { nodeId: string; text: string };
+    status: "pending" | "approving" | "rejected" | "approved" | "failed";
 };
 
 export type CanvasAssistantMessage = {
@@ -105,10 +125,14 @@ export type CanvasAssistantMessage = {
     isLoading?: boolean;
     references?: CanvasAssistantReference[];
     images?: CanvasAssistantImage[];
+    runId?: string;
+    lastEventSequence?: number;
+    confirmation?: CanvasAssistantConfirmation;
 };
 
 export type CanvasAssistantSession = {
     id: string;
+    agentSessionId?: string;
     title: string;
     messages: CanvasAssistantMessage[];
     createdAt: string;

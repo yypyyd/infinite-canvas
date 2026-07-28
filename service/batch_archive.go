@@ -78,7 +78,7 @@ func writeBatchProductionArchive(ctx context.Context, organizationID string, tar
 			entrySpec = item.DeliverySpec
 		}
 		entryName := uniqueBatchArchiveEntryName(batchProductionArchiveEntryName(item, entrySpec), usedEntryNames)
-		value, ok := organizationFileURL(organizationID, item.ResultStorageKey, 30*time.Minute)
+		value, ok := organizationFileURL(organizationID, item.ResultStorageKey, "", 30*time.Minute)
 		if !ok { _ = writer.Close(); return errors.New("batch archive source is unavailable") }
 		request, err := http.NewRequestWithContext(ctx, http.MethodGet, value, nil)
 		if err != nil { _ = writer.Close(); return err }

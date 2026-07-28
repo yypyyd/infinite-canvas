@@ -202,15 +202,17 @@ func ClaimOrganizationEmailOutbox(timestamp string, leaseExpiresAt string, lease
 	db, err := DB()
 	if err != nil { return model.OrganizationEmailOutbox{}, false, err }
 	var item model.OrganizationEmailOutbox
+	found := false
 	err = db.Transaction(func(tx *gorm.DB) error {
 		unavailableInvitations := tx.Model(&model.OrganizationInvitation{}).Select("id").Where("status <> ? OR expires_at <= ?", model.OrganizationInvitationPending, timestamp)
 		if err := tx.Model(&model.OrganizationEmailOutbox{}).Where("status IN ? AND invitation_id IN (?)", []string{"pending", "failed"}, unavailableInvitations).Updates(map[string]any{"status": "cancelled", "updated_at": timestamp}).Error; err != nil { return err }
 		query := tx.Table("organization_email_outboxes AS e").Select("e.*").Joins("JOIN organization_invitations AS i ON i.id = e.invitation_id AND i.status = ? AND i.expires_at > ?", model.OrganizationInvitationPending, timestamp).Clauses(clause.Locking{Strength: "UPDATE"}).Where("(e.status IN ? AND e.attempts < ? AND e.next_attempt_at <= ?) OR (e.status = ? AND e.lease_expires_at <= ?)", []string{"pending", "failed"}, 10, timestamp, "processing", timestamp).Order("e.created_at asc")
-		if err := query.First(&item).Error; err != nil { return err }
+		if err := query.First(&item).Error; errors.Is(err, gorm.ErrRecordNotFound) { return nil } else if err != nil { return err }
+		found = true
 		return tx.Model(&model.OrganizationEmailOutbox{}).Where("id = ?", item.ID).Updates(map[string]any{"status": "processing", "attempts": gorm.Expr("attempts + 1"), "lease_token": leaseToken, "lease_expires_at": leaseExpiresAt, "updated_at": timestamp}).Error
 	})
-	if errors.Is(err, gorm.ErrRecordNotFound) { return model.OrganizationEmailOutbox{}, false, nil }
 	if err != nil { return model.OrganizationEmailOutbox{}, false, err }
+	if !found { return model.OrganizationEmailOutbox{}, false, nil }
 	item.Status, item.LeaseToken, item.LeaseExpiresAt, item.UpdatedAt = "processing", leaseToken, leaseExpiresAt, timestamp
 	item.Attempts++
 	return item, true, nil
@@ -886,7 +888,7 @@ func GetBatchProductionJobByRequest(organizationID string, requestID string) (mo
 	return item, err == nil, err
 }
 
-func CreateBatchProductionJob(job model.BatchProductionJob, auditLogs ...model.OrganizationAuditLog) (model.BatchProductionJob, error) {
+func CreateBatchProductionJob(job model.BatchProductionJob, itemEstimatedCredits map[string]int, auditLogs ...model.OrganizationAuditLog) (model.BatchProductionJob, error) {
 	db, err := DB()
 	if err != nil { return job, err }
 	err = db.Transaction(func(tx *gorm.DB) error {
@@ -912,12 +914,15 @@ func CreateBatchProductionJob(job model.BatchProductionJob, auditLogs ...model.O
 		covered := make(map[string]bool, len(products))
 		appendItem := func(productID string, skuID string) error {
 			if len(items) >= maxBatchProductionItems { return ErrBatchProductionItemsTooLarge }
-			items = append(items, model.BatchProductionItem{ID: job.ID + "-item-" + strconv.Itoa(len(items)), OrganizationID: job.OrganizationID, JobID: job.ID, ProductID: productID, SKUID: skuID, Status: model.BatchProductionStatusQueued, RunNumber: 1, CreatedAt: job.CreatedAt, UpdatedAt: job.UpdatedAt})
+			estimatedCredits, ok := itemEstimatedCredits[productID+"\x00"+skuID]
+			if !ok || estimatedCredits <= 0 { return errors.New("batch production item estimate is missing") }
+			items = append(items, model.BatchProductionItem{ID: job.ID + "-item-" + strconv.Itoa(len(items)), OrganizationID: job.OrganizationID, JobID: job.ID, ProductID: productID, SKUID: skuID, EstimatedCredits: estimatedCredits, Status: model.BatchProductionStatusQueued, RunNumber: 1, CreatedAt: job.CreatedAt, UpdatedAt: job.UpdatedAt})
 			return nil
 		}
 		for _, sku := range skus { covered[sku.ProductID] = true; if err := appendItem(sku.ProductID, sku.ID); err != nil { return err } }
 		for _, product := range products { if !covered[product.ID] { if err := appendItem(product.ID, ""); err != nil { return err } } }
-		job.TotalItems = len(items)
+		job.TotalItems, job.QueuedItems, job.EstimatedCredits = len(items), len(items), 0
+		for _, item := range items { job.EstimatedCredits += item.EstimatedCredits }
 		var pending int64
 		if err := tx.Model(&model.BatchProductionItem{}).Where("organization_id = ? AND status IN ?", job.OrganizationID, []model.BatchProductionStatus{model.BatchProductionStatusQueued, model.BatchProductionStatusRunning}).Count(&pending).Error; err != nil { return err }
 		if pending+int64(len(items)) > maxBatchProductionPendingItemsPerOrganization { return ErrBatchProductionOrganizationQueueFull }
@@ -951,6 +956,7 @@ func CreateBatchProductionJob(job model.BatchProductionJob, auditLogs ...model.O
 				items[index].SKUSnapshotID = skuSnapshotIDs[sku.ID]
 			}
 		}
+		if err := reserveBatchProductionCredits(tx, &organization, &job); err != nil { return err }
 		if err := tx.Create(&job).Error; err != nil { return err }
 		if len(snapshots) > 0 { if err := tx.CreateInBatches(&snapshots, 200).Error; err != nil { return err } }
 		if len(items) > 0 { if err := tx.CreateInBatches(&items, 200).Error; err != nil { return err } }

@@ -75,12 +75,7 @@ export const commercePackageAssets = [
 const assetById = new Map(commercePackageAssets.map((item) => [item.id, item]));
 const platformById = new Map(commercePackagePlatforms.map((item) => [item.id, item]));
 
-export function buildCommercePackageBlueprint(
-    input: CommercePackageRequest,
-    origin: Position,
-    config: AiConfig,
-    referenceNodeIds: string[],
-): CommercePackageBlueprint {
+export function buildCommercePackageBlueprint(input: CommercePackageRequest, origin: Position, config: AiConfig, referenceNodeIds: string[]): CommercePackageBlueprint {
     const nodes: CanvasNodeData[] = [];
     const connections: CanvasConnection[] = [];
     const tasks: CommercePackageGenerationTask[] = [];
@@ -124,18 +119,8 @@ export function buildCommercePackageBlueprint(
                 metadata: {
                     prompt,
                     generationMode: mode,
-                    model:
-                        mode === "image"
-                            ? config.imageModel || config.model
-                            : mode === "video"
-                              ? config.videoModel
-                              : config.textModel || config.model,
-                    size:
-                        assetId === "detail"
-                            ? platform.detailSize
-                            : assetId === "video"
-                              ? platform.videoSize
-                              : platform.imageSize,
+                    model: mode === "image" ? config.imageModel || config.model : mode === "video" ? config.videoModel : config.textModel || config.model,
+                    size: assetId === "detail" ? platform.detailSize : assetId === "video" ? platform.videoSize : platform.imageSize,
                     quality: config.quality,
                     count: 1,
                     seconds: config.videoSeconds,
@@ -147,9 +132,7 @@ export function buildCommercePackageBlueprint(
             });
             connections.push({ id: nanoid(), fromNodeId: rootId, toNodeId: nodeId });
             if (mode !== "text") {
-                referenceNodeIds.forEach((referenceId) =>
-                    connections.push({ id: nanoid(), fromNodeId: referenceId, toNodeId: nodeId }),
-                );
+                referenceNodeIds.forEach((referenceId) => connections.push({ id: nanoid(), fromNodeId: referenceId, toNodeId: nodeId }));
             }
             tasks.push({ nodeId, mode, prompt });
         });
@@ -178,11 +161,7 @@ function buildProductContext(product: Product, sku?: ProductSKU) {
 }
 
 function buildAssetPrompt(platform: string, asset: CommercePackageAsset, context: string) {
-    const common = [
-        `你正在为${platform}制作可直接交付的电商素材。`,
-        "必须忠实保持商品外观、颜色、结构、材质、Logo 与包装细节，不得虚构商品功能或促销信息。",
-        context,
-    ].join("\n\n");
+    const common = [`你正在为${platform}制作可直接交付的电商素材。`, "必须忠实保持商品外观、颜色、结构、材质、Logo 与包装细节，不得虚构商品功能或促销信息。", context].join("\n\n");
     if (asset === "main") {
         return [common, "生成商品主图：商品作为唯一视觉主体，轮廓完整，干净背景，光线自然，构图克制，预留安全边距，不添加水印、边框、价格或无法确认的文字。"].join("\n\n");
     }
@@ -193,10 +172,7 @@ function buildAssetPrompt(platform: string, asset: CommercePackageAsset, context
         return [common, "生成详情页视觉：用近景和材质细节表现商品质感与核心卖点，画面具有纵向信息节奏并保留文案安全区，不生成无法确认的参数、价格、承诺或水印。"].join("\n\n");
     }
     if (asset === "video") {
-        const instruction = [
-            "生成 6–15 秒商品短视频：前三秒快速建立商品主体，中段展示材质、细节和使用场景，结尾回到完整商品；",
-            "镜头运动稳定，商品前后一致，适合无声观看，不生成价格、促销承诺或水印。",
-        ].join("");
+        const instruction = ["生成 6–15 秒商品短视频：前三秒快速建立商品主体，中段展示材质、细节和使用场景，结尾回到完整商品；", "镜头运动稳定，商品前后一致，适合无声观看，不生成价格、促销承诺或水印。"].join("");
         return [common, instruction].join("\n\n");
     }
     return [

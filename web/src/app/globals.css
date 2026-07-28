@@ -155,9 +155,7 @@
 
 @layer utilities {
     .dark .hero-atmosphere {
-        background-image:
-            radial-gradient(80% 120% at 90% -40%, var(--accent-glow), transparent 60%),
-            radial-gradient(70% 100% at 8% -40%, rgb(245 245 247 / 3%), transparent 60%);
+        background-image: radial-gradient(80% 120% at 90% -40%, var(--accent-glow), transparent 60%), radial-gradient(70% 100% at 8% -40%, rgb(245 245 247 / 3%), transparent 60%);
     }
 
     .ai-title-aurora {

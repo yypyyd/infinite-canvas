@@ -103,9 +103,7 @@ export function CanvasImageSettingsPopover({ config, model, onConfigChange, onOp
                         updateOpen(!open);
                     }}
                 >
-                    <span className="truncate">
-                        {[showQuality ? imageQualityLabel(quality) : "", imageSizeLabel(activeSize), `${count} 张`].filter(Boolean).join(" · ")}
-                    </span>
+                    <span className="truncate">{[showQuality ? imageQualityLabel(quality) : "", imageSizeLabel(activeSize), `${count} 张`].filter(Boolean).join(" · ")}</span>
                 </Button>
             </span>
             {panel}
@@ -162,15 +160,19 @@ function ImageSettingsPortal({
     } as const;
 
     return createPortal(
-        <div
-            ref={panelRef}
-            className="canvas-image-settings-popover"
-            style={style}
-            onPointerDown={(event) => event.stopPropagation()}
-            onMouseDown={(event) => event.stopPropagation()}
-            onClick={(event) => event.stopPropagation()}
-        >
-            <ImageSettingsPanel config={config} onConfigChange={(key, value) => onConfigChange(key, value)} theme={theme} className="space-y-4" pricingRules={pricingRules} model={model} operation={operation} supportedRatios={supportedRatios} supportedResolutionTiers={supportedResolutionTiers} showQuality={showQuality} />
+        <div ref={panelRef} className="canvas-image-settings-popover" style={style} onPointerDown={(event) => event.stopPropagation()} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
+            <ImageSettingsPanel
+                config={config}
+                onConfigChange={(key, value) => onConfigChange(key, value)}
+                theme={theme}
+                className="space-y-4"
+                pricingRules={pricingRules}
+                model={model}
+                operation={operation}
+                supportedRatios={supportedRatios}
+                supportedResolutionTiers={supportedResolutionTiers}
+                showQuality={showQuality}
+            />
         </div>,
         document.body,
     );

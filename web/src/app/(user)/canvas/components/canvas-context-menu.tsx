@@ -8,7 +8,21 @@ import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { ContextMenuState } from "../types";
 
-export function CanvasNodeContextMenu({ menu, isSelected, onClose, onToggleSelection, onDuplicate, onDelete }: { menu: ContextMenuState; isSelected: boolean; onClose: () => void; onToggleSelection: () => void; onDuplicate: () => void; onDelete: () => void }) {
+export function CanvasNodeContextMenu({
+    menu,
+    isSelected,
+    onClose,
+    onToggleSelection,
+    onDuplicate,
+    onDelete,
+}: {
+    menu: ContextMenuState;
+    isSelected: boolean;
+    onClose: () => void;
+    onToggleSelection: () => void;
+    onDuplicate: () => void;
+    onDelete: () => void;
+}) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
 
     useEffect(() => {

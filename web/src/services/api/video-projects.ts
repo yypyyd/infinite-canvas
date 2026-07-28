@@ -2,12 +2,33 @@ import { apiGet, apiPost, compactApiParams, type ApiParams } from "@/services/ap
 
 export type VideoOutputSpec = { ratio: "16:9" | "9:16" | "1:1"; width: number; height: number; fps: 30; format: "mp4"; videoCodec: "h264"; audioCodec: "aac" };
 export type VideoTimeline = {
-    shots: Array<{ id: string; source: { storageKey: string; kind: "image" | "video"; sourceType: "sku" | "asset" | "upload" | "generated" }; startMs: number; durationMs: number; trimStartMs: number; cropMode: "cover" | "contain"; transitionToNext: { type: "none" | "fade" | "cross_dissolve"; durationMs: number } }>;
+    shots: Array<{
+        id: string;
+        source: { storageKey: string; kind: "image" | "video"; sourceType: "sku" | "asset" | "upload" | "generated" };
+        startMs: number;
+        durationMs: number;
+        trimStartMs: number;
+        cropMode: "cover" | "contain";
+        transitionToNext: { type: "none" | "fade" | "cross_dissolve"; durationMs: number };
+    }>;
     subtitles: Array<{ id: string; text: string; startMs: number; endMs: number; style: "default" | "light" | "dark"; positionY: number }>;
     bgm?: { storageKey: string; volume: number; loop: boolean; trimStartMs: number; fadeInMs: number; fadeOutMs: number; rightsConfirmed: boolean };
     output: VideoOutputSpec;
 };
-export type VideoProject = { id: string; organizationId: string; productId: string; skuId: string; name: string; draftTimeline: VideoTimeline; status: "draft" | "versioned"; version: number; latestVersion: number; createdBy: string; createdAt: string; updatedAt: string };
+export type VideoProject = {
+    id: string;
+    organizationId: string;
+    productId: string;
+    skuId: string;
+    name: string;
+    draftTimeline: VideoTimeline;
+    status: "draft" | "versioned";
+    version: number;
+    latestVersion: number;
+    createdBy: string;
+    createdAt: string;
+    updatedAt: string;
+};
 export type VideoProjectVersion = { id: string; projectId: string; version: number; timeline: VideoTimeline; outputSpec: VideoOutputSpec; createdBy: string; createdAt: string };
 export type VideoPreflight = { canFreeze: boolean; durationMs: number; issues: Array<{ severity: string; code: string; message: string }>; output: VideoOutputSpec };
 export const fetchVideoProjects = (params?: ApiParams) => apiGet<{ items: VideoProject[]; total: number }>("/api/commerce/video-projects", compactApiParams(params || {}));

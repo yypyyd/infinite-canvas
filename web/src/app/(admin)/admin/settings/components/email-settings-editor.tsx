@@ -13,15 +13,17 @@ export function EmailSettingsEditor() {
     const passwordConfigured = Form.useWatch(["private", "email", "passwordConfigured"]) === true;
 
     return (
-        <Card size="small" title={<Space><Mail className="size-4" />注册邮件 SMTP</Space>}>
+        <Card
+            size="small"
+            title={
+                <Space>
+                    <Mail className="size-4" />
+                    注册邮件 SMTP
+                </Space>
+            }
+        >
             <Space orientation="vertical" size={16} className="w-full">
-                <Alert
-                    showIcon
-                    type="info"
-                    icon={<ShieldCheck className="size-4" />}
-                    message="注册固定使用邮箱验证码"
-                    description="验证码通过 SMTP 发送，10 分钟内有效。SMTP 密码留空会沿用已保存的密码，不会返回到浏览器。"
-                />
+                <Alert showIcon type="info" icon={<ShieldCheck className="size-4" />} message="注册固定使用邮箱验证码" description="验证码通过 SMTP 发送，10 分钟内有效。SMTP 密码留空会沿用已保存的密码，不会返回到浏览器。" />
                 <Row gutter={16}>
                     <Col xs={24} md={16}>
                         <Form.Item name={["private", "email", "smtpHost"]} label="SMTP 服务器" rules={[{ required: true, message: "请输入 SMTP 服务器" }]}>
@@ -49,7 +51,14 @@ export function EmailSettingsEditor() {
                         </Form.Item>
                     </Col>
                     <Col xs={24} md={12}>
-                        <Form.Item name={["private", "email", "smtpFromEmail"]} label="发件邮箱" rules={[{ required: true, message: "请输入发件邮箱" }, { type: "email", message: "请输入有效的发件邮箱" }]}>
+                        <Form.Item
+                            name={["private", "email", "smtpFromEmail"]}
+                            label="发件邮箱"
+                            rules={[
+                                { required: true, message: "请输入发件邮箱" },
+                                { type: "email", message: "请输入有效的发件邮箱" },
+                            ]}
+                        >
                             <Input placeholder="no-reply@example.com" />
                         </Form.Item>
                     </Col>
@@ -59,7 +68,9 @@ export function EmailSettingsEditor() {
                         </Form.Item>
                     </Col>
                 </Row>
-                <Form.Item name={["private", "email", "passwordConfigured"]} hidden valuePropName="checked"><Switch /></Form.Item>
+                <Form.Item name={["private", "email", "passwordConfigured"]} hidden valuePropName="checked">
+                    <Switch />
+                </Form.Item>
             </Space>
         </Card>
     );

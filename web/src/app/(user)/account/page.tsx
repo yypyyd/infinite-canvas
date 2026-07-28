@@ -24,10 +24,42 @@ type PasswordFormValues = { currentPassword: string; newPassword: string; confir
 const historyPageSize = 12;
 const creditPageSize = 12;
 const accountTabs = [
-    { key: "profile", label: <span className="inline-flex items-center gap-2"><CircleUserRound className="size-4" />个人资料</span> },
-    { key: "tasks", label: <span className="inline-flex items-center gap-2"><ListChecks className="size-4" />任务中心</span> },
-    { key: "history", label: <span className="inline-flex items-center gap-2"><History className="size-4" />生成记录</span> },
-    { key: "credits", label: <span className="inline-flex items-center gap-2"><ReceiptText className="size-4" />算力明细</span> },
+    {
+        key: "profile",
+        label: (
+            <span className="inline-flex items-center gap-2">
+                <CircleUserRound className="size-4" />
+                个人资料
+            </span>
+        ),
+    },
+    {
+        key: "tasks",
+        label: (
+            <span className="inline-flex items-center gap-2">
+                <ListChecks className="size-4" />
+                任务中心
+            </span>
+        ),
+    },
+    {
+        key: "history",
+        label: (
+            <span className="inline-flex items-center gap-2">
+                <History className="size-4" />
+                生成记录
+            </span>
+        ),
+    },
+    {
+        key: "credits",
+        label: (
+            <span className="inline-flex items-center gap-2">
+                <ReceiptText className="size-4" />
+                算力明细
+            </span>
+        ),
+    },
 ];
 const creditTypeMeta: Record<string, { label: string; color?: string }> = {
     admin_adjust: { label: "后台调整" },
@@ -58,11 +90,11 @@ function AccountContent() {
     const requestedTab = searchParams.get("tab");
     const activeTab: AccountTab = requestedTab === "tasks" || requestedTab === "history" || requestedTab === "credits" ? requestedTab : "profile";
     const accountHref = activeTab === "profile" ? "/account" : `/account?tab=${activeTab}`;
-	const historyOwnerId = workspaceOwnerId(user?.id || "", user?.organizationId || "");
+    const historyOwnerId = workspaceOwnerId(user?.id || "", user?.organizationId || "");
     const historyCountQuery = useQuery({
-		queryKey: ["generation-history-count", historyOwnerId],
-		queryFn: () => countGenerationHistory(historyOwnerId),
-		enabled: historyOwnerId !== "guest",
+        queryKey: ["generation-history-count", historyOwnerId],
+        queryFn: () => countGenerationHistory(historyOwnerId),
+        enabled: historyOwnerId !== "guest",
         staleTime: 0,
     });
 
@@ -71,13 +103,10 @@ function AccountContent() {
     }, [accountHref, isReady, router, user?.id]);
 
     useEffect(() => {
-        const refresh = () => void Promise.all([
-			queryClient.invalidateQueries({ queryKey: ["generation-history", historyOwnerId] }),
-			queryClient.invalidateQueries({ queryKey: ["generation-history-count", historyOwnerId] }),
-        ]);
+        const refresh = () => void Promise.all([queryClient.invalidateQueries({ queryKey: ["generation-history", historyOwnerId] }), queryClient.invalidateQueries({ queryKey: ["generation-history-count", historyOwnerId] })]);
         window.addEventListener(GENERATION_HISTORY_CHANGED_EVENT, refresh);
         return () => window.removeEventListener(GENERATION_HISTORY_CHANGED_EVENT, refresh);
-	}, [historyOwnerId, queryClient]);
+    }, [historyOwnerId, queryClient]);
 
     if (!isReady || !user) return <AccountPageSkeleton />;
 
@@ -97,11 +126,18 @@ function AccountContent() {
                             <div className="flex min-w-0 flex-wrap items-center gap-2">
                                 <h1 className="truncate text-2xl font-semibold tracking-tight sm:text-3xl">{userName}</h1>
                                 <Tag className="m-0">{user.role === "admin" ? "管理员" : "普通用户"}</Tag>
-                                <Tag className="m-0" color="blue">{user.group || "default"}</Tag>
+                                <Tag className="m-0" color="blue">
+                                    {user.group || "default"}
+                                </Tag>
                             </div>
                             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
                                 <span>@{user.username}</span>
-                                {user.email ? <><span>·</span><span>{user.email}</span></> : null}
+                                {user.email ? (
+                                    <>
+                                        <span>·</span>
+                                        <span>{user.email}</span>
+                                    </>
+                                ) : null}
                             </div>
                         </div>
                         <Button type="primary" href={CREDIT_PURCHASE_URL} target="_blank" rel="noreferrer" icon={<WalletCards className="size-4" />}>
@@ -116,17 +152,10 @@ function AccountContent() {
                 </section>
 
                 <div className="mt-6 rounded-[22px] bg-card px-4 shadow-[0_12px_36px_rgba(29,29,31,.06)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border sm:px-6">
-                    <Tabs
-                        activeKey={activeTab}
-                        items={accountTabs}
-                        onChange={(key) => router.replace(key === "profile" ? "/account" : `/account?tab=${key}`, { scroll: false })}
-                        tabBarStyle={{ margin: 0 }}
-                    />
+                    <Tabs activeKey={activeTab} items={accountTabs} onChange={(key) => router.replace(key === "profile" ? "/account" : `/account?tab=${key}`, { scroll: false })} tabBarStyle={{ margin: 0 }} />
                 </div>
 
-                <div className="mt-5">
-                    {activeTab === "profile" ? <ProfileSection /> : activeTab === "tasks" ? <TaskSection /> : activeTab === "history" ? <HistorySection /> : <CreditsSection />}
-                </div>
+                <div className="mt-5">{activeTab === "profile" ? <ProfileSection /> : activeTab === "tasks" ? <TaskSection /> : activeTab === "history" ? <HistorySection /> : <CreditsSection />}</div>
             </div>
         </main>
     );
@@ -138,7 +167,10 @@ function AccountMetric({ icon, label, value, suffix }: { icon: ReactNode; label:
             <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground [&_svg]:size-4">{icon}</span>
             <div className="min-w-0">
                 <div className="text-xs text-muted-foreground">{label}</div>
-                <div className="mt-0.5 truncate text-xl font-semibold tabular-nums">{value}{suffix ? <span className="ml-1 text-xs font-normal text-muted-foreground">{suffix}</span> : null}</div>
+                <div className="mt-0.5 truncate text-xl font-semibold tabular-nums">
+                    {value}
+                    {suffix ? <span className="ml-1 text-xs font-normal text-muted-foreground">{suffix}</span> : null}
+                </div>
             </div>
         </div>
     );
@@ -188,7 +220,15 @@ function ProfileSection() {
         { key: "username", label: "用户名", children: <Typography.Text copyable>{user.username}</Typography.Text> },
         { key: "email", label: "电子邮箱", children: user.email || "未绑定" },
         { key: "displayName", label: "昵称", children: user.displayName || "未设置" },
-        { key: "group", label: "用户组", children: <Tag className="m-0" color="blue">{user.group || "default"}</Tag> },
+        {
+            key: "group",
+            label: "用户组",
+            children: (
+                <Tag className="m-0" color="blue">
+                    {user.group || "default"}
+                </Tag>
+            ),
+        },
         { key: "id", label: "用户 ID", children: <Typography.Text copyable>{user.id}</Typography.Text> },
         { key: "createdAt", label: "注册时间", children: user.createdAt ? dayjs(user.createdAt).format("YYYY-MM-DD HH:mm") : "—" },
     ];
@@ -196,13 +236,34 @@ function ProfileSection() {
     return (
         <>
             <div className="grid gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,.65fr)]">
-                <Card title={<span className="inline-flex items-center gap-2"><CircleUserRound className="size-4" />个人资料</span>} extra={<Button type="text" icon={<PencilLine className="size-4" />} onClick={openProfileEditor}>编辑</Button>}>
+                <Card
+                    title={
+                        <span className="inline-flex items-center gap-2">
+                            <CircleUserRound className="size-4" />
+                            个人资料
+                        </span>
+                    }
+                    extra={
+                        <Button type="text" icon={<PencilLine className="size-4" />} onClick={openProfileEditor}>
+                            编辑
+                        </Button>
+                    }
+                >
                     <Descriptions items={descriptionItems} column={{ xs: 1, sm: 2 }} size="middle" />
                 </Card>
                 <div className="space-y-5">
-                    <Card title={<span className="inline-flex items-center gap-2"><ShieldCheck className="size-4" />账号安全</span>}>
+                    <Card
+                        title={
+                            <span className="inline-flex items-center gap-2">
+                                <ShieldCheck className="size-4" />
+                                账号安全
+                            </span>
+                        }
+                    >
                         <div className="flex items-start gap-3">
-                            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground"><KeyRound className="size-4" /></span>
+                            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+                                <KeyRound className="size-4" />
+                            </span>
                             <div className="min-w-0 flex-1">
                                 <div className="font-medium">登录密码</div>
                                 <p className="mt-1 text-sm leading-6 text-muted-foreground">修改密码前需要验证当前密码。</p>
@@ -210,16 +271,39 @@ function ProfileSection() {
                             <Button onClick={() => setPasswordOpen(true)}>修改</Button>
                         </div>
                     </Card>
-                    <Card title={<span className="inline-flex items-center gap-2"><Cloud className="size-4" />账号云端数据</span>}>
+                    <Card
+                        title={
+                            <span className="inline-flex items-center gap-2">
+                                <Cloud className="size-4" />
+                                账号云端数据
+                            </span>
+                        }
+                    >
                         <p className="text-sm leading-7 text-muted-foreground">画布、我的素材、生成记录及关联媒体会在登录后自动保存到当前账号；算力流水和任务记录同样保存在服务端。</p>
                         <div className="mt-3 rounded-lg bg-muted px-3 py-2 text-sm">
                             <div className="grid grid-cols-3 gap-3 border-b border-border pb-2 text-center">
-                                <div><div className="font-medium tabular-nums">{projectCount}</div><div className="text-xs text-muted-foreground">画布</div></div>
-                                <div><div className="font-medium tabular-nums">{assetCount}</div><div className="text-xs text-muted-foreground">素材</div></div>
-                                <div><div className="font-medium tabular-nums">{fileCount}</div><div className="text-xs text-muted-foreground">媒体</div></div>
+                                <div>
+                                    <div className="font-medium tabular-nums">{projectCount}</div>
+                                    <div className="text-xs text-muted-foreground">画布</div>
+                                </div>
+                                <div>
+                                    <div className="font-medium tabular-nums">{assetCount}</div>
+                                    <div className="text-xs text-muted-foreground">素材</div>
+                                </div>
+                                <div>
+                                    <div className="font-medium tabular-nums">{fileCount}</div>
+                                    <div className="text-xs text-muted-foreground">媒体</div>
+                                </div>
                             </div>
-                            <div className="mt-2 flex items-center justify-between gap-3"><span>媒体文件用量</span><span className="font-medium tabular-nums">{formatFileSize(usedBytes)} / {formatFileSize(quotaBytes)}</span></div>
-                            <div className="mt-1 text-xs text-muted-foreground">{cloudStatus === "saved" ? "已保存到账号" : cloudStatus === "syncing" ? "正在保存到账号" : cloudStatus === "offline" ? "当前离线，修改不会保存" : cloudStatus === "error" ? "云端保存失败" : "等待云端数据"}</div>
+                            <div className="mt-2 flex items-center justify-between gap-3">
+                                <span>媒体文件用量</span>
+                                <span className="font-medium tabular-nums">
+                                    {formatFileSize(usedBytes)} / {formatFileSize(quotaBytes)}
+                                </span>
+                            </div>
+                            <div className="mt-1 text-xs text-muted-foreground">
+                                {cloudStatus === "saved" ? "已保存到账号" : cloudStatus === "syncing" ? "正在保存到账号" : cloudStatus === "offline" ? "当前离线，修改不会保存" : cloudStatus === "error" ? "云端保存失败" : "等待云端数据"}
+                            </div>
                         </div>
                         <Link href="/account?tab=history" className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-foreground hover:underline">
                             查看生成记录 <ExternalLink className="size-3.5" />
@@ -244,7 +328,14 @@ function ProfileSection() {
                     <Form.Item name="currentPassword" label="当前密码" rules={[{ required: true, message: "请输入当前密码" }]}>
                         <Input.Password autoComplete="current-password" />
                     </Form.Item>
-                    <Form.Item name="newPassword" label="新密码" rules={[{ required: true, message: "请输入新密码" }, { min: 6, message: "新密码不能少于 6 个字符" }]}>
+                    <Form.Item
+                        name="newPassword"
+                        label="新密码"
+                        rules={[
+                            { required: true, message: "请输入新密码" },
+                            { min: 6, message: "新密码不能少于 6 个字符" },
+                        ]}
+                    >
                         <Input.Password autoComplete="new-password" />
                     </Form.Item>
                     <Form.Item
@@ -253,7 +344,7 @@ function ProfileSection() {
                         dependencies={["newPassword"]}
                         rules={[
                             { required: true, message: "请再次输入新密码" },
-                            ({ getFieldValue }) => ({ validator: (_, value) => !value || getFieldValue("newPassword") === value ? Promise.resolve() : Promise.reject(new Error("两次输入的密码不一致")) }),
+                            ({ getFieldValue }) => ({ validator: (_, value) => (!value || getFieldValue("newPassword") === value ? Promise.resolve() : Promise.reject(new Error("两次输入的密码不一致"))) }),
                         ]}
                     >
                         <Input.Password autoComplete="new-password" />
@@ -283,15 +374,18 @@ function TaskSection() {
         enabled: Boolean(token),
         refetchInterval: 30000,
     });
-    const columns = useMemo<TableColumnsType<GenerationTask>>(() => [
-        { title: "时间", dataIndex: "createdAt", width: 170, render: (value: string) => <span className="text-muted-foreground">{dayjs(value).format("YYYY-MM-DD HH:mm")}</span> },
-        { title: "模型", dataIndex: "model", render: (value: string) => <span className="font-medium">{value || "—"}</span> },
-        { title: "类型", dataIndex: "modality", width: 110, render: (value: string) => <Tag className="m-0">{modalityLabel(value)}</Tag> },
-        { title: "消耗", dataIndex: "credits", width: 90, align: "right", render: (value: number) => value.toLocaleString() },
-        { title: "状态", dataIndex: "status", width: 100, render: (value: GenerationTask["status"]) => <TaskStatusTag status={value} /> },
-        { title: "耗时", dataIndex: "durationMs", width: 100, render: (value: number) => (value ? `${(value / 1000).toFixed(1)}s` : "—") },
-        { title: "错误", dataIndex: "errorMessage", ellipsis: true, render: (value: string) => value ? <Typography.Text type="danger">{value}</Typography.Text> : "—" },
-    ], []);
+    const columns = useMemo<TableColumnsType<GenerationTask>>(
+        () => [
+            { title: "时间", dataIndex: "createdAt", width: 170, render: (value: string) => <span className="text-muted-foreground">{dayjs(value).format("YYYY-MM-DD HH:mm")}</span> },
+            { title: "模型", dataIndex: "model", render: (value: string) => <span className="font-medium">{value || "—"}</span> },
+            { title: "类型", dataIndex: "modality", width: 110, render: (value: string) => <Tag className="m-0">{modalityLabel(value)}</Tag> },
+            { title: "消耗", dataIndex: "credits", width: 90, align: "right", render: (value: number) => value.toLocaleString() },
+            { title: "状态", dataIndex: "status", width: 100, render: (value: GenerationTask["status"]) => <TaskStatusTag status={value} /> },
+            { title: "耗时", dataIndex: "durationMs", width: 100, render: (value: number) => (value ? `${(value / 1000).toFixed(1)}s` : "—") },
+            { title: "错误", dataIndex: "errorMessage", ellipsis: true, render: (value: string) => (value ? <Typography.Text type="danger">{value}</Typography.Text> : "—") },
+        ],
+        [],
+    );
 
     return (
         <Card>
@@ -307,20 +401,40 @@ function TaskSection() {
                         placeholder="搜索模型或错误"
                         enterButton
                         onChange={(event) => setKeywordText(event.target.value)}
-                        onSearch={(value) => { setKeyword(value); setPage(1); }}
+                        onSearch={(value) => {
+                            setKeyword(value);
+                            setPage(1);
+                        }}
                         className="sm:w-72"
                     />
                     <Select
                         value={status}
-                        onChange={(value) => { setStatus(value); setPage(1); }}
+                        onChange={(value) => {
+                            setStatus(value);
+                            setPage(1);
+                        }}
                         className="sm:w-36"
-                        options={[{ label: "全部状态", value: "" }, { label: "运行中", value: "running" }, { label: "成功", value: "success" }, { label: "失败", value: "failed" }]}
+                        options={[
+                            { label: "全部状态", value: "" },
+                            { label: "运行中", value: "running" },
+                            { label: "成功", value: "success" },
+                            { label: "失败", value: "failed" },
+                        ]}
                     />
                     <Select
                         value={modality}
-                        onChange={(value) => { setModality(value); setPage(1); }}
+                        onChange={(value) => {
+                            setModality(value);
+                            setPage(1);
+                        }}
                         className="sm:w-36"
-                        options={[{ label: "全部类型", value: "" }, { label: "图片", value: "image" }, { label: "视频", value: "video" }, { label: "文本", value: "text" }, { label: "音频", value: "audio" }]}
+                        options={[
+                            { label: "全部类型", value: "" },
+                            { label: "图片", value: "image" },
+                            { label: "视频", value: "video" },
+                            { label: "文本", value: "text" },
+                            { label: "音频", value: "audio" },
+                        ]}
                     />
                     <Button icon={<RefreshCw className="size-4" />} onClick={() => void query.refetch()}>
                         刷新
@@ -328,12 +442,30 @@ function TaskSection() {
                 </div>
             </div>
             <div className="mt-5 hidden md:block">
-                <Table<GenerationTask> rowKey="id" columns={columns} dataSource={query.data?.items || []} loading={query.isFetching} pagination={false} scroll={{ x: 920 }} locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={query.isError ? "读取任务失败" : "暂无任务"} /> }} />
+                <Table<GenerationTask>
+                    rowKey="id"
+                    columns={columns}
+                    dataSource={query.data?.items || []}
+                    loading={query.isFetching}
+                    pagination={false}
+                    scroll={{ x: 920 }}
+                    locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={query.isError ? "读取任务失败" : "暂无任务"} /> }}
+                />
             </div>
             <div className="mt-5 space-y-2 md:hidden">
-                {query.isFetching ? <Skeleton active /> : query.data?.items?.length ? query.data.items.map((item) => <TaskCard key={item.id} item={item} />) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={query.isError ? "读取任务失败" : "暂无任务"} />}
+                {query.isFetching ? (
+                    <Skeleton active />
+                ) : query.data?.items?.length ? (
+                    query.data.items.map((item) => <TaskCard key={item.id} item={item} />)
+                ) : (
+                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={query.isError ? "读取任务失败" : "暂无任务"} />
+                )}
             </div>
-            {(query.data?.total || 0) > creditPageSize ? <div className="mt-5 flex justify-end"><Pagination current={page} pageSize={creditPageSize} total={query.data?.total || 0} showSizeChanger={false} onChange={setPage} /></div> : null}
+            {(query.data?.total || 0) > creditPageSize ? (
+                <div className="mt-5 flex justify-end">
+                    <Pagination current={page} pageSize={creditPageSize} total={query.data?.total || 0} showSizeChanger={false} onChange={setPage} />
+                </div>
+            ) : null}
         </Card>
     );
 }
@@ -359,7 +491,11 @@ function TaskCard({ item }: { item: GenerationTask }) {
 
 function TaskStatusTag({ status }: { status: GenerationTask["status"] }) {
     const meta = { running: { label: "运行中", color: "processing" }, success: { label: "成功", color: "success" }, failed: { label: "失败", color: "error" } }[status] || { label: status, color: "default" };
-    return <Tag className="m-0" color={meta.color}>{meta.label}</Tag>;
+    return (
+        <Tag className="m-0" color={meta.color}>
+            {meta.label}
+        </Tag>
+    );
 }
 
 function modalityLabel(value: string) {
@@ -369,7 +505,7 @@ function modalityLabel(value: string) {
 function HistorySection() {
     const { message, modal } = App.useApp();
     const queryClient = useQueryClient();
-	const ownerId = useUserStore((state) => state.user ? workspaceOwnerId(state.user.id, state.user.organizationId) : "guest");
+    const ownerId = useUserStore((state) => (state.user ? workspaceOwnerId(state.user.id, state.user.organizationId) : "guest"));
     const [keyword, setKeyword] = useState("");
     const [kind, setKind] = useState<"all" | "image" | "video">("all");
     const [status, setStatus] = useState<"all" | "成功" | "失败">("all");
@@ -378,17 +514,14 @@ function HistorySection() {
     const query = useQuery({
         queryKey: ["generation-history", ownerId],
         queryFn: () => readGenerationHistory(ownerId),
-		enabled: ownerId !== "guest",
+        enabled: ownerId !== "guest",
         staleTime: 0,
     });
     const deleteMutation = useMutation({
         mutationFn: deleteGenerationHistory,
         onSuccess: async () => {
             setSelected(null);
-            await Promise.all([
-                queryClient.invalidateQueries({ queryKey: ["generation-history", ownerId] }),
-                queryClient.invalidateQueries({ queryKey: ["generation-history-count", ownerId] }),
-            ]);
+            await Promise.all([queryClient.invalidateQueries({ queryKey: ["generation-history", ownerId] }), queryClient.invalidateQueries({ queryKey: ["generation-history-count", ownerId] })]);
             message.success("生成记录已删除");
         },
         onError: (error) => message.error(error instanceof Error ? error.message : "删除失败"),
@@ -434,25 +567,39 @@ function HistorySection() {
                             prefix={<Search className="size-4 text-muted-foreground" />}
                             placeholder="搜索提示词或模型"
                             value={keyword}
-                            onChange={(event) => { setKeyword(event.target.value); setPage(1); }}
+                            onChange={(event) => {
+                                setKeyword(event.target.value);
+                                setPage(1);
+                            }}
                             className="sm:w-64"
                         />
                         <Select
                             value={kind}
-                            onChange={(value) => { setKind(value); setPage(1); }}
+                            onChange={(value) => {
+                                setKind(value);
+                                setPage(1);
+                            }}
                             className="sm:w-32"
-                            options={[{ label: "全部类型", value: "all" }, { label: "图片", value: "image" }, { label: "视频", value: "video" }]}
+                            options={[
+                                { label: "全部类型", value: "all" },
+                                { label: "图片", value: "image" },
+                                { label: "视频", value: "video" },
+                            ]}
                         />
                         <Select
                             value={status}
-                            onChange={(value) => { setStatus(value); setPage(1); }}
+                            onChange={(value) => {
+                                setStatus(value);
+                                setPage(1);
+                            }}
                             className="sm:w-32"
-                            options={[{ label: "全部状态", value: "all" }, { label: "成功", value: "成功" }, { label: "失败", value: "失败" }]}
+                            options={[
+                                { label: "全部状态", value: "all" },
+                                { label: "成功", value: "成功" },
+                                { label: "失败", value: "失败" },
+                            ]}
                         />
-                        <Button
-                            icon={<RefreshCw className="size-4" />}
-                            onClick={() => void Promise.all([query.refetch(), queryClient.invalidateQueries({ queryKey: ["generation-history-count", ownerId] })])}
-                        >
+                        <Button icon={<RefreshCw className="size-4" />} onClick={() => void Promise.all([query.refetch(), queryClient.invalidateQueries({ queryKey: ["generation-history-count", ownerId] })])}>
                             刷新
                         </Button>
                     </div>
@@ -461,16 +608,24 @@ function HistorySection() {
 
             <div className="mt-5">
                 {query.isLoading ? (
-                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"><SkeletonHistoryCards /></div>
+                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                        <SkeletonHistoryCards />
+                    </div>
                 ) : pageItems.length ? (
                     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                        {pageItems.map((item) => <HistoryCard key={`${item.kind}-${item.id}`} item={item} onOpen={() => setSelected(item)} onDelete={() => confirmDelete(item)} />)}
+                        {pageItems.map((item) => (
+                            <HistoryCard key={`${item.kind}-${item.id}`} item={item} onOpen={() => setSelected(item)} onDelete={() => confirmDelete(item)} />
+                        ))}
                     </div>
                 ) : (
-                    <Card><Empty description={query.isError ? "读取生成记录失败" : keyword || kind !== "all" || status !== "all" ? "没有符合筛选条件的记录" : "暂无生成记录"} /></Card>
+                    <Card>
+                        <Empty description={query.isError ? "读取生成记录失败" : keyword || kind !== "all" || status !== "all" ? "没有符合筛选条件的记录" : "暂无生成记录"} />
+                    </Card>
                 )}
                 {filtered.length > historyPageSize ? (
-                    <div className="mt-5 flex justify-center"><Pagination current={page} pageSize={historyPageSize} total={filtered.length} showSizeChanger={false} onChange={setPage} /></div>
+                    <div className="mt-5 flex justify-center">
+                        <Pagination current={page} pageSize={historyPageSize} total={filtered.length} showSizeChanger={false} onChange={setPage} />
+                    </div>
                 ) : null}
             </div>
 
@@ -495,7 +650,8 @@ function HistoryCard({ item, onOpen, onDelete }: { item: GenerationHistoryItem; 
                 {item.kind === "video" && mediaUrl ? <video src={mediaUrl} muted preload="metadata" className="h-full w-full object-cover" /> : null}
                 {!preview && !mediaUrl ? <span className="flex h-full items-center justify-center text-muted-foreground">{item.kind === "image" ? <ImageIcon className="size-8" /> : <Film className="size-8" />}</span> : null}
                 <span className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-md bg-background/90 px-2 py-1 text-xs font-medium text-foreground backdrop-blur">
-                    {item.kind === "image" ? <ImageIcon className="size-3.5" /> : <Film className="size-3.5" />}{item.kind === "image" ? "图片" : "视频"}
+                    {item.kind === "image" ? <ImageIcon className="size-3.5" /> : <Film className="size-3.5" />}
+                    {item.kind === "image" ? "图片" : "视频"}
                 </span>
                 {item.resultCount > 1 ? <span className="absolute right-3 top-3 rounded-md bg-black/65 px-2 py-1 text-xs text-white">{item.resultCount} 个结果</span> : null}
             </button>
@@ -505,7 +661,9 @@ function HistoryCard({ item, onOpen, onDelete }: { item: GenerationHistoryItem; 
                         <h3 className="truncate font-medium">{item.title}</h3>
                         <p className="mt-1 line-clamp-2 min-h-10 text-sm leading-5 text-muted-foreground">{item.prompt || "未填写提示词"}</p>
                     </div>
-                    <Tag className="m-0 shrink-0" color={item.status === "成功" ? "green" : "red"}>{item.status}</Tag>
+                    <Tag className="m-0 shrink-0" color={item.status === "成功" ? "green" : "red"}>
+                        {item.status}
+                    </Tag>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-1.5 text-xs text-muted-foreground">
                     {item.model ? <span className="max-w-full truncate rounded-md bg-muted px-2 py-1">{item.model}</span> : null}
@@ -515,8 +673,12 @@ function HistoryCard({ item, onOpen, onDelete }: { item: GenerationHistoryItem; 
                 <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
                     <span className="text-xs text-muted-foreground">耗时 {formatDuration(item.durationMs)}</span>
                     <div className="flex items-center gap-1">
-                        <Button type="text" size="small" onClick={onOpen}>查看</Button>
-                        <Button href={item.href} type="text" size="small" icon={<ExternalLink className="size-3.5" />}>工作台</Button>
+                        <Button type="text" size="small" onClick={onOpen}>
+                            查看
+                        </Button>
+                        <Button href={item.href} type="text" size="small" icon={<ExternalLink className="size-3.5" />}>
+                            工作台
+                        </Button>
                         <Button danger type="text" size="small" icon={<Trash2 className="size-3.5" />} aria-label="删除记录" onClick={onDelete} />
                     </div>
                 </div>
@@ -542,35 +704,68 @@ function HistoryDetailModal({ item, onClose, onDelete }: { item: GenerationHisto
             onCancel={onClose}
             width={920}
             destroyOnHidden
-            footer={item ? [
-                <Button key="delete" danger icon={<Trash2 className="size-4" />} onClick={onDelete}>删除记录</Button>,
-                <Button key="workbench" href={item.href} type="primary" icon={<ExternalLink className="size-4" />}>前往工作台</Button>,
-            ] : null}
+            footer={
+                item
+                    ? [
+                          <Button key="delete" danger icon={<Trash2 className="size-4" />} onClick={onDelete}>
+                              删除记录
+                          </Button>,
+                          <Button key="workbench" href={item.href} type="primary" icon={<ExternalLink className="size-4" />}>
+                              前往工作台
+                          </Button>,
+                      ]
+                    : null
+            }
         >
             {item ? (
                 <div className="space-y-5">
-                    {mediaQuery.isLoading ? <Skeleton active /> : item.kind === "image" ? (
+                    {mediaQuery.isLoading ? (
+                        <Skeleton active />
+                    ) : item.kind === "image" ? (
                         mediaUrls.length ? (
                             <AntImage.PreviewGroup>
                                 <div className="grid max-h-[52vh] grid-cols-2 gap-3 overflow-y-auto sm:grid-cols-3">
                                     {mediaUrls.map((url, index) => (
                                         <div key={`${item.id}-${index}`} className="relative overflow-hidden rounded-xl bg-muted">
                                             <AntImage src={url} alt={`${item.title} ${index + 1}`} className="!aspect-square !w-full !object-cover" />
-                                            <Button size="small" className="!absolute bottom-2 right-2" onClick={(event) => { event.stopPropagation(); saveAs(url, `${item.title || "image"}-${index + 1}.png`); }}>下载</Button>
+                                            <Button
+                                                size="small"
+                                                className="!absolute bottom-2 right-2"
+                                                onClick={(event) => {
+                                                    event.stopPropagation();
+                                                    saveAs(url, `${item.title || "image"}-${index + 1}.png`);
+                                                }}
+                                            >
+                                                下载
+                                            </Button>
                                         </div>
                                     ))}
                                 </div>
                             </AntImage.PreviewGroup>
-                        ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="本地结果文件不存在" />
+                        ) : (
+                            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="本地结果文件不存在" />
+                        )
                     ) : videoUrl ? (
-                        <div className="overflow-hidden rounded-xl bg-black"><video src={videoUrl} controls className="max-h-[52vh] w-full" /></div>
-                    ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="本地结果文件不存在" />}
+                        <div className="overflow-hidden rounded-xl bg-black">
+                            <video src={videoUrl} controls className="max-h-[52vh] w-full" />
+                        </div>
+                    ) : (
+                        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="本地结果文件不存在" />
+                    )}
                     <Descriptions
                         size="small"
                         column={{ xs: 1, sm: 2 }}
                         items={[
                             { key: "type", label: "类型", children: item.kind === "image" ? "图片生成" : "视频生成" },
-                            { key: "status", label: "状态", children: <Tag className="m-0" color={item.status === "成功" ? "green" : "red"}>{item.status}</Tag> },
+                            {
+                                key: "status",
+                                label: "状态",
+                                children: (
+                                    <Tag className="m-0" color={item.status === "成功" ? "green" : "red"}>
+                                        {item.status}
+                                    </Tag>
+                                ),
+                            },
                             { key: "model", label: "模型", children: item.model || "—" },
                             { key: "time", label: "生成时间", children: dayjs(item.createdAt).format("YYYY-MM-DD HH:mm:ss") },
                             { key: "detail", label: "参数", children: item.detail || "—" },
@@ -579,7 +774,9 @@ function HistoryDetailModal({ item, onClose, onDelete }: { item: GenerationHisto
                     />
                     <div>
                         <div className="mb-2 text-sm font-medium">提示词</div>
-                        <Typography.Paragraph copyable className="!mb-0 rounded-xl bg-muted p-3 !text-sm !leading-6">{item.prompt || "未填写提示词"}</Typography.Paragraph>
+                        <Typography.Paragraph copyable className="!mb-0 rounded-xl bg-muted p-3 !text-sm !leading-6">
+                            {item.prompt || "未填写提示词"}
+                        </Typography.Paragraph>
                     </div>
                     {item.error ? <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">{item.error}</div> : null}
                     {item.kind === "video" && videoUrl ? <Button onClick={() => saveAs(videoUrl, `${item.title || "video"}.mp4`)}>下载视频</Button> : null}
@@ -601,14 +798,40 @@ function CreditsSection() {
         queryFn: () => fetchCreditLogs(token, { keyword, type, page, pageSize: creditPageSize }),
         enabled: Boolean(token),
     });
-    const columns = useMemo<TableColumnsType<CreditLog>>(() => [
-        { title: "时间", dataIndex: "createdAt", width: 170, render: (value: string) => <span className="text-muted-foreground">{dayjs(value).format("YYYY-MM-DD HH:mm")}</span> },
-        { title: "类型", dataIndex: "type", width: 130, render: (value: string) => <CreditTypeTag type={value} /> },
-        { title: "账本", dataIndex: "creditSource", width: 90, render: (value: CreditLog["creditSource"]) => <Tag color={value === "organization" ? "blue" : undefined}>{value === "organization" ? "企业" : "个人"}</Tag> },
-        { title: "说明", dataIndex: "remark", render: (_: string, item) => { const extra = creditExtra(item.extra); return <div><div>{item.remark || "—"}</div>{extra.model ? <div className="mt-1 text-xs text-muted-foreground">{extra.model}</div> : null}</div>; } },
-        { title: "变动", dataIndex: "amount", width: 110, align: "right", render: (value: number) => <Typography.Text strong type={value >= 0 ? "success" : "danger"}>{value > 0 ? "+" : ""}{value.toLocaleString()}</Typography.Text> },
-        { title: "余额", dataIndex: "balance", width: 110, align: "right", render: (value: number) => value.toLocaleString() },
-    ], []);
+    const columns = useMemo<TableColumnsType<CreditLog>>(
+        () => [
+            { title: "时间", dataIndex: "createdAt", width: 170, render: (value: string) => <span className="text-muted-foreground">{dayjs(value).format("YYYY-MM-DD HH:mm")}</span> },
+            { title: "类型", dataIndex: "type", width: 130, render: (value: string) => <CreditTypeTag type={value} /> },
+            { title: "账本", dataIndex: "creditSource", width: 90, render: (value: CreditLog["creditSource"]) => <Tag color={value === "organization" ? "blue" : undefined}>{value === "organization" ? "企业" : "个人"}</Tag> },
+            {
+                title: "说明",
+                dataIndex: "remark",
+                render: (_: string, item) => {
+                    const extra = creditExtra(item.extra);
+                    return (
+                        <div>
+                            <div>{item.remark || "—"}</div>
+                            {extra.model ? <div className="mt-1 text-xs text-muted-foreground">{extra.model}</div> : null}
+                        </div>
+                    );
+                },
+            },
+            {
+                title: "变动",
+                dataIndex: "amount",
+                width: 110,
+                align: "right",
+                render: (value: number) => (
+                    <Typography.Text strong type={value >= 0 ? "success" : "danger"}>
+                        {value > 0 ? "+" : ""}
+                        {value.toLocaleString()}
+                    </Typography.Text>
+                ),
+            },
+            { title: "余额", dataIndex: "balance", width: 110, align: "right", render: (value: number) => value.toLocaleString() },
+        ],
+        [],
+    );
     const items = query.data?.items || [];
     const total = query.data?.total || 0;
 
@@ -626,12 +849,18 @@ function CreditsSection() {
                         placeholder="搜索说明或关联 ID"
                         enterButton
                         onChange={(event) => setKeywordText(event.target.value)}
-                        onSearch={(value) => { setKeyword(value); setPage(1); }}
+                        onSearch={(value) => {
+                            setKeyword(value);
+                            setPage(1);
+                        }}
                         className="sm:w-72"
                     />
                     <Select
                         value={type}
-                        onChange={(value) => { setType(value); setPage(1); }}
+                        onChange={(value) => {
+                            setType(value);
+                            setPage(1);
+                        }}
                         className="sm:w-40"
                         options={[{ label: "全部类型", value: "" }, ...Object.entries(creditTypeMeta).map(([value, meta]) => ({ label: meta.label, value }))]}
                     />
@@ -640,16 +869,32 @@ function CreditsSection() {
 
             <div className="my-5 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-muted px-4 py-3">
                 <span className="text-sm text-muted-foreground">共 {total.toLocaleString()} 条账户流水</span>
-                <span className="inline-flex items-center gap-1.5 font-semibold tabular-nums"><CreditSymbol />{credits.toLocaleString()}<span className="text-xs font-normal text-muted-foreground">个人余额</span></span>
+                <span className="inline-flex items-center gap-1.5 font-semibold tabular-nums">
+                    <CreditSymbol />
+                    {credits.toLocaleString()}
+                    <span className="text-xs font-normal text-muted-foreground">个人余额</span>
+                </span>
             </div>
 
             <div className="hidden md:block">
-                <Table<CreditLog> rowKey="id" columns={columns} dataSource={items} loading={query.isFetching} pagination={false} scroll={{ x: 760 }} locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={query.isError ? "读取算力明细失败" : "暂无算力明细"} /> }} />
+                <Table<CreditLog>
+                    rowKey="id"
+                    columns={columns}
+                    dataSource={items}
+                    loading={query.isFetching}
+                    pagination={false}
+                    scroll={{ x: 760 }}
+                    locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={query.isError ? "读取算力明细失败" : "暂无算力明细"} /> }}
+                />
             </div>
             <div className="space-y-2 md:hidden">
                 {query.isFetching ? <Skeleton active /> : items.length ? items.map((item) => <CreditLogCard key={item.id} item={item} />) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={query.isError ? "读取算力明细失败" : "暂无算力明细"} />}
             </div>
-            {total > creditPageSize ? <div className="mt-5 flex justify-end"><Pagination current={page} pageSize={creditPageSize} total={total} showSizeChanger={false} onChange={setPage} /></div> : null}
+            {total > creditPageSize ? (
+                <div className="mt-5 flex justify-end">
+                    <Pagination current={page} pageSize={creditPageSize} total={total} showSizeChanger={false} onChange={setPage} />
+                </div>
+            ) : null}
         </Card>
     );
 }
@@ -659,12 +904,20 @@ function CreditLogCard({ item }: { item: CreditLog }) {
     return (
         <article className="rounded-xl border border-border p-3" style={{ contentVisibility: "auto", containIntrinsicSize: "0 120px" }}>
             <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0"><CreditTypeTag type={item.type} /><div className="mt-2 truncate text-sm font-medium">{item.remark || "—"}</div></div>
-                <Typography.Text strong type={item.amount >= 0 ? "success" : "danger"}>{item.amount > 0 ? "+" : ""}{item.amount.toLocaleString()}</Typography.Text>
+                <div className="min-w-0">
+                    <CreditTypeTag type={item.type} />
+                    <div className="mt-2 truncate text-sm font-medium">{item.remark || "—"}</div>
+                </div>
+                <Typography.Text strong type={item.amount >= 0 ? "success" : "danger"}>
+                    {item.amount > 0 ? "+" : ""}
+                    {item.amount.toLocaleString()}
+                </Typography.Text>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                 <span>{dayjs(item.createdAt).format("YYYY-MM-DD HH:mm")}</span>
-                <span className="text-right">{item.creditSource === "organization" ? "企业" : "个人"}余额 {item.balance.toLocaleString()}</span>
+                <span className="text-right">
+                    {item.creditSource === "organization" ? "企业" : "个人"}余额 {item.balance.toLocaleString()}
+                </span>
                 {extra.model ? <span className="col-span-2 truncate">模型 {extra.model}</span> : null}
             </div>
         </article>
@@ -673,7 +926,11 @@ function CreditLogCard({ item }: { item: CreditLog }) {
 
 function CreditTypeTag({ type }: { type: string }) {
     const meta = creditTypeMeta[type] || { label: type || "未知类型" };
-    return <Tag className="m-0" color={meta.color}>{meta.label}</Tag>;
+    return (
+        <Tag className="m-0" color={meta.color}>
+            {meta.label}
+        </Tag>
+    );
 }
 
 function creditExtra(value: string) {
@@ -686,9 +943,21 @@ function creditExtra(value: string) {
 }
 
 function SkeletonHistoryCards() {
-    return Array.from({ length: 6 }, (_, index) => <Card key={index}><Skeleton active paragraph={{ rows: 4 }} /></Card>);
+    return Array.from({ length: 6 }, (_, index) => (
+        <Card key={index}>
+            <Skeleton active paragraph={{ rows: 4 }} />
+        </Card>
+    ));
 }
 
 function AccountPageSkeleton() {
-    return <main className="h-full overflow-y-auto bg-background"><div className="mx-auto max-w-7xl px-6 py-8"><Card><Skeleton active avatar paragraph={{ rows: 4 }} /></Card></div></main>;
+    return (
+        <main className="h-full overflow-y-auto bg-background">
+            <div className="mx-auto max-w-7xl px-6 py-8">
+                <Card>
+                    <Skeleton active avatar paragraph={{ rows: 4 }} />
+                </Card>
+            </div>
+        </main>
+    );
 }

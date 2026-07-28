@@ -19,15 +19,15 @@ const fileConcurrency = 3;
 let activeWorkspaceFlush: (() => Promise<void>) | null = null;
 
 export async function flushActiveWorkspaceChanges() {
-	if (activeWorkspaceFlush) return activeWorkspaceFlush();
-	if (hasPendingWorkspaceChanges()) throw new Error("当前账号仍有页面内数据未保存，请返回工作台联网同步后再继续");
+    if (activeWorkspaceFlush) return activeWorkspaceFlush();
+    if (hasPendingWorkspaceChanges()) throw new Error("当前账号仍有页面内数据未保存，请返回工作台联网同步后再继续");
 }
 
 export function WorkspaceProvider() {
     const token = useUserStore((state) => state.token);
     const userId = useUserStore((state) => state.user?.id || "");
     const organizationId = useUserStore((state) => state.user?.organizationId || "");
-	const ownerId = workspaceOwnerId(userId, organizationId);
+    const ownerId = workspaceOwnerId(userId, organizationId);
     useEffect(() => {
         let cancelled = false;
         let running = false;
@@ -78,9 +78,9 @@ export function WorkspaceProvider() {
             }
         };
 
-		const flush = async () => {
-			if (!readPendingWorkspaceChanges(ownerId).length) return;
-			if (!navigator.onLine) throw new Error("当前离线，无法切换企业");
+        const flush = async () => {
+            if (!readPendingWorkspaceChanges(ownerId).length) return;
+            if (!navigator.onLine) throw new Error("当前离线，无法切换企业");
             for (let attempt = 0; attempt < 3; attempt++) {
                 await save(false);
                 if (!readPendingWorkspaceChanges(ownerId).length) return;
@@ -109,16 +109,16 @@ export function WorkspaceProvider() {
             window.clearInterval(polling);
             window.removeEventListener(WORKSPACE_CHANGES_UPDATED_EVENT, schedule);
             window.removeEventListener("online", schedule);
-			window.removeEventListener("focus", saveWhenVisible);
-			document.removeEventListener("visibilitychange", saveWhenVisible);
-			if (activeWorkspaceFlush === flush) activeWorkspaceFlush = null;
-			if (!readPendingWorkspaceChanges(ownerId, userId).length) {
-				clearGenerationRecordMemory(ownerId);
-				clearImageMemory();
-				clearMediaMemory();
-				useCanvasStore.getState().replaceOwnerProjects(ownerId, []);
-				useAssetStore.getState().replaceOwnerAssets(ownerId, []);
-			}
+            window.removeEventListener("focus", saveWhenVisible);
+            document.removeEventListener("visibilitychange", saveWhenVisible);
+            if (activeWorkspaceFlush === flush) activeWorkspaceFlush = null;
+            if (!readPendingWorkspaceChanges(ownerId, userId).length) {
+                clearGenerationRecordMemory(ownerId);
+                clearImageMemory();
+                clearMediaMemory();
+                useCanvasStore.getState().replaceOwnerProjects(ownerId, []);
+                useAssetStore.getState().replaceOwnerAssets(ownerId, []);
+            }
         };
     }, [organizationId, ownerId, token, userId]);
 
@@ -129,8 +129,11 @@ async function flushPendingChanges(token: string, userId: string) {
     const pending = readPendingWorkspaceChanges(userId);
     if (!pending.length) return;
     await uploadReferencedFiles(token, pending);
-	const result = await saveWorkspaceChanges(token, pending.map(({ domain, objectId, data, deleted, version }) => ({ domain, objectId, data, deleted, version })));
-	commitWorkspaceChanges(pending, result.records);
+    const result = await saveWorkspaceChanges(
+        token,
+        pending.map(({ domain, objectId, data, deleted, version }) => ({ domain, objectId, data, deleted, version })),
+    );
+    commitWorkspaceChanges(pending, result.records);
     applyWorkspaceVersions(userId, result.records);
 }
 
@@ -149,7 +152,7 @@ function overlayPending<T extends { id: string }>(remote: T[], pending: Map<stri
     pending.forEach((change) => {
         if (change.domain !== domain) return;
         if (change.deleted) items.delete(change.objectId);
-		else items.set(change.objectId, { ...fromData(change.data), version: change.version });
+        else items.set(change.objectId, { ...fromData(change.data), version: change.version });
     });
     return [...items.values()];
 }
@@ -180,7 +183,10 @@ function applyWorkspaceVersions(userId: string, records: WorkspaceRecord[]) {
     const assetVersions = new Map(records.filter((item) => item.domain === "asset" && !item.deleted).map((item) => [item.objectId, item.version]));
     if (assetVersions.size) {
         const assets = useAssetStore.getState().assetsByOwner[userId] || [];
-        useAssetStore.getState().replaceOwnerAssets(userId, assets.map((asset) => assetVersions.has(asset.id) ? { ...asset, version: assetVersions.get(asset.id) } : asset));
+        useAssetStore.getState().replaceOwnerAssets(
+            userId,
+            assets.map((asset) => (assetVersions.has(asset.id) ? { ...asset, version: assetVersions.get(asset.id) } : asset)),
+        );
     }
 }
 
@@ -238,16 +244,18 @@ function collectStorageKeys(value: unknown, keys = new Set<string>()) {
     }
     if (!value || typeof value !== "object") return [...keys];
     if ("storageKey" in value && typeof value.storageKey === "string" && storageKeyPattern.test(value.storageKey)) keys.add(value.storageKey);
-    Object.values(value).forEach((item) => Array.isArray(item) ? item.forEach((child) => collectStorageKeys(child, keys)) : collectStorageKeys(item, keys));
+    Object.values(value).forEach((item) => (Array.isArray(item) ? item.forEach((child) => collectStorageKeys(child, keys)) : collectStorageKeys(item, keys)));
     return [...keys];
 }
 
 async function runWithConcurrency<T>(items: T[], limit: number, worker: (item: T) => Promise<void>) {
     let index = 0;
-    await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
-        while (index < items.length) {
-            const current = index++;
-            await worker(items[current]);
-        }
-    }));
+    await Promise.all(
+        Array.from({ length: Math.min(limit, items.length) }, async () => {
+            while (index < items.length) {
+                const current = index++;
+                await worker(items[current]);
+            }
+        }),
+    );
 }

@@ -55,7 +55,10 @@ async function loadAccessPolicy() {
 function clientIp(request: NextRequest) {
     const headers = [request.headers.get("cf-connecting-ip"), request.headers.get("x-real-ip"), request.headers.get("x-forwarded-for")];
     for (const value of headers) {
-        const ip = value?.split(",").map((item) => normalizeIp(item)).find(Boolean);
+        const ip = value
+            ?.split(",")
+            .map((item) => normalizeIp(item))
+            .find(Boolean);
         if (ip) return ip;
     }
     return "";

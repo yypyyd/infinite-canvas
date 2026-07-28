@@ -51,7 +51,16 @@ export default function AdminGenerationTasksPage() {
 
     const columns: ProColumns<AdminGenerationTask>[] = [
         { title: "创建时间", dataIndex: "createdAt", width: 170, render: (_, item) => <Typography.Text type="secondary">{dayjs(item.createdAt).format("YYYY-MM-DD HH:mm:ss")}</Typography.Text> },
-        { title: "用户 ID", dataIndex: "userId", width: 210, render: (_, item) => <Typography.Text copyable ellipsis style={{ maxWidth: 200 }}>{item.userId}</Typography.Text> },
+        {
+            title: "用户 ID",
+            dataIndex: "userId",
+            width: 210,
+            render: (_, item) => (
+                <Typography.Text copyable ellipsis style={{ maxWidth: 200 }}>
+                    {item.userId}
+                </Typography.Text>
+            ),
+        },
         { title: "模型", dataIndex: "model", width: 220, ellipsis: true },
         { title: "上游模型", dataIndex: "upstreamModel", width: 220, ellipsis: true },
         { title: "渠道", dataIndex: "channelName", width: 160, ellipsis: true },
@@ -118,7 +127,12 @@ export default function AdminGenerationTasksPage() {
                     tableLayout="fixed"
                     scroll={{ x: 1880 }}
                     cardProps={{ variant: "borderless" }}
-                    headerTitle={<Space><Typography.Text strong>生成任务</Typography.Text><Tag>{query.data?.total || 0} 条</Tag></Space>}
+                    headerTitle={
+                        <Space>
+                            <Typography.Text strong>生成任务</Typography.Text>
+                            <Tag>{query.data?.total || 0} 条</Tag>
+                        </Space>
+                    }
                     options={{ density: true, setting: true, reload: () => void query.refetch() }}
                     pagination={{
                         current: page,

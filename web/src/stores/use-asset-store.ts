@@ -42,51 +42,57 @@ type AssetStore = {
 };
 
 export const useAssetStore = create<AssetStore>()((set, get) => ({
-            hydrated: true,
-            ownerId: "guest",
-            assets: [],
-            assetsByOwner: { guest: [] },
-            switchOwner: (ownerId) => {
-                const normalizedOwnerId = ownerId || "guest";
-                set((state) => ({ ownerId: normalizedOwnerId, assets: state.assetsByOwner[normalizedOwnerId] || [] }));
-            },
-            replaceOwnerAssets: (ownerId, assets) => set((state) => ({
-                assetsByOwner: { ...state.assetsByOwner, [ownerId]: assets },
-                ...(state.ownerId === ownerId ? { assets } : {}),
-            })),
-            addAsset: (asset) => {
-                const now = new Date().toISOString();
-                const id = nanoid();
-                const next = { ...asset, id, createdAt: now, updatedAt: now } as Asset;
-                set((state) => ownerAssetsState(state, [next, ...state.assets]));
-				stageWorkspaceRecord(get().ownerId, "asset", id, workspaceAssetData(next), next.version || 0);
-                return id;
-            },
-            updateAsset: (id, patch) => {
-                set((state) => ownerAssetsState(state, state.assets.map((asset) => (asset.id === id ? ({ ...asset, ...patch, updatedAt: new Date().toISOString() } as Asset) : asset))));
-                const asset = get().assets.find((item) => item.id === id);
-				if (asset) stageWorkspaceRecord(get().ownerId, "asset", id, workspaceAssetData(asset), asset.version || 0);
-            },
-            removeAsset: (id) => {
-                const removed = get().assets.find((asset) => asset.id === id);
-                set((state) => {
-                    const assets = state.assets.filter((asset) => asset.id !== id);
-                    get().cleanupImages({ assets });
-                    return ownerAssetsState(state, assets);
-                });
-				if (removed) stageWorkspaceDelete(get().ownerId, "asset", id, removed.version || 0);
-            },
-            replaceAssets: (assets) => set((state) => ownerAssetsState(state, assets)),
-            cleanupImages: (extra) => {
-                window.setTimeout(async () => {
-                    const { useCanvasStore } = await import("@/app/(user)/canvas/stores/use-canvas-store");
-                    const assets = Object.values(get().assetsByOwner).flat();
-                    const projects = Object.values(useCanvasStore.getState().projectsByOwner).flat();
-                    await cleanupUnusedImages({ assets, projects, extra });
-                    await cleanupUnusedMedia({ assets, projects, extra });
-                }, 0);
-            },
-        }));
+    hydrated: true,
+    ownerId: "guest",
+    assets: [],
+    assetsByOwner: { guest: [] },
+    switchOwner: (ownerId) => {
+        const normalizedOwnerId = ownerId || "guest";
+        set((state) => ({ ownerId: normalizedOwnerId, assets: state.assetsByOwner[normalizedOwnerId] || [] }));
+    },
+    replaceOwnerAssets: (ownerId, assets) =>
+        set((state) => ({
+            assetsByOwner: { ...state.assetsByOwner, [ownerId]: assets },
+            ...(state.ownerId === ownerId ? { assets } : {}),
+        })),
+    addAsset: (asset) => {
+        const now = new Date().toISOString();
+        const id = nanoid();
+        const next = { ...asset, id, createdAt: now, updatedAt: now } as Asset;
+        set((state) => ownerAssetsState(state, [next, ...state.assets]));
+        stageWorkspaceRecord(get().ownerId, "asset", id, workspaceAssetData(next), next.version || 0);
+        return id;
+    },
+    updateAsset: (id, patch) => {
+        set((state) =>
+            ownerAssetsState(
+                state,
+                state.assets.map((asset) => (asset.id === id ? ({ ...asset, ...patch, updatedAt: new Date().toISOString() } as Asset) : asset)),
+            ),
+        );
+        const asset = get().assets.find((item) => item.id === id);
+        if (asset) stageWorkspaceRecord(get().ownerId, "asset", id, workspaceAssetData(asset), asset.version || 0);
+    },
+    removeAsset: (id) => {
+        const removed = get().assets.find((asset) => asset.id === id);
+        set((state) => {
+            const assets = state.assets.filter((asset) => asset.id !== id);
+            get().cleanupImages({ assets });
+            return ownerAssetsState(state, assets);
+        });
+        if (removed) stageWorkspaceDelete(get().ownerId, "asset", id, removed.version || 0);
+    },
+    replaceAssets: (assets) => set((state) => ownerAssetsState(state, assets)),
+    cleanupImages: (extra) => {
+        window.setTimeout(async () => {
+            const { useCanvasStore } = await import("@/app/(user)/canvas/stores/use-canvas-store");
+            const assets = Object.values(get().assetsByOwner).flat();
+            const projects = Object.values(useCanvasStore.getState().projectsByOwner).flat();
+            await cleanupUnusedImages({ assets, projects, extra });
+            await cleanupUnusedMedia({ assets, projects, extra });
+        }, 0);
+    },
+}));
 
 function ownerAssetsState(state: AssetStore, assets: Asset[]) {
     return { assets, assetsByOwner: { ...state.assetsByOwner, [state.ownerId]: assets } };

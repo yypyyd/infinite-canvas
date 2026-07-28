@@ -5,13 +5,7 @@ import { Alert, Button, Checkbox, Drawer, Empty, Form, Select, Spin, Switch, Tag
 import { Boxes, Film, Image as ImageIcon, PackageCheck, Sparkles, Type } from "lucide-react";
 
 import { fetchProducts, fetchProductSKUs, type Product, type ProductSKU } from "@/services/api/commerce";
-import {
-    commercePackageAssets,
-    commercePackagePlatforms,
-    type CommercePackageAsset,
-    type CommercePackagePlatform,
-    type CommercePackageRequest,
-} from "./canvas-commerce-package";
+import { commercePackageAssets, commercePackagePlatforms, type CommercePackageAsset, type CommercePackagePlatform, type CommercePackageRequest } from "./canvas-commerce-package";
 
 type PackageForm = {
     productId: string;
@@ -24,17 +18,7 @@ type PackageForm = {
 
 const assetIcons = { main: ImageIcon, scene: Sparkles, detail: Boxes, copy: Type, video: Film };
 
-export function CanvasCommercePackagePanel({
-    open,
-    selectedImageCount,
-    onClose,
-    onCreate,
-}: {
-    open: boolean;
-    selectedImageCount: number;
-    onClose: () => void;
-    onCreate: (request: CommercePackageRequest) => Promise<void> | void;
-}) {
+export function CanvasCommercePackagePanel({ open, selectedImageCount, onClose, onCreate }: { open: boolean; selectedImageCount: number; onClose: () => void; onCreate: (request: CommercePackageRequest) => Promise<void> | void }) {
     const [form] = Form.useForm<PackageForm>();
     const productId = Form.useWatch("productId", form);
     const [products, setProducts] = useState<Product[]>([]);
@@ -106,7 +90,8 @@ export function CanvasCommercePackagePanel({
         <Drawer
             title={
                 <span className="inline-flex items-center gap-2">
-                    <PackageCheck className="size-4" />一键电商素材包
+                    <PackageCheck className="size-4" />
+                    一键电商素材包
                 </span>
             }
             open={open}
@@ -119,12 +104,7 @@ export function CanvasCommercePackagePanel({
             footer={
                 <div className="flex items-center justify-between gap-3">
                     <span className="text-xs text-muted-foreground">创建后可继续单独调整每个节点</span>
-                    <Button
-                        type="primary"
-                        icon={<Sparkles className="size-4" />}
-                        loading={submitting}
-                        onClick={() => void submit()}
-                    >
+                    <Button type="primary" icon={<Sparkles className="size-4" />} loading={submitting} onClick={() => void submit()}>
                         创建素材包
                     </Button>
                 </div>
@@ -134,9 +114,7 @@ export function CanvasCommercePackagePanel({
             <Form form={form} layout="vertical" requiredMark={false} className="space-y-1">
                 <div className="mb-5 rounded-xl border border-border bg-muted/35 p-4">
                     <div className="text-sm font-medium">从商品资料到平台成品</div>
-                    <div className="mt-1 text-xs leading-5 text-muted-foreground">
-                        自动编排参考图、生产配置和结果节点，图片、文案、视频可分别重生成。
-                    </div>
+                    <div className="mt-1 text-xs leading-5 text-muted-foreground">自动编排参考图、生产配置和结果节点，图片、文案、视频可分别重生成。</div>
                 </div>
 
                 <Form.Item name="productId" label="商品" rules={[{ required: true, message: "请选择商品" }]}>
@@ -145,13 +123,7 @@ export function CanvasCommercePackagePanel({
                         loading={productsLoading}
                         placeholder="选择 SPU"
                         optionFilterProp="label"
-                        notFoundContent={
-                            productsLoading ? (
-                                <Spin size="small" />
-                            ) : (
-                                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无商品，请先到企业中心创建" />
-                            )
-                        }
+                        notFoundContent={productsLoading ? <Spin size="small" /> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无商品，请先到企业中心创建" />}
                         options={products.map((item) => ({ value: item.id, label: `${item.name} · ${item.code}` }))}
                     />
                 </Form.Item>
@@ -172,7 +144,9 @@ export function CanvasCommercePackagePanel({
                         {selectedProduct.brandName ? <Tag bordered={false}>{selectedProduct.brandName}</Tag> : null}
                         {selectedProduct.category ? <Tag bordered={false}>{selectedProduct.category}</Tag> : null}
                         {selectedProduct.sellingPoints?.slice(0, 3).map((item) => (
-                            <Tag key={item} bordered={false}>{item}</Tag>
+                            <Tag key={item} bordered={false}>
+                                {item}
+                            </Tag>
                         ))}
                     </div>
                 ) : null}
@@ -180,11 +154,7 @@ export function CanvasCommercePackagePanel({
                 <Form.Item name="platforms" label="目标平台" rules={[{ required: true, message: "请至少选择一个平台" }]}>
                     <Checkbox.Group className="grid w-full grid-cols-2 gap-2">
                         {commercePackagePlatforms.map((platform) => (
-                            <Checkbox
-                                key={platform.id}
-                                value={platform.id}
-                                className="!m-0 rounded-lg border border-border px-3 py-2.5"
-                            >
+                            <Checkbox key={platform.id} value={platform.id} className="!m-0 rounded-lg border border-border px-3 py-2.5">
                                 <span className="block font-medium">{platform.name}</span>
                                 <span className="mt-0.5 block text-[11px] text-muted-foreground">{platform.summary}</span>
                             </Checkbox>
@@ -197,13 +167,10 @@ export function CanvasCommercePackagePanel({
                         {commercePackageAssets.map((asset) => {
                             const Icon = assetIcons[asset.id];
                             return (
-                                <Checkbox
-                                    key={asset.id}
-                                    value={asset.id}
-                                    className="!m-0 rounded-lg border border-border px-3 py-2.5"
-                                >
+                                <Checkbox key={asset.id} value={asset.id} className="!m-0 rounded-lg border border-border px-3 py-2.5">
                                     <span className="inline-flex items-center gap-2 font-medium">
-                                        <Icon className="size-4" />{asset.name}
+                                        <Icon className="size-4" />
+                                        {asset.name}
                                     </span>
                                     <span className="ml-6 block text-[11px] text-muted-foreground">{asset.description}</span>
                                 </Checkbox>
@@ -217,12 +184,7 @@ export function CanvasCommercePackagePanel({
                         <Switch checkedChildren={`使用已选 ${Math.min(selectedImageCount, 4)} 张`} unCheckedChildren="使用 SKU 参考图" />
                     </Form.Item>
                 ) : (
-                    <Alert
-                        className="mb-4"
-                        type="info"
-                        showIcon
-                        message="当前未选择图片节点，将优先使用所选 SKU 的参考图。"
-                    />
+                    <Alert className="mb-4" type="info" showIcon message="当前未选择图片节点，将优先使用所选 SKU 的参考图。" />
                 )}
                 <Form.Item name="generateNow" label="创建方式" valuePropName="checked">
                     <Switch checkedChildren="立即生成" unCheckedChildren="仅编排节点" />

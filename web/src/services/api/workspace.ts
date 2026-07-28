@@ -29,7 +29,7 @@ export type WorkspaceFile = {
 
 type WorkspaceFileUploadTicket = {
     uploadRequired: boolean;
-	uploadId?: string;
+    uploadId?: string;
     uploadUrl?: string;
     uploadToken?: string;
     objectKey?: string;
@@ -59,38 +59,40 @@ export function fetchWorkspaceStorageStatus(token: string) {
 }
 
 export async function uploadWorkspaceFile(token: string, storageKey: string, file: Blob, signal?: AbortSignal) {
-	if (signal?.aborted) throw new Error("上传已取消");
+    if (signal?.aborted) throw new Error("上传已取消");
     const mimeType = file.type || "application/octet-stream";
-	const organizationId = getActiveOrganizationId();
-	const ticket = await apiPost<WorkspaceFileUploadTicket>("/api/workspace/files/upload-ticket", { storageKey, mimeType, size: file.size }, token, { signal, timeout: 30_000, organizationId });
+    const organizationId = getActiveOrganizationId();
+    const ticket = await apiPost<WorkspaceFileUploadTicket>("/api/workspace/files/upload-ticket", { storageKey, mimeType, size: file.size }, token, { signal, timeout: 30_000, organizationId });
     if (!ticket.uploadRequired && ticket.file) return ticket.file;
-	const { uploadId, uploadUrl, uploadToken, objectKey } = ticket;
-	if (!uploadId || !uploadUrl || !uploadToken || !objectKey) throw new Error("云端上传凭证无效");
-	try {
-		const form = new FormData();
-		form.append("token", uploadToken);
-		form.append("key", objectKey);
-		form.append("file", file, workspaceFileName(storageKey, mimeType));
-		await axios.post(uploadUrl, form, { signal, timeout: 15 * 60_000 });
-		if (signal?.aborted) throw new Error("上传已取消");
-		return await apiPost<WorkspaceFile>("/api/workspace/files/confirm", { uploadId, storageKey, objectKey, mimeType, size: file.size }, token, { signal, timeout: 30_000, organizationId });
-	} catch (error) {
-		try { await apiPost<boolean>(`/api/workspace/files/${encodeURIComponent(uploadId)}/cancel`, {}, token, { timeout: 10_000, organizationId }); } catch {}
-		throw error;
-	}
+    const { uploadId, uploadUrl, uploadToken, objectKey } = ticket;
+    if (!uploadId || !uploadUrl || !uploadToken || !objectKey) throw new Error("云端上传凭证无效");
+    try {
+        const form = new FormData();
+        form.append("token", uploadToken);
+        form.append("key", objectKey);
+        form.append("file", file, workspaceFileName(storageKey, mimeType));
+        await axios.post(uploadUrl, form, { signal, timeout: 15 * 60_000 });
+        if (signal?.aborted) throw new Error("上传已取消");
+        return await apiPost<WorkspaceFile>("/api/workspace/files/confirm", { uploadId, storageKey, objectKey, mimeType, size: file.size }, token, { signal, timeout: 30_000, organizationId });
+    } catch (error) {
+        try {
+            await apiPost<boolean>(`/api/workspace/files/${encodeURIComponent(uploadId)}/cancel`, {}, token, { timeout: 10_000, organizationId });
+        } catch {}
+        throw error;
+    }
 }
 
 export function workspaceFileUrl(storageKey: string, accountId = "", organizationId = getActiveOrganizationId(), variant?: WorkspaceImageVariant) {
-	const params = new URLSearchParams();
-	if (accountId) params.set("account", accountId);
-	if (organizationId) params.set("organization", organizationId);
-	if (variant) params.set("variant", variant);
-	const query = params.toString();
-	return `/api/workspace/files/${encodeURIComponent(storageKey)}${query ? `?${query}` : ""}`;
+    const params = new URLSearchParams();
+    if (accountId) params.set("account", accountId);
+    if (organizationId) params.set("organization", organizationId);
+    if (variant) params.set("variant", variant);
+    const query = params.toString();
+    return `/api/workspace/files/${encodeURIComponent(storageKey)}${query ? `?${query}` : ""}`;
 }
 
 export function workspaceImageUrl(storageKey: string, variant: WorkspaceImageVariant, accountId = "", organizationId = getActiveOrganizationId()) {
-	return workspaceFileUrl(storageKey, accountId, organizationId, variant);
+    return workspaceFileUrl(storageKey, accountId, organizationId, variant);
 }
 
 export async function workspaceFileExists(token: string, storageKey: string) {

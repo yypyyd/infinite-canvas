@@ -66,10 +66,11 @@ export const useCanvasStore = create<CanvasStore>()((set, get) => ({
         }));
         if (get().ownerId === ownerId && typeof window !== "undefined") window.dispatchEvent(new CustomEvent(CANVAS_PROJECTS_REPLACED_EVENT));
     },
-    setOwnerProjectVersions: (ownerId, versions) => set((state) => {
-        const projects = (state.projectsByOwner[ownerId] || []).map((project) => versions.has(project.id) ? { ...project, version: versions.get(project.id) } : project);
-        return { projectsByOwner: { ...state.projectsByOwner, [ownerId]: projects }, ...(state.ownerId === ownerId ? { projects } : {}) };
-    }),
+    setOwnerProjectVersions: (ownerId, versions) =>
+        set((state) => {
+            const projects = (state.projectsByOwner[ownerId] || []).map((project) => (versions.has(project.id) ? { ...project, version: versions.get(project.id) } : project));
+            return { projectsByOwner: { ...state.projectsByOwner, [ownerId]: projects }, ...(state.ownerId === ownerId ? { projects } : {}) };
+        }),
     createProject: (title = "未命名画布") => {
         const now = new Date().toISOString();
         const id = nanoid();
@@ -87,7 +88,7 @@ export const useCanvasStore = create<CanvasStore>()((set, get) => ({
             viewport: initialViewport,
         };
         set((state) => ownerProjectsState(state, [project, ...state.projects]));
-		stageWorkspaceRecord(get().ownerId, "canvas_project", project.id, workspaceProjectData(project), project.version || 0);
+        stageWorkspaceRecord(get().ownerId, "canvas_project", project.id, workspaceProjectData(project), project.version || 0);
         return id;
     },
     importProject: (source) => {
@@ -107,30 +108,45 @@ export const useCanvasStore = create<CanvasStore>()((set, get) => ({
             viewport: source.viewport || initialViewport,
         };
         set((state) => ownerProjectsState(state, [project, ...state.projects]));
-		stageWorkspaceRecord(get().ownerId, "canvas_project", project.id, workspaceProjectData(project), project.version || 0);
+        stageWorkspaceRecord(get().ownerId, "canvas_project", project.id, workspaceProjectData(project), project.version || 0);
         return project.id;
     },
     openProject: (id) => {
         return get().projects.find((item) => item.id === id) || null;
     },
     renameProject: (id, title) => {
-        set((state) => ownerProjectsState(state, state.projects.map((project) => (project.id === id ? { ...project, title: title.trim() || project.title, updatedAt: new Date().toISOString() } : project))));
+        set((state) =>
+            ownerProjectsState(
+                state,
+                state.projects.map((project) => (project.id === id ? { ...project, title: title.trim() || project.title, updatedAt: new Date().toISOString() } : project)),
+            ),
+        );
         const project = get().projects.find((item) => item.id === id);
-		if (project) stageWorkspaceRecord(get().ownerId, "canvas_project", id, workspaceProjectData(project), project.version || 0);
+        if (project) stageWorkspaceRecord(get().ownerId, "canvas_project", id, workspaceProjectData(project), project.version || 0);
     },
     deleteProjects: (ids) => {
         const deleted = get().projects.filter((project) => ids.includes(project.id));
-        set((state) => ownerProjectsState(state, state.projects.filter((project) => !ids.includes(project.id))));
-		deleted.forEach((project) => stageWorkspaceDelete(get().ownerId, "canvas_project", project.id, project.version || 0));
+        set((state) =>
+            ownerProjectsState(
+                state,
+                state.projects.filter((project) => !ids.includes(project.id)),
+            ),
+        );
+        deleted.forEach((project) => stageWorkspaceDelete(get().ownerId, "canvas_project", project.id, project.version || 0));
     },
     replaceProjects: (projects) => {
         set((state) => ownerProjectsState(state, projects));
         if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(CANVAS_PROJECTS_REPLACED_EVENT));
     },
     updateProject: (id, patch) => {
-        set((state) => ownerProjectsState(state, state.projects.map((project) => (project.id === id ? { ...project, ...patch, updatedAt: new Date().toISOString() } : project))));
+        set((state) =>
+            ownerProjectsState(
+                state,
+                state.projects.map((project) => (project.id === id ? { ...project, ...patch, updatedAt: new Date().toISOString() } : project)),
+            ),
+        );
         const project = get().projects.find((item) => item.id === id);
-		if (project) stageWorkspaceRecord(get().ownerId, "canvas_project", id, workspaceProjectData(project), project.version || 0);
+        if (project) stageWorkspaceRecord(get().ownerId, "canvas_project", id, workspaceProjectData(project), project.version || 0);
     },
 }));
 

@@ -61,14 +61,26 @@ export default function CanvasPage() {
             <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-10 px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
                 <header className="hero-atmosphere flex flex-wrap items-end justify-between gap-6 py-8 sm:py-10 dark:border-b dark:border-border">
                     <div>
-                        <p className="flex items-center gap-2 text-sm font-medium text-primary"><span className="size-1.5 rounded-full bg-primary" />商品创作空间</p>
+                        <p className="flex items-center gap-2 text-sm font-medium text-primary">
+                            <span className="size-1.5 rounded-full bg-primary" />
+                            商品创作空间
+                        </p>
                         <h1 className="mt-3 text-5xl font-semibold tracking-[-.045em] sm:text-6xl">每个商品，都有自己的画布。</h1>
                         <p className="mt-4 max-w-2xl text-base leading-7 text-muted-foreground">按商品或活动管理参考图、生成过程与最终交付素材。</p>
                     </div>
                     <div className="flex items-center gap-2">
                         {selectedIds.length ? (
                             <>
-                                <Button disabled={!hydrated} icon={<Download className="size-4" />} onClick={() => void exportCanvasProjects(projects.filter((project) => selectedIds.includes(project.id)), `商品画布-${selectedIds.length}个项目`)}>
+                                <Button
+                                    disabled={!hydrated}
+                                    icon={<Download className="size-4" />}
+                                    onClick={() =>
+                                        void exportCanvasProjects(
+                                            projects.filter((project) => selectedIds.includes(project.id)),
+                                            `商品画布-${selectedIds.length}个项目`,
+                                        )
+                                    }
+                                >
                                     导出选中
                                 </Button>
                                 <Button disabled={!hydrated} onClick={() => setDeleteIds(selectedIds)}>
@@ -98,7 +110,13 @@ export default function CanvasPage() {
                             { title: "详情页视觉", detail: "卖点拆解、材质特写与场景图", tag: "详情页视觉", cover: "/tpl-detail.jpg" },
                             { title: "大促活动视觉", detail: "活动主视觉、横幅与社媒素材", tag: "大促活动视觉", cover: "/tpl-promo.jpg" },
                         ].map((item) => (
-                            <button key={item.title} type="button" disabled={!hydrated} onClick={() => createAndEnter(item.title)} className="group overflow-hidden rounded-[22px] bg-white text-left shadow-[0_2px_14px_rgba(29,29,31,.06)] ring-1 ring-black/[.04] transition hover:-translate-y-[3px] hover:shadow-[0_14px_44px_rgba(29,29,31,.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50 dark:bg-card dark:shadow-none dark:ring-border dark:hover:shadow-none dark:hover:ring-border-strong">
+                            <button
+                                key={item.title}
+                                type="button"
+                                disabled={!hydrated}
+                                onClick={() => createAndEnter(item.title)}
+                                className="group overflow-hidden rounded-[22px] bg-white text-left shadow-[0_2px_14px_rgba(29,29,31,.06)] ring-1 ring-black/[.04] transition hover:-translate-y-[3px] hover:shadow-[0_14px_44px_rgba(29,29,31,.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50 dark:bg-card dark:shadow-none dark:ring-border dark:hover:shadow-none dark:hover:ring-border-strong"
+                            >
                                 <span className="relative block aspect-[4/3] overflow-hidden">
                                     <img src={item.cover} alt="" className="size-full object-cover transition duration-500 group-hover:scale-[1.03]" />
                                     <span className="absolute left-3 top-3 rounded-full bg-white/75 px-2.5 py-1 text-[11px] font-semibold backdrop-blur-md dark:bg-black/55">{item.tag}</span>

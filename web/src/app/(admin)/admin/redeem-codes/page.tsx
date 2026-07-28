@@ -135,7 +135,14 @@ export default function AdminRedeemCodesPage() {
                         <Row gutter={16} align="bottom">
                             <Col flex="360px">
                                 <Form.Item label="关键词">
-                                    <Input.Search value={keywordText} placeholder="搜索兑换码、状态、用户 ID 或备注" allowClear enterButton={<SearchOutlined />} onSearch={() => searchCodes(keywordText)} onChange={(event) => setKeywordText(event.target.value)} />
+                                    <Input.Search
+                                        value={keywordText}
+                                        placeholder="搜索兑换码、状态、用户 ID 或备注"
+                                        allowClear
+                                        enterButton={<SearchOutlined />}
+                                        onSearch={() => searchCodes(keywordText)}
+                                        onChange={(event) => setKeywordText(event.target.value)}
+                                    />
                                 </Form.Item>
                             </Col>
                             <Col flex="none">
@@ -244,29 +251,11 @@ export default function AdminRedeemCodesPage() {
                 确定删除兑换码「{deletingCode?.code}」吗？删除后用户将不能再兑换它。
             </Modal>
 
-            <Modal
-                title="批量删除兑换码"
-                open={isBatchDeleteOpen}
-                onCancel={() => setIsBatchDeleteOpen(false)}
-                onOk={() => void batchDeleteCodes()}
-                okText="删除"
-                okButtonProps={{ danger: true }}
-                cancelText="取消"
-                confirmLoading={isLoading}
-            >
+            <Modal title="批量删除兑换码" open={isBatchDeleteOpen} onCancel={() => setIsBatchDeleteOpen(false)} onOk={() => void batchDeleteCodes()} okText="删除" okButtonProps={{ danger: true }} cancelText="取消" confirmLoading={isLoading}>
                 确定删除选中的 {selectedCodeIds.length} 个兑换码吗？删除后用户将不能再兑换它们。
             </Modal>
 
-            <Modal
-                title="删除已使用兑换码"
-                open={isDeleteUsedOpen}
-                onCancel={() => setIsDeleteUsedOpen(false)}
-                onOk={() => void deleteUsed()}
-                okText="删除已使用"
-                okButtonProps={{ danger: true }}
-                cancelText="取消"
-                confirmLoading={isLoading}
-            >
+            <Modal title="删除已使用兑换码" open={isDeleteUsedOpen} onCancel={() => setIsDeleteUsedOpen(false)} onOk={() => void deleteUsed()} okText="删除已使用" okButtonProps={{ danger: true }} cancelText="取消" confirmLoading={isLoading}>
                 确定删除所有已使用的兑换码吗？未使用兑换码不会受影响。
             </Modal>
         </main>

@@ -161,10 +161,13 @@ func TestRetryBatchProductionJobStartsNewRunOnlyForFailedItems(t *testing.T) {
 	testDB := setupUserWorkspaceTestDB(t)
 	createWorkspaceTestOrganizations(t, testDB, "organization-a")
 	createBatchTestJob(t, testDB, "organization-a", "job-a", model.BatchProductionStatusFailed, model.BatchProductionStatusFailed, model.BatchProductionStatusCompleted)
-	if err := testDB.Model(&model.BatchProductionJob{}).Where("id = ?", "job-a").Updates(map[string]any{"completed_items": 1, "failed_items": 1}).Error; err != nil {
+	if err := testDB.Model(&model.Organization{}).Where("id = ?", "organization-a").Updates(map[string]any{"credit_mode": model.OrganizationCreditModeShared, "credits": 10}).Error; err != nil {
+		t.Fatalf("seed organization credits: %v", err)
+	}
+	if err := testDB.Model(&model.BatchProductionJob{}).Where("id = ?", "job-a").Updates(map[string]any{"completed_items": 1, "failed_items": 1, "credit_source": model.CreditSourceOrganization}).Error; err != nil {
 		t.Fatalf("seed job counters: %v", err)
 	}
-	if err := testDB.Model(&model.BatchProductionItem{}).Where("job_id = ? AND status = ?", "job-a", model.BatchProductionStatusFailed).Updates(map[string]any{"attempts": 5, "error_message": "failed", "lease_token": "stale", "lease_expires_at": batchTestExpired}).Error; err != nil {
+	if err := testDB.Model(&model.BatchProductionItem{}).Where("job_id = ? AND status = ?", "job-a", model.BatchProductionStatusFailed).Updates(map[string]any{"attempts": 5, "estimated_credits": 1, "error_message": "failed", "lease_token": "stale", "lease_expires_at": batchTestExpired}).Error; err != nil {
 		t.Fatalf("seed failed item: %v", err)
 	}
 
@@ -204,18 +207,22 @@ func TestRetryBatchProductionJobStartsNewRunOnlyForFailedItems(t *testing.T) {
 func TestCreateBatchProductionJobIsRequestIdempotent(t *testing.T) {
 	testDB := setupUserWorkspaceTestDB(t)
 	createWorkspaceTestOrganizations(t, testDB, "organization-a")
+	if err := testDB.Model(&model.Organization{}).Where("id = ?", "organization-a").Updates(map[string]any{"credit_mode": model.OrganizationCreditModeShared, "credits": 10}).Error; err != nil {
+		t.Fatalf("seed organization credits: %v", err)
+	}
 	product := model.Product{ID: "product-a", OrganizationID: "organization-a", Code: "product-a", Name: "Product A", Status: model.ProductStatusActive, CreatedAt: workspaceTestNow, UpdatedAt: workspaceTestNow}
 	if err := testDB.Create(&product).Error; err != nil {
 		t.Fatalf("create product: %v", err)
 	}
 	first := model.BatchProductionJob{ID: "job-a", OrganizationID: "organization-a", RequestID: "request-a", RequestHash: "same-hash", ArchiveToken: "archive-a", Name: "Job A", PresetID: "product-main", ProductIDs: []string{"product-a"}, Status: model.BatchProductionStatusQueued, CreatedBy: "user-a", CreatedAt: workspaceTestNow, UpdatedAt: workspaceTestNow}
-	saved, err := CreateBatchProductionJob(first)
+	estimates := map[string]int{"product-a\x00": 1}
+	saved, err := CreateBatchProductionJob(first, estimates)
 	if err != nil {
 		t.Fatalf("create first job: %v", err)
 	}
 	replay := first
 	replay.ID, replay.ArchiveToken = "job-replayed", "archive-replayed"
-	replayed, err := CreateBatchProductionJob(replay)
+	replayed, err := CreateBatchProductionJob(replay, estimates)
 	if err != nil {
 		t.Fatalf("replay job: %v", err)
 	}
@@ -224,7 +231,7 @@ func TestCreateBatchProductionJobIsRequestIdempotent(t *testing.T) {
 	}
 	conflict := replay
 	conflict.ID, conflict.RequestHash = "job-conflict", "different-hash"
-	if _, err := CreateBatchProductionJob(conflict); !errors.Is(err, ErrBatchProductionRequestConflict) {
+	if _, err := CreateBatchProductionJob(conflict, estimates); !errors.Is(err, ErrBatchProductionRequestConflict) {
 		t.Fatalf("conflicting replay error = %v, want request conflict", err)
 	}
 	var jobs, items, snapshots int64
@@ -239,6 +246,13 @@ func TestCreateBatchProductionJobIsRequestIdempotent(t *testing.T) {
 	}
 	if jobs != 1 || items != 1 || snapshots != 1 {
 		t.Fatalf("idempotent create stored jobs=%d items=%d snapshots=%d", jobs, items, snapshots)
+	}
+	var organization model.Organization
+	if err := testDB.First(&organization, "id = ?", "organization-a").Error; err != nil {
+		t.Fatalf("load organization credits: %v", err)
+	}
+	if saved.EstimatedCredits != 1 || saved.ReservedCredits != 1 || saved.CreditSource != model.CreditSourceOrganization || organization.ReservedCredits != 1 {
+		t.Fatalf("unexpected batch credit reservation: job=%#v organization=%#v", saved, organization)
 	}
 }
 

@@ -55,9 +55,9 @@ export async function apiPost<T>(url: string, body?: unknown, token?: string, op
             "Content-Type": "application/json",
             ...authorizationHeaders(token),
         },
-		signal: options?.signal,
-		timeout: options?.timeout,
-		organizationId: options?.organizationId,
+        signal: options?.signal,
+        timeout: options?.timeout,
+        organizationId: options?.organizationId,
     });
 }
 
@@ -83,18 +83,18 @@ export function authorizationHeaders(token?: string) {
 }
 
 async function apiRequest<T>(config: { url: string; method: "GET" | "POST" | "DELETE"; params?: ApiParams; data?: unknown; headers?: Record<string, string>; signal?: AbortSignal; timeout?: number; organizationId?: string }) {
-	let response;
-	try {
-		const organizationId = config.organizationId === undefined ? activeOrganizationId : config.organizationId.trim();
-		response = await axios.request<ApiResponse<T>>({
+    let response;
+    try {
+        const organizationId = config.organizationId === undefined ? activeOrganizationId : config.organizationId.trim();
+        response = await axios.request<ApiResponse<T>>({
             url: config.url,
             method: config.method,
             params: config.params,
             paramsSerializer: { serialize: (params) => serializeApiParams(params as ApiParams).toString() },
             data: config.data,
-			headers: { ...config.headers, ...organizationHeaders(organizationId) },
-			signal: config.signal,
-			timeout: config.timeout,
+            headers: { ...config.headers, ...organizationHeaders(organizationId) },
+            signal: config.signal,
+            timeout: config.timeout,
             validateStatus: () => true,
         });
     } catch {

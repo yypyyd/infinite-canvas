@@ -71,16 +71,7 @@ type NormalizedCreditRequest = {
     quantity: number;
 };
 
-function normalizePricingRequest(options: {
-    model: string;
-    modality: string;
-    operation?: string;
-    unit?: string;
-    count?: string | number;
-    size?: string;
-    resolution?: string;
-    resolutionTier?: string;
-}): NormalizedCreditRequest {
+function normalizePricingRequest(options: { model: string; modality: string; operation?: string; unit?: string; count?: string | number; size?: string; resolution?: string; resolutionTier?: string }): NormalizedCreditRequest {
     const modality = normalizeToken(options.modality);
     const unit = normalizeToken(options.unit || (modality === "image" ? "image" : modality === "video" ? "second" : "request"));
     const size = options.size || "";

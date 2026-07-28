@@ -47,14 +47,15 @@ func TestSelectPricingRulePrefersSpecificRule(t *testing.T) {
 	rules := normalizePricingRules([]model.PricingRule{
 		{Model: "video-model", Modality: "video", Operation: "generation", Unit: "second", Credits: 1, Enabled: true},
 		{Model: "video-model", Modality: "video", Operation: "generation", Unit: "second", ResolutionTier: "1080p", Credits: 3, Enabled: true},
+		{Model: "video-model", Modality: "video", Operation: "generation", Unit: "second", ResolutionTier: "1080p", DurationSeconds: 6, Credits: 5, Enabled: true},
 	})
 
 	rule, ok := selectPricingRule(rules, request)
 	if !ok {
 		t.Fatal("expected matching rule")
 	}
-	if rule.Credits != 3 {
-		t.Fatalf("credits = %d, want specific rule credits 3", rule.Credits)
+	if rule.Credits != 5 {
+		t.Fatalf("credits = %d, want duration-specific rule credits 5", rule.Credits)
 	}
 }
 
@@ -127,26 +128,26 @@ func TestModelChannelSelectionsFilterOperationAndResolution(t *testing.T) {
 	}
 }
 
-func TestVideoModelChannelSelectionsFilterResolution(t *testing.T) {
+func TestVideoModelChannelSelectionsFilterResolutionRatioAndDuration(t *testing.T) {
 	channels := normalizePrivateSetting(model.PrivateSetting{Channels: []model.ModelChannel{
 		{
 			Name: "standard-video", BaseURL: "https://standard.example", APIKey: "key", Enabled: true,
-			Models: []model.ChannelModel{{Model: "video-model", UpstreamModel: "video-standard", Operations: []string{"generation"}, ResolutionTiers: []string{"480p", "720p"}}},
+			Models: []model.ChannelModel{{Model: "video-model", Modality: "video", UpstreamModel: "video-standard", Operations: []string{"generation"}, AspectRatios: []string{"16:9"}, ResolutionTiers: []string{"480p", "720p"}, Durations: []int{5, 10}}},
 		},
 		{
 			Name: "hd-video", BaseURL: "https://hd.example", APIKey: "key", Enabled: true,
-			Models: []model.ChannelModel{{Model: "video-model", UpstreamModel: "video-hd", Operations: []string{"generation"}, ResolutionTiers: []string{"480p", "720p", "1080p"}}},
+			Models: []model.ChannelModel{{Model: "video-model", Modality: "video", UpstreamModel: "video-hd", Operations: []string{"generation"}, AspectRatios: []string{"16:9", "9:16"}, ResolutionTiers: []string{"480p", "720p", "1080p"}, Durations: []int{10}}},
 		},
 	}}).Channels
 
-	fullHD := normalizePricingRequest(PricingRequest{Model: "video-model", Modality: "video", Operation: "generation", Unit: "second", Resolution: "1080p", Quantity: 10})
+	fullHD := normalizePricingRequest(PricingRequest{Model: "video-model", Modality: "video", Operation: "generation", Unit: "second", Size: "720x1280", Resolution: "1080p", Quantity: 10})
 	fullHDSelections := modelChannelSelectionsForRequest(channels, fullHD)
 	if len(fullHDSelections) != 1 || fullHDSelections[0].Channel.Name != "hd-video" || fullHDSelections[0].Model.UpstreamModel != "video-hd" {
 		t.Fatalf("1080p selections = %#v, want hd-video channel", fullHDSelections)
 	}
 
-	hd := normalizePricingRequest(PricingRequest{Model: "video-model", Modality: "video", Operation: "generation", Unit: "second", Resolution: "720p", Quantity: 5})
-	if selections := modelChannelSelectionsForRequest(channels, hd); len(selections) != 2 {
-		t.Fatalf("720p selection count = %d, want 2", len(selections))
+	hd := normalizePricingRequest(PricingRequest{Model: "video-model", Modality: "video", Operation: "generation", Unit: "second", Size: "1280x720", Resolution: "720p", Quantity: 5})
+	if selections := modelChannelSelectionsForRequest(channels, hd); len(selections) != 1 || selections[0].Channel.Name != "standard-video" {
+		t.Fatalf("720p 16:9 5s selections = %#v, want standard-video", selections)
 	}
 }

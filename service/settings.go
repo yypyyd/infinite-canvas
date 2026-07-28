@@ -24,6 +24,7 @@ type PricingRequest struct {
 	Operation      string
 	Unit           string
 	ResolutionTier string
+	AspectRatio    string
 	Size           string
 	Resolution     string
 	Quantity       int
@@ -67,7 +68,7 @@ func SaveSettings(settings model.Settings) (model.Settings, error) {
 	return hidePrivateAPIKeys(result), err
 }
 
-func AdminChannelModels(index *int, channel model.ModelChannel) ([]string, error) {
+func AdminChannelModels(index *int, channel model.ModelChannel) ([]model.DiscoveredModel, error) {
 	resolved, err := resolveAdminChannel(index, channel)
 	if err != nil {
 		return nil, err
@@ -241,6 +242,9 @@ func normalizePricingRules(items []model.PricingRule) []model.PricingRule {
 		item.Operation = normalizePricingToken(item.Operation)
 		item.Unit = normalizePricingToken(item.Unit)
 		item.ResolutionTier = normalizeResolutionTier(item.ResolutionTier)
+		if item.DurationSeconds < 0 {
+			item.DurationSeconds = 0
+		}
 		item.BillingMode = normalizePricingToken(item.BillingMode)
 		if item.BillingMode != "ratio" {
 			item.BillingMode = "fixed"
@@ -325,7 +329,8 @@ func hasPricingFallbackRule(rules []model.PricingRule, target model.PricingRule)
 			rule.Modality == target.Modality &&
 			rule.Operation == target.Operation &&
 			rule.Unit == target.Unit &&
-			rule.ResolutionTier == "" {
+			rule.ResolutionTier == "" &&
+			rule.DurationSeconds == 0 {
 			return true
 		}
 	}
@@ -363,9 +368,13 @@ func normalizeModelDefinitions(items []model.ModelDefinition, availableModels []
 		item.Operations = normalizeModelOperations(item.Operations, item.ID, item.Modality)
 		item.AspectRatios = normalizeStringList(item.AspectRatios, normalizePricingToken)
 		item.ResolutionTiers = normalizeStringList(item.ResolutionTiers, normalizeResolutionTier)
+		item.Durations = normalizeDurations(item.Durations)
 		if item.Modality != "image" && item.Modality != "video" {
 			item.AspectRatios = []string{}
 			item.ResolutionTiers = []string{}
+			item.Durations = []int{}
+		} else if item.Modality != "video" {
+			item.Durations = []int{}
 		}
 		item.Remark = strings.TrimSpace(item.Remark)
 		result = append(result, item)
@@ -530,6 +539,7 @@ func normalizePricingRequest(request PricingRequest) PricingRequest {
 	request.Operation = normalizePricingToken(request.Operation)
 	request.Unit = normalizePricingToken(request.Unit)
 	request.ResolutionTier = normalizeResolutionTier(request.ResolutionTier)
+	request.AspectRatio = normalizeVideoAspectRatio(firstPricingNonEmpty(request.AspectRatio, request.Size))
 	if request.ResolutionTier == "" {
 		switch request.Modality {
 		case "image":
@@ -578,7 +588,27 @@ func pricingRuleScore(rule model.PricingRule, request PricingRequest) (int, bool
 		}
 		score++
 	}
+	if rule.DurationSeconds > 0 {
+		if request.Modality != "video" || rule.DurationSeconds != request.Quantity {
+			return 0, false
+		}
+		score++
+	}
 	return score, true
+}
+
+func normalizeDurations(items []int) []int {
+	result := []int{}
+	seen := map[int]bool{}
+	for _, item := range items {
+		if item <= 0 || seen[item] {
+			continue
+		}
+		seen[item] = true
+		result = append(result, item)
+	}
+	sort.Ints(result)
+	return result
 }
 
 func normalizeModelAspectRatios(items map[string][]string) map[string][]string {
@@ -672,6 +702,22 @@ func normalizeVideoResolutionTier(value string) string {
 		return "480p"
 	}
 	return normalizeResolutionTier(value)
+}
+
+func normalizeVideoAspectRatio(value string) string {
+	value = normalizePricingToken(value)
+	if strings.Contains(value, ":") {
+		return value
+	}
+	width, height, ok := parsePricingDimensions(value)
+	if !ok {
+		return ""
+	}
+	a, b := width, height
+	for b != 0 {
+		a, b = b, a%b
+	}
+	return fmt.Sprintf("%d:%d", width/a, height/a)
 }
 
 func parsePricingDimensions(value string) (int, int, bool) {
@@ -953,8 +999,14 @@ func normalizeModelChannel(channel model.ModelChannel) model.ModelChannel {
 		if item.UpstreamModel == "" {
 			item.UpstreamModel = item.Model
 		}
-		item.Operations = normalizeStringList(item.Operations, normalizePricingToken)
+		item.Modality = normalizePricingToken(item.Modality)
+		if item.Modality == "" {
+			item.Modality = defaultModelModality(item.Model)
+		}
+		item.Operations = normalizeModelOperations(item.Operations, item.Model, item.Modality)
+		item.AspectRatios = normalizeStringList(item.AspectRatios, normalizePricingToken)
 		item.ResolutionTiers = normalizeStringList(item.ResolutionTiers, normalizeResolutionTier)
+		item.Durations = normalizeDurations(item.Durations)
 		models = append(models, item)
 	}
 	channel.Models = models
@@ -998,7 +1050,7 @@ func resolveAdminChannel(index *int, channel model.ModelChannel) (model.ModelCha
 	return resolved, nil
 }
 
-func fetchAdminChannelModels(channel model.ModelChannel) ([]string, error) {
+func fetchAdminChannelModels(channel model.ModelChannel) ([]model.DiscoveredModel, error) {
 	request, err := http.NewRequest(http.MethodGet, BuildModelChannelURL(channel, "/models"), nil)
 	if err != nil {
 		return nil, err
@@ -1016,19 +1068,37 @@ func fetchAdminChannelModels(channel model.ModelChannel) ([]string, error) {
 	var payload struct {
 		Object string `json:"object"`
 		Data []struct {
-			ID string `json:"id"`
+			ID                   string   `json:"id"`
+			Kind                 string   `json:"kind"`
+			SupportedRatios      []string `json:"supported_ratios"`
+			SupportedResolutions []string `json:"supported_resolutions"`
+			SupportedDurations   []int    `json:"supported_durations"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil || payload.Object != "list" || payload.Data == nil {
 		return nil, safeMessageError{message: "读取模型失败：上游返回的不是 OpenAI 兼容 /models 格式"}
 	}
-	result := make([]string, 0, len(payload.Data))
+	result := make([]model.DiscoveredModel, 0, len(payload.Data))
 	for _, item := range payload.Data {
-		if strings.TrimSpace(item.ID) != "" {
-			result = append(result, item.ID)
+		item.ID = strings.TrimSpace(item.ID)
+		if item.ID == "" {
+			continue
 		}
+		modality := discoveredModelModality(item.Kind, item.ID)
+		resolutionNormalizer := normalizeResolutionTier
+		if modality == "video" {
+			resolutionNormalizer = normalizeVideoResolutionTier
+		}
+		resolutions := normalizeStringList(item.SupportedResolutions, resolutionNormalizer)
+		ratios := normalizeStringList(item.SupportedRatios, normalizePricingToken)
+		for _, resolution := range item.SupportedResolutions {
+			if ratio := normalizeVideoAspectRatio(resolution); modality == "video" && ratio != "" {
+				ratios = normalizeStringList(append(ratios, ratio), normalizePricingToken)
+			}
+		}
+		result = append(result, model.DiscoveredModel{ID: item.ID, Kind: strings.TrimSpace(item.Kind), Modality: modality, SupportedRatios: ratios, SupportedResolutions: resolutions, SupportedDurations: normalizeDurations(item.SupportedDurations)})
 	}
-	sort.Strings(result)
+	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
 	return result, nil
 }
 
@@ -1036,40 +1106,35 @@ func testAdminChannelModel(channel model.ModelChannel, modelName string) (string
 	if strings.TrimSpace(modelName) == "" {
 		return "", errors.New("缺少模型名称")
 	}
-	body, _ := json.Marshal(map[string]any{
-		"model": modelName,
-		"messages": []map[string]string{{
-			"role":    "user",
-			"content": "hi",
-		}},
-	})
-	request, err := http.NewRequest(http.MethodPost, BuildModelChannelURL(channel, "/chat/completions"), strings.NewReader(string(body)))
+	targetModel := strings.TrimSpace(modelName)
+	if configured, ok := findChannelModel(channel.Models, targetModel); ok && strings.TrimSpace(configured.UpstreamModel) != "" {
+		targetModel = configured.UpstreamModel
+	}
+	models, err := fetchAdminChannelModels(channel)
 	if err != nil {
 		return "", err
 	}
-	request.Header.Set("Authorization", "Bearer "+channel.APIKey)
-	request.Header.Set("Content-Type", "application/json")
-	response, err := adminModelHTTPClient.Do(request)
-	if err != nil {
-		return "", safeMessageError{message: "测试失败：上游接口无响应或网络不可达"}
+	for _, item := range models {
+		if item.ID == targetModel {
+			return fmt.Sprintf("OpenAI /models 校验成功（%s）", item.Modality), nil
+		}
 	}
-	defer response.Body.Close()
-	responseBody, _ := io.ReadAll(response.Body)
-	if response.StatusCode >= http.StatusBadRequest {
-		return "", readAdminChannelError(responseBody, response.StatusCode, "测试失败")
+	return "", safeMessageError{message: "测试失败：上游 /models 未返回该模型"}
+}
+
+func discoveredModelModality(kind string, modelName string) string {
+	switch normalizePricingToken(kind) {
+	case "image":
+		return "image"
+	case "video":
+		return "video"
+	case "audio", "speech":
+		return "audio"
+	case "text", "chat", "completion":
+		return "text"
+	default:
+		return defaultModelModality(modelName)
 	}
-	var payload struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-	_ = json.Unmarshal(responseBody, &payload)
-	if len(payload.Choices) > 0 && strings.TrimSpace(payload.Choices[0].Message.Content) != "" {
-		return payload.Choices[0].Message.Content, nil
-	}
-	return "ok", nil
 }
 
 func readAdminChannelError(body []byte, statusCode int, fallback string) error {
@@ -1131,10 +1196,28 @@ func channelModelSupportsRequest(item model.ChannelModel, request PricingRequest
 	if item.Model != request.Model {
 		return false
 	}
+	if request.Modality != "" && item.Modality != "" && item.Modality != request.Modality {
+		return false
+	}
 	if request.Operation != "" && !containsPricingValue(item.Operations, request.Operation) {
 		return false
 	}
-	return request.ResolutionTier == "" || containsPricingValue(item.ResolutionTiers, request.ResolutionTier)
+	if request.ResolutionTier != "" && len(item.ResolutionTiers) > 0 && !containsPricingValue(item.ResolutionTiers, request.ResolutionTier) {
+		return false
+	}
+	if request.Modality == "video" && request.AspectRatio != "" && len(item.AspectRatios) > 0 && !containsPricingValue(item.AspectRatios, request.AspectRatio) {
+		return false
+	}
+	return request.Modality != "video" || request.Quantity < 1 || len(item.Durations) == 0 || containsInt(item.Durations, request.Quantity)
+}
+
+func containsInt(items []int, value int) bool {
+	for _, item := range items {
+		if item == value {
+			return true
+		}
+	}
+	return false
 }
 
 func containsPricingValue(items []string, value string) bool {

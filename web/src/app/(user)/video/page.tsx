@@ -9,10 +9,10 @@ import { saveAs } from "file-saver";
 import { AssetPickerModal, type InsertAssetPayload } from "@/app/(user)/canvas/components/asset-picker-modal";
 import { ModelPicker } from "@/components/model-picker";
 import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
-import { VideoSettingsPanel, normalizeVideoResolutionValue, normalizeVideoSizeValue, videoSizeLabel } from "@/components/video-settings-panel";
+import { VideoSettingsPanel, normalizeVideoResolutionValue, normalizeVideoSizeValue, videoResolutionLabel, videoSizeLabel } from "@/components/video-settings-panel";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
-import { boolConfig, isSeedanceVideoConfig, normalizeSeedanceRatio, seedanceReferenceLabel, seedanceVideoReferenceError, seedanceVideoReferenceHint, SEEDANCE_REFERENCE_LIMITS, videoReferenceCapabilities } from "@/lib/seedance-video";
+import { videoReferenceCapabilities, videoReferenceLabel, VIDEO_REFERENCE_LIMITS } from "@/lib/video-reference";
 import { resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
 import { deleteStoredGenerationRecord, GENERATION_HISTORY_CHANGED_EVENT, readStoredGenerationRecords, saveGenerationRecord } from "@/services/generation-history";
 import { resolveImageUrl, uploadImage } from "@/services/image-storage";
@@ -123,12 +123,10 @@ export default function VideoPage() {
         const selectedFiles = Array.from(files || []);
         const unsupported = selectedFiles.filter((file) => (file.type.startsWith("image/") ? !referenceCapabilities.image : file.type.startsWith("video/") ? !referenceCapabilities.video : isSupportedAudioFile(file) ? !referenceCapabilities.audio : true));
         if (unsupported.length) message.warning("已忽略当前模型不支持的参考素材");
-        const imageFiles = referenceCapabilities.image ? selectedFiles.filter((file) => file.type.startsWith("image/") && file.size <= SEEDANCE_REFERENCE_LIMITS.imageMaxBytes).slice(0, SEEDANCE_REFERENCE_LIMITS.images - references.length) : [];
-        const videoFiles = referenceCapabilities.video ? selectedFiles.filter((file) => file.type.startsWith("video/") && file.size <= SEEDANCE_REFERENCE_LIMITS.videoMaxBytes).slice(0, SEEDANCE_REFERENCE_LIMITS.videos - videoReferences.length) : [];
-        const audioFiles = referenceCapabilities.audio ? selectedFiles.filter((file) => isSupportedAudioFile(file) && file.size <= SEEDANCE_REFERENCE_LIMITS.audioMaxBytes).slice(0, SEEDANCE_REFERENCE_LIMITS.audios - audioReferences.length) : [];
-        if (referenceCapabilities.image && selectedFiles.some((file) => file.type.startsWith("image/") && file.size > SEEDANCE_REFERENCE_LIMITS.imageMaxBytes)) message.warning("已忽略超过 30MB 的参考图");
-        if (referenceCapabilities.video && selectedFiles.some((file) => file.type.startsWith("video/") && file.size > SEEDANCE_REFERENCE_LIMITS.videoMaxBytes)) message.warning("已忽略超过 50MB 的参考视频");
-        if (referenceCapabilities.audio && selectedFiles.some((file) => isSupportedAudioFile(file) && file.size > SEEDANCE_REFERENCE_LIMITS.audioMaxBytes)) message.warning("已忽略超过 15MB 的参考音频");
+        const imageFiles = referenceCapabilities.image ? selectedFiles.filter((file) => file.type.startsWith("image/") && file.size <= VIDEO_REFERENCE_LIMITS.imageMaxBytes).slice(0, VIDEO_REFERENCE_LIMITS.images - references.length) : [];
+        const videoFiles = referenceCapabilities.video ? selectedFiles.filter((file) => file.type.startsWith("video/") && file.size <= VIDEO_REFERENCE_LIMITS.videoMaxBytes).slice(0, VIDEO_REFERENCE_LIMITS.videos - videoReferences.length) : [];
+        const audioFiles = referenceCapabilities.audio ? selectedFiles.filter((file) => isSupportedAudioFile(file) && file.size <= VIDEO_REFERENCE_LIMITS.audioMaxBytes).slice(0, VIDEO_REFERENCE_LIMITS.audios - audioReferences.length) : [];
+        if (referenceCapabilities.image && selectedFiles.some((file) => file.type.startsWith("image/") && file.size > VIDEO_REFERENCE_LIMITS.imageMaxBytes)) message.warning("已忽略超过 30MB 的参考图");
         const nextReferences = await Promise.all(
             imageFiles.map(async (file) => {
                 const image = await uploadImage(file);
@@ -151,9 +149,9 @@ export default function VideoPage() {
             ),
             message.warning,
         );
-        setReferences((value) => [...value, ...nextReferences].slice(0, SEEDANCE_REFERENCE_LIMITS.images));
-        setVideoReferences((value) => [...value, ...nextVideoReferences].slice(0, SEEDANCE_REFERENCE_LIMITS.videos));
-        setAudioReferences((value) => [...value, ...nextAudioReferences].slice(0, SEEDANCE_REFERENCE_LIMITS.audios));
+        setReferences((value) => [...value, ...nextReferences].slice(0, VIDEO_REFERENCE_LIMITS.images));
+        setVideoReferences((value) => [...value, ...nextVideoReferences].slice(0, VIDEO_REFERENCE_LIMITS.videos));
+        setAudioReferences((value) => [...value, ...nextAudioReferences].slice(0, VIDEO_REFERENCE_LIMITS.audios));
     };
 
     const addReferencesFromClipboard = async () => {
@@ -169,12 +167,12 @@ export default function VideoPage() {
                 return;
             }
             const nextReferences = await Promise.all(
-                blobs.slice(0, SEEDANCE_REFERENCE_LIMITS.images - references.length).map(async (blob, index) => {
+                blobs.slice(0, VIDEO_REFERENCE_LIMITS.images - references.length).map(async (blob, index) => {
                     const image = await uploadImage(blob);
                     return { id: nanoid(), name: `clipboard-${index + 1}.png`, type: image.mimeType, dataUrl: image.url, storageKey: image.storageKey };
                 }),
             );
-            setReferences((value) => [...value, ...nextReferences].slice(0, SEEDANCE_REFERENCE_LIMITS.images));
+            setReferences((value) => [...value, ...nextReferences].slice(0, VIDEO_REFERENCE_LIMITS.images));
             message.success(`已读取 ${nextReferences.length} 张参考图`);
         } catch {
             message.error("剪切板里没有可读取的图片");
@@ -254,11 +252,6 @@ export default function VideoPage() {
         const effectiveReferences = referenceCapabilities.image ? [...references] : [];
         const effectiveVideoReferences = referenceCapabilities.video ? [...videoReferences] : [];
         const effectiveAudioReferences = referenceCapabilities.audio ? [...audioReferences] : [];
-        const videoReferenceError = seedanceVideoReferenceError(effectiveVideoReferences);
-        if (videoReferenceError) {
-            message.error(`${videoReferenceError}。${seedanceVideoReferenceHint}`);
-            return null;
-        }
         return { text, config: buildVideoConfig(effectiveConfig, model), references: effectiveReferences, videoReferences: effectiveVideoReferences, audioReferences: effectiveAudioReferences };
     };
 
@@ -288,9 +281,9 @@ export default function VideoPage() {
             setPrompt(payload.content);
         } else if (payload.kind === "image" && referenceCapabilities.image) {
             const stored = await uploadImage(payload.dataUrl);
-            setReferences((value) => [...value, { id: nanoid(), name: payload.title, type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey }].slice(0, SEEDANCE_REFERENCE_LIMITS.images));
+            setReferences((value) => [...value, { id: nanoid(), name: payload.title, type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey }].slice(0, VIDEO_REFERENCE_LIMITS.images));
         } else if (payload.kind === "video" && referenceCapabilities.video) {
-            setVideoReferences((value) => [...value, { id: nanoid(), name: payload.title, type: "video/mp4", url: payload.url, storageKey: payload.storageKey, width: payload.width, height: payload.height }].slice(0, SEEDANCE_REFERENCE_LIMITS.videos));
+            setVideoReferences((value) => [...value, { id: nanoid(), name: payload.title, type: "video/mp4", url: payload.url, storageKey: payload.storageKey, width: payload.width, height: payload.height }].slice(0, VIDEO_REFERENCE_LIMITS.videos));
         } else {
             message.warning("当前模型不支持该类型的参考素材");
         }
@@ -407,7 +400,7 @@ export default function VideoPage() {
                                         {references.map((item, index) => (
                                             <div key={item.id} className="group relative size-20 shrink-0 overflow-hidden rounded-md border border-stone-200 dark:border-stone-800">
                                                 <img src={item.dataUrl} alt={item.name} className="size-full object-cover" />
-                                                <span className="absolute left-1 top-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">{seedanceReferenceLabel("image", index)}</span>
+                                                <span className="absolute left-1 top-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">{videoReferenceLabel("image", index)}</span>
                                                 <ReferenceOrderButtons index={index} total={references.length} onMove={(offset) => setReferences((value) => moveListItem(value, index, offset))} />
                                                 <button
                                                     type="button"
@@ -419,7 +412,7 @@ export default function VideoPage() {
                                                 </button>
                                             </div>
                                         ))}
-                                        {!references.length ? <div className="flex min-w-full items-center justify-center text-sm text-stone-500">暂无参考图，最多 9 张</div> : null}
+                                        {!references.length ? <div className="flex min-w-full items-center justify-center text-sm text-stone-500">暂无参考图，最多 1 张</div> : null}
                                     </div>
                                 </div>
                             ) : null}
@@ -436,7 +429,7 @@ export default function VideoPage() {
                                         {videoReferences.map((item, index) => (
                                             <div key={item.id} className="group relative h-20 w-32 shrink-0 overflow-hidden rounded-md border border-stone-200 bg-black dark:border-stone-800">
                                                 <video src={item.url} className="size-full object-cover" muted preload="metadata" />
-                                                <span className="absolute left-1 top-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">{seedanceReferenceLabel("video", index)}</span>
+                                                <span className="absolute left-1 top-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">{videoReferenceLabel("video", index)}</span>
                                                 <ReferenceOrderButtons index={index} total={videoReferences.length} onMove={(offset) => setVideoReferences((value) => moveListItem(value, index, offset))} />
                                                 <button
                                                     type="button"
@@ -466,7 +459,7 @@ export default function VideoPage() {
                                             <div key={item.id} className="group relative flex h-20 w-48 shrink-0 flex-col justify-center gap-2 rounded-md border border-stone-200 bg-stone-50 px-2 dark:border-stone-800 dark:bg-stone-900">
                                                 <div className="flex min-w-0 items-center gap-2 text-xs text-stone-500 dark:text-stone-400">
                                                     <Music2 className="size-4 shrink-0" />
-                                                    <span className="shrink-0 rounded bg-stone-200 px-1 text-[10px] text-stone-700 dark:bg-stone-800 dark:text-stone-200">{seedanceReferenceLabel("audio", index)}</span>
+                                                    <span className="shrink-0 rounded bg-stone-200 px-1 text-[10px] text-stone-700 dark:bg-stone-800 dark:text-stone-200">{videoReferenceLabel("audio", index)}</span>
                                                     <span className="truncate">{item.name}</span>
                                                 </div>
                                                 <audio src={item.url} controls className="h-8 w-full" preload="metadata" />
@@ -488,7 +481,7 @@ export default function VideoPage() {
 
                             <div className="flex items-center justify-between rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm dark:border-stone-800 dark:bg-stone-900 sm:hidden">
                                 <span className="truncate text-stone-500 dark:text-stone-400">
-                                    {model} · {normalizeResolution(effectiveConfig.vquality)}p · {videoSizeLabel(effectiveConfig.size)} · {normalizeVideoSeconds(effectiveConfig.videoSeconds)}s
+                                    {model} · {videoResolutionLabel(effectiveConfig.vquality)} · {videoSizeLabel(effectiveConfig.size)} · {normalizeVideoSeconds(effectiveConfig.videoSeconds)}s
                                 </span>
                                 <Button size="small" type="text" icon={<SlidersHorizontal className="size-4" />} onClick={() => setSettingsOpen(true)}>
                                     调整
@@ -900,16 +893,13 @@ function buildLog({
 }
 
 function buildVideoConfig(config: AiConfig, model: string): AiConfig {
-    const seedance = isSeedanceVideoConfig({ ...config, model });
     return {
         ...config,
         model,
         videoModel: model,
-        size: seedance ? normalizeSeedanceRatio(config.size) : normalizeVideoSize(config.size),
+        size: normalizeVideoSize(config.size),
         videoSeconds: normalizeVideoSeconds(config.videoSeconds),
         vquality: normalizeResolution(config.vquality),
-        videoGenerateAudio: String(boolConfig(config.videoGenerateAudio, true)),
-        videoWatermark: String(boolConfig(config.videoWatermark, false)),
     };
 }
 

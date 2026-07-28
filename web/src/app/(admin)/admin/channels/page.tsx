@@ -4,7 +4,7 @@ import { DeleteOutlined, LoadingOutlined, PlusOutlined, ReloadOutlined } from "@
 import { App, Button, Card, Checkbox, Col, Drawer, Flex, Form, Input, InputNumber, Modal, Row, Select, Space, Switch, Table, Tabs, Tag, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
 
-import { fetchAdminSettings, fetchChannelModels, saveAdminSettings, testChannelModel, type AdminChannelModel, type AdminManagedModel, type AdminModelChannel, type AdminSettings } from "@/services/api/admin";
+import { fetchAdminSettings, fetchChannelModels, saveAdminSettings, testChannelModel, type AdminChannelModel, type AdminDiscoveredModel, type AdminManagedModel, type AdminModelChannel, type AdminSettings } from "@/services/api/admin";
 import { useUserStore } from "@/stores/use-user-store";
 import { inferModelModality, inferModelOperations } from "../model-capabilities";
 import { ChannelModelCapabilitiesEditor } from "./components/channel-model-capabilities-editor";
@@ -18,6 +18,7 @@ export default function AdminChannelsPage() {
     const [settings, setSettings] = useState<AdminSettings | null>(null);
     const [channels, setChannels] = useState<AdminModelChannel[]>([]);
     const [knownModels, setKnownModels] = useState<string[]>([]);
+    const [discoveredModels, setDiscoveredModels] = useState<Record<string, AdminDiscoveredModel>>({});
     const [channelForm] = Form.useForm<AdminModelChannel>();
     const [editingChannelIndex, setEditingChannelIndex] = useState<number | null>(null);
     const [isChannelDrawerOpen, setIsChannelDrawerOpen] = useState(false);
@@ -127,15 +128,17 @@ export default function AdminChannelsPage() {
         setIsFetchingChannelModels(true);
         try {
             const models = await fetchChannelModels(token, { index: editingChannelIndex ?? undefined, channel: normalizeChannel(channel) });
+            const modelNames = models.map((item) => item.id);
             const current = isModelSelectorOpen ? uniqueModels(modelSelectSelected) : channelModelNames(channelForm.getFieldValue("models") || []);
-            rememberModels(models);
+            setDiscoveredModels((value) => ({ ...value, ...Object.fromEntries(models.map((item) => [item.id, item])) }));
+            rememberModels(modelNames);
             if (!models.length) {
                 message.warning("上游未返回模型列表，请手动输入模型名称");
                 return;
             }
             setModelSelectExisting(current);
-            setModelSelectSource(uniqueModels(models));
-            setModelSelectSelected(uniqueModels([...current, ...models]));
+            setModelSelectSource(uniqueModels(modelNames));
+            setModelSelectSelected(uniqueModels([...current, ...modelNames]));
             setModelSelectKeyword("");
             setModelSelectNewModel("");
             setModelSelectTab("new");
@@ -169,7 +172,7 @@ export default function AdminChannelsPage() {
     const confirmChannelModelSelector = () => {
         const currentModels = normalizeChannelModels(channelForm.getFieldValue("models") || []);
         const currentModelMap = new Map(currentModels.map((item) => [item.model, item]));
-        const models = uniqueModels(modelSelectSelected).map((model) => currentModelMap.get(model) || createChannelModel(model, managedModels));
+        const models = uniqueModels(modelSelectSelected).map((model) => currentModelMap.get(model) || createChannelModel(model, managedModels, discoveredModels[model]));
         channelForm.setFieldValue("models", models);
         rememberModels(channelModelNames(models));
         closeChannelModelSelector();
@@ -428,7 +431,11 @@ export default function AdminChannelsPage() {
                                         checked={modelSelectSelected.includes(model)}
                                         onChange={(event) => setModelSelectSelected((current) => (event.target.checked ? uniqueModels([...current, model]) : current.filter((item) => item !== model)))}
                                     >
-                                        <Typography.Text style={{ wordBreak: "break-all" }}>{model}</Typography.Text>
+                                        <Space size={6} wrap>
+                                            <Typography.Text style={{ wordBreak: "break-all" }}>{model}</Typography.Text>
+                                            {discoveredModels[model]?.modality ? <Tag bordered={false}>{discoveredModels[model].modality}</Tag> : null}
+                                            {discoveredModels[model]?.supportedDurations?.length ? <Tag bordered={false}>{discoveredModels[model].supportedDurations.join("/")} 秒</Tag> : null}
+                                        </Space>
                                     </Checkbox>
                                 ))}
                             </div>
@@ -532,24 +539,34 @@ function normalizeChannelModels(items: Partial<AdminChannelModel>[] = []): Admin
             {
                 model,
                 upstreamModel: item.upstreamModel?.trim() || model,
+                modality: normalizeToken(item.modality || inferModelModality(model)),
                 operations: Array.from(new Set((item.operations || []).map(normalizeToken).filter(Boolean))),
+                aspectRatios: Array.from(new Set((item.aspectRatios || []).map(normalizeToken).filter(Boolean))),
                 resolutionTiers: Array.from(new Set((item.resolutionTiers || []).map(normalizeResolutionTier).filter(Boolean))),
+                durations: normalizeDurations(item.durations),
             },
         ];
     });
 }
 
-function createChannelModel(model: string, managedModels: AdminManagedModel[]): AdminChannelModel {
+function createChannelModel(model: string, managedModels: AdminManagedModel[], discovered?: AdminDiscoveredModel): AdminChannelModel {
     const managedModel = managedModels.find((item) => item.id === model);
-    const modality = managedModel?.modality || inferModelModality(model);
+    const modality = discovered?.modality || managedModel?.modality || inferModelModality(model);
     return normalizeChannelModels([
         {
             model,
             upstreamModel: model,
+            modality,
             operations: managedModel?.operations?.length ? managedModel.operations : inferModelOperations(model, modality),
-            resolutionTiers: managedModel?.resolutionTiers?.length ? managedModel.resolutionTiers : modality === "image" ? ["1k"] : modality === "video" ? ["720p"] : [],
+            aspectRatios: discovered?.supportedRatios?.length ? discovered.supportedRatios : managedModel?.aspectRatios || [],
+            resolutionTiers: discovered?.supportedResolutions?.length ? discovered.supportedResolutions : managedModel?.resolutionTiers?.length ? managedModel.resolutionTiers : modality === "image" ? ["1k"] : modality === "video" ? ["720p"] : [],
+            durations: discovered?.supportedDurations?.length ? discovered.supportedDurations : managedModel?.durations || [],
         },
     ])[0];
+}
+
+function normalizeDurations(items: number[] = []) {
+    return Array.from(new Set(items.map((item) => Math.floor(Number(item))).filter((item) => item > 0))).sort((a, b) => a - b);
 }
 
 function collectKnownModels(settings: AdminSettings) {

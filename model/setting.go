@@ -25,8 +25,20 @@ type ModelChannel struct {
 type ChannelModel struct {
 	Model           string   `json:"model"`
 	UpstreamModel   string   `json:"upstreamModel"`
+	Modality        string   `json:"modality"`
 	Operations      []string `json:"operations"`
+	AspectRatios    []string `json:"aspectRatios"`
 	ResolutionTiers []string `json:"resolutionTiers"`
+	Durations       []int    `json:"durations"`
+}
+
+type DiscoveredModel struct {
+	ID                   string   `json:"id"`
+	Kind                 string   `json:"kind"`
+	Modality             string   `json:"modality"`
+	SupportedRatios      []string `json:"supportedRatios"`
+	SupportedResolutions []string `json:"supportedResolutions"`
+	SupportedDurations   []int    `json:"supportedDurations"`
 }
 
 // ModelDefinition stores public model management metadata.
@@ -39,6 +51,7 @@ type ModelDefinition struct {
 	Sort            int      `json:"sort"`
 	AspectRatios    []string `json:"aspectRatios"`
 	ResolutionTiers []string `json:"resolutionTiers"`
+	Durations       []int    `json:"durations"`
 	Remark          string   `json:"remark"`
 }
 
@@ -49,6 +62,7 @@ type PricingRule struct {
 	Operation       string  `json:"operation"`
 	Unit            string  `json:"unit"`
 	ResolutionTier  string  `json:"resolutionTier"`
+	DurationSeconds int     `json:"durationSeconds"`
 	BillingMode     string  `json:"billingMode"`
 	Credits         int     `json:"credits"`
 	MinCredits      int     `json:"minCredits"`

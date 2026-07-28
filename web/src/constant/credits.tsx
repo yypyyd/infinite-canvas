@@ -17,6 +17,7 @@ export type PricingRule = {
     operation: string;
     unit: string;
     resolutionTier?: string;
+    durationSeconds?: number;
     billingMode?: "fixed" | "ratio";
     credits: number;
     minCredits?: number;
@@ -68,6 +69,7 @@ type NormalizedCreditRequest = {
     operation: string;
     unit: string;
     resolutionTier: string;
+    durationSeconds: number;
     quantity: number;
 };
 
@@ -81,6 +83,7 @@ function normalizePricingRequest(options: { model: string; modality: string; ope
         operation: normalizeToken(options.operation || (modality === "text" ? "completion" : modality === "audio" ? "speech" : "generation")),
         unit,
         resolutionTier: normalizeResolutionTier(options.resolutionTier || resolutionTierForRequest(modality, size, options.resolution || "")),
+        durationSeconds: modality === "video" ? Math.max(1, Math.floor(Math.abs(Number(options.count)) || 1)) : 0,
         quantity: Math.max(1, Math.floor(Math.abs(Number(options.count)) || 1)),
     };
 }
@@ -106,13 +109,14 @@ function normalizeRule(rule: PricingRule): NormalizedCreditRequest {
         operation: normalizeToken(rule.operation),
         unit: normalizeToken(rule.unit),
         resolutionTier: normalizeResolutionTier(rule.resolutionTier || ""),
+        durationSeconds: Math.max(0, Math.floor(Number(rule.durationSeconds) || 0)),
         quantity: 1,
     };
 }
 
 function pricingRuleScore(rule: NormalizedCreditRequest, request: NormalizedCreditRequest) {
     let score = 0;
-    for (const key of ["modality", "operation", "unit", "resolutionTier"] as const) {
+    for (const key of ["modality", "operation", "unit", "resolutionTier", "durationSeconds"] as const) {
         if (!rule[key]) continue;
         if (rule[key] !== request[key]) return null;
         score += 1;

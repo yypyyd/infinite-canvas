@@ -33,7 +33,7 @@ func TestFetchAdminChannelModelsParsesOpenAIModels(t *testing.T) {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"z-model","kind":"text"},{"id":"a-model","supported_resolutions":["2K"]},{"id":""}]}`))
+		_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"z-model","kind":"text"},{"id":"a-model","kind":"video","supported_ratios":["16:9"],"supported_resolutions":["1280x720","1080p"],"supported_durations":[10,5,10]},{"id":""}]}`))
 	}))
 	defer server.Close()
 
@@ -44,7 +44,10 @@ func TestFetchAdminChannelModelsParsesOpenAIModels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fetchAdminChannelModels returned error: %v", err)
 	}
-	if want := []string{"a-model", "z-model"}; !reflect.DeepEqual(models, want) {
+	if want := []model.DiscoveredModel{
+		{ID: "a-model", Kind: "video", Modality: "video", SupportedRatios: []string{"16:9"}, SupportedResolutions: []string{"720p", "1080p"}, SupportedDurations: []int{5, 10}},
+		{ID: "z-model", Kind: "text", Modality: "text", SupportedRatios: []string{}, SupportedResolutions: []string{}, SupportedDurations: []int{}},
+	}; !reflect.DeepEqual(models, want) {
 		t.Fatalf("models = %#v, want %#v", models, want)
 	}
 }

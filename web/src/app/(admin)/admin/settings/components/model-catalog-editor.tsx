@@ -4,7 +4,7 @@ import { DeleteOutlined, EditOutlined, PlusOutlined, SyncOutlined } from "@ant-d
 import { App, AutoComplete, Button, Card, Col, Drawer, Empty, Flex, Form, Input, InputNumber, Row, Segmented, Select, Space, Switch, Table, Tag, Typography } from "antd";
 import { useMemo, useState } from "react";
 
-import type { AdminManagedModel, AdminPricingRule } from "@/services/api/admin";
+import type { AdminChannelModel, AdminManagedModel, AdminPricingRule } from "@/services/api/admin";
 import { allowedModelOperations, inferModelModality, inferModelOperations, normalizeModelOperations } from "../../model-capabilities";
 
 const modalityOptions = [
@@ -15,6 +15,7 @@ const modalityOptions = [
 ];
 const aspectRatioOptions = ["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16"];
 const resolutionOptions = ["1k", "2k", "4k", "480p", "720p", "1080p"];
+const durationOptions = [4, 5, 6, 8, 10, 12, 15, 16, 20];
 const modalityLabel = Object.fromEntries(modalityOptions.map((item) => [item.value, item.label]));
 const operationLabel: Record<string, string> = { generation: "生成", edit: "编辑", completion: "补全", speech: "语音" };
 const unitLabel: Record<string, string> = { image: "张", second: "秒", request: "次", token: "Token" };
@@ -25,7 +26,7 @@ type Props = {
     pricingRules: AdminPricingRule[];
     onPricingRulesChange: (value: AdminPricingRule[]) => void;
     candidateModels: string[];
-    channelModels: string[];
+    channelModels: AdminChannelModel[];
 };
 
 export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPricingRulesChange, candidateModels, channelModels }: Props) {
@@ -39,7 +40,8 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
     const selectedModality = Form.useWatch("modality", form) || "text";
     const selectedOperations = Form.useWatch("operations", form) || inferModelOperations("", selectedModality);
     const models = useMemo(() => normalizeModels(value), [value]);
-    const channelModelSet = useMemo(() => new Set(channelModels), [channelModels]);
+    const channelModelMap = useMemo(() => new Map(channelModels.map((item) => [item.model, item])), [channelModels]);
+    const channelModelSet = useMemo(() => new Set(channelModelMap.keys()), [channelModelMap]);
     const rulesByModel = useMemo(() => {
         const result = new Map<string, AdminPricingRule[]>();
         for (const rule of pricingRules) result.set(rule.model, [...(result.get(rule.model) || []), rule]);
@@ -63,7 +65,7 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
     };
     const openEdit = (model: AdminManagedModel) => {
         const rules = rulesByModel.get(model.id) || [];
-        const nextModel = { ...model, resolutionTiers: unique([...model.resolutionTiers, ...rules.map((rule) => rule.resolutionTier)]) };
+        const nextModel = { ...model, resolutionTiers: unique([...model.resolutionTiers, ...rules.map((rule) => rule.resolutionTier)]), durations: uniqueNumbers([...model.durations, ...rules.map((rule) => rule.durationSeconds)]) };
         setEditingModel(model.id);
         form.setFieldsValue(nextModel);
         setDraftRules(pricingTiers(rules, nextModel));
@@ -107,24 +109,28 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
     };
     const syncChannelModels = () => {
         const existing = new Set(models.map((model) => model.id));
-        const additions = channelModels.filter((model) => !existing.has(model)).map((model, index) => createModel(model, inferModelModality(model), models.length + index));
-        if (!additions.length) {
-            message.info("渠道模型已经全部在模型中心中");
-            return;
-        }
-        updateModels([...models, ...additions]);
-        onPricingRulesChange([...pricingRules, ...additions.flatMap((model) => defaultRules(model.id, model.modality))]);
-        message.success(`已同步 ${additions.length} 个模型，并生成默认计费`);
+        const additions = channelModels.filter((item) => !existing.has(item.model)).map((item, index) => createModel(item.model, item.modality || inferModelModality(item.model), models.length + index, item));
+        const synced = models.map((model) => syncModelCapabilities(model, channelModelMap.get(model.id)));
+        const nextModels = [...synced, ...additions];
+        const syncedIDs = new Set(channelModels.map((item) => item.model));
+        updateModels(nextModels);
+        onPricingRulesChange([
+            ...pricingRules.filter((rule) => !syncedIDs.has(rule.model)),
+            ...nextModels.filter((model) => syncedIDs.has(model.id)).flatMap((model) => expandPricingTiers(pricingTiers(rulesByModel.get(model.id) || [], model), model)),
+        ]);
+        message.success(additions.length ? `已同步模型能力，新增 ${additions.length} 个模型并生成默认计费` : "渠道模型能力已同步");
     };
     const setModelEnabled = (id: string, enabled: boolean) => updateModels(models.map((model) => (model.id === id ? { ...model, enabled } : model)));
     const setRuleField = <K extends keyof AdminPricingRule>(index: number, key: K, nextValue: AdminPricingRule[K]) =>
         setDraftRules((current) => current.map((rule, ruleIndex) => (ruleIndex === index ? normalizeRule({ ...rule, [key]: nextValue }) : rule)));
     const changeModality = (next: string) => {
         const resolutionTiers = defaultResolutionTiers(next);
-        form.setFieldsValue({ resolutionTiers, operations: inferModelOperations(form.getFieldValue("id") || "", next) });
-        setDraftRules(pricingTiers([], { ...form.getFieldsValue(), modality: next, resolutionTiers } as AdminManagedModel));
+        const durations = next === "video" ? [6, 10] : [];
+        form.setFieldsValue({ resolutionTiers, durations, operations: inferModelOperations(form.getFieldValue("id") || "", next) });
+        setDraftRules(pricingTiers([], { ...form.getFieldsValue(), modality: next, resolutionTiers, durations } as AdminManagedModel));
     };
     const changeResolutionTiers = (resolutionTiers: string[]) => setDraftRules((current) => pricingTiers(current, { ...form.getFieldsValue(), resolutionTiers } as AdminManagedModel));
+    const changeDurations = (durations: number[]) => setDraftRules((current) => pricingTiers(current, { ...form.getFieldsValue(), durations } as AdminManagedModel));
 
     return (
         <Card
@@ -191,7 +197,7 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
                             width: 220,
                             render: (_: unknown, model: AdminManagedModel) => (
                                 <Typography.Text type="secondary" className="text-xs">
-                                    {[capabilityLabel(model.operations), model.aspectRatios.join(" / "), model.resolutionTiers.join(" / ")].filter(Boolean).join(" · ")}
+                                    {[capabilityLabel(model.operations), model.aspectRatios.join(" / "), model.resolutionTiers.join(" / "), model.durations.length ? `${model.durations.join(" / ")} 秒` : ""].filter(Boolean).join(" · ")}
                                 </Typography.Text>
                             ),
                         },
@@ -236,6 +242,7 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
                     onValuesChange={(changed) => {
                         if (changed.modality) changeModality(changed.modality);
                         if (changed.resolutionTiers) changeResolutionTiers(changed.resolutionTiers);
+                        if (changed.durations) changeDurations(changed.durations);
                     }}
                 >
                     <Typography.Title level={5}>基本信息</Typography.Title>
@@ -249,10 +256,9 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
                                         options={candidateModels.filter((model) => !models.some((item) => item.id === model)).map((model) => ({ value: model }))}
                                         onChange={(modelID) => {
                                             const next = inferModelModality(modelID);
-                                            const resolutionTiers = defaultResolutionTiers(next);
-                                            const model = createModel(modelID, next, models.length);
-                                            form.setFieldsValue({ name: modelID, modality: next, operations: model.operations, aspectRatios: model.aspectRatios, resolutionTiers });
-                                            setDraftRules(pricingTiers([], { ...model, resolutionTiers }));
+                                            const model = createModel(modelID, next, models.length, channelModelMap.get(modelID));
+                                            form.setFieldsValue({ name: modelID, modality: model.modality, operations: model.operations, aspectRatios: model.aspectRatios, resolutionTiers: model.resolutionTiers, durations: model.durations });
+                                            setDraftRules(pricingTiers([], model));
                                         }}
                                         placeholder="例如 gpt-image-1"
                                     />
@@ -291,6 +297,13 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
                                 </Form.Item>
                             </Col>
                         ) : null}
+                        {selectedModality === "video" ? (
+                            <Col span={12}>
+                                <Form.Item name="durations" label="支持时长" extra="单位为秒；每个时长会按分辨率生成独立价格档。">
+                                    <Select mode="multiple" allowClear options={uniqueNumbers([...durationOptions, ...channelModels.flatMap((item) => item.durations || [])]).map((item) => ({ label: `${item} 秒`, value: item }))} />
+                                </Form.Item>
+                            </Col>
+                        ) : null}
                         {selectedModality === "image" || selectedModality === "video" ? (
                             <Col span={12}>
                                 <Form.Item name="resolutionTiers" label="支持分辨率档" extra="每增加一个分辨率，下面会自动增加对应价格档。">
@@ -311,7 +324,7 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
                                 计费规则
                             </Typography.Title>
                             <Typography.Text type="secondary" className="text-xs">
-                                价格按分辨率维护；内部操作按模型能力展开，计费单位由模型类型决定。
+                                视频价格按“分辨率 × 时长”维护；内部操作按模型能力展开，计费单位由模型类型决定。
                             </Typography.Text>
                         </div>
                         <Tag color="blue">
@@ -320,14 +333,21 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
                     </Flex>
                     <Flex vertical gap={12}>
                         {draftRules.map((rule, index) => (
-                            <Card key={rule.resolutionTier || "default"} size="small" title={rule.resolutionTier ? `${rule.resolutionTier.toUpperCase()} 价格` : "默认价格"}>
+                            <Card key={`${rule.resolutionTier || "default"}-${rule.durationSeconds || 0}`} size="small" title={pricingTierLabel(rule)}>
                                 <Row gutter={12}>
-                                    <Col span={4}>
+                                    <Col span={selectedModality === "video" ? 3 : 4}>
                                         <Form.Item label="分辨率">
                                             <Tag color={rule.resolutionTier ? "geekblue" : undefined}>{rule.resolutionTier ? rule.resolutionTier.toUpperCase() : "默认"}</Tag>
                                         </Form.Item>
                                     </Col>
-                                    <Col span={6}>
+                                    {selectedModality === "video" ? (
+                                        <Col span={3}>
+                                            <Form.Item label="时长">
+                                                <Tag color={rule.durationSeconds ? "purple" : undefined}>{rule.durationSeconds ? `${rule.durationSeconds} 秒` : "全部"}</Tag>
+                                            </Form.Item>
+                                        </Col>
+                                    ) : null}
+                                    <Col span={selectedModality === "video" ? 5 : 6}>
                                         <Form.Item label="计费方式">
                                             <Segmented
                                                 block
@@ -341,13 +361,13 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
                                         </Form.Item>
                                     </Col>
                                     {rule.billingMode === "fixed" ? (
-                                        <Col span={6}>
+                                        <Col span={selectedModality === "video" ? 5 : 6}>
                                             <Form.Item label={`单价（算力点/${unitLabel[defaultUnit(selectedModality)]}）`}>
                                                 <InputNumber min={0} precision={0} className="!w-full" value={rule.credits} onChange={(value) => setRuleField(index, "credits", Number(value) || 0)} />
                                             </Form.Item>
                                         </Col>
                                     ) : (
-                                        <Col span={6}>
+                                        <Col span={selectedModality === "video" ? 5 : 6}>
                                             <Form.Item label="模型倍率">
                                                 <InputNumber min={0.0001} step={0.1} className="!w-full" value={rule.modelRatio} onChange={(value) => setRuleField(index, "modelRatio", Number(value) || 1)} />
                                             </Form.Item>
@@ -379,8 +399,8 @@ function RuleSummary({ rules }: { rules: AdminPricingRule[] }) {
     return (
         <Space size={[4, 4]} wrap>
             {enabled.slice(0, 3).map((rule, index) => (
-                <Tag key={`${index}-${rule.resolutionTier}`} color={rule.billingMode === "ratio" ? "blue" : "green"}>
-                    {rule.resolutionTier ? rule.resolutionTier.toUpperCase() : "默认"} · {rule.billingMode === "ratio" ? `×${rule.modelRatio}` : `${rule.credits} 点/${unitLabel[rule.unit] || rule.unit}`}
+                <Tag key={`${index}-${rule.resolutionTier}-${rule.durationSeconds}`} color={rule.billingMode === "ratio" ? "blue" : "green"}>
+                    {pricingTierLabel(rule, false)} · {rule.billingMode === "ratio" ? `×${rule.modelRatio}` : `${rule.credits} 点/${unitLabel[rule.unit] || rule.unit}`}
                 </Tag>
             ))}
             {enabled.length > 3 ? <Tag>+{enabled.length - 3}</Tag> : null}
@@ -388,8 +408,33 @@ function RuleSummary({ rules }: { rules: AdminPricingRule[] }) {
     );
 }
 
-function createModel(id: string, modality: string, sort: number): AdminManagedModel {
-    return { id, name: id, modality, operations: inferModelOperations(id, modality), enabled: true, sort, aspectRatios: inferAspectRatios(id), resolutionTiers: defaultResolutionTiers(modality), remark: "" };
+function createModel(id: string, modality: string, sort: number, channelModel?: AdminChannelModel): AdminManagedModel {
+    const resolvedModality = channelModel?.modality || modality;
+    return {
+        id,
+        name: id,
+        modality: resolvedModality,
+        operations: channelModel?.operations?.length ? channelModel.operations : inferModelOperations(id, resolvedModality),
+        enabled: true,
+        sort,
+        aspectRatios: channelModel?.aspectRatios?.length ? channelModel.aspectRatios : inferAspectRatios(id),
+        resolutionTiers: channelModel?.resolutionTiers?.length ? channelModel.resolutionTiers : defaultResolutionTiers(resolvedModality),
+        durations: resolvedModality === "video" ? uniqueNumbers(channelModel?.durations?.length ? channelModel.durations : [6, 10]) : [],
+        remark: "",
+    };
+}
+
+function syncModelCapabilities(model: AdminManagedModel, channelModel?: AdminChannelModel): AdminManagedModel {
+    if (!channelModel) return model;
+    const modality = channelModel.modality || model.modality;
+    return {
+        ...model,
+        modality,
+        operations: channelModel.operations.length ? channelModel.operations : model.operations,
+        aspectRatios: channelModel.aspectRatios.length ? channelModel.aspectRatios : model.aspectRatios,
+        resolutionTiers: channelModel.resolutionTiers.length ? channelModel.resolutionTiers : model.resolutionTiers,
+        durations: modality === "video" && channelModel.durations.length ? channelModel.durations : model.durations,
+    };
 }
 
 function defaultResolutionTiers(modality: string) {
@@ -414,6 +459,7 @@ function normalizeModels(models: AdminManagedModel[]) {
                 sort: Number(model.sort ?? index) || 0,
                 aspectRatios: supportsResolution ? unique(model.aspectRatios) : [],
                 resolutionTiers: supportsResolution ? unique(model.resolutionTiers) : [],
+                durations: modality === "video" ? uniqueNumbers(model.durations) : [],
                 remark: model.remark || "",
             };
         })
@@ -421,15 +467,15 @@ function normalizeModels(models: AdminManagedModel[]) {
         .sort((a, b) => (a.sort === b.sort ? a.id.localeCompare(b.id) : a.sort - b.sort));
 }
 
-function defaultRules(model: string, modality: string) {
-    return expandPricingTiers([defaultRule(model, modality)], createModel(model, modality, 0));
-}
-
 function pricingTiers(rules: AdminPricingRule[], model: AdminManagedModel) {
-    const byResolution = new Map(uniquePricingTiers(rules).map((rule) => [rule.resolutionTier, rule]));
-    const fallback = byResolution.get("") || defaultRule(model.id, model.modality);
-    return ["", ...unique(model.resolutionTiers)].map((resolutionTier) =>
-        normalizeRule({ ...(byResolution.get(resolutionTier) || fallback), model: model.id || "", modality: model.modality, operation: defaultOperation(model.modality), unit: defaultUnit(model.modality), resolutionTier, remark: "" }),
+    const tiers = uniquePricingTiers(rules);
+    const byKey = new Map(tiers.map((rule) => [pricingTierKey(rule.resolutionTier, rule.durationSeconds), rule]));
+    const fallback = byKey.get(pricingTierKey("", 0)) || defaultRule(model.id, model.modality);
+    const combinations = model.modality === "video" && model.durations.length
+        ? [["", 0] as const, ...unique(model.resolutionTiers).flatMap((resolutionTier) => model.durations.map((durationSeconds) => [resolutionTier, durationSeconds] as const))]
+        : [["", 0] as const, ...unique(model.resolutionTiers).map((resolutionTier) => [resolutionTier, 0] as const)];
+    return combinations.map(([resolutionTier, durationSeconds]) =>
+        normalizeRule({ ...(byKey.get(pricingTierKey(resolutionTier, durationSeconds)) || fallback), model: model.id || "", modality: model.modality, operation: defaultOperation(model.modality), unit: defaultUnit(model.modality), resolutionTier, durationSeconds, remark: "" }),
     );
 }
 
@@ -440,15 +486,15 @@ function expandPricingTiers(tiers: AdminPricingRule[], model: AdminManagedModel)
 function uniquePricingTiers(rules: AdminPricingRule[]) {
     const result = new Map<string, AdminPricingRule>();
     for (const rule of rules) {
-        const resolution = rule.resolutionTier.trim().toLowerCase();
-        const current = result.get(resolution);
-        if (!current || rule.operation === "generation") result.set(resolution, normalizeRule(rule));
+        const key = pricingTierKey(rule.resolutionTier, rule.durationSeconds);
+        const current = result.get(key);
+        if (!current || rule.operation === "generation") result.set(key, normalizeRule(rule));
     }
-    return [...result.values()].sort((a, b) => resolutionSort(a.resolutionTier) - resolutionSort(b.resolutionTier));
+    return [...result.values()].sort((a, b) => resolutionSort(a.resolutionTier) - resolutionSort(b.resolutionTier) || a.durationSeconds - b.durationSeconds);
 }
 
 function defaultRule(model: string, modality: string): AdminPricingRule {
-    return { model, modality, operation: defaultOperation(modality), unit: defaultUnit(modality), resolutionTier: "", billingMode: "fixed", credits: 1, minCredits: 0, modelRatio: 1, completionRatio: 1, enabled: true, remark: "" };
+    return { model, modality, operation: defaultOperation(modality), unit: defaultUnit(modality), resolutionTier: "", durationSeconds: 0, billingMode: "fixed", credits: 1, minCredits: 0, modelRatio: 1, completionRatio: 1, enabled: true, remark: "" };
 }
 
 function normalizeRule(rule: AdminPricingRule): AdminPricingRule {
@@ -459,6 +505,7 @@ function normalizeRule(rule: AdminPricingRule): AdminPricingRule {
         operation: rule.operation.trim().toLowerCase(),
         unit: rule.unit.trim().toLowerCase(),
         resolutionTier: rule.resolutionTier.trim().toLowerCase(),
+        durationSeconds: Math.max(0, Math.floor(Number(rule.durationSeconds) || 0)),
         credits: Math.max(0, Number(rule.credits) || 0),
         minCredits: Math.max(0, Number(rule.minCredits) || 0),
         modelRatio: Math.max(0, Number(rule.modelRatio) || 1),
@@ -500,6 +547,19 @@ function modalityColor(modality: string) {
     return modality === "image" ? "magenta" : modality === "video" ? "purple" : modality === "audio" ? "cyan" : "blue";
 }
 
+function pricingTierKey(resolutionTier: string, durationSeconds: number) {
+    return `${resolutionTier.trim().toLowerCase()}|${Math.max(0, Math.floor(Number(durationSeconds) || 0))}`;
+}
+
+function pricingTierLabel(rule: Pick<AdminPricingRule, "resolutionTier" | "durationSeconds">, suffix = true) {
+    const parts = [rule.resolutionTier ? rule.resolutionTier.toUpperCase() : "默认", rule.durationSeconds ? `${rule.durationSeconds} 秒` : ""].filter(Boolean);
+    return `${parts.join(" · ")}${suffix ? " 价格" : ""}`;
+}
+
 function unique(items: string[] = []) {
     return Array.from(new Set(items.map((item) => item.trim().toLowerCase()).filter(Boolean)));
+}
+
+function uniqueNumbers(items: number[] = []) {
+    return Array.from(new Set(items.map((item) => Math.floor(Number(item))).filter((item) => item > 0))).sort((a, b) => a - b);
 }

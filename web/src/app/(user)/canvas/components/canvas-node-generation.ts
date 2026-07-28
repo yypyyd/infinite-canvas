@@ -1,6 +1,6 @@
 import type { ChatCompletionMessage } from "@/services/api/image";
 import { imageReferenceLabel } from "@/lib/image-reference-prompt";
-import { seedanceReferenceLabel } from "@/lib/seedance-video";
+import { videoReferenceLabel } from "@/lib/video-reference";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "../types";
@@ -159,8 +159,8 @@ function readNodeTextInput(node: CanvasNodeData) {
 
 function generationLabel(type: NodeGenerationInput["type"], index: number) {
     if (type === "image") return imageReferenceLabel(index);
-    if (type === "video") return seedanceReferenceLabel("video", index);
-    if (type === "audio") return seedanceReferenceLabel("audio", index);
+    if (type === "video") return videoReferenceLabel("video", index);
+    if (type === "audio") return videoReferenceLabel("audio", index);
     return `文本${index + 1}`;
 }
 

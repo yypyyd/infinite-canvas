@@ -1081,6 +1081,26 @@ function InfiniteCanvasPage() {
         setContextMenu(null);
     }, [size.height, size.width]);
 
+    const focusCanvasNodes = useCallback(
+        (targets: CanvasNodeData[]) => {
+            if (!targets.length) return;
+            const rect = containerRef.current?.getBoundingClientRect();
+            const viewportWidth = rect?.width || size.width;
+            const viewportHeight = rect?.height || size.height;
+            const left = Math.min(...targets.map((node) => node.position.x));
+            const top = Math.min(...targets.map((node) => node.position.y));
+            const right = Math.max(...targets.map((node) => node.position.x + node.width));
+            const bottom = Math.max(...targets.map((node) => node.position.y + node.height));
+            const contentWidth = Math.max(1, right - left);
+            const contentHeight = Math.max(1, bottom - top);
+            const padding = Math.min(96, viewportWidth * 0.08, viewportHeight * 0.08);
+            const scale = Math.min(1, Math.max(0.2, Math.min((viewportWidth - padding * 2) / contentWidth, (viewportHeight - padding * 2) / contentHeight)));
+            setViewport({ x: viewportWidth / 2 - ((left + right) / 2) * scale, y: viewportHeight / 2 - ((top + bottom) / 2) * scale, k: scale });
+            setContextMenu(null);
+        },
+        [size.height, size.width],
+    );
+
     const setZoomScale = useCallback(
         (scale: number) => {
             const nextScale = Math.min(Math.max(scale, 0.05), 5);
@@ -2564,13 +2584,16 @@ function InfiniteCanvasPage() {
             }
             try {
                 const result = await requestVideoCreativeAnalysis(analysisConfig, source.metadata.content, request.mode, request);
-                const gap = 96;
-                const centerY = source.position.y + source.height / 2;
+                const columnGap = 72;
+                const rowGap = 48;
+                const leftX = source.position.x;
+                const rightX = leftX + Math.max(source.width, 340) + columnGap;
+                const topY = source.position.y;
                 const analysisNode = {
-                    ...createCanvasNode(CanvasNodeType.Text, { x: source.position.x + source.width + gap + 190, y: centerY }, { content: result.analysis, prompt: result.analysis, status: NODE_STATUS_SUCCESS, fontSize: 14 }),
+                    ...createCanvasNode(CanvasNodeType.Text, { x: rightX + 180, y: topY + 130 }, { content: result.analysis, prompt: result.analysis, status: NODE_STATUS_SUCCESS, fontSize: 14 }),
                     title: "视频解析报告",
-                    width: 380,
-                    height: 300,
+                    width: 360,
+                    height: 260,
                 };
                 const additions: CanvasNodeData[] = [analysisNode];
                 const links: CanvasConnection[] = [{ id: nanoid(), fromNodeId: source.id, toNodeId: analysisNode.id }];
@@ -2578,15 +2601,17 @@ function InfiniteCanvasPage() {
                 let generationPrompt = result.videoPrompt;
 
                 if (request.mode === "viral") {
+                    const secondRowY = topY + Math.max(source.height, analysisNode.height) + rowGap;
                     const scriptNode = {
-                        ...createCanvasNode(CanvasNodeType.Text, { x: analysisNode.position.x + analysisNode.width + gap + 190, y: centerY }, { content: result.script, prompt: result.script, status: NODE_STATUS_SUCCESS, fontSize: 14 }),
+                        ...createCanvasNode(CanvasNodeType.Text, { x: rightX + 180, y: secondRowY + 160 }, { content: result.script, prompt: result.script, status: NODE_STATUS_SUCCESS, fontSize: 14 }),
                         title: "爆款改编脚本",
-                        width: 380,
-                        height: 360,
+                        width: 360,
+                        height: 320,
                     };
+                    const thirdRowY = secondRowY + scriptNode.height + rowGap;
                     let composerContent = `爆款脚本：@[node:${scriptNode.id}]\n\n成片要求：${result.videoPrompt}`;
                     const configNode = {
-                        ...createCanvasNode(CanvasNodeType.Config, { x: scriptNode.position.x + scriptNode.width + gap + NODE_DEFAULT_SIZE[CanvasNodeType.Config].width / 2, y: centerY }, {
+                        ...createCanvasNode(CanvasNodeType.Config, { x: leftX + NODE_DEFAULT_SIZE[CanvasNodeType.Config].width / 2, y: thirdRowY + NODE_DEFAULT_SIZE[CanvasNodeType.Config].height / 2 }, {
                             generationMode: "video",
                             model: effectiveConfig.videoModel || effectiveConfig.model,
                             size: effectiveConfig.size,
@@ -2608,7 +2633,7 @@ function InfiniteCanvasPage() {
                             id: nanoid(),
                             type: CanvasNodeType.Image,
                             title: "爆款首帧参考",
-                            position: { x: scriptNode.position.x, y: scriptNode.position.y + scriptNode.height + 48 },
+                            position: { x: leftX, y: secondRowY },
                             width: frameSize.width,
                             height: frameSize.height,
                             metadata: { ...imageMetadata(keyframe), prompt: "从参考视频提取的首帧", status: NODE_STATUS_SUCCESS },
@@ -2631,13 +2656,21 @@ function InfiniteCanvasPage() {
                 setSelectedConnectionId(null);
                 setDialogNodeId(request.mode === "viral" ? configNodeId : null);
                 setVideoCreativeTarget(null);
+                focusCanvasNodes([source, ...additions]);
                 message.success(request.mode === "viral" ? "爆款脚本与视频配置已加入画布" : "视频解析报告已加入画布");
-                if (request.mode === "viral" && request.generateNow && configNodeId) await handleGenerateNode(configNodeId, "video", generationPrompt);
+                if (request.mode === "viral" && request.generateNow && configNodeId) {
+                    await handleGenerateNode(configNodeId, "video", generationPrompt);
+                    requestAnimationFrame(() => {
+                        const outputNodeId = connectionsRef.current.find((connection) => connection.fromNodeId === configNodeId)?.toNodeId;
+                        const outputNode = nodesRef.current.find((node) => node.id === outputNodeId);
+                        focusCanvasNodes(outputNode ? [source, ...additions, outputNode] : [source, ...additions]);
+                    });
+                }
             } catch (error) {
                 message.error(error instanceof Error ? error.message : "视频解析失败");
             }
         },
-        [effectiveConfig, handleGenerateNode, isAiConfigReady, message, openConfigDialog, videoCreativeTarget?.nodeId],
+        [effectiveConfig, focusCanvasNodes, handleGenerateNode, isAiConfigReady, message, openConfigDialog, videoCreativeTarget?.nodeId],
     );
 
     const handleRetryNode = useCallback(

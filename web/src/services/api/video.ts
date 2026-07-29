@@ -4,6 +4,7 @@ import { dataUrlToFile } from "@/lib/image-utils";
 import { defaultVideoDurations, defaultVideoRatios, defaultVideoResolutions, normalizeVideoRatio, normalizeVideoResolution, videoOutputSize } from "@/lib/video-format";
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
+import { requestImageQuestion, type ChatCompletionMessage } from "@/services/api/image";
 import { authorizationHeaders, organizationHeaders } from "@/services/api/request";
 import { useConfigStore, type AiConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
@@ -15,6 +16,27 @@ type ApiVideoResponse = VideoResponse | { code?: number; data?: VideoResponse | 
 type RequestOptions = { signal?: AbortSignal; idempotencyKey?: string };
 
 export type VideoGenerationResult = { blob?: Blob; url?: string; mimeType?: string };
+export type VideoCreativeMode = "analysis" | "viral";
+export type VideoCreativeResult = { analysis: string; script: string; videoPrompt: string; frames: string[] };
+
+export async function requestVideoCreativeAnalysis(
+    config: AiConfig,
+    sourceUrl: string,
+    mode: VideoCreativeMode,
+    context: { platform: string; audience?: string; sellingPoint?: string },
+    options?: RequestOptions,
+): Promise<VideoCreativeResult> {
+    const frames = await extractVideoKeyFrames(sourceUrl, 6, options?.signal);
+    const prompt = buildVideoCreativePrompt(mode, context);
+    const messages: ChatCompletionMessage[] = [
+        {
+            role: "user",
+            content: [{ type: "text", text: prompt }, ...frames.map((url) => ({ type: "image_url" as const, image_url: { url } }))],
+        },
+    ];
+    const answer = await requestImageQuestion(config, messages, () => undefined, options);
+    return { ...parseVideoCreativeResult(answer, mode), frames };
+}
 
 export async function requestVideoGeneration(config: AiConfig, prompt: string, references: ReferenceImage[] = [], videoReferences: ReferenceVideo[] = [], audioReferences: ReferenceAudio[] = [], options?: RequestOptions): Promise<VideoGenerationResult> {
     const model = (config.model || config.videoModel).trim();
@@ -120,4 +142,92 @@ function delay(ms: number, signal?: AbortSignal) {
             reject(new DOMException("Aborted", "AbortError"));
         }, { once: true });
     });
+}
+
+async function extractVideoKeyFrames(sourceUrl: string, count: number, signal?: AbortSignal) {
+    const response = await fetch(sourceUrl, { credentials: "include", signal });
+    if (!response.ok) throw new Error("视频文件读取失败");
+    const blob = await response.blob();
+    if (blob.type && !blob.type.startsWith("video/") && blob.type !== "application/octet-stream") throw new Error("所选节点不是有效视频");
+    const objectUrl = URL.createObjectURL(blob);
+    const video = document.createElement("video");
+    video.muted = true;
+    video.preload = "auto";
+
+    try {
+        const metadataReady = waitForVideoEvent(video, "loadedmetadata", signal);
+        video.src = objectUrl;
+        await metadataReady;
+        if (!Number.isFinite(video.duration) || video.duration <= 0 || !video.videoWidth || !video.videoHeight) throw new Error("无法读取视频时长或画面尺寸");
+        const scale = Math.min(1, 768 / Math.max(video.videoWidth, video.videoHeight));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+        canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+        const painter = canvas.getContext("2d");
+        if (!painter) throw new Error("浏览器无法提取视频关键帧");
+        const frames: string[] = [];
+        for (let index = 0; index < count; index += 1) {
+            const progress = count === 1 ? 0.5 : 0.05 + (index / (count - 1)) * 0.9;
+            video.currentTime = Math.min(Math.max(0, video.duration - 0.05), video.duration * progress);
+            await waitForVideoEvent(video, "seeked", signal);
+            painter.drawImage(video, 0, 0, canvas.width, canvas.height);
+            frames.push(canvas.toDataURL("image/jpeg", 0.82));
+        }
+        return frames;
+    } finally {
+        video.removeAttribute("src");
+        video.load();
+        URL.revokeObjectURL(objectUrl);
+    }
+}
+
+function waitForVideoEvent(video: HTMLVideoElement, eventName: "loadedmetadata" | "seeked", signal?: AbortSignal) {
+    return new Promise<void>((resolve, reject) => {
+        if (signal?.aborted) return reject(new DOMException("Aborted", "AbortError"));
+        const cleanup = () => {
+            video.removeEventListener(eventName, done);
+            video.removeEventListener("error", failed);
+            signal?.removeEventListener("abort", aborted);
+        };
+        const done = () => {
+            cleanup();
+            resolve();
+        };
+        const failed = () => {
+            cleanup();
+            reject(new Error("视频关键帧提取失败"));
+        };
+        const aborted = () => {
+            cleanup();
+            reject(new DOMException("Aborted", "AbortError"));
+        };
+        video.addEventListener(eventName, done, { once: true });
+        video.addEventListener("error", failed, { once: true });
+        signal?.addEventListener("abort", aborted, { once: true });
+    });
+}
+
+function buildVideoCreativePrompt(mode: VideoCreativeMode, context: { platform: string; audience?: string; sellingPoint?: string }) {
+    const brief = `目标平台：${context.platform}\n目标受众：${context.audience?.trim() || "根据画面判断"}\n希望强化的卖点：${context.sellingPoint?.trim() || "根据画面判断"}`;
+    if (mode === "analysis") {
+        return `你是一名短视频内容分析师。以下图片按时间顺序取自同一条视频，请结合全部关键帧完成拆解。\n\n${brief}\n\n只输出合法 JSON，不要使用 Markdown 代码块，结构为：{"analysis":"中文分析报告"}。分析报告需要覆盖：3 秒钩子、叙事结构、镜头节奏、视觉风格、文案/字幕策略、情绪曲线、转化动作，以及可复用的方法。不要臆造关键帧中无法判断的事实。`;
+    }
+    return `你是一名短视频爆款编导。以下图片按时间顺序取自同一条参考视频。先拆解其有效结构，再进行原创改编，保留方法但不要照抄品牌、人物、台词或受版权保护的具体表达。\n\n${brief}\n\n只输出合法 JSON，不要使用 Markdown 代码块，结构为：{"analysis":"中文拆解报告","script":"可直接拍摄的分镜脚本，逐镜头写明时长、画面、字幕/口播和转场","videoPrompt":"一段可直接交给 AI 视频模型的中文提示词"}。脚本总长控制在 15 至 30 秒，前 3 秒必须有明确钩子，结尾包含自然行动引导。videoPrompt 只描述成片，不要包含解释。`;
+}
+
+function parseVideoCreativeResult(answer: string, mode: VideoCreativeMode) {
+    const normalized = answer.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+    if (!normalized) throw new Error("视频解析没有返回内容");
+    let value: { analysis?: unknown; script?: unknown; videoPrompt?: unknown };
+    try {
+        value = JSON.parse(normalized) as { analysis?: unknown; script?: unknown; videoPrompt?: unknown };
+    } catch {
+        return { analysis: normalized, script: mode === "viral" ? normalized : "", videoPrompt: mode === "viral" ? normalized : "" };
+    }
+    const analysis = typeof value.analysis === "string" ? value.analysis.trim() : "";
+    const script = typeof value.script === "string" ? value.script.trim() : "";
+    const videoPrompt = typeof value.videoPrompt === "string" ? value.videoPrompt.trim() : "";
+    if (!analysis) throw new Error("视频解析结果为空");
+    if (mode === "viral" && (!script || !videoPrompt)) throw new Error("爆款脚本结果不完整");
+    return { analysis, script, videoPrompt };
 }

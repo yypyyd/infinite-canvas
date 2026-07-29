@@ -316,7 +316,7 @@ function InfiniteCanvasPage() {
     const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
     const [assetPickerOpen, setAssetPickerOpen] = useState(false);
     const [commercePackageOpen, setCommercePackageOpen] = useState(false);
-    const [videoCreativeMode, setVideoCreativeMode] = useState<VideoCreativeMode | null>(null);
+    const [videoCreativeTarget, setVideoCreativeTarget] = useState<{ nodeId: string; mode: VideoCreativeMode } | null>(null);
     const [assetPickerTab, setAssetPickerTab] = useState<AssetPickerTab>("my-assets");
     const [projectLoaded, setProjectLoaded] = useState(false);
     const [toolbarNodeId, setToolbarNodeId] = useState<string | null>(null);
@@ -2540,25 +2540,21 @@ function InfiniteCanvasPage() {
         [effectiveConfig, getCanvasCenter, handleGenerateNode, message],
     );
 
-    const selectedVideo = useMemo(() => {
-        const selected = nodes.filter((node) => selectedNodeIds.has(node.id) && node.type === CanvasNodeType.Video && node.metadata?.content);
-        return selected.length === 1 ? selected[0] : null;
-    }, [nodes, selectedNodeIds]);
+    const videoCreativeSource = useMemo(() => nodes.find((node) => node.id === videoCreativeTarget?.nodeId && node.type === CanvasNodeType.Video && node.metadata?.content) || null, [nodes, videoCreativeTarget?.nodeId]);
 
     const openVideoCreativePanel = useCallback(
-        (mode: VideoCreativeMode) => {
-            const selectedCount = nodesRef.current.filter((node) => selectedNodeIdsRef.current.has(node.id) && node.type === CanvasNodeType.Video && node.metadata?.content).length;
-            if (selectedCount !== 1) message.info("请先选择一个包含内容的视频节点");
-            setVideoCreativeMode(mode);
+        (node: CanvasNodeData, mode: VideoCreativeMode) => {
+            if (node.type !== CanvasNodeType.Video || !node.metadata?.content) return message.info("请先给视频节点添加内容");
+            setVideoCreativeTarget({ nodeId: node.id, mode });
         },
         [message],
     );
 
     const runVideoCreativeWorkflow = useCallback(
         async (request: VideoCreativeRequest) => {
-            const source = nodesRef.current.find((node) => selectedNodeIdsRef.current.has(node.id) && node.type === CanvasNodeType.Video && node.metadata?.content);
+            const source = nodesRef.current.find((node) => node.id === videoCreativeTarget?.nodeId && node.type === CanvasNodeType.Video && node.metadata?.content);
             if (!source?.metadata?.content) {
-                message.warning("请先选择一个包含内容的视频节点");
+                message.warning("当前视频节点没有可解析的内容");
                 return;
             }
             const analysisConfig = { ...effectiveConfig, model: effectiveConfig.textModel || effectiveConfig.model || defaultConfig.textModel };
@@ -2634,14 +2630,14 @@ function InfiniteCanvasPage() {
                 setSelectedNodeIds(new Set(request.mode === "viral" && configNodeId ? [configNodeId] : [analysisNode.id]));
                 setSelectedConnectionId(null);
                 setDialogNodeId(request.mode === "viral" ? configNodeId : null);
-                setVideoCreativeMode(null);
+                setVideoCreativeTarget(null);
                 message.success(request.mode === "viral" ? "爆款脚本与视频配置已加入画布" : "视频解析报告已加入画布");
                 if (request.mode === "viral" && request.generateNow && configNodeId) await handleGenerateNode(configNodeId, "video", generationPrompt);
             } catch (error) {
                 message.error(error instanceof Error ? error.message : "视频解析失败");
             }
         },
-        [effectiveConfig, handleGenerateNode, isAiConfigReady, message, openConfigDialog],
+        [effectiveConfig, handleGenerateNode, isAiConfigReady, message, openConfigDialog, videoCreativeTarget?.nodeId],
     );
 
     const handleRetryNode = useCallback(
@@ -3296,6 +3292,8 @@ function InfiniteCanvasPage() {
                     onUpload={(node) => handleUploadRequest(node.id)}
                     onDownload={downloadNodeImage}
                     onSaveAsset={(node) => void saveNodeAsset(node)}
+                    onVideoAnalysis={(node) => openVideoCreativePanel(node, "analysis")}
+                    onViralVideo={(node) => openVideoCreativePanel(node, "viral")}
                     onMaskEdit={(node) => setMaskEditNodeId(node.id)}
                     onCrop={(node) => setCropNodeId(node.id)}
                     onSplit={(node) => setSplitNodeId(node.id)}
@@ -3337,8 +3335,6 @@ function InfiniteCanvasPage() {
                         setAssetPickerOpen(true);
                     }}
                     onOpenCommercePackage={() => setCommercePackageOpen(true)}
-                    onOpenVideoAnalysis={() => openVideoCreativePanel("analysis")}
-                    onOpenViralVideo={() => openVideoCreativePanel("viral")}
                 />
 
                 <CanvasCommercePackagePanel
@@ -3349,10 +3345,11 @@ function InfiniteCanvasPage() {
                 />
 
                 <CanvasVideoCreativePanel
-                    open={Boolean(videoCreativeMode)}
-                    defaultMode={videoCreativeMode || "analysis"}
-                    sourceVideo={selectedVideo}
-                    onClose={() => setVideoCreativeMode(null)}
+                    key={videoCreativeTarget ? `${videoCreativeTarget.nodeId}:${videoCreativeTarget.mode}` : "video-creative"}
+                    open={Boolean(videoCreativeTarget)}
+                    defaultMode={videoCreativeTarget?.mode || "analysis"}
+                    sourceVideo={videoCreativeSource}
+                    onClose={() => setVideoCreativeTarget(null)}
                     onRun={runVideoCreativeWorkflow}
                 />
 

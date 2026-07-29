@@ -1,7 +1,7 @@
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode, RefObject } from "react";
 import { useRef, useState } from "react";
 import { Button, Segmented, Switch } from "antd";
-import { CircleDot, Eraser, Flame, FolderOpen, Grid2x2, Hand, Image as ImageIcon, Info, Library, Moon, Music2, PackageCheck, Palette, Redo2, ScanSearch, Settings2, Square, Sun, Trash2, Type, Undo2, Upload, Video } from "lucide-react";
+import { CircleDot, Eraser, FolderOpen, Grid2x2, Hand, Image as ImageIcon, Info, Library, Moon, Music2, PackageCheck, Palette, Redo2, Settings2, Square, Sun, Trash2, Type, Undo2, Upload, Video } from "lucide-react";
 
 import { canvasThemes, type CanvasBackgroundMode, type CanvasColorTheme, type CanvasTheme } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -29,8 +29,6 @@ export function CanvasToolbar({
     onOpenAssetLibrary,
     onOpenMyAssets,
     onOpenCommercePackage,
-    onOpenVideoAnalysis,
-    onOpenViralVideo,
 }: {
     selectedCount: number;
     canUndo: boolean;
@@ -53,8 +51,6 @@ export function CanvasToolbar({
     onOpenAssetLibrary: () => void;
     onOpenMyAssets: () => void;
     onOpenCommercePackage: () => void;
-    onOpenVideoAnalysis: () => void;
-    onOpenViralVideo: () => void;
 }) {
     const wrapRef = useRef<HTMLDivElement>(null);
     const colorTheme = useThemeStore((state) => state.theme);
@@ -100,12 +96,6 @@ export function CanvasToolbar({
                 </ToolbarButton>
                 <ToolbarButton id="tool-commerce-package" label="一键电商素材包" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onOpenCommercePackage}>
                     <PackageCheck className="size-4.5" />
-                </ToolbarButton>
-                <ToolbarButton id="tool-video-analysis" label="视频解析" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onOpenVideoAnalysis}>
-                    <ScanSearch className="size-4.5" />
-                </ToolbarButton>
-                <ToolbarButton id="tool-viral-video" label="一键爆款" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onOpenViralVideo}>
-                    <Flame className="size-4.5" />
                 </ToolbarButton>
                 <ToolbarButton id="tool-upload" label="上传素材" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onUpload}>
                     <Upload className="size-4.5" />
@@ -302,8 +292,6 @@ function toolLabel(id: string) {
     if (id === "tool-audio") return "音频";
     if (id === "tool-config") return "生成配置";
     if (id === "tool-commerce-package") return "一键电商素材包";
-    if (id === "tool-video-analysis") return "视频解析";
-    if (id === "tool-viral-video") return "一键爆款";
     if (id === "tool-upload") return "上传素材";
     if (id === "tool-library") return "素材库";
     if (id === "tool-assets") return "商品素材";

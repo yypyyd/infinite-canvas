@@ -256,6 +256,7 @@ function InfiniteCanvasPage() {
     const lastSavedProjectRef = useRef<CanvasSaveSnapshot | null>(null);
     const historyCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const canvasSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const restoreRequestRef = useRef(0);
     const applyingHistoryRef = useRef(false);
     const historyPausedRef = useRef(false);
     const didInitialCenterRef = useRef(false);
@@ -377,6 +378,7 @@ function InfiniteCanvasPage() {
 
     const saveCanvas = useCallback(
         (successText = "画布已保存", nextAutoSaveEnabled = autoSaveEnabled) => {
+            restoreRequestRef.current += 1;
             if (canvasSaveTimerRef.current) {
                 clearTimeout(canvasSaveTimerRef.current);
                 canvasSaveTimerRef.current = null;
@@ -464,10 +466,16 @@ function InfiniteCanvasPage() {
         [modal, stopGenerationByRunningId],
     );
 
-    const restoreProjectState = useCallback(async (project: CanvasProject) => {
+    const restoreProjectState = useCallback(async (project: CanvasProject, preserveLocalChanges = false) => {
+        const restoreRequest = ++restoreRequestRef.current;
+        const savedProject = lastSavedProjectRef.current;
         const hadInterruptedGeneration = project.nodes.some((node) => node.metadata?.status === NODE_STATUS_LOADING);
-        const restoredNodes = await hydrateCanvasImages(resetInterruptedGeneration(project.nodes));
-        const restoredSessions = await hydrateAssistantImages(project.chatSessions || []);
+        const [restoredNodes, restoredSessions] = await Promise.all([
+            hydrateCanvasImages(resetInterruptedGeneration(project.nodes)),
+            hydrateAssistantImages(project.chatSessions || []),
+        ]);
+        if (restoreRequest !== restoreRequestRef.current) return;
+        if (preserveLocalChanges && (generationRequestsRef.current.size || hasUnsavedChangesRef.current || lastSavedProjectRef.current !== savedProject)) return;
         setNodes(restoredNodes);
         setConnections(project.connections);
         setChatSessions(restoredSessions);
@@ -524,7 +532,7 @@ function InfiniteCanvasPage() {
         const handleProjectsReplaced = () => {
             if (generationRequestsRef.current.size || hasUnsavedChangesRef.current) return;
             const project = useCanvasStore.getState().projects.find((item) => item.id === projectId);
-            if (project) void restoreProjectState(project);
+            if (project) void restoreProjectState(project, true);
         };
         window.addEventListener(CANVAS_PROJECTS_REPLACED_EVENT, handleProjectsReplaced);
         return () => window.removeEventListener(CANVAS_PROJECTS_REPLACED_EVENT, handleProjectsReplaced);
@@ -570,14 +578,16 @@ function InfiniteCanvasPage() {
         const previous = lastSavedProjectRef.current;
         if (previous && isSameSaveSnapshot(previous, next)) return;
 
+        restoreRequestRef.current += 1;
+        hasUnsavedChangesRef.current = true;
+        setHasUnsavedChanges(true);
+
         if (canvasSaveTimerRef.current) {
             clearTimeout(canvasSaveTimerRef.current);
             canvasSaveTimerRef.current = null;
         }
 
         if (!autoSaveEnabled) {
-            hasUnsavedChangesRef.current = true;
-            setHasUnsavedChanges(true);
             return;
         }
 
@@ -609,6 +619,7 @@ function InfiniteCanvasPage() {
     }, [chatSessions, projectLoaded]);
 
     useLayoutEffect(() => {
+        if (projectLoaded) restoreRequestRef.current += 1;
         nodesRef.current = nodes;
         connectionsRef.current = connections;
         selectedNodeIdsRef.current = selectedNodeIds;
@@ -616,7 +627,7 @@ function InfiniteCanvasPage() {
         connectingParamsRef.current = connectingParams;
         connectionTargetNodeIdRef.current = connectionTargetNodeId;
         pendingConnectionCreateRef.current = pendingConnectionCreate;
-    }, [nodes, connections, selectedNodeIds, viewport, connectingParams, connectionTargetNodeId, pendingConnectionCreate]);
+    }, [nodes, connections, selectedNodeIds, viewport, connectingParams, connectionTargetNodeId, pendingConnectionCreate, projectLoaded]);
 
     useLayoutEffect(() => {
         selectionBoxRef.current = selectionBox;

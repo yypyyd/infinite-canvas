@@ -218,11 +218,13 @@ function buildVideoCreativePrompt(mode: VideoCreativeMode, context: { platform: 
 function parseVideoCreativeResult(answer: string, mode: VideoCreativeMode) {
     const normalized = answer.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
     if (!normalized) throw new Error("视频解析没有返回内容");
+    const jsonCandidate = normalized.startsWith("{") ? normalized : normalized.match(/\{[\s\S]*\}/)?.[0] || normalized;
     let value: { analysis?: unknown; script?: unknown; videoPrompt?: unknown };
     try {
-        value = JSON.parse(normalized) as { analysis?: unknown; script?: unknown; videoPrompt?: unknown };
+        value = JSON.parse(jsonCandidate) as { analysis?: unknown; script?: unknown; videoPrompt?: unknown };
     } catch {
-        return { analysis: normalized, script: mode === "viral" ? normalized : "", videoPrompt: mode === "viral" ? normalized : "" };
+        if (mode === "viral") throw new Error("爆款方案格式不完整，请重新生成");
+        return { analysis: normalized, script: "", videoPrompt: "" };
     }
     const analysis = typeof value.analysis === "string" ? value.analysis.trim() : "";
     const script = typeof value.script === "string" ? value.script.trim() : "";

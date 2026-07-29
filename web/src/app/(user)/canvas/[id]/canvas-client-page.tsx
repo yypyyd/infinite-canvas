@@ -8,7 +8,7 @@ import { saveAs } from "file-saver";
 
 import { requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
-import { requestVideoGeneration, storeGeneratedVideo } from "@/services/api/video";
+import { requestVideoCreativeAnalysis, requestVideoGeneration, storeGeneratedVideo, type VideoCreativeMode } from "@/services/api/video";
 import { workspaceFileUrl } from "@/services/api/workspace";
 import { defaultConfig, type AiConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { resolveImageUrl, uploadImage, type UploadedImage } from "@/services/image-storage";
@@ -31,6 +31,7 @@ import { ActiveConnectionPath, ConnectionPath } from "../components/canvas-conne
 import { CanvasConfigComposer } from "../components/canvas-config-composer";
 import { CanvasConfigNodePanel } from "../components/canvas-config-node-panel";
 import { CanvasCommercePackagePanel } from "../components/canvas-commerce-package-panel";
+import { CanvasVideoCreativePanel, type VideoCreativeRequest } from "../components/canvas-video-creative-panel";
 import { buildCommercePackageBlueprint, type CommercePackageRequest } from "../components/canvas-commerce-package";
 import { CanvasAssistantPanel } from "../components/canvas-assistant-panel";
 import { CanvasNodeContextMenu } from "../components/canvas-context-menu";
@@ -315,6 +316,7 @@ function InfiniteCanvasPage() {
     const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
     const [assetPickerOpen, setAssetPickerOpen] = useState(false);
     const [commercePackageOpen, setCommercePackageOpen] = useState(false);
+    const [videoCreativeMode, setVideoCreativeMode] = useState<VideoCreativeMode | null>(null);
     const [assetPickerTab, setAssetPickerTab] = useState<AssetPickerTab>("my-assets");
     const [projectLoaded, setProjectLoaded] = useState(false);
     const [toolbarNodeId, setToolbarNodeId] = useState<string | null>(null);
@@ -2538,6 +2540,110 @@ function InfiniteCanvasPage() {
         [effectiveConfig, getCanvasCenter, handleGenerateNode, message],
     );
 
+    const selectedVideo = useMemo(() => {
+        const selected = nodes.filter((node) => selectedNodeIds.has(node.id) && node.type === CanvasNodeType.Video && node.metadata?.content);
+        return selected.length === 1 ? selected[0] : null;
+    }, [nodes, selectedNodeIds]);
+
+    const openVideoCreativePanel = useCallback(
+        (mode: VideoCreativeMode) => {
+            const selectedCount = nodesRef.current.filter((node) => selectedNodeIdsRef.current.has(node.id) && node.type === CanvasNodeType.Video && node.metadata?.content).length;
+            if (selectedCount !== 1) message.info("请先选择一个包含内容的视频节点");
+            setVideoCreativeMode(mode);
+        },
+        [message],
+    );
+
+    const runVideoCreativeWorkflow = useCallback(
+        async (request: VideoCreativeRequest) => {
+            const source = nodesRef.current.find((node) => selectedNodeIdsRef.current.has(node.id) && node.type === CanvasNodeType.Video && node.metadata?.content);
+            if (!source?.metadata?.content) {
+                message.warning("请先选择一个包含内容的视频节点");
+                return;
+            }
+            const analysisConfig = { ...effectiveConfig, model: effectiveConfig.textModel || effectiveConfig.model || defaultConfig.textModel };
+            if (!isAiConfigReady(analysisConfig, analysisConfig.model)) {
+                openConfigDialog(true);
+                return;
+            }
+            try {
+                const result = await requestVideoCreativeAnalysis(analysisConfig, source.metadata.content, request.mode, request);
+                const gap = 96;
+                const centerY = source.position.y + source.height / 2;
+                const analysisNode = {
+                    ...createCanvasNode(CanvasNodeType.Text, { x: source.position.x + source.width + gap + 190, y: centerY }, { content: result.analysis, prompt: result.analysis, status: NODE_STATUS_SUCCESS, fontSize: 14 }),
+                    title: "视频解析报告",
+                    width: 380,
+                    height: 300,
+                };
+                const additions: CanvasNodeData[] = [analysisNode];
+                const links: CanvasConnection[] = [{ id: nanoid(), fromNodeId: source.id, toNodeId: analysisNode.id }];
+                let configNodeId = "";
+                let generationPrompt = result.videoPrompt;
+
+                if (request.mode === "viral") {
+                    const scriptNode = {
+                        ...createCanvasNode(CanvasNodeType.Text, { x: analysisNode.position.x + analysisNode.width + gap + 190, y: centerY }, { content: result.script, prompt: result.script, status: NODE_STATUS_SUCCESS, fontSize: 14 }),
+                        title: "爆款改编脚本",
+                        width: 380,
+                        height: 360,
+                    };
+                    let composerContent = `爆款脚本：@[node:${scriptNode.id}]\n\n成片要求：${result.videoPrompt}`;
+                    const configNode = {
+                        ...createCanvasNode(CanvasNodeType.Config, { x: scriptNode.position.x + scriptNode.width + gap + NODE_DEFAULT_SIZE[CanvasNodeType.Config].width / 2, y: centerY }, {
+                            generationMode: "video",
+                            model: effectiveConfig.videoModel || effectiveConfig.model,
+                            size: effectiveConfig.size,
+                            seconds: effectiveConfig.videoSeconds,
+                            vquality: effectiveConfig.vquality,
+                            composerContent,
+                            prompt: composerContent,
+                        }),
+                        title: "爆款视频配置",
+                    };
+                    configNodeId = configNode.id;
+                    additions.push(scriptNode, configNode);
+                    links.push({ id: nanoid(), fromNodeId: analysisNode.id, toNodeId: scriptNode.id }, { id: nanoid(), fromNodeId: scriptNode.id, toNodeId: configNode.id });
+
+                    if (result.frames[0]) {
+                        const keyframe = await uploadImage(result.frames[0]);
+                        const frameSize = fitNodeSize(keyframe.width, keyframe.height, 240, 180);
+                        const frameNode: CanvasNodeData = {
+                            id: nanoid(),
+                            type: CanvasNodeType.Image,
+                            title: "爆款首帧参考",
+                            position: { x: scriptNode.position.x, y: scriptNode.position.y + scriptNode.height + 48 },
+                            width: frameSize.width,
+                            height: frameSize.height,
+                            metadata: { ...imageMetadata(keyframe), prompt: "从参考视频提取的首帧", status: NODE_STATUS_SUCCESS },
+                        };
+                        additions.push(frameNode);
+                        links.push({ id: nanoid(), fromNodeId: frameNode.id, toNodeId: configNode.id });
+                        composerContent = `视觉参考：@[node:${frameNode.id}]\n爆款脚本：@[node:${scriptNode.id}]\n\n成片要求：${result.videoPrompt}`;
+                        configNode.metadata = { ...configNode.metadata, composerContent, prompt: composerContent };
+                    }
+                    generationPrompt = composerContent;
+                }
+
+                const nextNodes = [...nodesRef.current, ...additions];
+                const nextConnections = [...connectionsRef.current, ...links];
+                nodesRef.current = nextNodes;
+                connectionsRef.current = nextConnections;
+                setNodes(nextNodes);
+                setConnections(nextConnections);
+                setSelectedNodeIds(new Set(request.mode === "viral" && configNodeId ? [configNodeId] : [analysisNode.id]));
+                setSelectedConnectionId(null);
+                setDialogNodeId(request.mode === "viral" ? configNodeId : null);
+                setVideoCreativeMode(null);
+                message.success(request.mode === "viral" ? "爆款脚本与视频配置已加入画布" : "视频解析报告已加入画布");
+                if (request.mode === "viral" && request.generateNow && configNodeId) await handleGenerateNode(configNodeId, "video", generationPrompt);
+            } catch (error) {
+                message.error(error instanceof Error ? error.message : "视频解析失败");
+            }
+        },
+        [effectiveConfig, handleGenerateNode, isAiConfigReady, message, openConfigDialog],
+    );
+
     const handleRetryNode = useCallback(
         async (node: CanvasNodeData) => {
             const sourceNode = findRetrySourceNode(node.id, nodesRef.current, connectionsRef.current) || node;
@@ -3231,6 +3337,8 @@ function InfiniteCanvasPage() {
                         setAssetPickerOpen(true);
                     }}
                     onOpenCommercePackage={() => setCommercePackageOpen(true)}
+                    onOpenVideoAnalysis={() => openVideoCreativePanel("analysis")}
+                    onOpenViralVideo={() => openVideoCreativePanel("viral")}
                 />
 
                 <CanvasCommercePackagePanel
@@ -3238,6 +3346,14 @@ function InfiniteCanvasPage() {
                     selectedImageCount={nodes.filter((node) => selectedNodeIds.has(node.id) && node.type === CanvasNodeType.Image && node.metadata?.content).length}
                     onClose={() => setCommercePackageOpen(false)}
                     onCreate={createCommercePackage}
+                />
+
+                <CanvasVideoCreativePanel
+                    open={Boolean(videoCreativeMode)}
+                    defaultMode={videoCreativeMode || "analysis"}
+                    sourceVideo={selectedVideo}
+                    onClose={() => setVideoCreativeMode(null)}
+                    onRun={runVideoCreativeWorkflow}
                 />
 
                 {isMiniMapOpen ? <Minimap nodes={displayNodes} viewport={viewport} viewportSize={size} onViewportChange={setViewport} /> : null}

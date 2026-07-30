@@ -36,7 +36,7 @@ func TestFetchAdminChannelModelsParsesOpenAIModels(t *testing.T) {
 			t.Fatalf("unexpected query: %s", r.URL.RawQuery)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"z-model","kind":"text"},{"id":"a-model","kind":"video","supported_ratios":["16:9"],"supported_resolutions":["1280x720","1080p"],"supported_durations":["10s",5,"5s","invalid"]},{"id":""}]}`))
+		_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"z-model","kind":"text"},{"id":"a-model","kind":"video","supported_ratios":["16:9"],"supported_resolutions":["1280x720","1080p"],"supported_durations":["10s",5,"5s","invalid"],"max_reference_images":2,"reference_mode":"frame"},{"id":""}]}`))
 	}))
 	defer server.Close()
 
@@ -48,8 +48,8 @@ func TestFetchAdminChannelModelsParsesOpenAIModels(t *testing.T) {
 		t.Fatalf("fetchAdminChannelModels returned error: %v", err)
 	}
 	if want := []model.DiscoveredModel{
-		{ID: "a-model", Kind: "video", Modality: "video", SupportedRatios: []string{"16:9"}, SupportedResolutions: []string{"720p", "1080p"}, SupportedDurations: []int{5, 10}},
-		{ID: "z-model", Kind: "text", Modality: "text", SupportedRatios: []string{}, SupportedResolutions: []string{}, SupportedDurations: []int{}},
+		{ID: "a-model", Kind: "video", Modality: "video", SupportedRatios: []string{"16:9"}, SupportedResolutions: []string{"720p", "1080p"}, SupportedDurations: []int{5, 10}, MaxReferenceImages: 2, ReferenceMode: "frame", ReferenceCapabilityProvided: true},
+		{ID: "z-model", Kind: "text", Modality: "text", SupportedRatios: []string{}, SupportedResolutions: []string{}, SupportedDurations: []int{}, ReferenceMode: "none"},
 	}; !reflect.DeepEqual(models, want) {
 		t.Fatalf("models = %#v, want %#v", models, want)
 	}
@@ -99,12 +99,12 @@ func TestPublicAPIModelsReturnsOnlyEnabledNonTextModels(t *testing.T) {
 		Models: []model.ModelDefinition{
 			{ID: "text-model", Name: "Text", Modality: "text", Enabled: true},
 			{ID: "image-model", Name: "Image", Modality: "image", Operations: []string{"generation", "edit"}, ResolutionTiers: []string{"1k", "2k"}, Enabled: true},
-			{ID: "video-model", Name: "Video", Modality: "video", Operations: []string{"generation"}, ResolutionTiers: []string{"720p"}, Durations: []int{5, 10}, Enabled: true},
+			{ID: "video-model", Name: "Video", Modality: "video", Operations: []string{"generation"}, ResolutionTiers: []string{"720p"}, Durations: []int{5, 10}, MaxReferenceImages: 2, ReferenceMode: "frame", Enabled: true},
 			{ID: "audio-model", Name: "Audio", Modality: "audio", Operations: []string{"speech"}, Enabled: false},
 		},
 	})
 
-	if len(items) != 2 || items[0].ID != "image-model" || items[0].Object != "model" || items[0].OwnedBy != "infinite-canvas" || items[1].ID != "video-model" || !reflect.DeepEqual(items[1].Durations, []int{5, 10}) {
+	if len(items) != 2 || items[0].ID != "image-model" || items[0].Object != "model" || items[0].OwnedBy != "infinite-canvas" || items[1].ID != "video-model" || !reflect.DeepEqual(items[1].Durations, []int{5, 10}) || items[1].MaxReferenceImages != 2 || items[1].ReferenceMode != "frame" {
 		t.Fatalf("public API models = %#v", items)
 	}
 }
@@ -138,8 +138,8 @@ func TestNormalizeSettingsMergesEnabledChannelCapabilitiesIntoCatalog(t *testing
 			AspectRatios: []string{"4:3"}, ResolutionTiers: []string{"480p"}, Durations: []int{4}, Remark: "public model",
 		}}}},
 		Private: model.PrivateSetting{Channels: []model.ModelChannel{
-			{Enabled: true, Models: []model.ChannelModel{{Model: "firefly-ray", Modality: "video", AspectRatios: []string{"16:9", "21:9"}, ResolutionTiers: []string{"720p"}, Durations: []int{5}}}},
-			{Enabled: true, Models: []model.ChannelModel{{Model: "firefly-ray", Modality: "video", AspectRatios: []string{"9:16", "16:9"}, ResolutionTiers: []string{"1080p"}, Durations: []int{10, 5}}}},
+			{Enabled: true, Models: []model.ChannelModel{{Model: "firefly-ray", Modality: "video", AspectRatios: []string{"16:9", "21:9"}, ResolutionTiers: []string{"720p"}, Durations: []int{5}, MaxReferenceImages: 2, ReferenceMode: "frame"}}},
+			{Enabled: true, Models: []model.ChannelModel{{Model: "firefly-ray", Modality: "video", AspectRatios: []string{"9:16", "16:9"}, ResolutionTiers: []string{"1080p"}, Durations: []int{10, 5}, MaxReferenceImages: 6, ReferenceMode: "asset"}}},
 			{Enabled: true, Models: []model.ChannelModel{{Model: "firefly-ray", Modality: "image", Operations: []string{"edit"}, AspectRatios: []string{"3:2"}, ResolutionTiers: []string{"2k"}}}},
 			{Enabled: false, Models: []model.ChannelModel{{Model: "firefly-ray", Modality: "video", AspectRatios: []string{"1:1"}, ResolutionTiers: []string{"480p"}, Durations: []int{20}}}},
 		}},
@@ -157,6 +157,19 @@ func TestNormalizeSettingsMergesEnabledChannelCapabilitiesIntoCatalog(t *testing
 	}
 	if want := []int{5, 10}; !reflect.DeepEqual(got.Durations, want) {
 		t.Fatalf("durations = %#v, want %#v", got.Durations, want)
+	}
+	if got.MaxReferenceImages != 6 || got.ReferenceMode != "asset" {
+		t.Fatalf("reference capability = %d/%q, want 6/asset", got.MaxReferenceImages, got.ReferenceMode)
+	}
+}
+
+func TestChannelModelSupportsReferenceImageLimit(t *testing.T) {
+	item := model.ChannelModel{Model: "video-model", Modality: "video", Operations: []string{"generation"}, Durations: []int{5}, MaxReferenceImages: 6, ReferenceMode: "frame"}
+	if !channelModelSupportsRequest(item, PricingRequest{Model: "video-model", Modality: "video", Operation: "generation", Quantity: 5, ReferenceImages: 6}) {
+		t.Fatal("expected six reference images to be supported")
+	}
+	if channelModelSupportsRequest(item, PricingRequest{Model: "video-model", Modality: "video", Operation: "generation", Quantity: 5, ReferenceImages: 7}) {
+		t.Fatal("expected seven reference images to be rejected")
 	}
 }
 

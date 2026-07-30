@@ -72,6 +72,7 @@ export default function VideoPage() {
     const { message } = App.useApp();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const config = useConfigStore((state) => state.config);
+    const managedModels = useConfigStore((state) => state.publicSettings?.modelChannel.models);
     const effectiveConfig = useEffectiveConfig();
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
@@ -96,7 +97,8 @@ export default function VideoPage() {
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
     const model = effectiveConfig.videoModel || effectiveConfig.model;
-    const referenceCapabilities = videoReferenceCapabilities(model);
+    const referenceCapabilities = videoReferenceCapabilities(model, managedModels);
+    const imageReferenceLimit = referenceCapabilities.maxImages;
     const referenceAccept = [referenceCapabilities.image ? "image/*" : "", referenceCapabilities.video ? "video/mp4,video/quicktime" : "", referenceCapabilities.audio ? "audio/mpeg,audio/wav,audio/x-wav,.mp3,.wav" : ""].filter(Boolean).join(",");
     const canGenerate = Boolean(prompt.trim());
 
@@ -119,11 +121,15 @@ export default function VideoPage() {
         return () => window.removeEventListener(GENERATION_HISTORY_CHANGED_EVENT, refresh);
     }, [historyOwnerId]);
 
+    useEffect(() => {
+        setReferences((current) => current.slice(0, imageReferenceLimit));
+    }, [imageReferenceLimit]);
+
     const addReferences = async (files?: FileList | null) => {
         const selectedFiles = Array.from(files || []);
         const unsupported = selectedFiles.filter((file) => (file.type.startsWith("image/") ? !referenceCapabilities.image : file.type.startsWith("video/") ? !referenceCapabilities.video : isSupportedAudioFile(file) ? !referenceCapabilities.audio : true));
         if (unsupported.length) message.warning("已忽略当前模型不支持的参考素材");
-        const imageFiles = referenceCapabilities.image ? selectedFiles.filter((file) => file.type.startsWith("image/") && file.size <= VIDEO_REFERENCE_LIMITS.imageMaxBytes).slice(0, VIDEO_REFERENCE_LIMITS.images - references.length) : [];
+        const imageFiles = referenceCapabilities.image ? selectedFiles.filter((file) => file.type.startsWith("image/") && file.size <= VIDEO_REFERENCE_LIMITS.imageMaxBytes).slice(0, Math.max(0, imageReferenceLimit - references.length)) : [];
         const videoFiles = referenceCapabilities.video ? selectedFiles.filter((file) => file.type.startsWith("video/") && file.size <= VIDEO_REFERENCE_LIMITS.videoMaxBytes).slice(0, VIDEO_REFERENCE_LIMITS.videos - videoReferences.length) : [];
         const audioFiles = referenceCapabilities.audio ? selectedFiles.filter((file) => isSupportedAudioFile(file) && file.size <= VIDEO_REFERENCE_LIMITS.audioMaxBytes).slice(0, VIDEO_REFERENCE_LIMITS.audios - audioReferences.length) : [];
         if (referenceCapabilities.image && selectedFiles.some((file) => file.type.startsWith("image/") && file.size > VIDEO_REFERENCE_LIMITS.imageMaxBytes)) message.warning("已忽略超过 30MB 的参考图");
@@ -149,7 +155,7 @@ export default function VideoPage() {
             ),
             message.warning,
         );
-        setReferences((value) => [...value, ...nextReferences].slice(0, VIDEO_REFERENCE_LIMITS.images));
+        setReferences((value) => [...value, ...nextReferences].slice(0, imageReferenceLimit));
         setVideoReferences((value) => [...value, ...nextVideoReferences].slice(0, VIDEO_REFERENCE_LIMITS.videos));
         setAudioReferences((value) => [...value, ...nextAudioReferences].slice(0, VIDEO_REFERENCE_LIMITS.audios));
     };
@@ -167,12 +173,12 @@ export default function VideoPage() {
                 return;
             }
             const nextReferences = await Promise.all(
-                blobs.slice(0, VIDEO_REFERENCE_LIMITS.images - references.length).map(async (blob, index) => {
+                blobs.slice(0, Math.max(0, imageReferenceLimit - references.length)).map(async (blob, index) => {
                     const image = await uploadImage(blob);
                     return { id: nanoid(), name: `clipboard-${index + 1}.png`, type: image.mimeType, dataUrl: image.url, storageKey: image.storageKey };
                 }),
             );
-            setReferences((value) => [...value, ...nextReferences].slice(0, VIDEO_REFERENCE_LIMITS.images));
+            setReferences((value) => [...value, ...nextReferences].slice(0, imageReferenceLimit));
             message.success(`已读取 ${nextReferences.length} 张参考图`);
         } catch {
             message.error("剪切板里没有可读取的图片");
@@ -281,7 +287,7 @@ export default function VideoPage() {
             setPrompt(payload.content);
         } else if (payload.kind === "image" && referenceCapabilities.image) {
             const stored = await uploadImage(payload.dataUrl);
-            setReferences((value) => [...value, { id: nanoid(), name: payload.title, type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey }].slice(0, VIDEO_REFERENCE_LIMITS.images));
+            setReferences((value) => [...value, { id: nanoid(), name: payload.title, type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey }].slice(0, imageReferenceLimit));
         } else if (payload.kind === "video" && referenceCapabilities.video) {
             setVideoReferences((value) => [...value, { id: nanoid(), name: payload.title, type: "video/mp4", url: payload.url, storageKey: payload.storageKey, width: payload.width, height: payload.height }].slice(0, VIDEO_REFERENCE_LIMITS.videos));
         } else {
@@ -388,10 +394,10 @@ export default function VideoPage() {
                                     <div className="mb-2 flex items-center justify-between gap-3">
                                         <span className="text-base font-semibold">参考图</span>
                                         <div className="flex gap-2">
-                                            <Button size="small" icon={<ClipboardPaste className="size-3.5" />} onClick={() => void addReferencesFromClipboard()}>
+                                            <Button size="small" disabled={references.length >= imageReferenceLimit} icon={<ClipboardPaste className="size-3.5" />} onClick={() => void addReferencesFromClipboard()}>
                                                 剪切板
                                             </Button>
-                                            <Button size="small" icon={<Upload className="size-3.5" />} onClick={() => fileInputRef.current?.click()}>
+                                            <Button size="small" disabled={references.length >= imageReferenceLimit} icon={<Upload className="size-3.5" />} onClick={() => fileInputRef.current?.click()}>
                                                 上传
                                             </Button>
                                         </div>
@@ -412,7 +418,7 @@ export default function VideoPage() {
                                                 </button>
                                             </div>
                                         ))}
-                                        {!references.length ? <div className="flex min-w-full items-center justify-center text-sm text-stone-500">暂无参考图，最多 1 张</div> : null}
+                                        {!references.length ? <div className="flex min-w-full items-center justify-center text-sm text-stone-500">暂无参考图，最多 {imageReferenceLimit} 张</div> : null}
                                     </div>
                                 </div>
                             ) : null}

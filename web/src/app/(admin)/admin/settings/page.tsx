@@ -509,6 +509,8 @@ function normalizeManagedModels(items: Partial<AdminManagedModel>[], availableMo
                   aspectRatios: aspectRatios[model] || inferModelAspectRatios(model),
                   resolutionTiers: defaultResolutionTiers(modality),
                   durations: [],
+                  maxReferenceImages: 0,
+                  referenceMode: "none" as const,
                   remark: "",
               };
           });
@@ -530,6 +532,8 @@ function normalizeManagedModels(items: Partial<AdminManagedModel>[], availableMo
                 aspectRatios: supportsResolution ? Array.from(new Set((item.aspectRatios || []).map(normalizePricingToken).filter(Boolean))) : [],
                 resolutionTiers: supportsResolution ? Array.from(new Set((item.resolutionTiers || []).map(normalizeResolutionTier).filter(Boolean))) : [],
                 durations: modality === "video" ? normalizeDurations(item.durations) : [],
+                maxReferenceImages: supportsResolution ? Math.max(0, Math.floor(Number(item.maxReferenceImages) || 0)) : 0,
+                referenceMode: supportsResolution ? normalizeReferenceMode(item.referenceMode) : "none",
                 remark: item.remark || "",
             } as AdminManagedModel;
         })
@@ -653,6 +657,8 @@ function normalizeChannelModels(items: Partial<AdminChannelModel>[] = []): Admin
                 aspectRatios: Array.from(new Set((item.aspectRatios || []).map(normalizePricingToken).filter(Boolean))),
                 resolutionTiers: Array.from(new Set((item.resolutionTiers || []).map(normalizeResolutionTier).filter(Boolean))),
                 durations: normalizeDurations(item.durations),
+                maxReferenceImages: Math.max(0, Math.floor(Number(item.maxReferenceImages) || 0)),
+                referenceMode: normalizeReferenceMode(item.referenceMode),
             },
         ];
     });
@@ -693,6 +699,10 @@ function normalizeResolutionTier(value: string) {
     return normalized;
 }
 
+function normalizeReferenceMode(value?: string): "frame" | "asset" | "none" {
+    return value === "frame" || value === "asset" ? value : "none";
+}
+
 function mergeChannelApiKeys(currentChannels: AdminModelChannel[], saved: AdminSettings): AdminSettings {
     const channels = saved.private.channels.map((item, index) => ({
         ...item,
@@ -708,6 +718,7 @@ function collectChannelModels(channels: AdminModelChannel[]) {
     const models = new Map<string, AdminChannelModel>();
     for (const item of channels.filter((channel) => channel.enabled).flatMap((channel) => channel.models || [])) {
         const current = models.get(item.model);
+        const useIncomingReference = !!current && (item.maxReferenceImages > current.maxReferenceImages || (item.maxReferenceImages === current.maxReferenceImages && current.referenceMode === "none" && item.referenceMode !== "none"));
         models.set(item.model, current ? {
             ...current,
             modality: current.modality || item.modality,
@@ -715,6 +726,8 @@ function collectChannelModels(channels: AdminModelChannel[]) {
             aspectRatios: Array.from(new Set([...current.aspectRatios, ...item.aspectRatios])),
             resolutionTiers: Array.from(new Set([...current.resolutionTiers, ...item.resolutionTiers])),
             durations: normalizeDurations([...current.durations, ...item.durations]),
+            maxReferenceImages: Math.max(current.maxReferenceImages, item.maxReferenceImages),
+            referenceMode: useIncomingReference ? item.referenceMode : current.referenceMode,
         } : item);
     }
     return [...models.values()];

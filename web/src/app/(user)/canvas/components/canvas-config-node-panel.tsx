@@ -40,7 +40,7 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
     const baseConfig = buildNodeConfig(globalConfig, node, mode);
     const config = mode === "video" ? resolveCanvasVideoConfig(baseConfig, managedModels) : baseConfig;
     const imageSupportsReferences = supportsImageReferences(config.model, managedModels);
-    const videoCapabilities = videoReferenceCapabilities(config.model);
+    const videoCapabilities = videoReferenceCapabilities(config.model, managedModels);
     const supportsImageInput = mode === "text" || (mode === "image" && imageSupportsReferences) || (mode === "video" && videoCapabilities.image);
     const supportsVideoInput = mode === "video" && videoCapabilities.video;
     const supportsAudioInput = mode === "video" && videoCapabilities.audio;

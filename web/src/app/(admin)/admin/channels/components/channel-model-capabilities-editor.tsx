@@ -1,7 +1,7 @@
 "use client";
 
 import { DeleteOutlined } from "@ant-design/icons";
-import { Alert, Button, Card, Col, Empty, Flex, Form, Input, Row, Select, Tag, Typography } from "antd";
+import { Alert, Button, Card, Col, Empty, Flex, Form, Input, InputNumber, Row, Select, Tag, Typography } from "antd";
 import { useMemo } from "react";
 
 import type { AdminChannelModel, AdminManagedModel } from "@/services/api/admin";
@@ -17,6 +17,11 @@ const imageResolutionOptions = ["1k", "2k", "4k"];
 const videoResolutionOptions = ["480p", "720p", "1080p"];
 const videoDurationOptions = [4, 5, 6, 8, 10, 12, 15, 16, 20];
 const aspectRatioOptions = ["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "21:9"];
+const referenceModeOptions = [
+    { label: "帧参考（frame）", value: "frame" },
+    { label: "素材参考（asset）", value: "asset" },
+    { label: "不支持（none）", value: "none" },
+];
 
 export function ChannelModelCapabilitiesEditor({ managedModels }: { managedModels: AdminManagedModel[] }) {
     const channelModels = (Form.useWatch("models") || []) as AdminChannelModel[];
@@ -24,7 +29,7 @@ export function ChannelModelCapabilitiesEditor({ managedModels }: { managedModel
 
     return (
         <Flex vertical gap={12}>
-            <Alert type="info" showIcon title="渠道只声明上游能力" description="模型售价和对外开放能力仍在模型中心统一维护；这里配置当前渠道实际能处理的类型、操作、比例、分辨率和时长，路由会先匹配能力再按渠道权重选择。" />
+            <Alert type="info" showIcon title="渠道只声明上游能力" description="模型售价和对外开放能力仍在模型中心统一维护；这里配置当前渠道实际能处理的类型、操作、比例、分辨率、时长和参考图数量，路由会先匹配能力再按渠道权重选择。" />
             <Form.List name="models">
                 {(fields, { remove }) =>
                     fields.length ? (
@@ -35,6 +40,7 @@ export function ChannelModelCapabilitiesEditor({ managedModels }: { managedModel
                                 const managedModel = managedModelMap.get(modelName);
                                 const modality = channelModel?.modality || managedModel?.modality || inferModelModality(modelName);
                                 const supportsResolution = modality === "image" || modality === "video";
+                                const supportsReferences = modality === "image" || modality === "video";
                                 const allowedOperations = new Set(allowedModelOperations(modality));
                                 const modelOperationOptions = managedModel ? operationOptions.filter((item) => allowedOperations.has(item.value)) : operationOptions;
                                 const canConfigureResolution = !managedModel || supportsResolution;
@@ -101,6 +107,20 @@ export function ChannelModelCapabilitiesEditor({ managedModels }: { managedModel
                                                         <Select mode="tags" tokenSeparators={[",", "\n"]} options={durationOptions} />
                                                     </Form.Item>
                                                 </Col>
+                                            ) : null}
+                                            {supportsReferences ? (
+                                                <>
+                                                    <Col xs={24} md={12}>
+                                                        <Form.Item name={[field.name, "maxReferenceImages"]} label="最多参考图" extra="填写 0 表示该渠道的这个模型不接受参考图；上游未返回能力时可在这里手工设置，例如 6 张。">
+                                                            <InputNumber min={0} precision={0} className="w-full" addonAfter="张" />
+                                                        </Form.Item>
+                                                    </Col>
+                                                    <Col xs={24} md={12}>
+                                                        <Form.Item name={[field.name, "referenceMode"]} label="参考模式" extra="frame 表示帧参考，asset 表示素材参考；不支持参考图时选择 none。">
+                                                            <Select options={referenceModeOptions} />
+                                                        </Form.Item>
+                                                    </Col>
+                                                </>
                                             ) : null}
                                         </Row>
                                     </Card>

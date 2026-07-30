@@ -1,5 +1,4 @@
 export const VIDEO_REFERENCE_LIMITS = {
-    images: 1,
     videos: 0,
     audios: 0,
     imageMaxBytes: 30 * 1024 * 1024,
@@ -7,8 +6,11 @@ export const VIDEO_REFERENCE_LIMITS = {
     audioMaxBytes: 0,
 };
 
-export function videoReferenceCapabilities(_model: string) {
-    return { image: true, video: false, audio: false };
+export type VideoModelDefinition = { id: string; maxReferenceImages?: number };
+
+export function videoReferenceCapabilities(model: string, definitions?: VideoModelDefinition[]) {
+    const maxImages = Math.max(0, Math.floor(Number(definitions?.find((item) => item.id === model)?.maxReferenceImages) || 0));
+    return { image: maxImages > 0, video: false, audio: false, maxImages };
 }
 
 export function videoReferenceLabel(kind: "image" | "video" | "audio", index: number) {

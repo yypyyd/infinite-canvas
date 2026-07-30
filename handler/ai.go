@@ -696,13 +696,14 @@ func cacheVideoGeneration(body []byte, mimeType string) string {
 }
 
 type aiRequestMeta struct {
-	ModelName      string
-	Count          int
-	Size           string
-	Quality        string
-	Resolution     string
-	ResolutionTier string
-	Duration       int
+	ModelName       string
+	Count           int
+	Size            string
+	Quality         string
+	Resolution      string
+	ResolutionTier  string
+	Duration        int
+	ReferenceImages int
 }
 
 func readAIRequest(r *http.Request) ([]byte, string, aiRequestMeta, error) {
@@ -807,13 +808,14 @@ func readMultipartAIRequest(body []byte, contentType string) aiRequestMeta {
 	}
 	defer form.RemoveAll()
 	return aiRequestMeta{
-		ModelName:      firstFormValue(form, "model"),
-		Count:          readIntValue(firstFormValue(form, "n"), 1),
-		Size:           firstFormValue(form, "size", "ratio"),
-		Quality:        firstFormValue(form, "quality"),
-		Resolution:     firstFormValue(form, "resolution_name", "resolution", "vquality"),
-		ResolutionTier: firstFormValue(form, "resolutionTier"),
-		Duration:       readIntValue(firstFormValue(form, "seconds", "duration", "videoSeconds"), 1),
+		ModelName:       firstFormValue(form, "model"),
+		Count:           readIntValue(firstFormValue(form, "n"), 1),
+		Size:            firstFormValue(form, "size", "ratio"),
+		Quality:         firstFormValue(form, "quality"),
+		Resolution:      firstFormValue(form, "resolution_name", "resolution", "vquality"),
+		ResolutionTier:  firstFormValue(form, "resolutionTier"),
+		Duration:        readIntValue(firstFormValue(form, "seconds", "duration", "videoSeconds"), 1),
+		ReferenceImages: len(form.File["image"]) + len(form.File["image[]"]) + len(form.File["input_reference"]) + len(form.File["input_reference[]"]),
 	}
 }
 
@@ -821,14 +823,29 @@ func readJSONAIRequest(body []byte) aiRequestMeta {
 	var payload map[string]any
 	_ = json.Unmarshal(body, &payload)
 	return aiRequestMeta{
-		ModelName:      readStringField(payload, "model"),
-		Count:          readIntField(payload, 1, "n"),
-		Size:           readStringField(payload, "size", "ratio"),
-		Quality:        readStringField(payload, "quality"),
-		Resolution:     readStringField(payload, "resolution", "resolution_name", "vquality"),
-		ResolutionTier: readStringField(payload, "resolutionTier"),
-		Duration:       readIntField(payload, 1, "duration", "seconds", "videoSeconds"),
+		ModelName:       readStringField(payload, "model"),
+		Count:           readIntField(payload, 1, "n"),
+		Size:            readStringField(payload, "size", "ratio"),
+		Quality:         readStringField(payload, "quality"),
+		Resolution:      readStringField(payload, "resolution", "resolution_name", "vquality"),
+		ResolutionTier:  readStringField(payload, "resolutionTier"),
+		Duration:        readIntField(payload, 1, "duration", "seconds", "videoSeconds"),
+		ReferenceImages: referenceImageCount(firstAnyValue(payload, "reference_images", "input_reference", "input_reference[]")),
 	}
+}
+
+func referenceImageCount(value any) int {
+	switch typed := value.(type) {
+	case []string:
+		return len(typed)
+	case []any:
+		return len(typed)
+	case string:
+		if strings.TrimSpace(typed) != "" {
+			return 1
+		}
+	}
+	return 0
 }
 
 func firstFormValue(form *multipart.Form, keys ...string) string {
@@ -881,11 +898,12 @@ func readIntValue(value string, defaultValue int) int {
 
 func pricingRequestForAIPath(path string, request aiRequestMeta) service.PricingRequest {
 	pricing := service.PricingRequest{
-		Model:          request.ModelName,
-		ResolutionTier: request.ResolutionTier,
-		Size:           request.Size,
-		Resolution:     request.Resolution,
-		Quantity:       1,
+		Model:           request.ModelName,
+		ResolutionTier:  request.ResolutionTier,
+		Size:            request.Size,
+		Resolution:      request.Resolution,
+		Quantity:        1,
+		ReferenceImages: request.ReferenceImages,
 	}
 	switch path {
 	case "/images/generations":
@@ -1070,8 +1088,10 @@ func adaptVividAIVideoMultipartBody(body []byte, contentType string) ([]byte, st
 			_ = writer.WriteField(key, value)
 		}
 	}
-	if err := copyMultipartFile(writer, "input_reference", files[0]); err != nil {
-		return nil, "", err
+	for _, file := range files {
+		if err := copyMultipartFile(writer, "input_reference", file); err != nil {
+			return nil, "", err
+		}
 	}
 	if err := writer.Close(); err != nil {
 		return nil, "", err

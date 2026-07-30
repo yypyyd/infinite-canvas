@@ -1,4 +1,4 @@
-export type ImageModelDefinition = { id: string; operations: string[] };
+export type ImageModelDefinition = { id: string; operations: string[]; maxReferenceImages?: number };
 
 export function supportsImageReferences(model: string, models?: ImageModelDefinition[]) {
     return Boolean(models?.find((item) => item.id === model)?.operations.includes("edit"));

@@ -41,8 +41,11 @@ export async function requestVideoCreativeAnalysis(
 export async function requestVideoGeneration(config: AiConfig, prompt: string, references: ReferenceImage[] = [], videoReferences: ReferenceVideo[] = [], audioReferences: ReferenceAudio[] = [], options?: RequestOptions): Promise<VideoGenerationResult> {
     const model = (config.model || config.videoModel).trim();
     if (!model) throw new Error("请先配置视频模型");
-    if (videoReferences.length || audioReferences.length) throw new Error("OpenAI 兼容视频接口仅支持单张参考图，请移除参考视频和参考音频");
+    if (videoReferences.length || audioReferences.length) throw new Error("OpenAI 兼容视频接口只接受参考图片，请移除参考视频和参考音频");
     const definition = findVideoModel(model);
+    const maxReferenceImages = definition?.maxReferenceImages || 0;
+    if (references.length && maxReferenceImages === 0) throw new Error("当前视频模型不支持参考图");
+    if (references.length > maxReferenceImages) throw new Error(`当前视频模型最多支持 ${maxReferenceImages} 张参考图`);
     const ratio = supportedValue(definition?.aspectRatios, normalizeVideoRatio(config.size), defaultVideoRatios[0]);
     const resolution = supportedValue(definition?.resolutionTiers, normalizeVideoResolution(config.vquality), defaultVideoResolutions[0]);
     const duration = supportedNumber(definition?.durations, Number(config.videoSeconds), defaultVideoDurations[0]);
@@ -52,8 +55,8 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
     body.append("prompt", prompt);
     body.append("seconds", String(duration));
     body.append("size", videoOutputSize(resolution, ratio));
-    const reference = references[0];
-    if (reference) body.append("input_reference", dataUrlToFile({ ...reference, dataUrl: await imageToDataUrl(reference) }));
+    const referenceFiles = await Promise.all(references.map(async (reference) => dataUrlToFile({ ...reference, dataUrl: await imageToDataUrl(reference) })));
+    referenceFiles.forEach((reference) => body.append("input_reference", reference));
 
     try {
         const created = unwrapVideoResponse((await axios.post<ApiVideoResponse>("/api/v1/videos", body, { headers: aiHeaders(options?.idempotencyKey), signal: options?.signal })).data);

@@ -179,6 +179,13 @@ type chatGPT2APIImageTask struct {
 	Error  string           `json:"error"`
 }
 
+type recoverableImageTask struct {
+	Status  string           `json:"status"`
+	Created int64            `json:"created"`
+	Data    []map[string]any `json:"data"`
+	Error   string           `json:"error"`
+}
+
 func isChatGPT2APIImageTaskChannel(baseURL string, path string) bool {
 	if path != "/images/generations" {
 		return false
@@ -329,6 +336,89 @@ func normalizeChatGPT2APIImageTaskData(baseURL string, apiKey string, data []map
 	return result
 }
 
+func recoverGatewayTimedOutImageTask(w http.ResponseWriter, request *http.Request) ([]byte, string, bool) {
+	requestID := strings.TrimSpace(request.Header.Get("Idempotency-Key"))
+	path := request.URL.Path
+	if requestID == "" || (!strings.HasSuffix(path, "/images/generations") && !strings.HasSuffix(path, "/images/edits")) {
+		return nil, "", false
+	}
+	taskURL := *request.URL
+	if strings.HasSuffix(path, "/generations") {
+		taskURL.Path = strings.TrimSuffix(path, "/generations") + "/tasks"
+	} else {
+		taskURL.Path = strings.TrimSuffix(path, "/edits") + "/tasks"
+	}
+	query := taskURL.Query()
+	query.Set("request_id", requestID)
+	taskURL.RawQuery = query.Encode()
+	baseURL := request.URL.Scheme + "://" + request.URL.Host
+	apiKey := strings.TrimSpace(strings.TrimPrefix(request.Header.Get("Authorization"), "Bearer "))
+	deadline := time.Now().Add(7 * time.Minute)
+	supported := false
+
+	for {
+		pollRequest, err := http.NewRequest(http.MethodGet, taskURL.String(), nil)
+		if err != nil {
+			return nil, "", false
+		}
+		pollRequest.Header.Set("Authorization", request.Header.Get("Authorization"))
+		response, err := http.DefaultClient.Do(pollRequest)
+		if err != nil {
+			if !supported {
+				return nil, "", false
+			}
+		} else {
+			body, readErr := io.ReadAll(io.LimitReader(response.Body, 48<<20))
+			_ = response.Body.Close()
+			if response.StatusCode == http.StatusNotFound || response.StatusCode == http.StatusMethodNotAllowed {
+				if !supported {
+					return nil, "", false
+				}
+				return nil, "AI 接口请求失败：上游任务不存在", true
+			}
+			if readErr == nil && response.StatusCode < http.StatusBadRequest {
+				var task recoverableImageTask
+				if json.Unmarshal(body, &task) == nil {
+					status := strings.ToLower(strings.TrimSpace(task.Status))
+					supported = status != ""
+					switch status {
+					case "completed", "success":
+						data := normalizeChatGPT2APIImageTaskData(baseURL, apiKey, task.Data)
+						if len(data) == 0 {
+							return nil, "AI 接口请求失败：上游任务没有返回图片", true
+						}
+						result, _ := json.Marshal(map[string]any{"created": task.Created, "data": data})
+						return result, "", true
+					case "failed", "error":
+						message := safeUpstreamText(task.Error)
+						if message == "" {
+							message = "上游生图任务失败"
+						}
+						return nil, "AI 接口请求失败：" + message, true
+					case "queued", "pending", "running", "processing", "in_progress":
+						// Keep polling below.
+					default:
+						if !supported {
+							return nil, "", false
+						}
+					}
+				}
+			}
+		}
+		if !supported {
+			return nil, "", false
+		}
+		if time.Now().After(deadline) {
+			return nil, "AI 接口请求失败：上游生图任务等待超时", true
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache, no-transform")
+		w.Header().Set("X-Accel-Buffering", "no")
+		writeAIKeepAlive(w)
+		time.Sleep(5 * time.Second)
+	}
+}
+
 func downloadChatGPT2APIImage(baseURL string, apiKey string, imageURL string) string {
 	parsed, err := url.Parse(imageURL)
 	if err != nil {
@@ -382,6 +472,20 @@ func copyAIResponse(w http.ResponseWriter, request *http.Request, onFailure func
 	defer response.Body.Close()
 
 	if response.StatusCode >= http.StatusBadRequest {
+		if isAIImageGatewayTimeout(response.StatusCode) {
+			if recoveredBody, message, supported := recoverGatewayTimedOutImageTask(w, request); supported {
+				if message != "" {
+					if onFailure != nil {
+						onFailure(message)
+					}
+					Fail(w, message)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json; charset=utf-8")
+				_, _ = w.Write(recoveredBody)
+				return
+			}
+		}
 		log.Printf("AI upstream error: url=%s status=%d", request.URL.String(), response.StatusCode)
 		message := aiUpstreamStatusMessage(response.StatusCode, body)
 		if onFailure != nil {
@@ -414,6 +518,15 @@ func copyAIResponse(w http.ResponseWriter, request *http.Request, onFailure func
 	}
 	w.WriteHeader(response.StatusCode)
 	_, _ = w.Write(body)
+}
+
+func isAIImageGatewayTimeout(statusCode int) bool {
+	switch statusCode {
+	case http.StatusRequestTimeout, http.StatusGatewayTimeout, 520, 521, 522, 523, 524, 525:
+		return true
+	default:
+		return false
+	}
 }
 
 func doAIRequestWithRetry(request *http.Request, retryPolicy *aiRetryPolicy) (*http.Response, []byte, error) {

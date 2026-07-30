@@ -27,7 +27,7 @@ export type NodeGenerationInput = {
     audio?: ReferenceAudio;
 };
 
-export type NodeReferenceCapabilities = { image: boolean; video: boolean; audio: boolean };
+export type NodeReferenceCapabilities = { image: boolean; video: boolean; audio: boolean; maxImages?: number };
 
 export function buildNodeGenerationContext(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[], prompt: string, capabilities?: NodeReferenceCapabilities): NodeGenerationContext {
     const inputs = filterNodeGenerationInputs(buildNodeGenerationInputs(nodeId, nodes, connections), capabilities);
@@ -58,7 +58,13 @@ export function buildNodeGenerationContext(nodeId: string, nodes: CanvasNodeData
 
 export function filterNodeGenerationInputs(inputs: NodeGenerationInput[], capabilities?: NodeReferenceCapabilities) {
     if (!capabilities) return inputs;
-    return inputs.filter((input) => input.type === "text" || (input.type === "image" && capabilities.image) || (input.type === "video" && capabilities.video) || (input.type === "audio" && capabilities.audio));
+    let imageCount = 0;
+    return inputs.filter((input) => {
+        if (input.type === "text") return true;
+        if (input.type === "image") return capabilities.image && (capabilities.maxImages === undefined || imageCount++ < capabilities.maxImages);
+        if (input.type === "video") return capabilities.video;
+        return capabilities.audio;
+    });
 }
 
 function buildComposerGenerationContext(inputs: NodeGenerationInput[], prompt: string): NodeGenerationContext {

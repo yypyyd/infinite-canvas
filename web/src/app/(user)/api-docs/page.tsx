@@ -250,11 +250,12 @@ function ModelOverview({ model, pricingRules, onCopy }: { model: AdminManagedMod
                 </div>
                 <div className="min-w-0">
                     {pricingRules ? <PricingOverview rules={pricingRules} /> : null}
-                    <div className={`${pricingRules ? "mt-3" : ""} grid gap-2 sm:grid-cols-2 2xl:grid-cols-4`}>
+                    <div className={`${pricingRules ? "mt-3" : ""} grid gap-2 sm:grid-cols-2 2xl:grid-cols-5`}>
                         <Capability label="开放操作" values={modelOperations(model).map((operation) => operationMeta[operation].label)} fallback="未配置" />
                         <Capability label="宽高比" values={model.aspectRatios} fallback="未公布限制" />
                         <Capability label="分辨率" values={model.resolutionTiers.map(formatResolution)} fallback="未公布限制" />
                         <Capability label="视频时长" values={model.durations.map((duration) => `${duration} 秒`)} fallback={model.modality === "video" ? "未公布限制" : "不适用"} />
+                        <Capability label="参考图" values={referenceCapabilityValues(model)} fallback="不支持" />
                     </div>
                 </div>
             </div>
@@ -375,7 +376,7 @@ function requestFields(model: AdminManagedModel & { modality: DocModality }, ope
         const fields = [
             { name: "model", description: "当前选中的公开模型 ID。" },
             { name: "prompt", description: operation === "edit" ? "希望如何修改参考图。" : "需要生成的画面描述。" },
-            ...(operation === "edit" ? [{ name: "image", description: "参考图片文件，可重复传入。" }] : []),
+            ...(operation === "edit" ? [{ name: "image", description: model.maxReferenceImages ? `参考图片文件，可重复传入，最多 ${model.maxReferenceImages} 张。` : "参考图片文件，可重复传入。" }] : []),
             ...(model.aspectRatios.length ? [{ name: "size", description: "根据后台配置的宽高比生成示例尺寸。" }] : []),
             ...(model.resolutionTiers.length ? [{ name: "quality", description: "根据后台配置的分辨率档生成。" }] : []),
             { name: "n", description: "生成张数，按实际数量计费。" },
@@ -387,7 +388,7 @@ function requestFields(model: AdminManagedModel & { modality: DocModality }, ope
         { name: "prompt", description: "视频画面与运动描述。" },
         ...(model.durations.length ? [{ name: "seconds", description: "必须使用后台配置的可用时长。" }] : []),
         ...(model.aspectRatios.length && model.resolutionTiers.length ? [{ name: "size", description: "由后台配置的比例和分辨率组合成像素尺寸。" }] : []),
-        { name: "input_reference", description: "上游模型支持时可传单张参考图文件。" },
+        ...(model.maxReferenceImages ? [{ name: "input_reference", description: `同名字段可重复传入，最多 ${model.maxReferenceImages} 张参考图；模式为 ${referenceModeLabel(model.referenceMode)}。` }] : []),
     ];
     return [
         { name: "model", description: "当前选中的公开音频模型 ID。" },
@@ -433,6 +434,7 @@ ${fields.map((field) => `  -F "${field}"`).join(" \\\n")}`;
         const fields = [
             ...(model.durations[0] ? [`seconds=${model.durations[0]}`] : []),
             ...(ratio && resolution ? [`size=${videoOutputSize(resolution, ratio)}`] : []),
+            ...(model.maxReferenceImages ? ["input_reference=@./reference.png"] : []),
         ];
         const videoSpec = fields.map((field) => `  -F "${field}"`).join(" \\\n");
         return `curl -X POST "${endpoint}/videos" \\
@@ -466,6 +468,15 @@ function imageQuality(resolution: string) {
 
 function formatResolution(value: string) {
     return value.toUpperCase();
+}
+
+function referenceCapabilityValues(model: AdminManagedModel) {
+    if (!model.maxReferenceImages) return [];
+    return [`最多 ${model.maxReferenceImages} 张`, referenceModeLabel(model.referenceMode)];
+}
+
+function referenceModeLabel(value: string) {
+    return value === "frame" ? "帧参考" : value === "asset" ? "素材参考" : "普通参考";
 }
 
 function operationLabel(operation: string) {

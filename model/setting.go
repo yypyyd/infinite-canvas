@@ -23,50 +23,59 @@ type ModelChannel struct {
 
 // ChannelModel stores one public model's upstream mapping and channel-specific capabilities.
 type ChannelModel struct {
-	Model           string   `json:"model"`
-	UpstreamModel   string   `json:"upstreamModel"`
-	Modality        string   `json:"modality"`
-	Operations      []string `json:"operations"`
-	AspectRatios    []string `json:"aspectRatios"`
-	ResolutionTiers []string `json:"resolutionTiers"`
-	Durations       []int    `json:"durations"`
+	Model              string   `json:"model"`
+	UpstreamModel      string   `json:"upstreamModel"`
+	Modality           string   `json:"modality"`
+	Operations         []string `json:"operations"`
+	AspectRatios       []string `json:"aspectRatios"`
+	ResolutionTiers    []string `json:"resolutionTiers"`
+	Durations          []int    `json:"durations"`
+	MaxReferenceImages int      `json:"maxReferenceImages"`
+	ReferenceMode      string   `json:"referenceMode"`
 }
 
 type DiscoveredModel struct {
-	ID                   string   `json:"id"`
-	Kind                 string   `json:"kind"`
-	Modality             string   `json:"modality"`
-	SupportedRatios      []string `json:"supportedRatios"`
-	SupportedResolutions []string `json:"supportedResolutions"`
-	SupportedDurations   []int    `json:"supportedDurations"`
+	ID                          string   `json:"id"`
+	Kind                        string   `json:"kind"`
+	Modality                    string   `json:"modality"`
+	SupportedRatios             []string `json:"supportedRatios"`
+	SupportedResolutions        []string `json:"supportedResolutions"`
+	SupportedDurations          []int    `json:"supportedDurations"`
+	MaxReferenceImages          int      `json:"maxReferenceImages"`
+	ReferenceMode               string   `json:"referenceMode"`
+	ReferenceCapabilityProvided bool     `json:"referenceCapabilityProvided"`
 }
 
 // ModelDefinition stores public model management metadata.
 type ModelDefinition struct {
-	ID              string   `json:"id"`
-	Name            string   `json:"name"`
-	Modality        string   `json:"modality"`
-	Operations      []string `json:"operations"`
-	Enabled         bool     `json:"enabled"`
-	Sort            int      `json:"sort"`
-	AspectRatios    []string `json:"aspectRatios"`
-	ResolutionTiers []string `json:"resolutionTiers"`
-	Durations       []int    `json:"durations"`
-	Remark          string   `json:"remark"`
+	ID                 string   `json:"id"`
+	Name               string   `json:"name"`
+	Modality           string   `json:"modality"`
+	Operations         []string `json:"operations"`
+	Enabled            bool     `json:"enabled"`
+	Sort               int      `json:"sort"`
+	AspectRatios       []string `json:"aspectRatios"`
+	ResolutionTiers    []string `json:"resolutionTiers"`
+	Durations          []int    `json:"durations"`
+	MaxReferenceImages int      `json:"maxReferenceImages"`
+	ReferenceMode      string   `json:"referenceMode"`
+	Remark             string   `json:"remark"`
 }
 
 // PublicAPIModel describes one non-text model exposed to API Key callers.
 type PublicAPIModel struct {
-	ID              string   `json:"id"`
-	Object          string   `json:"object"`
-	Created         int64    `json:"created"`
-	OwnedBy         string   `json:"owned_by"`
-	Name            string   `json:"name"`
-	Modality        string   `json:"modality"`
-	Operations      []string `json:"operations"`
-	AspectRatios    []string `json:"aspectRatios"`
-	ResolutionTiers []string `json:"resolutionTiers"`
-	Durations       []int    `json:"durations"`
+	ID                 string   `json:"id"`
+	Object             string   `json:"object"`
+	Created            int64    `json:"created"`
+	OwnedBy            string   `json:"owned_by"`
+	Name               string   `json:"name"`
+	Modality           string   `json:"modality"`
+	Operations         []string `json:"operations"`
+	AspectRatios       []string `json:"aspectRatios"`
+	ResolutionTiers    []string `json:"resolutionTiers"`
+	Durations          []int    `json:"durations"`
+	MaxReferenceImages int      `json:"max_reference_images"`
+	ReferenceMode      string   `json:"reference_mode"`
 }
 
 type PublicAPIModelList struct {

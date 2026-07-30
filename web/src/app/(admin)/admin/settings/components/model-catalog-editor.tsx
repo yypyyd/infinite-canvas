@@ -220,7 +220,7 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
                             width: 220,
                             render: (_: unknown, model: AdminManagedModel) => (
                                 <Typography.Text type="secondary" className="text-xs">
-                                    {[capabilityLabel(model.operations), model.aspectRatios.join(" / "), model.resolutionTiers.join(" / "), model.durations.length ? `${model.durations.join(" / ")} 秒` : ""].filter(Boolean).join(" · ")}
+                                    {[capabilityLabel(model.operations), model.aspectRatios.join(" / "), model.resolutionTiers.join(" / "), model.durations.length ? `${model.durations.join(" / ")} 秒` : "", model.maxReferenceImages ? `最多 ${model.maxReferenceImages} 张参考图` : ""].filter(Boolean).join(" · ")}
                                 </Typography.Text>
                             ),
                         },
@@ -457,6 +457,8 @@ function createModel(id: string, modality: string, sort: number, channelModel?: 
         aspectRatios: channelModel?.aspectRatios?.length ? channelModel.aspectRatios : inferAspectRatios(id),
         resolutionTiers: channelModel?.resolutionTiers?.length ? channelModel.resolutionTiers : defaultResolutionTiers(resolvedModality),
         durations: resolvedModality === "video" ? uniqueNumbers(channelModel?.durations?.length ? channelModel.durations : [6, 10]) : [],
+        maxReferenceImages: channelModel?.maxReferenceImages || 0,
+        referenceMode: channelModel?.referenceMode || "none",
         remark: "",
     };
 }
@@ -471,6 +473,8 @@ function syncModelCapabilities(model: AdminManagedModel, channelModel?: AdminCha
         aspectRatios: channelModel.aspectRatios.length ? channelModel.aspectRatios : model.aspectRatios,
         resolutionTiers: channelModel.resolutionTiers.length ? channelModel.resolutionTiers : model.resolutionTiers,
         durations: modality === "video" && channelModel.durations.length ? channelModel.durations : model.durations,
+        maxReferenceImages: channelModel.maxReferenceImages,
+        referenceMode: channelModel.referenceMode,
     };
 }
 
@@ -497,6 +501,8 @@ function normalizeModels(models: AdminManagedModel[]) {
                 aspectRatios: supportsResolution ? unique(model.aspectRatios) : [],
                 resolutionTiers: supportsResolution ? unique(model.resolutionTiers) : [],
                 durations: modality === "video" ? uniqueNumbers(model.durations) : [],
+                maxReferenceImages: supportsResolution ? Math.max(0, Math.floor(Number(model.maxReferenceImages) || 0)) : 0,
+                referenceMode: supportsResolution && (model.referenceMode === "frame" || model.referenceMode === "asset") ? model.referenceMode : "none",
                 remark: model.remark || "",
             };
         })

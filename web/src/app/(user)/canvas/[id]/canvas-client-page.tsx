@@ -3930,7 +3930,7 @@ function getInputSummary(inputs: NodeGenerationInput[]) {
 
 function nodeReferenceCapabilities(mode: CanvasNodeGenerationMode, model: string, managedModels?: ImageModelDefinition[]): NodeReferenceCapabilities {
     if (mode === "image") return { image: supportsImageReferences(model, managedModels), video: false, audio: false };
-    if (mode === "video") return videoReferenceCapabilities(model);
+    if (mode === "video") return videoReferenceCapabilities(model, managedModels);
     if (mode === "text") return { image: true, video: false, audio: false };
     return { image: false, video: false, audio: false };
 }

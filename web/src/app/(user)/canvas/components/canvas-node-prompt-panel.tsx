@@ -46,7 +46,7 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
     const baseConfig = buildNodeConfig(globalConfig, node, mode);
     const config = mode === "video" ? resolveCanvasVideoConfig(baseConfig, managedModels) : baseConfig;
     const imageSupportsReferences = supportsImageReferences(config.model, managedModels);
-    const referenceCapabilities = mode === "video" ? videoReferenceCapabilities(config.model) : { image: mode === "text" || (mode === "image" && imageSupportsReferences), video: false, audio: false };
+    const referenceCapabilities = mode === "video" ? videoReferenceCapabilities(config.model, managedModels) : { image: mode === "text" || (mode === "image" && imageSupportsReferences), video: false, audio: false };
     const visibleMentionReferences = mentionReferences.filter(
         (reference) => reference.kind === "text" || (reference.kind === "image" && referenceCapabilities.image) || (reference.kind === "video" && referenceCapabilities.video) || (reference.kind === "audio" && referenceCapabilities.audio),
     );

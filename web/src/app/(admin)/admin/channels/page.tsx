@@ -186,6 +186,8 @@ export default function AdminChannelsPage() {
                     aspectRatios: discovered.supportedRatios?.length ? discovered.supportedRatios : current.aspectRatios,
                     resolutionTiers: discovered.supportedResolutions || [],
                     durations: discovered.supportedDurations || [],
+                    maxReferenceImages: discovered.referenceCapabilityProvided ? discovered.maxReferenceImages : current.maxReferenceImages,
+                    referenceMode: discovered.referenceCapabilityProvided ? discovered.referenceMode : current.referenceMode,
                 },
             ])[0];
         });
@@ -451,6 +453,7 @@ export default function AdminChannelsPage() {
                                             <Typography.Text style={{ wordBreak: "break-all" }}>{model}</Typography.Text>
                                             {discoveredModels[model]?.modality ? <Tag bordered={false}>{discoveredModels[model].modality}</Tag> : null}
                                             {discoveredModels[model]?.supportedDurations?.length ? <Tag bordered={false}>{discoveredModels[model].supportedDurations.join("/")} 秒</Tag> : null}
+                                            {discoveredModels[model]?.referenceCapabilityProvided ? <Tag bordered={false}>{discoveredModels[model].maxReferenceImages ? `参考图 ${discoveredModels[model].maxReferenceImages} 张` : "无参考图"}</Tag> : null}
                                         </Space>
                                     </Checkbox>
                                 ))}
@@ -560,6 +563,8 @@ function normalizeChannelModels(items: Partial<AdminChannelModel>[] = []): Admin
                 aspectRatios: Array.from(new Set((item.aspectRatios || []).map(normalizeToken).filter(Boolean))),
                 resolutionTiers: Array.from(new Set((item.resolutionTiers || []).map(normalizeResolutionTier).filter(Boolean))),
                 durations: normalizeDurations(item.durations),
+                maxReferenceImages: Math.max(0, Math.floor(Number(item.maxReferenceImages) || 0)),
+                referenceMode: normalizeReferenceMode(item.referenceMode),
             },
         ];
     });
@@ -577,12 +582,18 @@ function createChannelModel(model: string, managedModels: AdminManagedModel[], d
             aspectRatios: discovered?.supportedRatios?.length ? discovered.supportedRatios : managedModel?.aspectRatios || [],
             resolutionTiers: discovered ? discovered.supportedResolutions || [] : managedModel?.resolutionTiers?.length ? managedModel.resolutionTiers : modality === "image" ? ["1k"] : modality === "video" ? ["720p"] : [],
             durations: discovered ? discovered.supportedDurations || [] : managedModel?.durations || [],
+            maxReferenceImages: discovered?.referenceCapabilityProvided ? discovered.maxReferenceImages : managedModel?.maxReferenceImages || 0,
+            referenceMode: discovered?.referenceCapabilityProvided ? discovered.referenceMode : managedModel?.referenceMode || "none",
         },
     ])[0];
 }
 
 function normalizeDurations(items: number[] = []) {
     return Array.from(new Set(items.map((item) => Math.floor(Number(item))).filter((item) => item > 0))).sort((a, b) => a - b);
+}
+
+function normalizeReferenceMode(value?: string): "frame" | "asset" | "none" {
+    return value === "frame" || value === "asset" ? value : "none";
 }
 
 function collectKnownModels(settings: AdminSettings) {

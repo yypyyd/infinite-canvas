@@ -20,15 +20,16 @@ import (
 var adminModelHTTPClient = &http.Client{Timeout: 30 * time.Second}
 
 type PricingRequest struct {
-	Model          string
-	Modality       string
-	Operation      string
-	Unit           string
-	ResolutionTier string
-	AspectRatio    string
-	Size           string
-	Resolution     string
-	Quantity       int
+	Model           string
+	Modality        string
+	Operation       string
+	Unit            string
+	ResolutionTier  string
+	AspectRatio     string
+	Size            string
+	Resolution      string
+	Quantity        int
+	ReferenceImages int
 }
 
 type ModelChannelSelection struct {
@@ -59,15 +60,17 @@ func publicAPIModels(setting model.PublicModelChannelSetting) []model.PublicAPIM
 			continue
 		}
 		result = append(result, model.PublicAPIModel{
-			ID:              item.ID,
-			Object:          "model",
-			OwnedBy:         "infinite-canvas",
-			Name:            item.Name,
-			Modality:        item.Modality,
-			Operations:      item.Operations,
-			AspectRatios:    item.AspectRatios,
-			ResolutionTiers: item.ResolutionTiers,
-			Durations:       item.Durations,
+			ID:                 item.ID,
+			Object:             "model",
+			OwnedBy:            "infinite-canvas",
+			Name:               item.Name,
+			Modality:           item.Modality,
+			Operations:         item.Operations,
+			AspectRatios:       item.AspectRatios,
+			ResolutionTiers:    item.ResolutionTiers,
+			Durations:          item.Durations,
+			MaxReferenceImages: item.MaxReferenceImages,
+			ReferenceMode:      item.ReferenceMode,
 		})
 	}
 	return result
@@ -337,10 +340,14 @@ func normalizeModelDefinitions(items []model.ModelDefinition, availableModels []
 		item.AspectRatios = normalizeStringList(item.AspectRatios, normalizePricingToken)
 		item.ResolutionTiers = normalizeStringList(item.ResolutionTiers, normalizeResolutionTier)
 		item.Durations = normalizeDurations(item.Durations)
+		item.MaxReferenceImages = max(0, item.MaxReferenceImages)
+		item.ReferenceMode = normalizeReferenceMode(item.ReferenceMode)
 		if item.Modality != "image" && item.Modality != "video" {
 			item.AspectRatios = []string{}
 			item.ResolutionTiers = []string{}
 			item.Durations = []int{}
+			item.MaxReferenceImages = 0
+			item.ReferenceMode = "none"
 		} else if item.Modality != "video" {
 			item.Durations = []int{}
 		}
@@ -375,11 +382,13 @@ func normalizeModelDefinitions(items []model.ModelDefinition, availableModels []
 
 func mergeEnabledChannelCapabilities(items []model.ModelDefinition, channels []model.ModelChannel) []model.ModelDefinition {
 	type capabilities struct {
-		modality        string
-		operations      []string
-		aspectRatios    []string
-		resolutionTiers []string
-		durations       []int
+		modality           string
+		operations         []string
+		aspectRatios       []string
+		resolutionTiers    []string
+		durations          []int
+		maxReferenceImages int
+		referenceMode      string
 	}
 
 	merged := map[string]capabilities{}
@@ -405,6 +414,10 @@ func mergeEnabledChannelCapabilities(items []model.ModelDefinition, channels []m
 			current.aspectRatios = append(current.aspectRatios, channelModel.AspectRatios...)
 			current.resolutionTiers = append(current.resolutionTiers, channelModel.ResolutionTiers...)
 			current.durations = append(current.durations, channelModel.Durations...)
+			if channelModel.MaxReferenceImages > current.maxReferenceImages || (channelModel.MaxReferenceImages == current.maxReferenceImages && current.referenceMode == "none" && channelModel.ReferenceMode != "none") {
+				current.maxReferenceImages = channelModel.MaxReferenceImages
+				current.referenceMode = channelModel.ReferenceMode
+			}
 			merged[modelID] = current
 		}
 	}
@@ -419,10 +432,14 @@ func mergeEnabledChannelCapabilities(items []model.ModelDefinition, channels []m
 		items[index].AspectRatios = normalizeStringList(capability.aspectRatios, normalizePricingToken)
 		items[index].ResolutionTiers = normalizeStringList(capability.resolutionTiers, normalizeResolutionTier)
 		items[index].Durations = normalizeDurations(capability.durations)
+		items[index].MaxReferenceImages = capability.maxReferenceImages
+		items[index].ReferenceMode = normalizeReferenceMode(capability.referenceMode)
 		if capability.modality != "image" && capability.modality != "video" {
 			items[index].AspectRatios = []string{}
 			items[index].ResolutionTiers = []string{}
 			items[index].Durations = []int{}
+			items[index].MaxReferenceImages = 0
+			items[index].ReferenceMode = "none"
 		} else if capability.modality != "video" {
 			items[index].Durations = []int{}
 		}
@@ -576,6 +593,7 @@ func normalizePricingRequest(request PricingRequest) PricingRequest {
 	if request.Quantity < 1 {
 		request.Quantity = 1
 	}
+	request.ReferenceImages = max(0, request.ReferenceImages)
 	return request
 }
 
@@ -864,7 +882,11 @@ func SelectModelChannel(request PricingRequest) (ModelChannelSelection, error) {
 	request = normalizePricingRequest(request)
 	selections := modelChannelSelectionsForRequest(normalizePrivateSetting(settings.Private).Channels, request)
 	if len(selections) == 0 {
-		return ModelChannelSelection{}, safeMessageError{message: fmt.Sprintf("模型 %s 没有支持当前操作或分辨率的可用渠道", request.Model)}
+		reason := "当前操作或规格"
+		if request.ReferenceImages > 0 {
+			reason = "当前操作、规格或参考图数量"
+		}
+		return ModelChannelSelection{}, safeMessageError{message: fmt.Sprintf("模型 %s 没有支持%s的可用渠道", request.Model, reason)}
 	}
 	total := 0
 	for _, selection := range selections {
@@ -1022,6 +1044,12 @@ func normalizeModelChannel(channel model.ModelChannel) model.ModelChannel {
 		item.AspectRatios = normalizeStringList(item.AspectRatios, normalizePricingToken)
 		item.ResolutionTiers = normalizeStringList(item.ResolutionTiers, normalizeResolutionTier)
 		item.Durations = normalizeDurations(item.Durations)
+		item.MaxReferenceImages = max(0, item.MaxReferenceImages)
+		item.ReferenceMode = normalizeReferenceMode(item.ReferenceMode)
+		if item.Modality != "image" && item.Modality != "video" {
+			item.MaxReferenceImages = 0
+			item.ReferenceMode = "none"
+		}
 		models = append(models, item)
 	}
 	channel.Models = models
@@ -1088,6 +1116,8 @@ func fetchAdminChannelModels(channel model.ModelChannel) ([]model.DiscoveredMode
 			SupportedRatios      []string          `json:"supported_ratios"`
 			SupportedResolutions []string          `json:"supported_resolutions"`
 			SupportedDurations   []json.RawMessage `json:"supported_durations"`
+			MaxReferenceImages   *int              `json:"max_reference_images"`
+			ReferenceMode        *string           `json:"reference_mode"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil || payload.Object != "list" || payload.Data == nil {
@@ -1111,7 +1141,15 @@ func fetchAdminChannelModels(channel model.ModelChannel) ([]model.DiscoveredMode
 				ratios = normalizeStringList(append(ratios, ratio), normalizePricingToken)
 			}
 		}
-		result = append(result, model.DiscoveredModel{ID: item.ID, Kind: strings.TrimSpace(item.Kind), Modality: modality, SupportedRatios: ratios, SupportedResolutions: resolutions, SupportedDurations: parseSupportedDurations(item.SupportedDurations)})
+		maxReferenceImages := 0
+		if item.MaxReferenceImages != nil {
+			maxReferenceImages = max(0, *item.MaxReferenceImages)
+		}
+		referenceMode := "none"
+		if item.ReferenceMode != nil {
+			referenceMode = normalizeReferenceMode(*item.ReferenceMode)
+		}
+		result = append(result, model.DiscoveredModel{ID: item.ID, Kind: strings.TrimSpace(item.Kind), Modality: modality, SupportedRatios: ratios, SupportedResolutions: resolutions, SupportedDurations: parseSupportedDurations(item.SupportedDurations), MaxReferenceImages: maxReferenceImages, ReferenceMode: referenceMode, ReferenceCapabilityProvided: item.MaxReferenceImages != nil || item.ReferenceMode != nil})
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
 	return result, nil
@@ -1134,6 +1172,15 @@ func parseSupportedDurations(values []json.RawMessage) []int {
 		}
 	}
 	return normalizeDurations(durations)
+}
+
+func normalizeReferenceMode(value string) string {
+	switch normalizePricingToken(value) {
+	case "frame", "asset":
+		return normalizePricingToken(value)
+	default:
+		return "none"
+	}
 }
 
 func testAdminChannelModel(channel model.ModelChannel, modelName string) (string, error) {
@@ -1240,6 +1287,9 @@ func channelModelSupportsRequest(item model.ChannelModel, request PricingRequest
 		return false
 	}
 	if request.Modality == "video" && request.AspectRatio != "" && len(item.AspectRatios) > 0 && !containsPricingValue(item.AspectRatios, request.AspectRatio) {
+		return false
+	}
+	if request.ReferenceImages > item.MaxReferenceImages {
 		return false
 	}
 	return request.Modality != "video" || request.Quantity < 1 || len(item.Durations) == 0 || containsInt(item.Durations, request.Quantity)

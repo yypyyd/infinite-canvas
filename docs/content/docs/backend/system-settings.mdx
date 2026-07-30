@@ -19,7 +19,7 @@ description: settings 表中 public 和 private 配置结构说明
   "modelChannel": {
     "availableModels": ["gpt-5.5", "gpt-image-2"],
     "models": [
-      { "id": "gpt-image-2", "name": "GPT Image 2", "modality": "image", "operations": ["generation", "edit"], "enabled": true, "sort": 0, "aspectRatios": ["1:1", "3:2", "2:3"], "resolutionTiers": ["1k", "2k", "4k"], "remark": "" }
+      { "id": "gpt-image-2", "name": "GPT Image 2", "modality": "image", "operations": ["generation", "edit"], "enabled": true, "sort": 0, "aspectRatios": ["1:1", "3:2", "2:3"], "resolutionTiers": ["1k", "2k", "4k"], "maxReferenceImages": 6, "referenceMode": "none", "remark": "" }
     ],
     "groupRatios": {
       "default": 1,
@@ -72,7 +72,7 @@ description: settings 表中 public 和 private 配置结构说明
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `availableModels` | string[] | 系统可用模型，由模型中心中已启用的模型生成 |
-| `models` | object[] | 模型中心配置，包含模型名称、类型、支持操作、启用状态、排序、宽高比、分辨率档和视频时长；保存设置时按对外模型名汇总所有同类型启用渠道的能力并集，默认 `/models` 保持严格 OpenAI 字段 |
+| `models` | object[] | 模型中心配置，包含模型名称、类型、支持操作、启用状态、排序、宽高比、分辨率档、视频时长、参考图上限和参考模式；保存设置时按对外模型名汇总所有同类型启用渠道的能力，`/api/v1/models` 额外返回 `max_reference_images` 与 `reference_mode` |
 | `pricingRules` | object[] | 管理员显式维护的模型算力点配置，后端模型接口调用前按模型预扣，上游失败时返还；新增或同步模型不会自动生成价格 |
 | `groupRatios` | object | 用户分组倍率，例如 `default`、`vip`、`svip` |
 | `defaultModel` | string | 默认模型，从 `availableModels` 中选择；为空或失效时优先选择文本模型 |
@@ -140,7 +140,7 @@ description: settings 表中 public 和 private 配置结构说明
       "apiKey": "sk-xxx",
       "models": [
         { "model": "gpt-5.5", "upstreamModel": "gpt-5.5", "operations": ["completion"], "resolutionTiers": [] },
-        { "model": "gpt-image-2", "upstreamModel": "gpt-image-2", "operations": ["generation", "edit"], "resolutionTiers": ["1k"] }
+        { "model": "gpt-image-2", "upstreamModel": "gpt-image-2", "operations": ["generation", "edit"], "resolutionTiers": ["1k"], "maxReferenceImages": 6, "referenceMode": "none" }
       ],
       "weight": 1,
       "enabled": true,
@@ -152,7 +152,7 @@ description: settings 表中 public 和 private 配置结构说明
       "baseUrl": "https://hd-api.example.com",
       "apiKey": "sk-yyy",
       "models": [
-        { "model": "gpt-image-2", "upstreamModel": "gpt-image-2", "operations": ["generation", "edit"], "resolutionTiers": ["1k", "2k", "4k"] }
+        { "model": "gpt-image-2", "upstreamModel": "gpt-image-2", "operations": ["generation", "edit"], "resolutionTiers": ["1k", "2k", "4k"], "maxReferenceImages": 6, "referenceMode": "none" }
       ],
       "weight": 1,
       "enabled": true,
@@ -206,8 +206,10 @@ description: settings 表中 public 和 private 配置结构说明
 | `aspectRatios` | string[] | 图片或视频支持的宽高比；视频路由会据此筛选渠道 |
 | `resolutionTiers` | string[] | 当前渠道支持的分辨率档，例如图片的 `1k`、`2k`、`4k` 或视频的 `480p`、`720p`、`1080p`；文本、音频等无分辨率模型为空 |
 | `durations` | number[] | 视频支持的时长秒数；非视频模型为空 |
+| `maxReferenceImages` | number | 当前渠道最多接受的参考图数量；`0` 表示不支持，可在上游未公布时由管理员手工设置 |
+| `referenceMode` | string | 参考模式：`frame`、`asset` 或 `none` |
 
-后端调用模型时，会先按对外模型名、类型、操作和请求规格筛选已启用且密钥完整的渠道，再在能力相符的渠道中按 `weight` 加权随机选择。用户价格始终读取公开模型的 `pricingRules`，不会因随机命中不同上游渠道而变化；请求发送前会把 `model` 替换为所选渠道的 `upstreamModel`。
+后端调用模型时，会先按对外模型名、类型、操作、请求规格和实际参考图数量筛选已启用且密钥完整的渠道，再在能力相符的渠道中按 `weight` 加权随机选择。用户价格始终读取公开模型的 `pricingRules`，不会因随机命中不同上游渠道而变化；请求发送前会把 `model` 替换为所选渠道的 `upstreamModel`。
 
 `promptSync` 字段：
 

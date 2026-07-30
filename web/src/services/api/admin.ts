@@ -313,6 +313,8 @@ export type AdminChannelModel = {
     aspectRatios: string[];
     resolutionTiers: string[];
     durations: number[];
+    maxReferenceImages: number;
+    referenceMode: "frame" | "asset" | "none";
 };
 
 export type AdminDiscoveredModel = {
@@ -322,6 +324,9 @@ export type AdminDiscoveredModel = {
     supportedRatios: string[];
     supportedResolutions: string[];
     supportedDurations: number[];
+    maxReferenceImages: number;
+    referenceMode: "frame" | "asset" | "none";
+    referenceCapabilityProvided: boolean;
 };
 
 export type AdminPublicModelChannelSettings = {
@@ -347,6 +352,8 @@ export type AdminManagedModel = {
     aspectRatios: string[];
     resolutionTiers: string[];
     durations: number[];
+    maxReferenceImages: number;
+    referenceMode: "frame" | "asset" | "none";
     remark: string;
 };
 

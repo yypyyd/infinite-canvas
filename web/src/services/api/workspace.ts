@@ -37,6 +37,8 @@ type WorkspaceFileUploadTicket = {
     file?: WorkspaceFile;
 };
 
+let workspaceUploadMutation = Promise.resolve();
+
 export type WorkspaceStorageStatus = {
     usedBytes: number;
     quotaBytes: number;
@@ -62,7 +64,7 @@ export async function uploadWorkspaceFile(token: string, storageKey: string, fil
     if (signal?.aborted) throw new Error("上传已取消");
     const mimeType = file.type || "application/octet-stream";
     const organizationId = getActiveOrganizationId();
-    const ticket = await apiPost<WorkspaceFileUploadTicket>("/api/workspace/files/upload-ticket", { storageKey, mimeType, size: file.size }, token, { signal, timeout: 30_000, organizationId });
+    const ticket = await serializeWorkspaceUploadMutation(() => apiPost<WorkspaceFileUploadTicket>("/api/workspace/files/upload-ticket", { storageKey, mimeType, size: file.size }, token, { signal, timeout: 30_000, organizationId }));
     if (!ticket.uploadRequired && ticket.file) return ticket.file;
     const { uploadId, uploadUrl, uploadToken, objectKey } = ticket;
     if (!uploadId || !uploadUrl || !uploadToken || !objectKey) throw new Error("云端上传凭证无效");
@@ -73,13 +75,22 @@ export async function uploadWorkspaceFile(token: string, storageKey: string, fil
         form.append("file", file, workspaceFileName(storageKey, mimeType));
         await axios.post(uploadUrl, form, { signal, timeout: 15 * 60_000 });
         if (signal?.aborted) throw new Error("上传已取消");
-        return await apiPost<WorkspaceFile>("/api/workspace/files/confirm", { uploadId, storageKey, objectKey, mimeType, size: file.size }, token, { signal, timeout: 30_000, organizationId });
+        return await serializeWorkspaceUploadMutation(() => apiPost<WorkspaceFile>("/api/workspace/files/confirm", { uploadId, storageKey, objectKey, mimeType, size: file.size }, token, { signal, timeout: 30_000, organizationId }));
     } catch (error) {
         try {
-            await apiPost<boolean>(`/api/workspace/files/${encodeURIComponent(uploadId)}/cancel`, {}, token, { timeout: 10_000, organizationId });
+            await serializeWorkspaceUploadMutation(() => apiPost<boolean>(`/api/workspace/files/${encodeURIComponent(uploadId)}/cancel`, {}, token, { timeout: 10_000, organizationId }));
         } catch {}
         throw error;
     }
+}
+
+function serializeWorkspaceUploadMutation<T>(mutation: () => Promise<T>) {
+    const result = workspaceUploadMutation.then(mutation, mutation);
+    workspaceUploadMutation = result.then(
+        () => undefined,
+        () => undefined,
+    );
+    return result;
 }
 
 export function workspaceFileUrl(storageKey: string, accountId = "", organizationId = getActiveOrganizationId(), variant?: WorkspaceImageVariant) {

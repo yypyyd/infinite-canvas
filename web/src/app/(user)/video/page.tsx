@@ -206,7 +206,7 @@ export default function VideoPage() {
                 mimeType: stored.mimeType,
             };
             setResults([{ id: nextVideo.id, status: "success", video: nextVideo }]);
-            saveLog(
+            await saveLog(
                 buildLog({
                     ownerId: historyOwnerId,
                     prompt: snapshot.text,
@@ -224,7 +224,7 @@ export default function VideoPage() {
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : "生成失败";
             setResults([{ id: nanoid(), status: "failed", error: errorMessage }]);
-            saveLog(
+            await saveLog(
                 buildLog({
                     ownerId: historyOwnerId,
                     prompt: snapshot.text,
@@ -318,8 +318,9 @@ export default function VideoPage() {
         setDeleteConfirmOpen(false);
     };
 
-    const saveLog = (log: GenerationLog) => {
-        void saveGenerationRecord(historyOwnerId, "video", serializeLog(log) as unknown as Record<string, unknown>).then(refreshLogs);
+    const saveLog = async (log: GenerationLog) => {
+        await saveGenerationRecord(historyOwnerId, "video", serializeLog(log) as unknown as Record<string, unknown>);
+        await refreshLogs();
     };
 
     const refreshLogs = async () => setLogs(await readStoredLogs(historyOwnerId));

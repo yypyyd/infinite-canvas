@@ -4,22 +4,24 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { App, Avatar, Button, Card, Descriptions, Empty, Form, Image as AntImage, Input, Modal, Pagination, Progress, Select, Skeleton, Table, Tabs, Tag, Typography, type TableColumnsType } from "antd";
 import dayjs from "dayjs";
 import { saveAs } from "file-saver";
-import { CircleUserRound, Clock3, Cloud, Coins, ExternalLink, Film, History, ImageIcon, KeyRound, ListChecks, PencilLine, ReceiptText, RefreshCw, Search, ShieldCheck, Trash2, WalletCards } from "lucide-react";
+import { CircleUserRound, Clock3, Cloud, Code2, Coins, Copy, ExternalLink, Film, History, ImageIcon, KeyRound, ListChecks, PencilLine, Plus, ReceiptText, RefreshCw, Search, ShieldCheck, Trash2, WalletCards } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { CREDIT_PURCHASE_URL, CreditSymbol } from "@/constant/credits";
+import { useCopyText } from "@/hooks/use-copy-text";
 import { formatDuration } from "@/lib/image-utils";
-import { changePassword, fetchCreditLogs, fetchGenerationTasks, updateProfile as updateUserProfile, type CreditLog, type GenerationTask } from "@/services/api/auth";
+import { changePassword, createUserAPIKey, fetchCreditLogs, fetchGenerationTasks, fetchUserAPIKeys, revokeUserAPIKey, updateProfile as updateUserProfile, type CreditLog, type CreatedUserAPIKey, type GenerationTask, type UserAPIKey } from "@/services/api/auth";
 import { countGenerationHistory, deleteGenerationHistory, GENERATION_HISTORY_CHANGED_EVENT, readGenerationHistory, resolveGenerationHistoryMedia, resolveGenerationHistoryPreview, type GenerationHistoryItem } from "@/services/generation-history";
 import { workspaceOwnerId } from "@/services/workspace-changes";
 import { useUserStore } from "@/stores/use-user-store";
 import { useWorkspaceStatusStore } from "@/stores/use-workspace-status-store";
 
-type AccountTab = "profile" | "tasks" | "history" | "credits";
+type AccountTab = "profile" | "tasks" | "history" | "credits" | "api";
 type ProfileFormValues = { displayName: string; avatarUrl: string };
 type PasswordFormValues = { currentPassword: string; newPassword: string; confirmPassword: string };
+type APIKeyFormValues = { name: string };
 
 const historyPageSize = 12;
 const creditPageSize = 12;
@@ -60,6 +62,15 @@ const accountTabs = [
             </span>
         ),
     },
+    {
+        key: "api",
+        label: (
+            <span className="inline-flex items-center gap-2">
+                <Code2 className="size-4" />
+                API 接入
+            </span>
+        ),
+    },
 ];
 const creditTypeMeta: Record<string, { label: string; color?: string }> = {
     admin_adjust: { label: "后台调整" },
@@ -88,7 +99,7 @@ function AccountContent() {
     const user = useUserStore((state) => state.user);
     const isReady = useUserStore((state) => state.isReady);
     const requestedTab = searchParams.get("tab");
-    const activeTab: AccountTab = requestedTab === "tasks" || requestedTab === "history" || requestedTab === "credits" ? requestedTab : "profile";
+    const activeTab: AccountTab = requestedTab === "tasks" || requestedTab === "history" || requestedTab === "credits" || requestedTab === "api" ? requestedTab : "profile";
     const accountHref = activeTab === "profile" ? "/account" : `/account?tab=${activeTab}`;
     const historyOwnerId = workspaceOwnerId(user?.id || "", user?.organizationId || "");
     const historyCountQuery = useQuery({
@@ -155,7 +166,7 @@ function AccountContent() {
                     <Tabs activeKey={activeTab} items={accountTabs} onChange={(key) => router.replace(key === "profile" ? "/account" : `/account?tab=${key}`, { scroll: false })} tabBarStyle={{ margin: 0 }} />
                 </div>
 
-                <div className="mt-5">{activeTab === "profile" ? <ProfileSection /> : activeTab === "tasks" ? <TaskSection /> : activeTab === "history" ? <HistorySection /> : <CreditsSection />}</div>
+                <div className="mt-5">{activeTab === "profile" ? <ProfileSection /> : activeTab === "tasks" ? <TaskSection /> : activeTab === "history" ? <HistorySection /> : activeTab === "credits" ? <CreditsSection /> : <APIKeySection key={user.organizationId} />}</div>
             </div>
         </main>
     );
@@ -941,6 +952,175 @@ function creditExtra(value: string) {
     } catch {
         return { model: "", path: "" };
     }
+}
+
+function APIKeySection() {
+    const { message, modal } = App.useApp();
+    const copyText = useCopyText();
+    const queryClient = useQueryClient();
+    const token = useUserStore((state) => state.token);
+    const organizationId = useUserStore((state) => state.user?.organizationId || "");
+    const [form] = Form.useForm<APIKeyFormValues>();
+    const [createOpen, setCreateOpen] = useState(false);
+    const [createdKey, setCreatedKey] = useState<CreatedUserAPIKey | null>(null);
+    const [endpoint, setEndpoint] = useState("/api/v1");
+    const queryKey = ["user-api-keys", organizationId];
+    const keysQuery = useQuery({
+        queryKey,
+        queryFn: () => fetchUserAPIKeys(token),
+        enabled: Boolean(token && organizationId),
+    });
+    const createMutation = useMutation({
+        mutationFn: (values: APIKeyFormValues) => createUserAPIKey(token, values.name),
+        gcTime: 0,
+        onSuccess: (item) => {
+            setCreateOpen(false);
+            form.resetFields();
+            setCreatedKey(item);
+            void queryClient.invalidateQueries({ queryKey });
+        },
+        onError: (error) => message.error(error instanceof Error ? error.message : "创建失败"),
+    });
+    const revokeMutation = useMutation({
+        mutationFn: (id: string) => revokeUserAPIKey(token, id),
+        onSuccess: () => {
+            message.success("API Key 已撤销");
+            void queryClient.invalidateQueries({ queryKey });
+        },
+        onError: (error) => message.error(error instanceof Error ? error.message : "撤销失败"),
+    });
+    const activeCount = keysQuery.data?.filter((item) => item.status === "active").length || 0;
+    const curlExample = `curl ${endpoint}/chat/completions -H "Authorization: Bearer YOUR_API_KEY" -H "Content-Type: application/json" -d '{"model":"YOUR_MODEL","messages":[{"role":"user","content":"你好"}]}'`;
+
+    useEffect(() => setEndpoint(`${window.location.origin}/api/v1`), []);
+
+    const closeCreatedKey = () => {
+        setCreatedKey(null);
+        createMutation.reset();
+    };
+
+    const confirmRevoke = (item: UserAPIKey) => {
+        modal.confirm({
+            title: `撤销「${item.name}」？`,
+            content: "撤销后使用该 Key 的请求会立即失败，此操作不可恢复。",
+            okText: "撤销",
+            okButtonProps: { danger: true },
+            cancelText: "取消",
+            onOk: () => revokeMutation.mutateAsync(item.id),
+        });
+    };
+
+    return (
+        <>
+            <section className="overflow-hidden rounded-[28px] bg-card shadow-[0_18px_50px_rgba(29,29,31,.07)] ring-1 ring-border/70">
+                <header className="flex flex-col gap-4 border-b border-border px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-7">
+                    <div>
+                        <div className="flex items-center gap-2 text-lg font-semibold tracking-tight">
+                            <KeyRound className="size-5 text-primary" />
+                            API Key
+                        </div>
+                        <p className="mt-1 text-sm text-muted-foreground">让你的应用通过现有模型渠道调用 AI 能力，费用计入当前企业算力。</p>
+                    </div>
+                    <Button type="primary" icon={<Plus className="size-4" />} disabled={activeCount >= 10} onClick={() => setCreateOpen(true)}>
+                        创建 Key
+                    </Button>
+                </header>
+
+                <div className="grid lg:grid-cols-[minmax(0,1.4fr)_minmax(320px,.8fr)]">
+                    <div className="p-5 sm:p-7 lg:border-r lg:border-border">
+                        <div className="mb-4 flex items-center justify-between gap-4">
+                            <div className="text-sm font-medium text-muted-foreground">当前企业的密钥</div>
+                            <span className="text-xs tabular-nums text-muted-foreground">{activeCount} / 10 个有效</span>
+                        </div>
+                        {keysQuery.isLoading ? (
+                            <Skeleton active paragraph={{ rows: 4 }} />
+                        ) : keysQuery.data?.length ? (
+                            <div className="divide-y divide-border">
+                                {keysQuery.data.map((item) => (
+                                    <div key={item.id} className="flex flex-col gap-3 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-center">
+                                        <span className={`flex size-10 shrink-0 items-center justify-center rounded-2xl ${item.status === "active" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
+                                            <KeyRound className="size-4" />
+                                        </span>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex min-w-0 items-center gap-2">
+                                                <span className="truncate text-sm font-medium">{item.name}</span>
+                                                <Tag className="m-0 shrink-0" color={item.status === "active" ? "green" : undefined}>
+                                                    {item.status === "active" ? "使用中" : "已撤销"}
+                                                </Tag>
+                                            </div>
+                                            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                                                <code>{item.prefix}••••••••</code>
+                                                <span>创建于 {dayjs(item.createdAt).format("YYYY-MM-DD HH:mm")}</span>
+                                                <span>{item.lastUsedAt ? `最后使用 ${dayjs(item.lastUsedAt).format("YYYY-MM-DD HH:mm")}` : "尚未使用"}</span>
+                                            </div>
+                                        </div>
+                                        {item.status === "active" ? (
+                                            <Button danger type="text" icon={<Trash2 className="size-4" />} loading={revokeMutation.isPending && revokeMutation.variables === item.id} onClick={() => confirmRevoke(item)}>
+                                                撤销
+                                            </Button>
+                                        ) : null}
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有 API Key" />
+                        )}
+                    </div>
+
+                    <aside className="border-t border-border p-5 sm:p-7 lg:border-t-0">
+                        <div className="flex items-center gap-2 text-sm font-medium">
+                            <Code2 className="size-4 text-primary" />
+                            快速接入
+                        </div>
+                        <p className="mt-2 text-sm leading-6 text-muted-foreground">使用 Bearer 鉴权访问 <code>/api/v1/*</code>。Key 自动绑定当前企业，无需传企业编号。</p>
+                        <div className="mt-5 rounded-2xl bg-muted/70 p-4">
+                            <div className="flex items-center justify-between gap-3">
+                                <span className="text-xs text-muted-foreground">API Endpoint</span>
+                                <Button type="text" size="small" icon={<Copy className="size-3.5" />} onClick={() => copyText(endpoint, "接口地址已复制")} />
+                            </div>
+                            <code className="mt-2 block break-all text-xs leading-5">{endpoint}</code>
+                        </div>
+                        <div className="mt-3 rounded-2xl bg-muted/70 p-4">
+                            <div className="flex items-center justify-between gap-3">
+                                <span className="text-xs text-muted-foreground">Curl 示例</span>
+                                <Button type="text" size="small" icon={<Copy className="size-3.5" />} onClick={() => copyText(curlExample, "示例已复制")} />
+                            </div>
+                            <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-all text-xs leading-5">{curlExample}</pre>
+                        </div>
+                        <div className="mt-4 flex gap-2 text-xs leading-5 text-muted-foreground">
+                            <ShieldCheck className="mt-0.5 size-3.5 shrink-0" />
+                            Key 仅能访问 AI 接口，不能登录账号、管理企业或进入后台。
+                        </div>
+                    </aside>
+                </div>
+            </section>
+
+            <Modal title="创建 API Key" open={createOpen} onCancel={() => setCreateOpen(false)} onOk={() => form.submit()} confirmLoading={createMutation.isPending} okText="创建" cancelText="取消" destroyOnHidden>
+                <Form<APIKeyFormValues> form={form} layout="vertical" requiredMark={false} onFinish={(values) => createMutation.mutate(values)}>
+                    <Form.Item name="name" label="名称" rules={[{ max: 50, message: "名称不能超过 50 个字符" }]} extra="建议填写调用方或环境，例如“生产服务器”。">
+                        <Input maxLength={50} showCount placeholder="生产服务器" autoFocus />
+                    </Form.Item>
+                </Form>
+            </Modal>
+
+            <Modal
+                title="API Key 创建成功"
+                open={Boolean(createdKey)}
+                onCancel={closeCreatedKey}
+                footer={<Button type="primary" onClick={closeCreatedKey}>我已保存</Button>}
+                destroyOnHidden
+            >
+                <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+                    <div className="text-sm font-medium">请立即复制并妥善保存</div>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">出于安全原因，关闭此窗口后将无法再次查看完整 Key。</p>
+                    <div className="mt-4 flex items-start gap-2 rounded-xl bg-card p-3 ring-1 ring-border">
+                        <code className="min-w-0 flex-1 break-all text-xs leading-5">{createdKey?.secret}</code>
+                        <Button type="text" size="small" icon={<Copy className="size-4" />} onClick={() => copyText(createdKey?.secret || "", "API Key 已复制")} />
+                    </div>
+                </div>
+            </Modal>
+        </>
+    );
 }
 
 function SkeletonHistoryCards() {

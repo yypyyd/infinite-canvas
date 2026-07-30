@@ -38,6 +38,9 @@ func New() *gin.Engine {
 	api.GET("/workspace/status", middleware.UserAuth, middleware.OrganizationAuth, gin.WrapF(handler.UserStorageStatus))
 	api.GET("/preferences", middleware.UserAuth, gin.WrapF(handler.UserPreferences))
 	api.POST("/preferences", middleware.UserAuth, gin.WrapF(handler.SaveUserPreferences))
+	api.GET("/api-keys", middleware.UserAuth, middleware.OrganizationAuth, gin.WrapF(handler.UserAPIKeys))
+	api.POST("/api-keys", middleware.UserAuth, middleware.OrganizationAuth, gin.WrapF(handler.CreateUserAPIKey))
+	api.DELETE("/api-keys/:id", middleware.UserAuth, middleware.OrganizationAuth, func(c *gin.Context) { handler.RevokeUserAPIKey(c.Writer, c.Request, c.Param("id")) })
 	commerce := api.Group("/commerce", middleware.UserAuth, middleware.OrganizationAuth)
 	commerce.GET("/workspace", gin.WrapF(handler.CommerceWorkspace))
 	commerce.POST("/organizations", gin.WrapF(handler.CreateOrganization))
@@ -105,7 +108,7 @@ func New() *gin.Engine {
 	api.HEAD("/asset-files/:name", func(c *gin.Context) {
 		handler.AssetFile(c.Writer, c.Request, c.Param("name"))
 	})
-	v1 := api.Group("/v1", middleware.UserAuth, middleware.OrganizationAuth)
+	v1 := api.Group("/v1", middleware.APIAuth, middleware.OrganizationAuth)
 	v1.POST("/images/generations", gin.WrapF(handler.AIImagesGenerations))
 	v1.POST("/images/edits", gin.WrapF(handler.AIImagesEdits))
 	v1.POST("/chat/completions", gin.WrapF(handler.AIChatCompletions))

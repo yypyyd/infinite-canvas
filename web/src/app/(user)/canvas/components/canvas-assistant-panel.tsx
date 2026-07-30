@@ -15,6 +15,8 @@ import { nanoid } from "nanoid";
 import { cn } from "@/lib/utils";
 import { requestEdit, requestGeneration } from "@/services/api/image";
 import { requestVideoGeneration, storeGeneratedVideo } from "@/services/api/video";
+import { saveCanvasImageGenerationRecord } from "@/services/generation-history";
+import { workspaceOwnerId } from "@/services/workspace-changes";
 import { claimAgentToolExecution, confirmAgentTool, createAgentSession, getAgentRun, getAgentToolResultReceipt, streamAgentRun, submitAgentMessage, submitAgentToolResult, type AgentEvent, type AgentToolResult } from "@/services/api/agent";
 import type { UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl, uploadImage } from "@/services/image-storage";
@@ -83,6 +85,7 @@ export function CanvasAssistantPanel({
     const groupRatios = useConfigStore((state) => state.publicSettings?.modelChannel.groupRatios);
     const managedModels = useConfigStore((state) => state.publicSettings?.modelChannel.models);
     const userGroup = useUserStore((state) => state.user?.group || "default");
+    const historyOwnerId = useUserStore((state) => (state.user ? workspaceOwnerId(state.user.id, state.user.organizationId) : "guest"));
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
@@ -471,11 +474,21 @@ export function CanvasAssistantPanel({
 
         try {
             if (nextMode === "image") {
+                const generationStartedAt = performance.now();
                 const referenceImages: ReferenceImage[] = await Promise.all(
                     refs.filter((item) => item.dataUrl).map(async (item) => ({ id: item.id, name: `${item.title}.png`, type: "image/png", dataUrl: await imageToDataUrl(item), storageKey: item.storageKey })),
                 );
                 const images = referenceImages.length ? await requestEdit(requestConfig, text, referenceImages) : await requestGeneration(requestConfig, text);
                 const storedImages = await Promise.all(images.map((image) => uploadImage(image.dataUrl)));
+                void saveCanvasImageGenerationRecord(historyOwnerId, {
+                    prompt: text,
+                    model: requestConfig.model,
+                    size: requestConfig.size,
+                    quality: requestConfig.quality,
+                    images: storedImages,
+                    durationMs: performance.now() - generationStartedAt,
+                    canvasId: projectId,
+                });
                 updateMessage(session.id, assistantId, {
                     text: `生成了 ${storedImages.length} 张图片`,
                     images: storedImages.map((image, index) => ({ id: images[index].id, dataUrl: image.url, storageKey: image.storageKey, prompt: text })),

@@ -35,7 +35,7 @@ func TestNormalizePricingRequestDefaultsImageTierWithoutQuality(t *testing.T) {
 	}
 }
 
-func TestSelectPricingRulePrefersSpecificRule(t *testing.T) {
+func TestSelectVideoPricingRuleMatchesResolutionAndBillsBySeconds(t *testing.T) {
 	request := normalizePricingRequest(PricingRequest{
 		Model:      "video-model",
 		Modality:   "video",
@@ -47,15 +47,25 @@ func TestSelectPricingRulePrefersSpecificRule(t *testing.T) {
 	rules := normalizePricingRules([]model.PricingRule{
 		{Model: "video-model", Modality: "video", Operation: "generation", Unit: "second", Credits: 1, Enabled: true},
 		{Model: "video-model", Modality: "video", Operation: "generation", Unit: "second", ResolutionTier: "1080p", Credits: 3, Enabled: true},
-		{Model: "video-model", Modality: "video", Operation: "generation", Unit: "second", ResolutionTier: "1080p", DurationSeconds: 6, Credits: 5, Enabled: true},
 	})
 
 	rule, ok := selectPricingRule(rules, request)
 	if !ok {
 		t.Fatal("expected matching rule")
 	}
-	if rule.Credits != 5 {
-		t.Fatalf("credits = %d, want duration-specific rule credits 5", rule.Credits)
+	if rule.Credits != 3 {
+		t.Fatalf("credits = %d, want resolution rule credits 3", rule.Credits)
+	}
+	if credits := calculateRuleCredits(rule, request.Quantity, 1); credits != 18 {
+		t.Fatalf("credits = %d, want 3 credits/second * 6 seconds", credits)
+	}
+}
+
+func TestSelectPricingRuleDoesNotUseBlankResolutionFallback(t *testing.T) {
+	request := normalizePricingRequest(PricingRequest{Model: "video-model", Modality: "video", Operation: "generation", Unit: "second", Resolution: "1080p", Quantity: 6})
+	rules := normalizePricingRules([]model.PricingRule{{Model: "video-model", Modality: "video", Operation: "generation", Unit: "second", Credits: 1, Enabled: true}})
+	if _, ok := selectPricingRule(rules, request); ok {
+		t.Fatal("expected blank resolution rule not to match video request")
 	}
 }
 
@@ -89,8 +99,8 @@ func TestSelectPricingRuleSkipsDisabledAndMismatchedRules(t *testing.T) {
 		Unit:      "image",
 	})
 	rules := normalizePricingRules([]model.PricingRule{
-		{Model: "gpt-image-2", Modality: "image", Operation: "generation", Unit: "image", Credits: 1, Enabled: true},
-		{Model: "gpt-image-2", Modality: "image", Operation: "edit", Unit: "image", Credits: 2, Enabled: false},
+		{Model: "gpt-image-2", Modality: "image", Operation: "generation", Unit: "image", ResolutionTier: "1k", Credits: 1, Enabled: true},
+		{Model: "gpt-image-2", Modality: "image", Operation: "edit", Unit: "image", ResolutionTier: "1k", Credits: 2, Enabled: false},
 	})
 
 	if _, ok := selectPricingRule(rules, request); ok {

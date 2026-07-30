@@ -43,6 +43,36 @@ func PublicSettings() (model.PublicSetting, error) {
 	return public, err
 }
 
+func PublicAPIModels() ([]model.PublicAPIModel, error) {
+	settings, err := PublicSettings()
+	return publicAPIModels(settings.ModelChannel), err
+}
+
+func publicAPIModels(setting model.PublicModelChannelSetting) []model.PublicAPIModel {
+	available := make(map[string]bool, len(setting.AvailableModels))
+	for _, modelID := range setting.AvailableModels {
+		available[modelID] = true
+	}
+	result := make([]model.PublicAPIModel, 0, len(setting.Models))
+	for _, item := range setting.Models {
+		if !item.Enabled || !available[item.ID] || item.Modality == "text" {
+			continue
+		}
+		result = append(result, model.PublicAPIModel{
+			ID:              item.ID,
+			Object:          "model",
+			OwnedBy:         "infinite-canvas",
+			Name:            item.Name,
+			Modality:        item.Modality,
+			Operations:      item.Operations,
+			AspectRatios:    item.AspectRatios,
+			ResolutionTiers: item.ResolutionTiers,
+			Durations:       item.Durations,
+		})
+	}
+	return result
+}
+
 func AdminSettings() (model.Settings, error) {
 	settings, err := repository.GetSettings()
 	return hidePrivateAPIKeys(normalizeSettings(settings)), err
@@ -105,7 +135,7 @@ func normalizePublicSettingWithChannels(setting model.PublicSetting, channels []
 	enabledModels := enabledChannelModels(channels)
 	setting.ModelChannel.Models = normalizeModelDefinitions(setting.ModelChannel.Models, setting.ModelChannel.AvailableModels, setting.ModelChannel.ModelAspectRatios, enabledModels)
 	setting.ModelChannel.Models = mergeEnabledChannelCapabilities(setting.ModelChannel.Models, channels)
-	setting.ModelChannel.PricingRules = appendDefaultPricingRulesForModels(normalizePricingRules(setting.ModelChannel.PricingRules), setting.ModelChannel.Models)
+	setting.ModelChannel.PricingRules = normalizePricingRules(setting.ModelChannel.PricingRules)
 	setting.ModelChannel.GroupRatios = normalizeGroupRatios(setting.ModelChannel.GroupRatios)
 	setting.ModelChannel.ModelAspectRatios = normalizeModelAspectRatios(modelAspectRatiosFromDefinitions(setting.ModelChannel.Models, setting.ModelChannel.ModelAspectRatios))
 	if setting.Auth.AllowRegister == nil {
@@ -203,7 +233,7 @@ func CalculateRequestCreditsForGroup(request PricingRequest, userGroup string) (
 	public := normalizePublicSetting(settings.Public)
 	rule, ok := selectPricingRule(public.ModelChannel.PricingRules, request)
 	if !ok {
-		return 0, safeMessageError{message: "模型未配置计费规则"}
+		return 0, safeMessageError{message: "该模型或当前规格未设置价格"}
 	}
 	quantity := request.Quantity
 	if quantity < 1 {
@@ -244,9 +274,6 @@ func normalizePricingRules(items []model.PricingRule) []model.PricingRule {
 		item.Operation = normalizePricingToken(item.Operation)
 		item.Unit = normalizePricingToken(item.Unit)
 		item.ResolutionTier = normalizeResolutionTier(item.ResolutionTier)
-		if item.DurationSeconds < 0 {
-			item.DurationSeconds = 0
-		}
 		item.BillingMode = normalizePricingToken(item.BillingMode)
 		if item.BillingMode != "ratio" {
 			item.BillingMode = "fixed"
@@ -264,79 +291,18 @@ func normalizePricingRules(items []model.PricingRule) []model.PricingRule {
 		if item.CompletionRatio <= 0 {
 			item.CompletionRatio = 1
 		}
-		if item.Model == "" {
+		if item.Model == "" || item.Modality == "" || item.Operation == "" || item.Unit == "" {
+			continue
+		}
+		if (item.Modality == "image" || item.Modality == "video") && item.ResolutionTier == "" {
+			continue
+		}
+		if item.Modality != "image" && item.Modality != "video" && item.ResolutionTier != "" {
 			continue
 		}
 		result = append(result, item)
 	}
 	return result
-}
-
-func appendDefaultPricingRulesForModels(rules []model.PricingRule, models []model.ModelDefinition) []model.PricingRule {
-	result := append([]model.PricingRule{}, rules...)
-	for _, item := range models {
-		if !item.Enabled || strings.TrimSpace(item.ID) == "" {
-			continue
-		}
-		for _, rule := range defaultPricingRulesForModel(item) {
-			if hasPricingFallbackRule(result, rule) {
-				continue
-			}
-			result = append(result, rule)
-		}
-	}
-	return result
-}
-
-func defaultPricingRulesForModel(item model.ModelDefinition) []model.PricingRule {
-	modelID := strings.TrimSpace(item.ID)
-	modality := normalizePricingToken(item.Modality)
-	base := model.PricingRule{
-		Model:           modelID,
-		BillingMode:     "fixed",
-		Credits:         1,
-		MinCredits:      0,
-		ModelRatio:      1,
-		CompletionRatio: 1,
-		Enabled:         true,
-		Remark:          "auto default",
-	}
-	unit := "request"
-	if modality == "image" {
-		unit = "image"
-	} else if modality == "video" {
-		unit = "second"
-	}
-	operations := normalizeModelOperations(item.Operations, modelID, modality)
-	rules := make([]model.PricingRule, 0, len(operations))
-	for _, operation := range operations {
-		rules = append(rules, defaultPricingRule(base, modality, operation, unit))
-	}
-	return rules
-}
-
-func defaultPricingRule(base model.PricingRule, modality string, operation string, unit string) model.PricingRule {
-	base.Modality = modality
-	base.Operation = operation
-	base.Unit = unit
-	return base
-}
-
-func hasPricingFallbackRule(rules []model.PricingRule, target model.PricingRule) bool {
-	for _, rule := range rules {
-		if !rule.Enabled {
-			continue
-		}
-		if rule.Model == target.Model &&
-			rule.Modality == target.Modality &&
-			rule.Operation == target.Operation &&
-			rule.Unit == target.Unit &&
-			rule.ResolutionTier == "" &&
-			rule.DurationSeconds == 0 {
-			return true
-		}
-	}
-	return false
 }
 
 func normalizeModelDefinitions(items []model.ModelDefinition, availableModels []string, aspectRatios map[string][]string, channelModels []string) []model.ModelDefinition {
@@ -631,29 +597,19 @@ func selectPricingRule(rules []model.PricingRule, request PricingRequest) (model
 }
 
 func pricingRuleScore(rule model.PricingRule, request PricingRequest) (int, bool) {
-	score := 0
-	fields := [][2]string{
-		{rule.Modality, request.Modality},
-		{rule.Operation, request.Operation},
-		{rule.Unit, request.Unit},
-		{rule.ResolutionTier, request.ResolutionTier},
+	if rule.Modality != request.Modality || rule.Operation != request.Operation || rule.Unit != request.Unit {
+		return 0, false
 	}
-	for _, field := range fields {
-		if field[0] == "" {
-			continue
-		}
-		if field[0] != field[1] {
+	if request.Modality == "image" || request.Modality == "video" {
+		if rule.ResolutionTier == "" || rule.ResolutionTier != request.ResolutionTier {
 			return 0, false
 		}
-		score++
+		return 4, true
 	}
-	if rule.DurationSeconds > 0 {
-		if request.Modality != "video" || rule.DurationSeconds != request.Quantity {
-			return 0, false
-		}
-		score++
+	if rule.ResolutionTier != "" {
+		return 0, false
 	}
-	return score, true
+	return 3, true
 }
 
 func normalizeDurations(items []int) []int {

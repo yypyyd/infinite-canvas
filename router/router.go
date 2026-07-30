@@ -109,6 +109,7 @@ func New() *gin.Engine {
 		handler.AssetFile(c.Writer, c.Request, c.Param("name"))
 	})
 	v1 := api.Group("/v1", middleware.APIAuth, middleware.OrganizationAuth)
+	v1.GET("/models", gin.WrapF(handler.AIModels))
 	v1.POST("/images/generations", gin.WrapF(handler.AIImagesGenerations))
 	v1.POST("/images/edits", gin.WrapF(handler.AIImagesEdits))
 	v1.POST("/chat/completions", gin.WrapF(handler.AIChatCompletions))

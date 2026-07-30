@@ -73,7 +73,7 @@ description: settings 表中 public 和 private 配置结构说明
 | --- | --- | --- |
 | `availableModels` | string[] | 系统可用模型，由模型中心中已启用的模型生成 |
 | `models` | object[] | 模型中心配置，包含模型名称、类型、支持操作、启用状态、排序、宽高比、分辨率档和视频时长；保存设置时按对外模型名汇总所有同类型启用渠道的能力并集，默认 `/models` 保持严格 OpenAI 字段 |
-| `pricingRules` | object[] | 模型算力点配置，后端模型接口调用前按模型预扣，上游失败时返还；新增模型会按模型能力自动生成默认规则 |
+| `pricingRules` | object[] | 管理员显式维护的模型算力点配置，后端模型接口调用前按模型预扣，上游失败时返还；新增或同步模型不会自动生成价格 |
 | `groupRatios` | object | 用户分组倍率，例如 `default`、`vip`、`svip` |
 | `defaultModel` | string | 默认模型，从 `availableModels` 中选择；为空或失效时优先选择文本模型 |
 | `defaultImageModel` | string | 默认图片模型，从 `availableModels` 中选择；为空或失效时优先选择 `seedream`、`image`、`gpt-image` 模型 |
@@ -88,14 +88,13 @@ description: settings 表中 public 和 private 配置结构说明
 | `model` | string | 模型名称 |
 | `operation` | string | 内部操作类型，由模型中心的 `operations` 自动展开；图片模型会按能力注册表区分生成与编辑，识别错误时可在模型信息中修正 |
 | `unit` | string | 内部计费单位，由模型类型自动生成：图片按张、视频按秒、文本和音频按请求 |
-| `resolutionTier` | string | 分辨率价格档，例如 `1k`、`2k`、`4k`、`720p`；为空时是默认价格 |
-| `durationSeconds` | number | 视频时长条件；大于 0 时只匹配该秒数，0 表示不限制时长 |
+| `resolutionTier` | string | 图片和视频必填的分辨率价格档，例如 `1k`、`2k`、`4k`、`720p`；请求必须精确命中，不提供默认价格兜底 |
 | `billingMode` | string | 计费模式：`fixed` 固定单价，`ratio` 倍率计费 |
-| `credits` | number | 固定计费模式下的基础单价 |
+| `credits` | number | 固定计费模式下的基础单价；图片按张，视频按实际生成秒数乘以对应分辨率的每秒单价 |
 | `modelRatio` | number | 倍率计费模式下的模型倍率 |
 | `completionRatio` | number | 补全倍率，预留给后续 token usage 结算 |
 
-用户端统一请求同源后端 `/api/v1/*`，后端按模型名、类型、操作、比例、分辨率档和视频时长匹配 `private.value.channels` 中的可用渠道。浏览器不保存上游 Base URL 或 API Key。
+用户端统一请求同源后端 `/api/v1/*`，后端按模型名、类型、操作、比例、分辨率档和视频时长匹配 `private.value.channels` 中的可用渠道。计费规则不按视频时长拆档，未命中管理员显式配置的价格时直接拒绝请求并提示未设置价格。浏览器不保存上游 Base URL 或 API Key。
 
 `auth` 字段：
 

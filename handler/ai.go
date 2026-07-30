@@ -50,6 +50,15 @@ func AIChatCompletions(w http.ResponseWriter, r *http.Request) {
 	proxyAIRequest(w, r, "/chat/completions")
 }
 
+func AIModels(w http.ResponseWriter, _ *http.Request) {
+	items, err := service.PublicAPIModels()
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	writeJSON(w, model.PublicAPIModelList{Object: "list", Data: items})
+}
+
 func AIAudioSpeech(w http.ResponseWriter, r *http.Request) {
 	proxyAIRequest(w, r, "/audio/speech")
 }

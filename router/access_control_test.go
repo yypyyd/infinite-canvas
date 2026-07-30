@@ -25,6 +25,7 @@ func TestProtectedHTTPRoutesRejectUnauthenticatedRequests(t *testing.T) {
 		{method: http.MethodGet, path: "/api/preferences"},
 		{method: http.MethodPost, path: "/api/preferences", body: map[string]any{"theme": "dark"}},
 		{method: http.MethodGet, path: "/api/commerce/workspace"},
+		{method: http.MethodGet, path: "/api/v1/models"},
 		{method: http.MethodPost, path: "/api/v1/images/generations", body: map[string]any{"model": "forbidden"}},
 		{method: http.MethodGet, path: "/api/check-in"},
 		{method: http.MethodPost, path: "/api/redeem-codes/redeem", body: map[string]any{"code": "forbidden"}},

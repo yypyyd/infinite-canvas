@@ -356,7 +356,6 @@ export type AdminPricingRule = {
     operation: string;
     unit: string;
     resolutionTier: string;
-    durationSeconds: number;
     billingMode: "fixed" | "ratio";
     credits: number;
     minCredits: number;

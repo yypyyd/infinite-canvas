@@ -39,6 +39,22 @@ Authorization: Bearer ic_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 用户 API Key 只用于同源后端 `/api/v1/*` 路由，继续复用创建用户、绑定企业、后台模型渠道、用户组计价、企业扣费模式、企业额度和生成任务记录；调用方无需传 `X-Organization-ID`。若请求仍传入 `X-Organization-ID` 或 `organization` 查询参数，必须与 Key 绑定企业一致，否则服务端拒绝请求。Key 不能调用 `/api/auth/*`、`/api/admin/*`、`/api/commerce/*`、画布数据、用户资料或 Key 管理接口。
 
+`GET /api/v1/models` 返回当前开放的图片、视频和音频模型，不返回文本模型。响应保持 OpenAI 模型列表的 `{ "object": "list", "data": [...] }` 结构，每项包含标准的 `id`、`object`、`created`、`owned_by`，并补充显示名称、类型、支持操作、宽高比、分辨率档和视频时长；接口使用与生成请求相同的 Bearer 鉴权：
+
+```bash
+curl "https://huantu.xyz/api/v1/models" \
+  -H "Authorization: Bearer YOUR_API_KEY"
+```
+
+图片生成示例：
+
+```bash
+curl -X POST "https://huantu.xyz/api/v1/images/generations" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"YOUR_IMAGE_MODEL","prompt":"生成一张商品主图","size":"1024x1024","n":1}'
+```
+
 ### 安全边界与已知限制
 
 - 威胁模型覆盖数据库泄漏导致明文 Key 暴露、跨企业伪造、已撤销 Key 重放，以及使用 Key 进入账号或管理接口。完整 Key 由 32 字节安全随机值生成，数据库只保存 SHA-256 摘要；摘要适合验证高熵随机凭据，不能恢复原始 Key。

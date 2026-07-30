@@ -89,6 +89,7 @@ docker compose -f docker-compose.local.yml up -d --build
 - [Render 部署](docs/content/docs/overview/render.mdx)
 - [画布节点操作手册](docs/content/docs/canvas/canvas-node-manual.mdx)
 - [画布快捷键](docs/content/docs/canvas/canvas-shortcuts.mdx)
+- [API 对接指南](docs/content/docs/api/integration.mdx)
 - [待办事项](docs/content/docs/progress/todo.mdx)
 - [待测试事项](docs/content/docs/progress/pending-test.mdx)
 - [后端数据库说明](docs/content/docs/backend/backend-database.mdx)

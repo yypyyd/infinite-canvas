@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { App, Avatar, Button, Card, Descriptions, Empty, Form, Image as AntImage, Input, Modal, Pagination, Progress, Segmented, Select, Skeleton, Table, Tabs, Tag, Typography, type TableColumnsType } from "antd";
 import dayjs from "dayjs";
 import { saveAs } from "file-saver";
-import { CircleUserRound, Clock3, Cloud, Code2, Coins, Copy, ExternalLink, Film, History, ImageIcon, KeyRound, ListChecks, PencilLine, Plus, ReceiptText, RefreshCw, Search, ShieldCheck, Trash2, WalletCards } from "lucide-react";
+import { BookOpen, CircleUserRound, Clock3, Cloud, Code2, Coins, Copy, ExternalLink, Film, History, ImageIcon, KeyRound, ListChecks, PencilLine, Plus, ReceiptText, RefreshCw, Search, ShieldCheck, Trash2, WalletCards } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
@@ -1028,9 +1028,12 @@ function APIKeySection() {
                         </div>
                         <p className="mt-1 text-sm text-muted-foreground">让你的应用通过现有模型渠道调用 AI 能力，费用计入当前企业算力。</p>
                     </div>
-                    <Button type="primary" icon={<Plus className="size-4" />} disabled={activeCount >= 10} onClick={() => setCreateOpen(true)}>
-                        创建 Key
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                        <Button href="/api-docs" icon={<BookOpen className="size-4" />}>接入文档</Button>
+                        <Button type="primary" icon={<Plus className="size-4" />} disabled={activeCount >= 10} onClick={() => setCreateOpen(true)}>
+                            创建 Key
+                        </Button>
+                    </div>
                 </header>
 
                 <div className="grid lg:grid-cols-[minmax(0,1.4fr)_minmax(320px,.8fr)]">

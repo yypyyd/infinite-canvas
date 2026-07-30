@@ -37,8 +37,10 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
     const [editingModel, setEditingModel] = useState<string | null>(null);
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [draftRules, setDraftRules] = useState<AdminPricingRule[]>([]);
+    const [pricingTierInput, setPricingTierInput] = useState("");
     const selectedModality = Form.useWatch("modality", form) || "text";
     const selectedOperations = Form.useWatch("operations", form) || inferModelOperations("", selectedModality);
+    const selectedResolutionTiers = (Form.useWatch("resolutionTiers", form) || []) as string[];
     const models = useMemo(() => normalizeModels(value), [value]);
     const channelModelMap = useMemo(() => new Map(channelModels.map((item) => [item.model, item])), [channelModels]);
     const channelModelSet = useMemo(() => new Set(channelModelMap.keys()), [channelModelMap]);
@@ -61,6 +63,7 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
         const model = createModel(modelID, nextModality, models.length);
         form.setFieldsValue(model);
         setDraftRules([]);
+        setPricingTierInput("");
         setDrawerOpen(true);
     };
     const openEdit = (model: AdminManagedModel) => {
@@ -69,6 +72,7 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
         setEditingModel(model.id);
         form.setFieldsValue(nextModel);
         setDraftRules(pricingTiers(rules, nextModel));
+        setPricingTierInput("");
         setDrawerOpen(true);
     };
     const closeDrawer = () => {
@@ -76,6 +80,7 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
         setEditingModel(null);
         form.resetFields();
         setDraftRules([]);
+        setPricingTierInput("");
     };
     const saveModel = async () => {
         const fields = await form.validateFields();
@@ -127,18 +132,27 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
         const durations = next === "video" ? [6, 10] : [];
         form.setFieldsValue({ resolutionTiers, durations, operations: inferModelOperations(form.getFieldValue("id") || "", next) });
         setDraftRules([]);
+        setPricingTierInput("");
     };
     const changeResolutionTiers = (resolutionTiers: string[]) => setDraftRules((current) => pricingTiers(current, { ...form.getFieldsValue(), resolutionTiers } as AdminManagedModel));
     const addPricingRule = () => {
         const model = { ...form.getFieldsValue(), modality: selectedModality } as AdminManagedModel;
-        const resolutionTier = selectedModality === "image" || selectedModality === "video"
-            ? unique(model.resolutionTiers).find((item) => !draftRules.some((rule) => rule.resolutionTier === item))
+        const supportsResolution = selectedModality === "image" || selectedModality === "video";
+        const requestedTier = unique([pricingTierInput])[0] || "";
+        const resolutionTier = supportsResolution
+            ? requestedTier || unique(model.resolutionTiers).find((item) => !draftRules.some((rule) => rule.resolutionTier === item))
             : draftRules.length ? undefined : "";
         if (resolutionTier === undefined) {
-            message.warning(selectedModality === "image" || selectedModality === "video" ? "请先增加一个未设置价格的分辨率" : "该模型价格已经添加");
+            message.warning(supportsResolution ? "请选择或输入一个新的分辨率档" : "该模型价格已经添加");
             return;
         }
+        if (draftRules.some((rule) => rule.resolutionTier === resolutionTier)) {
+            message.warning("该分辨率档已经设置价格");
+            return;
+        }
+        if (supportsResolution && !unique(model.resolutionTiers).includes(resolutionTier)) form.setFieldValue("resolutionTiers", unique([...model.resolutionTiers, resolutionTier]));
         setDraftRules((current) => [...current, createPricingRule(model.id || "", selectedModality, resolutionTier)]);
+        setPricingTierInput("");
     };
 
     return (
@@ -256,7 +270,7 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
                     <Typography.Title level={5}>基本信息</Typography.Title>
                     <Row gutter={16}>
                         <Col span={16}>
-                            <Form.Item name="id" label="模型 ID" rules={[{ required: true, whitespace: true, message: "请输入模型 ID" }]} extra={editingModel ? "模型 ID 保存后不允许修改，避免渠道和历史规则失联。" : undefined}>
+                            <Form.Item name="id" label="模型 ID" rules={[{ required: true, whitespace: true, message: "请输入模型 ID" }]} extra={editingModel ? "模型 ID 保存后不允许修改，避免渠道和历史规则失联。" : "可从已有渠道选择，也可直接输入任意模型 ID。"}>
                                 {editingModel ? (
                                     <Input disabled />
                                 ) : (
@@ -335,10 +349,21 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
                                 仅保存手动添加的价格；图片和视频按分辨率精确匹配，视频单价按实际生成秒数计算。
                             </Typography.Text>
                         </div>
-                        <Space>
+                        <Space wrap>
                             <Tag color="blue">
                                 {capabilityLabel(selectedOperations)} · 按{unitLabel[defaultUnit(selectedModality)]}
                             </Tag>
+                            {selectedModality === "image" || selectedModality === "video" ? (
+                                <AutoComplete
+                                    allowClear
+                                    size="small"
+                                    value={pricingTierInput}
+                                    options={unique([...resolutionOptions, ...selectedResolutionTiers]).filter((item) => !draftRules.some((rule) => rule.resolutionTier === item)).map((item) => ({ label: item.toUpperCase(), value: item }))}
+                                    placeholder="选择或输入分辨率档"
+                                    style={{ width: 180 }}
+                                    onChange={setPricingTierInput}
+                                />
+                            ) : null}
                             <Button size="small" icon={<PlusOutlined />} onClick={addPricingRule}>添加价格</Button>
                         </Space>
                     </Flex>

@@ -16,7 +16,7 @@ const operationOptions = [
 const imageResolutionOptions = ["1k", "2k", "4k"];
 const videoResolutionOptions = ["480p", "720p", "1080p"];
 const videoDurationOptions = [4, 5, 6, 8, 10, 12, 15, 16, 20];
-const videoRatioOptions = ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"];
+const aspectRatioOptions = ["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "21:9"];
 
 export function ChannelModelCapabilitiesEditor({ managedModels }: { managedModels: AdminManagedModel[] }) {
     const channelModels = (Form.useWatch("models") || []) as AdminChannelModel[];
@@ -40,7 +40,7 @@ export function ChannelModelCapabilitiesEditor({ managedModels }: { managedModel
                                 const canConfigureResolution = !managedModel || supportsResolution;
                                 const presetTiers = modality === "image" ? imageResolutionOptions : modality === "video" ? videoResolutionOptions : [...imageResolutionOptions, ...videoResolutionOptions];
                                 const resolutionOptions = Array.from(new Set([...(managedModel?.resolutionTiers || []), ...(channelModel?.resolutionTiers || []), ...presetTiers])).map((value) => ({ label: value.toUpperCase(), value }));
-                                const ratioOptions = Array.from(new Set([...(channelModel?.aspectRatios || []), ...videoRatioOptions])).map((value) => ({ label: value, value }));
+                                const ratioOptions = Array.from(new Set([...(channelModel?.aspectRatios || []), ...(managedModel?.aspectRatios || []), ...aspectRatioOptions])).map((value) => ({ label: value, value }));
                                 const durationOptions = Array.from(new Set([...(channelModel?.durations || []), ...videoDurationOptions])).map((value) => ({ label: `${value} 秒`, value }));
                                 return (
                                     <Card
@@ -88,19 +88,19 @@ export function ChannelModelCapabilitiesEditor({ managedModels }: { managedModel
                                                     </Form.Item>
                                                 </Col>
                                             ) : null}
+                                            {supportsResolution ? (
+                                                <Col xs={24} md={modality === "video" ? 12 : 24}>
+                                                    <Form.Item name={[field.name, "aspectRatios"]} label="支持比例" rules={[{ required: true, message: "请选择至少一个支持比例" }]} extra="可直接输入上游实际支持的比例；路由只会把请求发送到支持该比例的渠道。">
+                                                        <Select mode="tags" tokenSeparators={[",", "\n"]} options={ratioOptions} />
+                                                    </Form.Item>
+                                                </Col>
+                                            ) : null}
                                             {modality === "video" ? (
-                                                <>
-                                                    <Col xs={24} md={12}>
-                                                        <Form.Item name={[field.name, "aspectRatios"]} label="支持比例" rules={[{ required: true, message: "请选择至少一个视频比例" }]}>
-                                                            <Select mode="tags" tokenSeparators={[",", "\n"]} options={ratioOptions} />
-                                                        </Form.Item>
-                                                    </Col>
-                                                    <Col xs={24} md={12}>
-                                                        <Form.Item name={[field.name, "durations"]} label="支持时长" rules={[{ required: true, message: "请选择至少一个视频时长" }]} extra="单位为秒；路由只会把请求发送到支持该时长的渠道。">
-                                                            <Select mode="tags" tokenSeparators={[",", "\n"]} options={durationOptions} />
-                                                        </Form.Item>
-                                                    </Col>
-                                                </>
+                                                <Col xs={24} md={12}>
+                                                    <Form.Item name={[field.name, "durations"]} label="支持时长" rules={[{ required: true, message: "请选择至少一个视频时长" }]} extra="单位为秒；路由只会把请求发送到支持该时长的渠道。">
+                                                        <Select mode="tags" tokenSeparators={[",", "\n"]} options={durationOptions} />
+                                                    </Form.Item>
+                                                </Col>
                                             ) : null}
                                         </Row>
                                     </Card>

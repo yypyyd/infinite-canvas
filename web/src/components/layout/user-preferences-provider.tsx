@@ -20,6 +20,7 @@ export function UserPreferencesProvider() {
         let lastSnapshot = "";
         let saveTimer: ReturnType<typeof setTimeout> | null = null;
         applyPreferences({});
+        lastSnapshot = JSON.stringify(currentPreferences());
 
         const saveCurrent = async () => {
             if (saveTimer) {

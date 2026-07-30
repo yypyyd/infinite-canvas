@@ -42,6 +42,36 @@ func UserAuth(c *gin.Context) {
 	c.Next()
 }
 
+// APIAuth 允许登录会话或绑定企业的用户 API Key 访问 AI 接口。
+func APIAuth(c *gin.Context) {
+	authorization := strings.TrimSpace(c.GetHeader("Authorization"))
+	scheme, token, hasScheme := strings.Cut(authorization, " ")
+	token = strings.TrimSpace(token)
+	if !hasScheme || !strings.EqualFold(scheme, "Bearer") || !strings.HasPrefix(token, service.UserAPIKeyTokenPrefix) {
+		UserAuth(c)
+		return
+	}
+	user, apiKey, err := service.AuthenticateUserAPIKey(token)
+	if err != nil {
+		handler.FailError(c.Writer, err)
+		c.Abort()
+		return
+	}
+	requestedOrganizationID := strings.TrimSpace(c.GetHeader("X-Organization-ID"))
+	if requestedOrganizationID == "" {
+		requestedOrganizationID = strings.TrimSpace(c.Query("organization"))
+	}
+	if requestedOrganizationID != "" && requestedOrganizationID != apiKey.OrganizationID {
+		handler.Fail(c.Writer, "API Key 不能访问其他企业")
+		c.Abort()
+		return
+	}
+	c.Request.Header.Set("X-Organization-ID", apiKey.OrganizationID)
+	c.Request = c.Request.WithContext(service.WithUser(c.Request.Context(), user))
+	c.Set("user_api_key_id", apiKey.ID)
+	c.Next()
+}
+
 func OptionalAuth(c *gin.Context) {
 	if user, ok := authUser(c); ok {
 		c.Request = c.Request.WithContext(service.WithUser(c.Request.Context(), user))

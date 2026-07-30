@@ -1,4 +1,4 @@
-import { apiGet, apiPost, compactApiParams } from "@/services/api/request";
+import { apiDelete, apiGet, apiPost, compactApiParams } from "@/services/api/request";
 
 export type UserRole = "guest" | "user" | "admin";
 
@@ -89,6 +89,23 @@ export type GenerationTaskListResponse = {
     total: number;
 };
 
+export type UserAPIKey = {
+    id: string;
+    organizationId: string;
+    userId: string;
+    name: string;
+    prefix: string;
+    status: "active" | "revoked";
+    lastUsedAt: string;
+    revokedAt: string;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type CreatedUserAPIKey = UserAPIKey & {
+    secret: string;
+};
+
 export async function login(payload: LoginPayload) {
     return apiPost<AuthSession>("/api/auth/login", payload);
 }
@@ -135,4 +152,16 @@ export async function fetchCheckInStatus(token: string) {
 
 export async function checkIn(token: string) {
     return apiPost<CheckInResult>("/api/check-in", undefined, token);
+}
+
+export async function fetchUserAPIKeys(token: string) {
+    return apiGet<UserAPIKey[]>("/api/api-keys", undefined, token);
+}
+
+export async function createUserAPIKey(token: string, name: string) {
+    return apiPost<CreatedUserAPIKey>("/api/api-keys", { name }, token);
+}
+
+export async function revokeUserAPIKey(token: string, id: string) {
+    return apiDelete<boolean>(`/api/api-keys/${encodeURIComponent(id)}`, token);
 }

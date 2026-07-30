@@ -164,7 +164,12 @@ func DeleteUser(id string) error {
 	if err != nil {
 		return err
 	}
-	return db.Delete(&model.User{}, "id = ?", id).Error
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("user_id = ?", id).Delete(&model.UserAPIKey{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&model.User{}, "id = ?", id).Error
+	})
 }
 
 // findUser 查询单个用户，并将未命中转换为 ok=false。

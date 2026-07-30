@@ -23,6 +23,30 @@ description: 业务接口统一响应结构与前端处理约定
 
 接口连接失败、服务不可达、返回体不是约定 JSON 时，前端按网络或接口异常处理。
 
+## 用户 API Key
+
+登录用户可在当前企业内管理自己的 API Key：
+
+- `GET /api/api-keys`：返回当前用户在当前企业创建的 Key，完整密钥不会返回。
+- `POST /api/api-keys`：接受 `{ "name": "生产服务器" }`，完整 `secret` 仅在本次成功响应中返回。
+- `DELETE /api/api-keys/:id`：撤销当前用户在当前企业内的有效 Key，撤销后不可恢复。
+
+每个用户在每个企业最多有 10 个有效 Key。调用 AI 接口时使用：
+
+```http
+Authorization: Bearer ic_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+用户 API Key 只用于同源后端 `/api/v1/*` 路由，继续复用创建用户、绑定企业、后台模型渠道、用户组计价、企业扣费模式、企业额度和生成任务记录；调用方无需传 `X-Organization-ID`。若请求仍传入 `X-Organization-ID` 或 `organization` 查询参数，必须与 Key 绑定企业一致，否则服务端拒绝请求。Key 不能调用 `/api/auth/*`、`/api/admin/*`、`/api/commerce/*`、画布数据、用户资料或 Key 管理接口。
+
+### 安全边界与已知限制
+
+- 威胁模型覆盖数据库泄漏导致明文 Key 暴露、跨企业伪造、已撤销 Key 重放，以及使用 Key 进入账号或管理接口。完整 Key 由 32 字节安全随机值生成，数据库只保存 SHA-256 摘要；摘要适合验证高熵随机凭据，不能恢复原始 Key。
+- Key 鉴权会逐请求复核用户状态、企业状态和成员关系。用户封禁、成员移除、企业停用或 Key 撤销后，后续请求立即拒绝。
+- 服务访问日志不得记录 Authorization、Cookie、请求体或完整 Key；企业审计日志只记录 Key 编号、名称和可辨认前缀。
+- 当前复用账号及企业额度、预算和既有接口防护，暂不提供单 Key 独立额度、细粒度 scope、过期时间或单 Key 限流。商业开放前仍应在反向代理层配置通用速率限制，并在后续版本按套餐增加 Key 级配额和限流。
+- 原始 Key 只展示一次，用户遗失后只能撤销并重新创建；前端不得把 Key 写入 localStorage、IndexedDB、日志或分析事件。
+
 ## 企业电商生产接口
 
 企业接口继续使用 `X-Organization-ID`，服务端逐请求复核当前用户成员关系。新增真实可用接口包括：

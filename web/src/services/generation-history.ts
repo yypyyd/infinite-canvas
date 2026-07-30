@@ -5,7 +5,7 @@ import { nanoid } from "nanoid";
 import { resolveMediaUrl, type UploadedFile } from "@/services/file-storage";
 import { resolveImageUrl, type UploadedImage } from "@/services/image-storage";
 import type { WorkspaceRecord } from "@/services/api/workspace";
-import { stageWorkspaceDelete, stageWorkspaceRecord, type PendingWorkspaceChange } from "@/services/workspace-changes";
+import { stageWorkspaceChange, stageWorkspaceRecord, type PendingWorkspaceChange } from "@/services/workspace-changes";
 
 export const GENERATION_HISTORY_CHANGED_EVENT = "infinite-canvas:generation-history-changed";
 
@@ -14,6 +14,25 @@ type RawGenerationLog = Record<string, unknown> & { id?: string; ownerId?: strin
 
 type StoredImage = { dataUrl?: string; storageKey?: string };
 type StoredVideo = { url?: string; storageKey?: string };
+
+type CanvasHistoryNode = {
+    id?: string;
+    type?: string;
+    title?: string;
+    metadata?: {
+        prompt?: string;
+        model?: string;
+        size?: string;
+        quality?: string;
+        vquality?: string;
+        seconds?: string;
+        status?: string;
+        storageKey?: string;
+        durationMs?: number;
+    };
+};
+
+type CanvasHistoryProject = { id?: string; createdAt?: string; updatedAt?: string; nodes?: CanvasHistoryNode[] };
 
 type StoredImageLog = {
     id?: string;
@@ -150,22 +169,53 @@ export function saveCanvasVideoGenerationRecord(
 
 export async function deleteStoredGenerationRecord(ownerId: string, kind: GenerationKind, id: string) {
     if (!ownerId || ownerId === "guest") return;
-    const version = generationStore(kind).get(logKey(ownerId, id))?.version || 0;
+    const current = generationStore(kind).get(logKey(ownerId, id));
+    const version = current?.version || 0;
     generationStore(kind).delete(logKey(ownerId, id));
-    stageWorkspaceDelete(ownerId, "generation_record", id, version);
+    const data: RawGenerationLog = { ...(current || { id, ownerId, kind }) };
+    delete data.version;
+    stageWorkspaceChange(ownerId, { domain: "generation_record", objectId: id, data, deleted: true, version });
     dispatchGenerationHistoryChanged();
 }
 
 export async function applyGenerationRecordSnapshot(ownerId: string, records: WorkspaceRecord[], pending: PendingWorkspaceChange[]) {
     const target = new Map<string, RawGenerationLog>();
+    const knownIds = new Set<string>();
+    const knownStorageKeys = new Set<string>();
     records.forEach((record) => {
-        if (record.domain !== "generation_record" || record.deleted || !record.data) return;
+        if (record.domain !== "generation_record") return;
+        knownIds.add(record.objectId);
+        generationStorageKeys(record.data).forEach((key) => knownStorageKeys.add(key));
+        if (record.deleted || !record.data) return;
         target.set(record.objectId, { ...record.data, id: record.objectId, ownerId, version: record.version });
     });
     pending.forEach((change) => {
         if (change.domain !== "generation_record") return;
+        knownIds.add(change.objectId);
+        generationStorageKeys(change.data).forEach((key) => knownStorageKeys.add(key));
         if (change.deleted) target.delete(change.objectId);
         else target.set(change.objectId, { ...change.data, id: change.objectId, ownerId, version: change.version });
+    });
+    const projects = new Map(
+        records
+            .filter((record) => record.domain === "canvas_project" && !record.deleted && record.data)
+            .map((record) => [record.objectId, { ...record.data, id: record.objectId } as CanvasHistoryProject]),
+    );
+    pending.forEach((change) => {
+        if (change.domain !== "canvas_project") return;
+        if (change.deleted) projects.delete(change.objectId);
+        else projects.set(change.objectId, { ...change.data, id: change.objectId } as CanvasHistoryProject);
+    });
+    projects.forEach((project) => {
+        (project.nodes || []).forEach((node) => {
+            const log = canvasNodeGenerationLog(project, node);
+            if (!log) return;
+            const id = canvasNodeGenerationRecordId(project.id || "", node.id || "");
+            const storageKey = generationStorageKeys(log)[0];
+            if (knownIds.has(id) || !storageKey || knownStorageKeys.has(storageKey)) return;
+            target.set(id, { ...log, id, ownerId, version: 0 });
+            knownStorageKeys.add(storageKey);
+        });
     });
     const local = readRawGenerationLogs(ownerId);
     local.filter((item) => item.id && !target.has(item.id)).forEach((item) => generationStore(item.kind || "image").delete(logKey(ownerId, item.id || "")));
@@ -209,6 +259,33 @@ function readRawGenerationLogs(ownerId: string) {
 
 function generationStore(kind: GenerationKind) {
     return kind === "image" ? imageLogs : videoLogs;
+}
+
+function canvasNodeGenerationLog(project: CanvasHistoryProject, node: CanvasHistoryNode): RawGenerationLog | null {
+    const metadata = node.metadata;
+    const storageKey = metadata?.storageKey || "";
+    const prompt = metadata?.prompt?.trim() || "";
+    if (!project.id || !node.id || !storageKey || (!prompt && !metadata?.model) || metadata?.status === "loading" || metadata?.status === "error") return null;
+    const createdAt = Date.parse(project.updatedAt || project.createdAt || "") || 0;
+    const shared = { createdAt, title: node.title || prompt.slice(0, 12) || "未命名", prompt, model: metadata?.model || "", durationMs: metadata?.durationMs || 0, status: "成功", canvasId: project.id, source: "canvas" };
+    if (node.type === "image") return { ...shared, kind: "image", successCount: 1, failCount: 0, imageCount: 1, size: metadata?.size || "", quality: metadata?.quality || "", images: [{ dataUrl: "", storageKey }] };
+    if (node.type === "video") return { ...shared, kind: "video", size: metadata?.size || "", resolution: metadata?.vquality || "", seconds: metadata?.seconds || "", video: { url: "", storageKey } };
+    return null;
+}
+
+function canvasNodeGenerationRecordId(canvasId: string, nodeId: string) {
+    const value = `${canvasId}:${nodeId}`;
+    let hash = 0;
+    for (let index = 0; index < value.length; index++) hash = (Math.imul(hash, 31) + value.charCodeAt(index)) | 0;
+    return `canvas-node-${canvasId.slice(0, 48)}-${nodeId.slice(0, 48)}-${(hash >>> 0).toString(36)}`;
+}
+
+function generationStorageKeys(log?: Record<string, unknown>) {
+    if (!log) return [];
+    const images = Array.isArray(log.images) ? log.images : [];
+    const imageKeys = images.map((image) => (image && typeof image === "object" && "storageKey" in image ? image.storageKey : "")).filter((key): key is string => typeof key === "string" && Boolean(key));
+    const video = log.video && typeof log.video === "object" && "storageKey" in log.video ? log.video.storageKey : "";
+    return typeof video === "string" && video ? [...imageKeys, video] : imageKeys;
 }
 
 function logKey(ownerId: string, id: string) {

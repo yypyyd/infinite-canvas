@@ -107,10 +107,30 @@ func DB() (*gorm.DB, error) {
 			&model.Setting{},
 		)
 		if dbErr == nil {
+			dbErr = dropLegacyWorkspaceUniqueIndexes(db)
+		}
+		if dbErr == nil {
 			dbErr = backfillLegacyOrganizationData(db)
 		}
 	})
 	return db, dbErr
+}
+
+func dropLegacyWorkspaceUniqueIndexes(db *gorm.DB) error {
+	for _, item := range []struct {
+		model any
+		name  string
+	}{
+		{model: &model.UserAsset{}, name: "idx_user_asset"},
+		{model: &model.UserGenerationRecord{}, name: "idx_user_generation_record"},
+	} {
+		if db.Migrator().HasIndex(item.model, item.name) {
+			if err := db.Migrator().DropIndex(item.model, item.name); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func backfillLegacyOrganizationData(db *gorm.DB) error {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { App, Avatar, Button, Card, Descriptions, Empty, Form, Image as AntImage, Input, Modal, Pagination, Select, Skeleton, Table, Tabs, Tag, Typography, type TableColumnsType } from "antd";
+import { App, Avatar, Button, Card, Descriptions, Empty, Form, Image as AntImage, Input, Modal, Pagination, Progress, Select, Skeleton, Table, Tabs, Tag, Typography, type TableColumnsType } from "antd";
 import dayjs from "dayjs";
 import { saveAs } from "file-saver";
 import { CircleUserRound, Clock3, Cloud, Coins, ExternalLink, Film, History, ImageIcon, KeyRound, ListChecks, PencilLine, ReceiptText, RefreshCw, Search, ShieldCheck, Trash2, WalletCards } from "lucide-react";
@@ -216,101 +216,102 @@ function ProfileSection() {
         profileForm.setFieldsValue({ displayName: user.displayName, avatarUrl: user.avatarUrl });
         setProfileOpen(true);
     };
-    const descriptionItems = [
-        { key: "username", label: "用户名", children: <Typography.Text copyable>{user.username}</Typography.Text> },
-        { key: "email", label: "电子邮箱", children: user.email || "未绑定" },
-        { key: "displayName", label: "昵称", children: user.displayName || "未设置" },
-        {
-            key: "group",
-            label: "用户组",
-            children: (
-                <Tag className="m-0" color="blue">
-                    {user.group || "default"}
-                </Tag>
-            ),
-        },
-        { key: "id", label: "用户 ID", children: <Typography.Text copyable>{user.id}</Typography.Text> },
-        { key: "createdAt", label: "注册时间", children: user.createdAt ? dayjs(user.createdAt).format("YYYY-MM-DD HH:mm") : "—" },
+    const profileItems = [
+        { key: "username", label: "用户名", value: <Typography.Text copyable>{user.username}</Typography.Text> },
+        { key: "displayName", label: "昵称", value: user.displayName || "尚未设置" },
+        { key: "email", label: "电子邮箱", value: user.email || "尚未绑定" },
+        { key: "group", label: "用户组", value: <Tag className="m-0 border-0 bg-primary/10 text-primary">{user.group || "default"}</Tag> },
+        { key: "createdAt", label: "注册时间", value: user.createdAt ? dayjs(user.createdAt).format("YYYY-MM-DD HH:mm") : "—" },
     ];
+    const storagePercent = quotaBytes ? Math.min(100, Math.round((usedBytes / quotaBytes) * 100)) : 0;
+    const cloudStatusText = cloudStatus === "saved" ? "所有数据已同步" : cloudStatus === "syncing" ? "正在同步账号数据" : cloudStatus === "offline" ? "当前离线，等待联网" : cloudStatus === "error" ? "云端同步失败" : "正在读取云端数据";
 
     return (
         <>
-            <div className="grid gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,.65fr)]">
-                <Card
-                    title={
-                        <span className="inline-flex items-center gap-2">
-                            <CircleUserRound className="size-4" />
-                            个人资料
+            <section className="overflow-hidden rounded-[28px] bg-card shadow-[0_18px_50px_rgba(29,29,31,.07)] ring-1 ring-border/70">
+                <header className="flex flex-col gap-4 border-b border-border px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-7">
+                    <div>
+                        <div className="flex items-center gap-2 text-lg font-semibold tracking-tight">
+                            <CircleUserRound className="size-5 text-primary" />
+                            账户概览
+                        </div>
+                        <p className="mt-1 text-sm text-muted-foreground">管理身份信息、安全设置与云端空间。</p>
+                    </div>
+                    <Button icon={<PencilLine className="size-4" />} onClick={openProfileEditor}>
+                        编辑资料
+                    </Button>
+                </header>
+
+                <div className="grid lg:grid-cols-[minmax(0,1.35fr)_minmax(240px,.8fr)_minmax(280px,1fr)]">
+                    <div className="p-5 sm:p-7 lg:border-r lg:border-border">
+                        <div className="mb-5 text-sm font-medium text-muted-foreground">基本信息</div>
+                        <div className="grid gap-x-8 gap-y-5 sm:grid-cols-2">
+                            {profileItems.map((item) => (
+                                <div key={item.key} className="min-w-0">
+                                    <div className="text-xs text-muted-foreground">{item.label}</div>
+                                    <div className="mt-1.5 min-w-0 truncate text-sm font-medium">{item.value}</div>
+                                </div>
+                            ))}
+                            <div className="min-w-0 sm:col-span-2">
+                                <div className="text-xs text-muted-foreground">用户 ID</div>
+                                <Typography.Text copyable={{ text: user.id }} ellipsis={{ tooltip: user.id }} className="mt-1.5 block max-w-full font-mono text-xs text-foreground">
+                                    {user.id}
+                                </Typography.Text>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="border-t border-border p-5 sm:p-7 lg:border-r lg:border-t-0">
+                        <div className="mb-5 flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                            <ShieldCheck className="size-4" />
+                            账号安全
+                        </div>
+                        <span className="flex size-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                            <KeyRound className="size-5" />
                         </span>
-                    }
-                    extra={
-                        <Button type="text" icon={<PencilLine className="size-4" />} onClick={openProfileEditor}>
-                            编辑
+                        <div className="mt-4 font-medium">登录密码</div>
+                        <p className="mt-1 text-sm leading-6 text-muted-foreground">定期更新密码，保护账号与企业资产。</p>
+                        <Button className="mt-5" onClick={() => setPasswordOpen(true)}>
+                            修改密码
                         </Button>
-                    }
-                >
-                    <Descriptions items={descriptionItems} column={{ xs: 1, sm: 2 }} size="middle" />
-                </Card>
-                <div className="space-y-5">
-                    <Card
-                        title={
-                            <span className="inline-flex items-center gap-2">
-                                <ShieldCheck className="size-4" />
-                                账号安全
-                            </span>
-                        }
-                    >
-                        <div className="flex items-start gap-3">
-                            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
-                                <KeyRound className="size-4" />
-                            </span>
-                            <div className="min-w-0 flex-1">
-                                <div className="font-medium">登录密码</div>
-                                <p className="mt-1 text-sm leading-6 text-muted-foreground">修改密码前需要验证当前密码。</p>
+                    </div>
+
+                    <div className="border-t border-border p-5 sm:p-7 lg:border-t-0">
+                        <div className="flex items-start justify-between gap-3">
+                            <div>
+                                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                                    <Cloud className="size-4" />
+                                    云端空间
+                                </div>
+                                <div className="mt-2 text-xs text-muted-foreground">{cloudStatusText}</div>
                             </div>
-                            <Button onClick={() => setPasswordOpen(true)}>修改</Button>
+                            <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">{storagePercent}%</span>
                         </div>
-                    </Card>
-                    <Card
-                        title={
-                            <span className="inline-flex items-center gap-2">
-                                <Cloud className="size-4" />
-                                账号云端数据
-                            </span>
-                        }
-                    >
-                        <p className="text-sm leading-7 text-muted-foreground">画布、我的素材、生成记录及关联媒体会在登录后自动保存到当前账号；算力流水和任务记录同样保存在服务端。</p>
-                        <div className="mt-3 rounded-lg bg-muted px-3 py-2 text-sm">
-                            <div className="grid grid-cols-3 gap-3 border-b border-border pb-2 text-center">
-                                <div>
-                                    <div className="font-medium tabular-nums">{projectCount}</div>
-                                    <div className="text-xs text-muted-foreground">画布</div>
+                        <div className="mt-5 grid grid-cols-3 gap-2 rounded-2xl bg-muted/70 p-3 text-center">
+                            {[
+                                [projectCount, "画布"],
+                                [assetCount, "素材"],
+                                [fileCount, "媒体"],
+                            ].map(([value, label]) => (
+                                <div key={label}>
+                                    <div className="text-base font-semibold tabular-nums">{value}</div>
+                                    <div className="mt-0.5 text-xs text-muted-foreground">{label}</div>
                                 </div>
-                                <div>
-                                    <div className="font-medium tabular-nums">{assetCount}</div>
-                                    <div className="text-xs text-muted-foreground">素材</div>
-                                </div>
-                                <div>
-                                    <div className="font-medium tabular-nums">{fileCount}</div>
-                                    <div className="text-xs text-muted-foreground">媒体</div>
-                                </div>
-                            </div>
-                            <div className="mt-2 flex items-center justify-between gap-3">
-                                <span>媒体文件用量</span>
-                                <span className="font-medium tabular-nums">
-                                    {formatFileSize(usedBytes)} / {formatFileSize(quotaBytes)}
-                                </span>
-                            </div>
-                            <div className="mt-1 text-xs text-muted-foreground">
-                                {cloudStatus === "saved" ? "已保存到账号" : cloudStatus === "syncing" ? "正在保存到账号" : cloudStatus === "offline" ? "当前离线，修改不会保存" : cloudStatus === "error" ? "云端保存失败" : "等待云端数据"}
-                            </div>
+                            ))}
                         </div>
-                        <Link href="/account?tab=history" className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-foreground hover:underline">
+                        <div className="mt-5 flex items-center justify-between gap-4 text-xs">
+                            <span className="text-muted-foreground">媒体文件用量</span>
+                            <span className="font-medium tabular-nums">
+                                {formatFileSize(usedBytes)} / {formatFileSize(quotaBytes)}
+                            </span>
+                        </div>
+                        <Progress percent={storagePercent} showInfo={false} size="small" className="mt-1" />
+                        <Link href="/account?tab=history" className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline">
                             查看生成记录 <ExternalLink className="size-3.5" />
                         </Link>
-                    </Card>
+                    </div>
                 </div>
-            </div>
+            </section>
 
             <Modal title="编辑个人资料" open={profileOpen} onCancel={() => setProfileOpen(false)} onOk={() => profileForm.submit()} confirmLoading={updateMutation.isPending} okText="保存" cancelText="取消" destroyOnHidden>
                 <Form<ProfileFormValues> form={profileForm} layout="vertical" requiredMark={false} onFinish={(values) => updateMutation.mutate(values)}>

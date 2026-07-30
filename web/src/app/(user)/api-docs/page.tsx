@@ -1,7 +1,7 @@
 "use client";
 
 import { Button, Empty, Segmented, Skeleton } from "antd";
-import { AudioLines, BookOpen, Check, ChevronRight, Clock3, Code2, Coins, Copy, ImageIcon, KeyRound, RefreshCw, Video } from "lucide-react";
+import { AudioLines, Check, ChevronRight, Clock3, Code2, Coins, Copy, ImageIcon, KeyRound, RefreshCw, Video } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -26,6 +26,12 @@ const operationMeta: Record<DocOperation, { label: string }> = {
     edit: { label: "编辑" },
     speech: { label: "语音合成" },
 };
+
+const integrationTips = [
+    { title: "先读模型", description: "从模型列表获取 ID 与能力，不假设默认模型。" },
+    { title: "唯一请求号", description: "每次生成使用新的 Idempotency-Key，避免重复扣费。" },
+    { title: "检查业务码", description: "JSON 响应同时检查 code，不能只判断 HTTP 200。" },
+];
 
 export default function APIDocsPage() {
     const copyText = useCopyText();
@@ -86,8 +92,15 @@ export default function APIDocsPage() {
                                 开放能力 · 配置驱动
                             </div>
                             <h1 className="max-w-2xl text-balance text-3xl font-semibold leading-[1.08] tracking-[-.045em] sm:text-4xl lg:text-[44px]">每个模型，都有准确的接入方式。</h1>
-                            <p className="mt-4 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-[15px]">直接读取模型中心配置，自动呈现操作、比例、分辨率、时长和计费；后台变化后，无需再修改文档。</p>
-                            <div className="mt-5 flex flex-wrap gap-2.5">
+                            <div className="mt-5 grid overflow-hidden rounded-2xl bg-muted/55 ring-1 ring-border sm:grid-cols-3">
+                                {integrationTips.map((item, index) => (
+                                    <div key={item.title} className={`p-3.5 ${index ? "border-t border-border sm:border-l sm:border-t-0" : ""}`}>
+                                        <div className="flex items-center gap-2 text-xs font-semibold"><Check className="size-3.5 text-primary" />{item.title}</div>
+                                        <p className="mt-1.5 text-[11px] leading-[1.55] text-muted-foreground">{item.description}</p>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="mt-4 flex flex-wrap gap-2.5">
                                 <Link href="/account?tab=api" className="inline-flex min-h-10 items-center gap-2 rounded-full bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                                     <KeyRound className="size-4" /> 创建 API Key
                                 </Link>
@@ -167,8 +180,7 @@ export default function APIDocsPage() {
                             <div className="rounded-[28px] bg-card p-8 ring-1 ring-border"><Skeleton active paragraph={{ rows: 14 }} /></div>
                         ) : selectedModel ? (
                             <>
-                                {activeOperation ? <PricingSection rules={pricingRules} /> : null}
-                                <ModelOverview model={selectedModel} onCopy={() => copyText(selectedModel.id, "模型 ID 已复制")} />
+                                <ModelOverview model={selectedModel} pricingRules={activeOperation ? pricingRules : null} onCopy={() => copyText(selectedModel.id, "模型 ID 已复制")} />
 
                                 {activeOperation ? <section className="overflow-hidden rounded-[24px] bg-card shadow-[0_14px_42px_rgba(29,29,31,.05)] ring-1 ring-border dark:shadow-none">
                                     <div className="flex flex-col gap-3 border-b border-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
@@ -209,17 +221,6 @@ export default function APIDocsPage() {
                     </div>
                 </section>
 
-                <section className="mt-5 grid gap-4 rounded-[24px] bg-card p-5 ring-1 ring-border lg:grid-cols-[.8fr_1.7fr]">
-                    <div>
-                        <BookOpen className="size-5 text-primary" />
-                        <h2 className="mt-3 text-xl font-semibold tracking-[-.03em]">接入时只记住三件事。</h2>
-                    </div>
-                    <div className="grid gap-5 sm:grid-cols-3">
-                        <ChecklistItem title="先读模型" description="始终从模型列表获取 ID 与能力，不假设默认模型。" />
-                        <ChecklistItem title="唯一请求号" description="每次生成使用新的 Idempotency-Key，避免重复扣费。" />
-                        <ChecklistItem title="检查业务码" description="JSON 响应同时检查 code，不能只判断 HTTP 200。" />
-                    </div>
-                </section>
             </div>
         </main>
     );
@@ -229,31 +230,65 @@ function HeroMetric({ label, value }: { label: string; value: string }) {
     return <div><div className="text-[10px] opacity-55">{label}</div><div className="mt-0.5 text-sm font-semibold tabular-nums">{value}</div></div>;
 }
 
-function ModelOverview({ model, onCopy }: { model: AdminManagedModel & { modality: DocModality }; onCopy: () => void }) {
+function ModelOverview({ model, pricingRules, onCopy }: { model: AdminManagedModel & { modality: DocModality }; pricingRules: AdminPricingRule[] | null; onCopy: () => void }) {
     const meta = modalityMeta[model.modality];
     const Icon = meta.icon;
     return (
-        <section className="rounded-[24px] bg-card p-5 shadow-[0_14px_42px_rgba(29,29,31,.05)] ring-1 ring-border dark:shadow-none">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-                <span className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground"><Icon className="size-5" /></span>
-                <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-xs font-medium text-primary">{meta.label}模型</span>
-                        <span className="text-xs text-muted-foreground">·</span>
-                        <span className="text-xs text-muted-foreground">{meta.description}</span>
+        <section className="relative overflow-hidden rounded-[24px] bg-card p-5 shadow-[0_14px_42px_rgba(29,29,31,.05)] ring-1 ring-primary/25 dark:shadow-none">
+            <div className="absolute inset-y-5 left-0 w-1 rounded-r-full bg-primary" />
+            {pricingRules ? <PricingOverview rules={pricingRules} /> : null}
+            <div className={`${pricingRules ? "mt-5 border-t border-border pt-5" : ""} grid gap-4 xl:grid-cols-[minmax(230px,.72fr)_minmax(0,1.6fr)]`}>
+                <div className="flex min-w-0 items-start gap-3">
+                    <span className="flex size-11 shrink-0 items-center justify-center rounded-[15px] bg-primary text-primary-foreground"><Icon className="size-5" /></span>
+                    <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                            <span className="font-medium text-primary">{meta.label}模型</span>
+                            <span className="text-muted-foreground">· {meta.description}</span>
+                        </div>
+                        <h2 className="mt-1 break-words text-xl font-semibold tracking-[-.03em]">{model.name || model.id}</h2>
+                        <button type="button" className="mt-1 break-all text-left font-mono text-xs text-muted-foreground transition hover:text-primary" onClick={onCopy}>{model.id}</button>
+                        {model.remark ? <p className="mt-2 text-xs leading-5 text-muted-foreground">{model.remark}</p> : null}
                     </div>
-                    <h2 className="mt-1.5 break-words text-2xl font-semibold tracking-[-.035em]">{model.name || model.id}</h2>
-                    <button type="button" className="mt-1 break-all text-left font-mono text-xs text-muted-foreground transition hover:text-primary" onClick={onCopy}>{model.id}</button>
-                    {model.remark ? <p className="mt-2 max-w-3xl text-xs leading-5 text-muted-foreground">{model.remark}</p> : null}
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                    <Capability label="开放操作" values={modelOperations(model).map((operation) => operationMeta[operation].label)} fallback="未配置" />
+                    <Capability label="宽高比" values={model.aspectRatios} fallback="未公布限制" />
+                    <Capability label="分辨率" values={model.resolutionTiers.map(formatResolution)} fallback="未公布限制" />
+                    <Capability label="视频时长" values={model.durations.map((duration) => `${duration} 秒`)} fallback={model.modality === "video" ? "未公布限制" : "不适用"} />
                 </div>
             </div>
-            <div className="mt-4 grid gap-2 border-t border-border pt-4 sm:grid-cols-2 xl:grid-cols-4">
-                <Capability label="开放操作" values={modelOperations(model).map((operation) => operationMeta[operation].label)} fallback="未配置" />
-                <Capability label="宽高比" values={model.aspectRatios} fallback="未公布限制" />
-                <Capability label="分辨率" values={model.resolutionTiers.map(formatResolution)} fallback="未公布限制" />
-                <Capability label="视频时长" values={model.durations.map((duration) => `${duration} 秒`)} fallback={model.modality === "video" ? "未公布限制" : "不适用"} />
-            </div>
         </section>
+    );
+}
+
+function PricingOverview({ rules }: { rules: AdminPricingRule[] }) {
+    return (
+        <div>
+            <div className="flex items-start justify-between gap-4">
+                <div className="flex min-w-0 items-start gap-3">
+                    <span className="flex size-10 shrink-0 items-center justify-center rounded-[14px] bg-primary/10 text-primary"><Coins className="size-4" /></span>
+                    <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[.16em] text-primary">Pricing</div>
+                        <h2 className="mt-0.5 text-lg font-semibold tracking-[-.025em]">当前调用价格</h2>
+                        <p className="mt-1 text-xs leading-5 text-muted-foreground">价格随后台配置实时变化，最终扣费还会应用账号用户组倍率。</p>
+                    </div>
+                </div>
+                <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-medium text-primary"><RefreshCw className="size-3" /> 实时配置</span>
+            </div>
+            {rules.length ? (
+                <div className="mt-4 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
+                    {rules.map((rule, index) => (
+                        <div key={`${rule.operation}-${rule.resolutionTier}-${index}`} className="rounded-2xl bg-primary/[.055] p-3.5 ring-1 ring-primary/15">
+                            <div className="flex items-center justify-between gap-3 text-[11px] text-muted-foreground"><span className="font-medium text-foreground">{rule.resolutionTier ? formatResolution(rule.resolutionTier) : "通用规格"}</span><span>{operationLabel(rule.operation)}</span></div>
+                            <div className="mt-2 text-2xl font-semibold tracking-[-.03em] text-primary tabular-nums">{rule.billingMode === "ratio" ? `${rule.modelRatio}×` : rule.credits}<span className="ml-1.5 text-xs font-normal tracking-normal text-muted-foreground">算力 / {unitLabel(rule.unit)}</span></div>
+                            {rule.minCredits > 0 ? <div className="mt-2 text-xs text-muted-foreground">单次最低 {rule.minCredits} 算力</div> : null}
+                        </div>
+                    ))}
+                </div>
+            ) : (
+                <div className="mt-4 rounded-2xl border border-dashed border-primary/30 bg-primary/[.045] px-4 py-3 text-xs leading-5 text-muted-foreground"><span className="font-semibold text-foreground">暂未配置价格。</span> 调用时会直接提示“该模型或当前规格未设置价格”。</div>
+            )}
+        </div>
     );
 }
 
@@ -303,38 +338,6 @@ function VideoFlow({ endpoint, model }: { endpoint: string; model: string }) {
     );
 }
 
-function PricingSection({ rules }: { rules: AdminPricingRule[] }) {
-    return (
-        <section className="relative overflow-hidden rounded-[24px] bg-card p-5 shadow-[0_14px_42px_rgba(29,29,31,.05)] ring-1 ring-primary/25 dark:shadow-none">
-            <div className="absolute inset-y-5 left-0 w-1 rounded-r-full bg-primary" />
-            <div className="flex items-start justify-between gap-4">
-                <div className="flex min-w-0 items-start gap-3">
-                    <span className="flex size-10 shrink-0 items-center justify-center rounded-[14px] bg-primary/10 text-primary"><Coins className="size-4" /></span>
-                    <div>
-                        <div className="text-[10px] font-semibold uppercase tracking-[.16em] text-primary">Pricing</div>
-                        <h2 className="mt-0.5 text-lg font-semibold tracking-[-.025em]">当前调用价格</h2>
-                        <p className="mt-1 text-xs leading-5 text-muted-foreground">价格随后台配置实时变化，最终扣费还会应用账号用户组倍率。</p>
-                    </div>
-                </div>
-                <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-medium text-primary"><RefreshCw className="size-3" /> 实时配置</span>
-            </div>
-            {rules.length ? (
-                <div className="mt-4 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
-                    {rules.map((rule, index) => (
-                        <div key={`${rule.operation}-${rule.resolutionTier}-${index}`} className="rounded-2xl bg-primary/[.055] p-3.5 ring-1 ring-primary/15">
-                            <div className="flex items-center justify-between gap-3 text-[11px] text-muted-foreground"><span className="font-medium text-foreground">{rule.resolutionTier ? formatResolution(rule.resolutionTier) : "通用规格"}</span><span>{operationLabel(rule.operation)}</span></div>
-                            <div className="mt-2 text-2xl font-semibold tracking-[-.03em] text-primary tabular-nums">{rule.billingMode === "ratio" ? `${rule.modelRatio}×` : rule.credits}<span className="ml-1.5 text-xs font-normal tracking-normal text-muted-foreground">算力 / {unitLabel(rule.unit)}</span></div>
-                            {rule.minCredits > 0 ? <div className="mt-2 text-xs text-muted-foreground">单次最低 {rule.minCredits} 算力</div> : null}
-                        </div>
-                    ))}
-                </div>
-            ) : (
-                <div className="mt-4 rounded-2xl border border-dashed border-primary/30 bg-primary/[.045] px-4 py-3 text-xs leading-5 text-muted-foreground"><span className="font-semibold text-foreground">暂未配置价格。</span> 调用时会直接提示“该模型或当前规格未设置价格”。</div>
-            )}
-        </section>
-    );
-}
-
 function ResponseSection({ modality }: { modality: DocModality }) {
     const items = modality === "image"
         ? ["成功响应读取 data[].b64_json 或 data[].url。", "Base64 需要补成可用的 data URL 或解码为文件。"]
@@ -350,10 +353,6 @@ function ResponseSection({ modality }: { modality: DocModality }) {
             <div className="mt-3 rounded-2xl border border-border px-4 py-3 text-xs leading-5 text-muted-foreground">业务错误格式为 <code className="text-foreground">&#123;"code":1,"data":null,"msg":"错误原因"&#125;</code>。部分业务失败仍可能返回 HTTP 200，必须同时判断 JSON 中的 <code className="text-foreground">code</code>。</div>
         </section>
     );
-}
-
-function ChecklistItem({ title, description }: { title: string; description: string }) {
-    return <div className="border-t border-border pt-4"><div className="flex items-center gap-2 text-sm font-semibold"><Check className="size-4 text-primary" />{title}</div><p className="mt-2 text-xs leading-5 text-muted-foreground">{description}</p></div>;
 }
 
 function isDocModality(value: string): value is DocModality {

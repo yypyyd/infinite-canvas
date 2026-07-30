@@ -359,7 +359,7 @@ function InfiniteCanvasPage() {
 
     const recordGeneratedImages = useCallback(
         (prompt: string, generationConfig: AiConfig, images: UploadedImage[], startedAt?: number) =>
-            void saveCanvasImageGenerationRecord(historyOwnerId, {
+            saveCanvasImageGenerationRecord(historyOwnerId, {
                 prompt,
                 model: generationConfig.model,
                 size: generationConfig.size,
@@ -372,7 +372,7 @@ function InfiniteCanvasPage() {
     );
     const recordGeneratedVideo = useCallback(
         (prompt: string, generationConfig: AiConfig, video: UploadedFile, startedAt?: number) =>
-            void saveCanvasVideoGenerationRecord(historyOwnerId, {
+            saveCanvasVideoGenerationRecord(historyOwnerId, {
                 prompt,
                 model: generationConfig.model,
                 size: generationConfig.size,
@@ -1905,7 +1905,7 @@ function InfiniteCanvasPage() {
                 throwIfGenerationCanceled(controller.signal);
                 const size = fitNodeSize(uploaded.width, uploaded.height, node.width, node.height);
                 setNodes((prev) => prev.map((item) => (item.id === childId ? { ...item, width: size.width, height: size.height, metadata: { ...item.metadata, ...imageMetadata(uploaded), prompt, ...generationMetadata } } : item)));
-                recordGeneratedImages(prompt, generationConfig, [uploaded], generationStartedAt);
+                await recordGeneratedImages(prompt, generationConfig, [uploaded], generationStartedAt);
             } catch (error) {
                 if (isGenerationCanceled(error)) return;
                 const errorDetails = error instanceof Error ? error.message : "局部修改失败";
@@ -1995,7 +1995,7 @@ function InfiniteCanvasPage() {
                 throwIfGenerationCanceled(controller.signal);
                 const size = fitNodeSize(uploaded.width, uploaded.height, imageConfig.width, imageConfig.height);
                 setNodes((prev) => prev.map((item) => (item.id === childId ? { ...item, width: size.width, height: size.height, metadata: { ...item.metadata, ...imageMetadata(uploaded), prompt, ...generationMetadata } } : item)));
-                recordGeneratedImages(prompt, generationConfig, [uploaded], generationStartedAt);
+                await recordGeneratedImages(prompt, generationConfig, [uploaded], generationStartedAt);
             } catch (error) {
                 if (isGenerationCanceled(error)) return;
                 const errorDetails = error instanceof Error ? error.message : "生成失败";
@@ -2365,7 +2365,7 @@ function InfiniteCanvasPage() {
                         setNodes((prev) => prev.map((node) => (node.id === nodeId && isConfigNode && node.metadata?.status === NODE_STATUS_LOADING ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_IDLE, errorDetails: undefined } } : node)));
                         return;
                     }
-                    recordGeneratedImages(effectivePrompt, generationConfig, successfulImages, generationStartedAt);
+                    await recordGeneratedImages(effectivePrompt, generationConfig, successfulImages, generationStartedAt);
                     if (hasFailure) message.error(hasSuccess ? "部分图片生成失败" : "全部图片生成失败");
                     setNodes((prev) =>
                         prev.map((node) =>
@@ -2444,7 +2444,7 @@ function InfiniteCanvasPage() {
                                     : node,
                             ),
                         );
-                        recordGeneratedVideo(effectivePrompt, generationConfig, video, generationStartedAt);
+                        await recordGeneratedVideo(effectivePrompt, generationConfig, video, generationStartedAt);
                     } finally {
                         finishGenerationRequest(videoId, runController);
                     }
@@ -2812,7 +2812,7 @@ function InfiniteCanvasPage() {
                                 : item,
                         ),
                     );
-                    recordGeneratedVideo(prompt, generationConfig, video, generationStartedAt);
+                    await recordGeneratedVideo(prompt, generationConfig, video, generationStartedAt);
                     return;
                 }
                 if (node.type === CanvasNodeType.Audio) {
@@ -2852,7 +2852,7 @@ function InfiniteCanvasPage() {
                             : item,
                     ),
                 );
-                recordGeneratedImages(prompt, generationConfig, [uploadedImage], generationStartedAt);
+                await recordGeneratedImages(prompt, generationConfig, [uploadedImage], generationStartedAt);
             } catch (error) {
                 if (isGenerationCanceled(error)) return;
                 const errorDetails = error instanceof Error ? error.message : "生成失败";
@@ -2961,7 +2961,7 @@ function InfiniteCanvasPage() {
             setSelectedNodeIds(new Set(created.map((node) => node.id)));
             setSelectedConnectionId(null);
             if (created[0]) setDialogNodeId(created[0].id);
-            recordGeneratedImages(images[0]?.prompt || "", { ...effectiveConfig, model: effectiveConfig.imageModel || effectiveConfig.model }, stored.map((item) => item.storedImage));
+            await recordGeneratedImages(images[0]?.prompt || "", { ...effectiveConfig, model: effectiveConfig.imageModel || effectiveConfig.model }, stored.map((item) => item.storedImage));
             return created.map((node, index) => ({ nodeId: node.id, storageKey: stored[index].storedImage.storageKey }));
         },
         [effectiveConfig, recordGeneratedImages, screenToCanvas, size.height, size.width],
@@ -2991,7 +2991,7 @@ function InfiniteCanvasPage() {
             setSelectedNodeIds(new Set([node.id]));
             setSelectedConnectionId(null);
             setDialogNodeId(node.id);
-            recordGeneratedVideo(video.prompt, { ...effectiveConfig, model: effectiveConfig.videoModel || effectiveConfig.model }, video);
+            await recordGeneratedVideo(video.prompt, { ...effectiveConfig, model: effectiveConfig.videoModel || effectiveConfig.model }, video);
             return { nodeId: node.id, storageKey: video.storageKey };
         },
         [effectiveConfig, recordGeneratedVideo, screenToCanvas, selectedNodeIds, size.height, size.width],

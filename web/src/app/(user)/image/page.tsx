@@ -207,12 +207,15 @@ export default function ImagePage() {
         const failed = result.find((item): item is PromiseRejectedResult => item.status === "rejected");
 
         try {
-            const logImages = await Promise.all(
+            const storedResults = await Promise.allSettled(
                 successImages.map(async (image) => {
                     const stored = await uploadImage(image.dataUrl);
                     return { ...image, dataUrl: stored.url, storageKey: stored.storageKey, width: stored.width, height: stored.height, bytes: stored.bytes, mimeType: stored.mimeType };
                 }),
             );
+            const logImages = storedResults.filter((item): item is PromiseFulfilledResult<GeneratedImage> => item.status === "fulfilled").map((item) => item.value);
+            const storageFailCount = successImages.length - logImages.length;
+            const storageFailure = storedResults.find((item): item is PromiseRejectedResult => item.status === "rejected");
             const storedImages = new Map(logImages.map((image) => [image.id, image]));
             setResults((value) =>
                 value.map((result) => {
@@ -220,7 +223,7 @@ export default function ImagePage() {
                     return stored ? { ...result, image: stored } : result;
                 }),
             );
-            saveLog(
+            await saveLog(
                 buildLog({
                     ownerId: historyOwnerId,
                     prompt: text,
@@ -228,13 +231,20 @@ export default function ImagePage() {
                     config: { ...snapshot.config, count: String(generationCount) },
                     references: snapshot.references,
                     durationMs: performance.now() - batchStartedAt,
-                    successCount,
-                    failCount,
-                    status: successCount ? "成功" : "失败",
+                    successCount: logImages.length,
+                    failCount: failCount + storageFailCount,
+                    status: logImages.length ? "成功" : "失败",
                     images: logImages,
                 }),
             );
-            successCount ? message.success("图片已生成") : message.error(failed?.reason instanceof Error ? failed.reason.message : "生成失败");
+            if (storageFailCount) {
+                const detail = storageFailure?.reason instanceof Error ? storageFailure.reason.message : "保存失败";
+                logImages.length ? message.warning(`已生成 ${successCount} 张图片，其中 ${storageFailCount} 张未写入生成记录`) : message.error(`图片已生成，但生成记录保存失败：${detail}`);
+            } else if (successCount && failCount) {
+                message.warning(`成功生成 ${successCount} 张，失败 ${failCount} 张`);
+            } else {
+                successCount ? message.success("图片已生成") : message.error(failed?.reason instanceof Error ? failed.reason.message : "生成失败");
+            }
         } finally {
             setRunning(false);
         }
@@ -301,8 +311,9 @@ export default function ImagePage() {
         setDeleteConfirmOpen(false);
     };
 
-    const saveLog = (log: GenerationLog) => {
-        void saveGenerationRecord(historyOwnerId, "image", serializeLog(log) as unknown as Record<string, unknown>).then(refreshLogs);
+    const saveLog = async (log: GenerationLog) => {
+        await saveGenerationRecord(historyOwnerId, "image", serializeLog(log) as unknown as Record<string, unknown>);
+        await refreshLogs();
     };
 
     const refreshLogs = async () => setLogs(await readStoredLogs(historyOwnerId));

@@ -40,6 +40,7 @@ func Load() error {
 		return err
 	}
 	normalizeDockerSQLiteDSN("/app/data")
+	normalizeSQLiteBusyTimeout()
 	if strings.TrimSpace(Cfg.JWTSecret) == "" || Cfg.JWTSecret == "infinite-canvas" {
 		secret, err := randomSecret()
 		if err != nil {
@@ -48,6 +49,19 @@ func Load() error {
 		Cfg.JWTSecret = secret
 	}
 	return nil
+}
+
+func normalizeSQLiteBusyTimeout() {
+	driver := strings.ToLower(strings.TrimSpace(Cfg.StorageDriver))
+	dsn := strings.TrimSpace(Cfg.DatabaseDSN)
+	if (driver != "" && driver != "sqlite") || dsn == "" || strings.Contains(dsn, ":memory:") || strings.Contains(strings.ToLower(dsn), "_pragma=busy_timeout(") {
+		return
+	}
+	separator := "?"
+	if strings.Contains(dsn, "?") {
+		separator = "&"
+	}
+	Cfg.DatabaseDSN = dsn + separator + "_pragma=busy_timeout(5000)"
 }
 
 func normalizeDockerSQLiteDSN(appDataDir string) {

@@ -31,3 +31,23 @@ func TestNormalizeDockerSQLiteDSNLeavesLocalPathWithoutMountedDataDir(t *testing
 		t.Fatalf("DatabaseDSN = %q, want relative local path", Cfg.DatabaseDSN)
 	}
 }
+
+func TestNormalizeSQLiteBusyTimeoutAddsDefault(t *testing.T) {
+	Cfg = Config{StorageDriver: "sqlite", DatabaseDSN: "data/infinite-canvas.db?cache=shared"}
+
+	normalizeSQLiteBusyTimeout()
+
+	if Cfg.DatabaseDSN != "data/infinite-canvas.db?cache=shared&_pragma=busy_timeout(5000)" {
+		t.Fatalf("DatabaseDSN = %q", Cfg.DatabaseDSN)
+	}
+}
+
+func TestNormalizeSQLiteBusyTimeoutKeepsExplicitValue(t *testing.T) {
+	Cfg = Config{StorageDriver: "sqlite", DatabaseDSN: "data/infinite-canvas.db?_pragma=busy_timeout(10000)"}
+
+	normalizeSQLiteBusyTimeout()
+
+	if Cfg.DatabaseDSN != "data/infinite-canvas.db?_pragma=busy_timeout(10000)" {
+		t.Fatalf("DatabaseDSN = %q", Cfg.DatabaseDSN)
+	}
+}

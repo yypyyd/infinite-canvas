@@ -339,11 +339,14 @@ export function CanvasAssistantPanel({
                                 const generated = referenceImages.length
                                     ? await requestEdit(toolConfig, toolArguments.prompt, referenceImages, undefined, { signal: toolAbortController.signal, idempotencyKey })
                                     : await requestGeneration(toolConfig, toolArguments.prompt, { signal: toolAbortController.signal, idempotencyKey });
-                                const stored = await Promise.all(generated.map((image) => uploadImage(image.dataUrl)));
-                                const canvasImages = stored.map((image, index) => ({ id: generated[index].id, dataUrl: image.url, storageKey: image.storageKey, prompt: toolArguments.prompt, agentRunId: runId, agentToolCallId: callId }));
+                                const storedResults = await Promise.allSettled(generated.map(async (image) => ({ generated: image, stored: await uploadImage(image.dataUrl) })));
+                                const stored = storedResults.filter((item): item is PromiseFulfilledResult<{ generated: (typeof generated)[number]; stored: Awaited<ReturnType<typeof uploadImage>> }> => item.status === "fulfilled").map((item) => item.value);
+                                if (!stored.length) throw storedResults.find((item): item is PromiseRejectedResult => item.status === "rejected")?.reason || new Error("生成图片保存失败");
+                                const canvasImages = stored.map(({ generated: image, stored }) => ({ id: image.id, dataUrl: stored.url, storageKey: stored.storageKey, prompt: toolArguments.prompt, agentRunId: runId, agentToolCallId: callId }));
                                 await claimAgentToolExecution(runId, callId, toolExecutorToken.current);
                                 const inserted = await onInsertImages(canvasImages);
-                                updateMessage(sessionId, assistantMessageId, { text: `已生成并插入 ${inserted.length} 张图片，正在整理结果`, images: canvasImages, isLoading: true });
+                                const storageFailCount = generated.length - stored.length;
+                                updateMessage(sessionId, assistantMessageId, { text: storageFailCount ? `已插入 ${inserted.length} 张图片，另有 ${storageFailCount} 张保存失败，正在整理结果` : `已生成并插入 ${inserted.length} 张图片，正在整理结果`, images: canvasImages, isLoading: true });
                                 result = { callId, status: "success", images: inserted };
                             } else if (toolName === "video.generate" && "duration" in toolArguments) {
                                 updateMessage(sessionId, assistantMessageId, { text: "正在生成视频", isLoading: true });
@@ -479,19 +482,22 @@ export function CanvasAssistantPanel({
                     refs.filter((item) => item.dataUrl).map(async (item) => ({ id: item.id, name: `${item.title}.png`, type: "image/png", dataUrl: await imageToDataUrl(item), storageKey: item.storageKey })),
                 );
                 const images = referenceImages.length ? await requestEdit(requestConfig, text, referenceImages) : await requestGeneration(requestConfig, text);
-                const storedImages = await Promise.all(images.map((image) => uploadImage(image.dataUrl)));
-                void saveCanvasImageGenerationRecord(historyOwnerId, {
+                const storedResults = await Promise.allSettled(images.map(async (image) => ({ generated: image, stored: await uploadImage(image.dataUrl) })));
+                const storedImages = storedResults.filter((item): item is PromiseFulfilledResult<{ generated: (typeof images)[number]; stored: Awaited<ReturnType<typeof uploadImage>> }> => item.status === "fulfilled").map((item) => item.value);
+                if (!storedImages.length) throw storedResults.find((item): item is PromiseRejectedResult => item.status === "rejected")?.reason || new Error("生成图片保存失败");
+                await saveCanvasImageGenerationRecord(historyOwnerId, {
                     prompt: text,
                     model: requestConfig.model,
                     size: requestConfig.size,
                     quality: requestConfig.quality,
-                    images: storedImages,
+                    images: storedImages.map((item) => item.stored),
                     durationMs: performance.now() - generationStartedAt,
                     canvasId: projectId,
                 });
+                const storageFailCount = images.length - storedImages.length;
                 updateMessage(session.id, assistantId, {
-                    text: `生成了 ${storedImages.length} 张图片`,
-                    images: storedImages.map((image, index) => ({ id: images[index].id, dataUrl: image.url, storageKey: image.storageKey, prompt: text })),
+                    text: storageFailCount ? `生成了 ${images.length} 张图片，其中 ${storageFailCount} 张保存失败` : `生成了 ${storedImages.length} 张图片`,
+                    images: storedImages.map(({ generated: image, stored }) => ({ id: image.id, dataUrl: stored.url, storageKey: stored.storageKey, prompt: text })),
                     isLoading: false,
                 });
                 return;

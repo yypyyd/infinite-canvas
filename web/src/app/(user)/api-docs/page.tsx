@@ -1,7 +1,7 @@
 "use client";
 
 import { Button, Empty, Segmented, Skeleton } from "antd";
-import { AudioLines, BookOpen, Check, ChevronRight, Clock3, Code2, Copy, ImageIcon, KeyRound, RefreshCw, Video } from "lucide-react";
+import { AudioLines, BookOpen, Check, ChevronRight, Clock3, Code2, Coins, Copy, ImageIcon, KeyRound, RefreshCw, Video } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -76,39 +76,39 @@ export default function APIDocsPage() {
 
     return (
         <main className="h-full overflow-y-auto bg-background text-foreground">
-            <div className="mx-auto w-full max-w-[1440px] px-4 py-5 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
-                <section className="relative overflow-hidden rounded-[34px] bg-card px-6 py-10 shadow-[0_26px_80px_rgba(29,29,31,.08)] ring-1 ring-border sm:px-10 lg:px-14 lg:py-14 dark:shadow-none">
-                    <div className="pointer-events-none absolute -right-28 -top-40 size-[420px] rounded-full bg-primary/10 blur-3xl" />
-                    <div className="relative grid items-end gap-10 lg:grid-cols-[minmax(0,1.15fr)_minmax(360px,.85fr)]">
+            <div className="mx-auto w-full max-w-[1360px] px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
+                <section className="relative overflow-hidden rounded-[28px] bg-card px-6 py-7 shadow-[0_20px_60px_rgba(29,29,31,.07)] ring-1 ring-border sm:px-8 lg:px-10 lg:py-8 dark:shadow-none">
+                    <div className="pointer-events-none absolute -right-20 -top-40 size-[320px] rounded-full bg-primary/10 blur-3xl" />
+                    <div className="relative grid items-center gap-7 lg:grid-cols-[minmax(0,1.15fr)_minmax(360px,.85fr)]">
                         <div className="max-w-3xl">
-                            <div className="mb-5 inline-flex items-center gap-2 text-sm font-medium text-primary">
+                            <div className="mb-3 inline-flex items-center gap-2 text-xs font-medium text-primary">
                                 <span className="size-1.5 rounded-full bg-primary" />
                                 开放能力 · 配置驱动
                             </div>
-                            <h1 className="text-balance text-4xl font-semibold tracking-[-.05em] sm:text-5xl lg:text-[58px] lg:leading-[1.02]">每个模型，都有准确的接入方式。</h1>
-                            <p className="mt-6 max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg sm:leading-8">页面直接读取当前模型中心配置，自动呈现可用操作、比例、分辨率、时长和计费。后台配置变化后，无需再修改文档。</p>
-                            <div className="mt-7 flex flex-wrap gap-3">
-                                <Link href="/account?tab=api" className="inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-5 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                            <h1 className="max-w-2xl text-balance text-3xl font-semibold leading-[1.08] tracking-[-.045em] sm:text-4xl lg:text-[44px]">每个模型，都有准确的接入方式。</h1>
+                            <p className="mt-4 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-[15px]">直接读取模型中心配置，自动呈现操作、比例、分辨率、时长和计费；后台变化后，无需再修改文档。</p>
+                            <div className="mt-5 flex flex-wrap gap-2.5">
+                                <Link href="/account?tab=api" className="inline-flex min-h-10 items-center gap-2 rounded-full bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                                     <KeyRound className="size-4" /> 创建 API Key
                                 </Link>
-                                <button type="button" onClick={() => copyText(endpoint, "API Endpoint 已复制")} className="inline-flex min-h-11 items-center gap-2 rounded-full bg-muted px-5 text-sm font-medium text-foreground transition hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                                <button type="button" onClick={() => copyText(endpoint, "API Endpoint 已复制")} className="inline-flex min-h-10 items-center gap-2 rounded-full bg-muted px-4 text-sm font-medium text-foreground transition hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                                     <Copy className="size-4" /> 复制接口地址
                                 </button>
                             </div>
                         </div>
 
-                        <div className="overflow-hidden rounded-[26px] bg-foreground text-background shadow-[0_24px_65px_rgba(29,29,31,.18)] dark:bg-muted dark:text-foreground dark:shadow-[0_24px_65px_rgba(0,0,0,.32)]">
-                            <div className="flex items-center justify-between border-b border-background/15 px-5 py-4 dark:border-border">
+                        <div className="overflow-hidden rounded-[22px] bg-muted/70 text-foreground shadow-[0_18px_48px_rgba(29,29,31,.10)] ring-1 ring-border dark:bg-muted dark:shadow-[0_18px_48px_rgba(0,0,0,.28)]">
+                            <div className="flex items-center justify-between border-b border-border px-4 py-3">
                                 <span className="flex items-center gap-2 text-xs font-medium opacity-65"><Code2 className="size-3.5" /> API Endpoint</span>
                                 <span className="inline-flex items-center gap-1.5 text-xs opacity-65"><RefreshCw className="size-3" /> 自动同步</span>
                             </div>
-                            <div className="px-5 py-6 sm:px-6">
+                            <div className="px-4 py-4 sm:px-5">
                                 <code className="block break-all text-[13px] leading-6">{endpoint}</code>
-                                <div className="mt-4 flex items-center justify-between gap-3 rounded-xl bg-background/10 px-3 py-2.5 text-xs dark:bg-background/40">
+                                <div className="mt-3 flex items-center justify-between gap-3 rounded-xl bg-card/80 px-3 py-2 text-xs ring-1 ring-border dark:bg-background/40 dark:ring-0">
                                     <code><span className="mr-2 font-semibold text-primary">GET</span>/models</code>
                                     <span className="opacity-55">发现模型</span>
                                 </div>
-                                <div className="mt-7 grid grid-cols-3 gap-3 border-t border-background/15 pt-5 dark:border-border">
+                                <div className="mt-4 grid grid-cols-3 gap-3 border-t border-border pt-4">
                                     <HeroMetric label="开放模型" value={String(models.length)} />
                                     <HeroMetric label="模型类型" value={String(new Set(models.map((model) => model.modality)).size)} />
                                     <HeroMetric label="鉴权方式" value="Bearer" />
@@ -118,9 +118,9 @@ export default function APIDocsPage() {
                     </div>
                 </section>
 
-                <section className="mt-7 grid items-start gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
-                    <aside className="rounded-[28px] bg-card p-4 shadow-[0_16px_50px_rgba(29,29,31,.06)] ring-1 ring-border dark:shadow-none lg:sticky lg:top-6">
-                        <div className="px-2 pb-4 pt-1">
+                <section className="mt-5 grid items-start gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
+                    <aside className="rounded-[24px] bg-card p-3 shadow-[0_14px_42px_rgba(29,29,31,.05)] ring-1 ring-border dark:shadow-none lg:sticky lg:top-4">
+                        <div className="px-2 pb-3 pt-1">
                             <div className="text-sm font-semibold">模型目录</div>
                             <p className="mt-1 text-xs leading-5 text-muted-foreground">只显示当前已开放的非文本模型</p>
                         </div>
@@ -130,7 +130,7 @@ export default function APIDocsPage() {
                             options={filterOptions(models)}
                             onChange={chooseModality}
                         />
-                        <div className="mt-4 max-h-[min(660px,calc(100vh-230px))] space-y-2 overflow-y-auto pr-1 thin-scrollbar">
+                        <div className="mt-3 max-h-[min(700px,calc(100vh-190px))] space-y-1.5 overflow-y-auto pr-1 thin-scrollbar">
                             {isLoading || !modelChannel ? (
                                 <div className="space-y-3 p-2"><Skeleton active paragraph={{ rows: 8 }} title={false} /></div>
                             ) : visibleModels.length ? (
@@ -143,9 +143,9 @@ export default function APIDocsPage() {
                                             key={model.id}
                                             type="button"
                                             onClick={() => chooseModel(model)}
-                                            className={`group flex w-full items-center gap-3 rounded-[18px] p-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selected ? "bg-accent-soft ring-1 ring-primary/25" : "hover:bg-muted"}`}
+                                            className={`group flex w-full items-center gap-3 rounded-[15px] p-2.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selected ? "bg-accent-soft ring-1 ring-primary/25" : "hover:bg-muted"}`}
                                         >
-                                            <span className={`flex size-10 shrink-0 items-center justify-center rounded-[14px] ${selected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground group-hover:bg-card"}`}>
+                                            <span className={`flex size-9 shrink-0 items-center justify-center rounded-xl ${selected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground group-hover:bg-card"}`}>
                                                 <Icon className="size-4" />
                                             </span>
                                             <span className="min-w-0 flex-1">
@@ -162,18 +162,19 @@ export default function APIDocsPage() {
                         </div>
                     </aside>
 
-                    <div className="min-w-0 space-y-6">
+                    <div className="min-w-0 space-y-4">
                         {isLoading || !modelChannel ? (
                             <div className="rounded-[28px] bg-card p-8 ring-1 ring-border"><Skeleton active paragraph={{ rows: 14 }} /></div>
                         ) : selectedModel ? (
                             <>
+                                {activeOperation ? <PricingSection rules={pricingRules} /> : null}
                                 <ModelOverview model={selectedModel} onCopy={() => copyText(selectedModel.id, "模型 ID 已复制")} />
 
-                                {activeOperation ? <section className="overflow-hidden rounded-[28px] bg-card shadow-[0_16px_50px_rgba(29,29,31,.06)] ring-1 ring-border dark:shadow-none">
-                                    <div className="flex flex-col gap-4 border-b border-border px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-7">
+                                {activeOperation ? <section className="overflow-hidden rounded-[24px] bg-card shadow-[0_14px_42px_rgba(29,29,31,.05)] ring-1 ring-border dark:shadow-none">
+                                    <div className="flex flex-col gap-3 border-b border-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
                                         <div>
-                                            <div className="text-lg font-semibold tracking-[-.02em]">请求示例</div>
-                                            <p className="mt-1 text-sm text-muted-foreground">已带入当前模型和后台明确配置的规格，可直接替换 Key 与提示词。</p>
+                                            <div className="text-base font-semibold tracking-[-.02em]">请求示例</div>
+                                            <p className="mt-1 text-xs leading-5 text-muted-foreground">已带入当前模型和后台明确配置的规格，可直接替换 Key 与提示词。</p>
                                         </div>
                                         {operations.length > 1 ? (
                                             <Segmented<DocOperation>
@@ -183,15 +184,15 @@ export default function APIDocsPage() {
                                             />
                                         ) : null}
                                     </div>
-                                    <div className="grid xl:grid-cols-[minmax(0,1.4fr)_minmax(280px,.6fr)]">
+                                    <div className="grid xl:grid-cols-[minmax(0,1.65fr)_minmax(260px,.75fr)]">
                                         <SnippetCard value={snippet} onCopy={() => copyText(snippet, "请求示例已复制")} />
-                                        <div className="border-t border-border p-5 sm:p-7 xl:border-l xl:border-t-0">
-                                            <div className="text-sm font-semibold">参数说明</div>
-                                            <div className="mt-4 space-y-4">
+                                        <div className="border-t border-border bg-muted/25 p-4 xl:border-l xl:border-t-0">
+                                            <div className="flex items-center justify-between gap-3"><div className="text-sm font-semibold">参数说明</div><span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">{requestFields(selectedModel, activeOperation).length} 项</span></div>
+                                            <div className="mt-3 space-y-2">
                                                 {requestFields(selectedModel, activeOperation).map((field) => (
-                                                    <div key={field.name} className="grid grid-cols-[92px_minmax(0,1fr)] gap-3 text-sm">
-                                                        <code className="text-primary">{field.name}</code>
-                                                        <span className="leading-6 text-muted-foreground">{field.description}</span>
+                                                    <div key={field.name} className="grid grid-cols-[78px_minmax(0,1fr)] gap-2 rounded-xl border border-border/70 bg-card px-3 py-2.5 text-xs">
+                                                        <code className="font-semibold text-primary">{field.name}</code>
+                                                        <span className="leading-5 text-muted-foreground">{field.description}</span>
                                                     </div>
                                                 ))}
                                             </div>
@@ -200,7 +201,6 @@ export default function APIDocsPage() {
                                 </section> : <section className="rounded-[28px] bg-card px-6 py-12 text-center ring-1 ring-border"><h2 className="text-lg font-semibold">当前模型未配置可用操作</h2><p className="mt-2 text-sm text-muted-foreground">请先在后台模型中心配置生成、编辑或语音合成能力。</p></section>}
 
                                 {activeOperation && selectedModel.modality === "video" ? <VideoFlow endpoint={endpoint} model={selectedModel.id} /> : null}
-                                {activeOperation ? <PricingSection rules={pricingRules} /> : null}
                                 {activeOperation ? <ResponseSection modality={selectedModel.modality} /> : null}
                             </>
                         ) : (
@@ -209,10 +209,10 @@ export default function APIDocsPage() {
                     </div>
                 </section>
 
-                <section className="mt-7 grid gap-5 rounded-[28px] bg-card p-6 ring-1 ring-border sm:p-8 lg:grid-cols-[1fr_1.5fr]">
+                <section className="mt-5 grid gap-4 rounded-[24px] bg-card p-5 ring-1 ring-border lg:grid-cols-[.8fr_1.7fr]">
                     <div>
                         <BookOpen className="size-5 text-primary" />
-                        <h2 className="mt-5 text-2xl font-semibold tracking-[-.03em]">接入时只记住三件事。</h2>
+                        <h2 className="mt-3 text-xl font-semibold tracking-[-.03em]">接入时只记住三件事。</h2>
                     </div>
                     <div className="grid gap-5 sm:grid-cols-3">
                         <ChecklistItem title="先读模型" description="始终从模型列表获取 ID 与能力，不假设默认模型。" />
@@ -226,28 +226,28 @@ export default function APIDocsPage() {
 }
 
 function HeroMetric({ label, value }: { label: string; value: string }) {
-    return <div><div className="text-[11px] opacity-55">{label}</div><div className="mt-1 text-base font-semibold tabular-nums">{value}</div></div>;
+    return <div><div className="text-[10px] opacity-55">{label}</div><div className="mt-0.5 text-sm font-semibold tabular-nums">{value}</div></div>;
 }
 
 function ModelOverview({ model, onCopy }: { model: AdminManagedModel & { modality: DocModality }; onCopy: () => void }) {
     const meta = modalityMeta[model.modality];
     const Icon = meta.icon;
     return (
-        <section className="rounded-[28px] bg-card p-6 shadow-[0_16px_50px_rgba(29,29,31,.06)] ring-1 ring-border sm:p-8 dark:shadow-none">
-            <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
-                <span className="flex size-14 shrink-0 items-center justify-center rounded-[18px] bg-primary text-primary-foreground"><Icon className="size-6" /></span>
+        <section className="rounded-[24px] bg-card p-5 shadow-[0_14px_42px_rgba(29,29,31,.05)] ring-1 ring-border dark:shadow-none">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+                <span className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground"><Icon className="size-5" /></span>
                 <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                         <span className="text-xs font-medium text-primary">{meta.label}模型</span>
                         <span className="text-xs text-muted-foreground">·</span>
                         <span className="text-xs text-muted-foreground">{meta.description}</span>
                     </div>
-                    <h2 className="mt-2 break-words text-3xl font-semibold tracking-[-.035em]">{model.name || model.id}</h2>
-                    <button type="button" className="mt-2 break-all text-left font-mono text-xs text-muted-foreground transition hover:text-primary" onClick={onCopy}>{model.id}</button>
-                    {model.remark ? <p className="mt-4 max-w-3xl text-sm leading-6 text-muted-foreground">{model.remark}</p> : null}
+                    <h2 className="mt-1.5 break-words text-2xl font-semibold tracking-[-.035em]">{model.name || model.id}</h2>
+                    <button type="button" className="mt-1 break-all text-left font-mono text-xs text-muted-foreground transition hover:text-primary" onClick={onCopy}>{model.id}</button>
+                    {model.remark ? <p className="mt-2 max-w-3xl text-xs leading-5 text-muted-foreground">{model.remark}</p> : null}
                 </div>
             </div>
-            <div className="mt-7 grid gap-4 border-t border-border pt-6 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="mt-4 grid gap-2 border-t border-border pt-4 sm:grid-cols-2 xl:grid-cols-4">
                 <Capability label="开放操作" values={modelOperations(model).map((operation) => operationMeta[operation].label)} fallback="未配置" />
                 <Capability label="宽高比" values={model.aspectRatios} fallback="未公布限制" />
                 <Capability label="分辨率" values={model.resolutionTiers.map(formatResolution)} fallback="未公布限制" />
@@ -259,10 +259,10 @@ function ModelOverview({ model, onCopy }: { model: AdminManagedModel & { modalit
 
 function Capability({ label, values, fallback }: { label: string; values: Array<string | number>; fallback: string }) {
     return (
-        <div className="min-w-0">
-            <div className="text-xs font-medium text-muted-foreground">{label}</div>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-                {values.length ? values.map((value) => <span key={String(value)} className="rounded-lg bg-muted px-2 py-1 text-xs font-medium">{value}</span>) : <span className="text-sm text-muted-foreground">{fallback}</span>}
+        <div className="min-w-0 rounded-xl bg-muted/70 px-3 py-2.5 ring-1 ring-border/50">
+            <div className="text-[11px] font-medium text-muted-foreground">{label}</div>
+            <div className="mt-1.5 flex min-h-5 flex-wrap items-center gap-1">
+                {values.length ? values.map((value) => <span key={String(value)} className="rounded-md bg-card px-1.5 py-0.5 text-[11px] font-semibold ring-1 ring-border/70">{value}</span>) : <span className="text-xs text-muted-foreground">{fallback}</span>}
             </div>
         </div>
     );
@@ -270,12 +270,12 @@ function Capability({ label, values, fallback }: { label: string; values: Array<
 
 function SnippetCard({ value, onCopy }: { value: string; onCopy: () => void }) {
     return (
-        <div className="min-w-0 bg-foreground text-background dark:bg-muted dark:text-foreground">
-            <div className="flex items-center justify-between border-b border-background/15 px-5 py-3 dark:border-border">
-                <div className="flex items-center gap-1.5" aria-hidden="true"><span className="size-2.5 rounded-full bg-background/25" /><span className="size-2.5 rounded-full bg-background/15" /><span className="size-2.5 rounded-full bg-background/10" /></div>
+        <div className="min-w-0 bg-muted/70 text-foreground dark:bg-muted">
+            <div className="flex items-center justify-between border-b border-border px-5 py-3">
+                <div className="flex items-center gap-1.5" aria-hidden="true"><span className="size-2.5 rounded-full bg-muted-foreground/50" /><span className="size-2.5 rounded-full bg-muted-foreground/30" /><span className="size-2.5 rounded-full bg-muted-foreground/20" /></div>
                 <Button type="text" size="small" icon={<Copy className="size-3.5" />} onClick={onCopy} className="!text-inherit !opacity-65 hover:!opacity-100">复制</Button>
             </div>
-            <pre className="thin-scrollbar max-h-[520px] overflow-auto p-5 text-[12px] leading-6 sm:p-7"><code>{value}</code></pre>
+            <pre className="thin-scrollbar max-h-[440px] overflow-auto p-5 text-[12px] leading-6"><code>{value}</code></pre>
         </div>
     );
 }
@@ -287,41 +287,49 @@ function VideoFlow({ endpoint, model }: { endpoint: string; model: string }) {
         { title: "下载成片", detail: `状态 completed 后请求 /videos/{id}/content?model=${model}` },
     ];
     return (
-        <section className="rounded-[28px] bg-card p-6 ring-1 ring-border sm:p-8">
+        <section className="rounded-[24px] bg-card p-5 ring-1 ring-border">
             <div className="flex items-center gap-2 text-sm font-semibold"><Clock3 className="size-4 text-primary" /> 视频异步流程</div>
-            <div className="mt-6 grid gap-4 md:grid-cols-3">
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
                 {steps.map((step, index) => (
-                    <div key={step.title} className="rounded-[20px] bg-muted p-5">
+                    <div key={step.title} className="rounded-2xl bg-muted p-4">
                         <span className="text-xs font-semibold tabular-nums text-primary">0{index + 1}</span>
-                        <h3 className="mt-5 font-semibold">{step.title}</h3>
+                        <h3 className="mt-3 font-semibold">{step.title}</h3>
                         <p className="mt-2 break-all text-xs leading-5 text-muted-foreground">{step.detail}</p>
                     </div>
                 ))}
             </div>
-            <p className="mt-5 text-xs leading-5 text-muted-foreground">建议每 2–3 秒轮询一次。查询和下载都必须携带创建任务时的模型 ID；下载地址为 {endpoint}/videos/&#123;id&#125;/content?model={model}。</p>
+            <p className="mt-4 text-xs leading-5 text-muted-foreground">建议每 2–3 秒轮询一次。查询和下载都必须携带创建任务时的模型 ID；下载地址为 {endpoint}/videos/&#123;id&#125;/content?model={model}。</p>
         </section>
     );
 }
 
 function PricingSection({ rules }: { rules: AdminPricingRule[] }) {
     return (
-        <section className="rounded-[28px] bg-card p-6 ring-1 ring-border sm:p-8">
+        <section className="relative overflow-hidden rounded-[24px] bg-card p-5 shadow-[0_14px_42px_rgba(29,29,31,.05)] ring-1 ring-primary/25 dark:shadow-none">
+            <div className="absolute inset-y-5 left-0 w-1 rounded-r-full bg-primary" />
             <div className="flex items-start justify-between gap-4">
-                <div><h2 className="text-lg font-semibold tracking-[-.02em]">当前计费配置</h2><p className="mt-1 text-sm text-muted-foreground">页面随后台模型计费实时变化，最终扣费还会应用账号用户组倍率。</p></div>
-                <RefreshCw className="mt-1 size-4 shrink-0 text-primary" />
+                <div className="flex min-w-0 items-start gap-3">
+                    <span className="flex size-10 shrink-0 items-center justify-center rounded-[14px] bg-primary/10 text-primary"><Coins className="size-4" /></span>
+                    <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[.16em] text-primary">Pricing</div>
+                        <h2 className="mt-0.5 text-lg font-semibold tracking-[-.025em]">当前调用价格</h2>
+                        <p className="mt-1 text-xs leading-5 text-muted-foreground">价格随后台配置实时变化，最终扣费还会应用账号用户组倍率。</p>
+                    </div>
+                </div>
+                <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-medium text-primary"><RefreshCw className="size-3" /> 实时配置</span>
             </div>
             {rules.length ? (
-                <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                <div className="mt-4 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
                     {rules.map((rule, index) => (
-                        <div key={`${rule.operation}-${rule.resolutionTier}-${index}`} className="rounded-[18px] bg-muted p-4">
-                            <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground"><span>{rule.resolutionTier ? formatResolution(rule.resolutionTier) : "通用规格"}</span><span>{operationLabel(rule.operation)}</span></div>
-                            <div className="mt-3 text-xl font-semibold tabular-nums">{rule.billingMode === "ratio" ? `${rule.modelRatio}×` : rule.credits}<span className="ml-1 text-xs font-normal text-muted-foreground">算力 / {unitLabel(rule.unit)}</span></div>
+                        <div key={`${rule.operation}-${rule.resolutionTier}-${index}`} className="rounded-2xl bg-primary/[.055] p-3.5 ring-1 ring-primary/15">
+                            <div className="flex items-center justify-between gap-3 text-[11px] text-muted-foreground"><span className="font-medium text-foreground">{rule.resolutionTier ? formatResolution(rule.resolutionTier) : "通用规格"}</span><span>{operationLabel(rule.operation)}</span></div>
+                            <div className="mt-2 text-2xl font-semibold tracking-[-.03em] text-primary tabular-nums">{rule.billingMode === "ratio" ? `${rule.modelRatio}×` : rule.credits}<span className="ml-1.5 text-xs font-normal tracking-normal text-muted-foreground">算力 / {unitLabel(rule.unit)}</span></div>
                             {rule.minCredits > 0 ? <div className="mt-2 text-xs text-muted-foreground">单次最低 {rule.minCredits} 算力</div> : null}
                         </div>
                     ))}
                 </div>
             ) : (
-                <div className="mt-6 rounded-[18px] bg-muted px-5 py-4 text-sm text-muted-foreground">当前操作没有启用的计费规则，调用时会提示“该模型或当前规格未设置价格”。</div>
+                <div className="mt-4 rounded-2xl border border-dashed border-primary/30 bg-primary/[.045] px-4 py-3 text-xs leading-5 text-muted-foreground"><span className="font-semibold text-foreground">暂未配置价格。</span> 调用时会直接提示“该模型或当前规格未设置价格”。</div>
             )}
         </section>
     );
@@ -334,12 +342,12 @@ function ResponseSection({ modality }: { modality: DocModality }) {
           ? ["创建和查询返回 JSON，下载接口返回视频二进制。", "只有 status=completed 后才能下载内容。"]
           : ["成功响应是音频二进制，不是 JSON。", "保存文件前检查 Content-Type，JSON 应按错误处理。"];
     return (
-        <section className="rounded-[28px] bg-card p-6 ring-1 ring-border sm:p-8">
-            <h2 className="text-lg font-semibold tracking-[-.02em]">响应与错误</h2>
-            <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                {items.map((item) => <div key={item} className="flex gap-3 rounded-[18px] bg-muted p-4 text-sm leading-6"><Check className="mt-1 size-4 shrink-0 text-primary" /><span>{item}</span></div>)}
+        <section className="rounded-[24px] bg-card p-5 ring-1 ring-border">
+            <h2 className="text-base font-semibold tracking-[-.02em]">响应与错误</h2>
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                {items.map((item) => <div key={item} className="flex gap-2.5 rounded-2xl bg-muted p-3.5 text-xs leading-5"><Check className="mt-0.5 size-4 shrink-0 text-primary" /><span>{item}</span></div>)}
             </div>
-            <div className="mt-4 rounded-[18px] border border-border px-5 py-4 text-sm leading-6 text-muted-foreground">业务错误格式为 <code className="text-foreground">&#123;"code":1,"data":null,"msg":"错误原因"&#125;</code>。部分业务失败仍可能返回 HTTP 200，必须同时判断 JSON 中的 <code className="text-foreground">code</code>。</div>
+            <div className="mt-3 rounded-2xl border border-border px-4 py-3 text-xs leading-5 text-muted-foreground">业务错误格式为 <code className="text-foreground">&#123;"code":1,"data":null,"msg":"错误原因"&#125;</code>。部分业务失败仍可能返回 HTTP 200，必须同时判断 JSON 中的 <code className="text-foreground">code</code>。</div>
         </section>
     );
 }

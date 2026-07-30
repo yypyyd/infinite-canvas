@@ -183,7 +183,7 @@ export default function AdminChannelsPage() {
                 {
                     ...current,
                     modality: discovered.modality || current.modality,
-                    aspectRatios: discovered.supportedRatios || [],
+                    aspectRatios: discovered.supportedRatios?.length ? discovered.supportedRatios : current.aspectRatios,
                     resolutionTiers: discovered.supportedResolutions || [],
                     durations: discovered.supportedDurations || [],
                 },
@@ -574,7 +574,7 @@ function createChannelModel(model: string, managedModels: AdminManagedModel[], d
             upstreamModel: model,
             modality,
             operations: managedModel?.operations?.length ? managedModel.operations : inferModelOperations(model, modality),
-            aspectRatios: discovered ? discovered.supportedRatios || [] : managedModel?.aspectRatios || [],
+            aspectRatios: discovered?.supportedRatios?.length ? discovered.supportedRatios : managedModel?.aspectRatios || [],
             resolutionTiers: discovered ? discovered.supportedResolutions || [] : managedModel?.resolutionTiers?.length ? managedModel.resolutionTiers : modality === "image" ? ["1k"] : modality === "video" ? ["720p"] : [],
             durations: discovered ? discovered.supportedDurations || [] : managedModel?.durations || [],
         },

@@ -1,7 +1,9 @@
 "use client";
 
-import { resolveMediaUrl } from "@/services/file-storage";
-import { resolveImageUrl } from "@/services/image-storage";
+import { nanoid } from "nanoid";
+
+import { resolveMediaUrl, type UploadedFile } from "@/services/file-storage";
+import { resolveImageUrl, type UploadedImage } from "@/services/image-storage";
 import type { WorkspaceRecord } from "@/services/api/workspace";
 import { stageWorkspaceDelete, stageWorkspaceRecord, type PendingWorkspaceChange } from "@/services/workspace-changes";
 
@@ -28,6 +30,8 @@ type StoredImageLog = {
     quality?: string;
     status?: "成功" | "失败";
     images?: StoredImage[];
+    canvasId?: string;
+    source?: "canvas";
 };
 
 type StoredVideoLog = {
@@ -44,6 +48,8 @@ type StoredVideoLog = {
     status?: "成功" | "失败";
     video?: StoredVideo;
     error?: string;
+    canvasId?: string;
+    source?: "canvas";
 };
 
 export type GenerationHistoryItem = {
@@ -62,7 +68,8 @@ export type GenerationHistoryItem = {
     storageKeys: string[];
     detail: string;
     error: string;
-    href: "/image" | "/video";
+    href: string;
+    source: "workbench" | "canvas";
 };
 
 const imageLogs = new Map<string, RawGenerationLog>();
@@ -94,6 +101,51 @@ export async function saveGenerationRecord(ownerId: string, kind: GenerationKind
     const { version: _version, ...workspaceData } = data;
     stageWorkspaceRecord(ownerId, "generation_record", id, workspaceData, version);
     dispatchGenerationHistoryChanged();
+}
+
+export function saveCanvasImageGenerationRecord(
+    ownerId: string,
+    input: { prompt: string; model: string; size?: string; quality?: string; images: UploadedImage[]; durationMs?: number; canvasId: string },
+) {
+    if (!input.images.length) return;
+    return saveGenerationRecord(ownerId, "image", {
+        id: nanoid(),
+        createdAt: Date.now(),
+        title: input.prompt.slice(0, 12) || "未命名",
+        prompt: input.prompt,
+        model: input.model,
+        durationMs: input.durationMs || 0,
+        successCount: input.images.length,
+        failCount: 0,
+        imageCount: input.images.length,
+        size: input.size || "",
+        quality: input.quality || "",
+        status: "成功",
+        images: input.images.map((image) => ({ dataUrl: "", storageKey: image.storageKey })),
+        canvasId: input.canvasId,
+        source: "canvas",
+    });
+}
+
+export function saveCanvasVideoGenerationRecord(
+    ownerId: string,
+    input: { prompt: string; model: string; size?: string; resolution?: string; seconds?: string; video: UploadedFile; durationMs?: number; canvasId: string },
+) {
+    return saveGenerationRecord(ownerId, "video", {
+        id: nanoid(),
+        createdAt: Date.now(),
+        title: input.prompt.slice(0, 12) || "未命名",
+        prompt: input.prompt,
+        model: input.model,
+        durationMs: input.durationMs || 0,
+        size: input.size || "",
+        resolution: input.resolution || "",
+        seconds: input.seconds || "",
+        status: "成功",
+        video: { url: "", storageKey: input.video.storageKey },
+        canvasId: input.canvasId,
+        source: "canvas",
+    });
 }
 
 export async function deleteStoredGenerationRecord(ownerId: string, kind: GenerationKind, id: string) {
@@ -189,7 +241,8 @@ function normalizeImageLog(log: StoredImageLog): GenerationHistoryItem {
         storageKeys,
         detail,
         error: log.failCount ? `${log.failCount} 张生成失败` : "",
-        href: "/image",
+        href: log.source === "canvas" && log.canvasId ? `/canvas/${encodeURIComponent(log.canvasId)}` : "/image",
+        source: log.source === "canvas" ? "canvas" : "workbench",
     };
 }
 
@@ -212,6 +265,7 @@ function normalizeVideoLog(log: StoredVideoLog): GenerationHistoryItem {
         storageKeys,
         detail: [log.resolution, log.size, log.seconds ? `${log.seconds} 秒` : ""].filter(Boolean).join(" · "),
         error: log.error || "",
-        href: "/video",
+        href: log.source === "canvas" && log.canvasId ? `/canvas/${encodeURIComponent(log.canvasId)}` : "/video",
+        source: log.source === "canvas" ? "canvas" : "workbench",
     };
 }

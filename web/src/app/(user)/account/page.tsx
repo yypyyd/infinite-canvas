@@ -559,7 +559,7 @@ function HistorySection() {
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div>
                         <h2 className="text-lg font-semibold">生成记录</h2>
-                        <p className="mt-1 text-sm text-muted-foreground">汇总当前账号在生图和视频工作台产生的结果，并在登录设备之间自动同步。</p>
+                        <p className="mt-1 text-sm text-muted-foreground">汇总当前账号在生图、视频工作台和商品画布产生的结果，并在登录设备之间自动同步。</p>
                     </div>
                     <div className="flex flex-col gap-2 sm:flex-row">
                         <Input
@@ -677,7 +677,7 @@ function HistoryCard({ item, onOpen, onDelete }: { item: GenerationHistoryItem; 
                             查看
                         </Button>
                         <Button href={item.href} type="text" size="small" icon={<ExternalLink className="size-3.5" />}>
-                            工作台
+                            {item.source === "canvas" ? "画布" : "工作台"}
                         </Button>
                         <Button danger type="text" size="small" icon={<Trash2 className="size-3.5" />} aria-label="删除记录" onClick={onDelete} />
                     </div>
@@ -711,7 +711,7 @@ function HistoryDetailModal({ item, onClose, onDelete }: { item: GenerationHisto
                               删除记录
                           </Button>,
                           <Button key="workbench" href={item.href} type="primary" icon={<ExternalLink className="size-4" />}>
-                              前往工作台
+                              {item.source === "canvas" ? "返回画布" : "前往工作台"}
                           </Button>,
                       ]
                     : null

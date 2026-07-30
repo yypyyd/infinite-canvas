@@ -14,6 +14,10 @@
 - [画布节点操作手册](/docs/canvas/canvas-node-manual)
 - [画布快捷键](/docs/canvas/canvas-shortcuts)
 
+## API 接入
+
+- [API 对接指南](/docs/api/integration)
+
 ## 开发文档
 
 - [本地开发](/docs/backend/local-development)

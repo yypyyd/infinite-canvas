@@ -1,0 +1,271 @@
+---
+title: API 对接指南
+description: 使用 API Key 接入图片、视频和音频模型
+---
+
+# API 对接指南
+
+道生画境提供统一的非文本模型 API。调用方先获取当前开放的模型及能力，再根据每个模型返回的 `modality` 和 `operations` 选择接口。模型由管理员动态配置，没有默认模型，也不要把模型名称写死在客户端。
+
+需要按当前后台配置查看模型、参数、计费和可复制示例时，可直接打开[主站动态 API 接入页面](/api-docs)。
+
+## 接入信息
+
+生产环境基础地址：
+
+```text
+https://huantu.xyz/api/v1
+```
+
+登录道生画境后，在“个人中心 → API Key”创建密钥。完整 Key 只展示一次，请保存在服务端环境变量或密钥管理服务中，不要写入浏览器、客户端安装包、日志或代码仓库。
+
+所有请求都使用 Bearer 鉴权：
+
+```http
+Authorization: Bearer YOUR_API_KEY
+```
+
+API Key 已绑定创建时所在的企业，调用时不需要传 `X-Organization-ID`。模型费用计入该企业当前采用的个人或共享算力账户；账号、企业、成员关系、Key 或模型不可用时，请求会立即失败。
+
+## 第一步：获取模型
+
+```bash
+curl "https://huantu.xyz/api/v1/models" \
+  -H "Authorization: Bearer YOUR_API_KEY"
+```
+
+成功响应保持 OpenAI 模型列表结构，但会增加模型能力字段：
+
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "IMAGE_MODEL_ID",
+      "object": "model",
+      "created": 0,
+      "owned_by": "infinite-canvas",
+      "name": "模型显示名称",
+      "modality": "image",
+      "operations": ["generation", "edit"],
+      "aspectRatios": ["1:1", "16:9", "9:16"],
+      "resolutionTiers": ["1k", "2k"],
+      "durations": []
+    }
+  ]
+}
+```
+
+| 字段 | 含义 |
+| --- | --- |
+| `id` | 请求中的 `model`，必须原样传入 |
+| `name` | 前端展示名称，不用于调用 |
+| `modality` | `image`、`video` 或 `audio` |
+| `operations` | 当前开放操作，例如 `generation`、`edit`、`speech` |
+| `aspectRatios` | 支持的宽高比；空数组表示当前未公布限制 |
+| `resolutionTiers` | 支持的分辨率档；空数组表示当前未公布限制 |
+| `durations` | 视频支持的秒数；非视频模型通常为空数组 |
+
+文本模型不会出现在该列表中，对外接入也不应使用 `/chat/completions`。
+
+## 每个模型如何选择接口
+
+对 `data` 中的每一项按下表判断，不要根据模型名称猜测类型：
+
+| 模型能力 | 接口 | 请求格式 | 成功结果 |
+| --- | --- | --- | --- |
+| `image` + `generation` | `POST /images/generations` | JSON | 图片 URL 或 Base64 JSON |
+| `image` + `edit` | `POST /images/edits` | multipart/form-data | 图片 URL 或 Base64 JSON |
+| `video` + `generation` | `POST /videos` | multipart/form-data | 异步任务编号 |
+| `audio` + `speech` | `POST /audio/speech` | JSON | 音频二进制 |
+
+如果模型没有声明对应操作，就不要调用该接口。调用前应使用模型公布的比例、分辨率和时长；没有设置价格的模型或规格会直接返回“该模型或当前规格未设置价格”。
+
+## 图片生成
+
+仅适用于 `modality=image` 且 `operations` 包含 `generation` 的模型。
+
+```bash
+curl -X POST "https://huantu.xyz/api/v1/images/generations" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: image-$(date +%s)" \
+  -d '{
+    "model": "IMAGE_MODEL_ID",
+    "prompt": "生成一张白色背景的运动鞋商品主图",
+    "size": "1024x1024",
+    "quality": "low",
+    "n": 1,
+    "response_format": "b64_json",
+    "output_format": "png"
+  }'
+```
+
+主要参数：
+
+| 参数 | 必填 | 说明 |
+| --- | --- | --- |
+| `model` | 是 | 从 `/models` 返回的图片模型 ID |
+| `prompt` | 是 | 图片描述 |
+| `size` | 建议 | 输出尺寸，例如 `1024x1024`；比例应属于 `aspectRatios` |
+| `quality` | 建议 | `low`、`medium`、`high` 分别对应常用的 1K、2K、4K 档 |
+| `n` | 否 | 生成数量，省略时按 1 张计费 |
+| `response_format` | 否 | 推荐 `b64_json`；部分兼容模型也会返回 `url` |
+| `output_format` | 否 | 常用值为 `png` |
+
+典型响应：
+
+```json
+{
+  "created": 1760000000,
+  "data": [
+    { "b64_json": "iVBORw0KGgoAAA..." }
+  ]
+}
+```
+
+调用方应同时兼容 `data[].b64_json` 和 `data[].url`。
+
+## 图片编辑
+
+仅适用于 `modality=image` 且 `operations` 包含 `edit` 的模型。图片使用 multipart 上传，同名 `image` 字段可以重复传入多张参考图；具体张数仍以当前模型能力为准。
+
+```bash
+curl -X POST "https://huantu.xyz/api/v1/images/edits" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Idempotency-Key: image-edit-$(date +%s)" \
+  -F "model=IMAGE_EDIT_MODEL_ID" \
+  -F "prompt=保留鞋子造型，把背景改成夜晚霓虹街道" \
+  -F "image=@./shoe.png" \
+  -F "size=1024x1024" \
+  -F "quality=low" \
+  -F "n=1" \
+  -F "response_format=b64_json" \
+  -F "output_format=png"
+```
+
+需要局部编辑时可额外传入 `mask` 文件。响应格式与图片生成相同。
+
+## 视频生成
+
+仅适用于 `modality=video` 且 `operations` 包含 `generation` 的模型。视频是异步任务，需要“创建 → 轮询 → 下载”三步完成。
+
+### 1. 创建任务
+
+```bash
+curl -X POST "https://huantu.xyz/api/v1/videos" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Idempotency-Key: video-$(date +%s)" \
+  -F "model=VIDEO_MODEL_ID" \
+  -F "prompt=一双运动鞋在雨夜街头缓慢旋转，电影级光影" \
+  -F "seconds=5" \
+  -F "size=1280x720"
+```
+
+如果模型支持参考图，可增加一个 `input_reference` 文件：
+
+```bash
+-F "input_reference=@./reference.png"
+```
+
+`seconds` 必须使用模型 `durations` 中的值。`size` 的比例和分辨率应分别匹配 `aspectRatios` 与 `resolutionTiers`，例如 `1280x720` 表示 16:9、720P。
+
+创建成功后会返回任务编号：
+
+```json
+{
+  "id": "video_task_id",
+  "status": "queued"
+}
+```
+
+### 2. 查询状态
+
+查询和下载都必须带上创建任务时使用的公开模型 ID：
+
+```bash
+curl "https://huantu.xyz/api/v1/videos/video_task_id?model=VIDEO_MODEL_ID" \
+  -H "Authorization: Bearer YOUR_API_KEY"
+```
+
+建议每 2–3 秒查询一次。常见状态为 `queued`、`running`、`completed`、`failed` 或 `cancelled`；只有 `completed` 才能下载。
+
+### 3. 下载视频
+
+```bash
+curl "https://huantu.xyz/api/v1/videos/video_task_id/content?model=VIDEO_MODEL_ID" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  --output result.mp4
+```
+
+下载接口成功时直接返回视频二进制，不是 JSON。
+
+## 语音合成
+
+仅适用于 `modality=audio` 且 `operations` 包含 `speech` 的模型。
+
+```bash
+curl -X POST "https://huantu.xyz/api/v1/audio/speech" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: speech-$(date +%s)" \
+  -d '{
+    "model": "AUDIO_MODEL_ID",
+    "input": "欢迎使用道生画境开放接口。",
+    "voice": "alloy",
+    "response_format": "mp3",
+    "speed": 1,
+    "instructions": "自然、清晰地朗读"
+  }' \
+  --output speech.mp3
+```
+
+`response_format` 常用值包括 `mp3`、`wav`、`opus`、`aac`、`flac` 和 `pcm`，`speed` 建议使用 `0.25` 到 `4`。当前模型列表不公布音色和音频格式能力，最终以所选音频模型的兼容范围为准。
+
+成功时直接返回音频二进制。下载前应检查响应 `Content-Type`；如果是 `application/json`，应先按错误响应解析，不能把它保存成音频文件。
+
+## 请求编号与重试
+
+生成请求建议携带：
+
+```http
+Idempotency-Key: 调用方生成的唯一请求编号
+X-Request-ID: 可选的链路追踪编号
+```
+
+- `Idempotency-Key` 最长 191 个字符，同一用户和企业内必须唯一。重复提交会返回“请求已提交，请勿重复操作”，不会再次扣费，也不会把上一次结果重新返回。
+- `X-Request-ID` 最长 128 个字符，可使用字母、数字、点、下划线、冒号和短横线；服务端会在响应头返回最终的 `X-Request-ID`。
+- 网络超时时不要立即更换幂等编号重试，否则可能创建第二个生成任务。视频任务应继续使用已取得的任务 ID 查询。
+
+## 响应与错误处理
+
+模型成功响应保持对应的 OpenAI 兼容结构或媒体二进制。由道生画境拦截的鉴权、企业、余额、价格、参数或上游错误采用统一 JSON：
+
+```json
+{
+  "code": 1,
+  "data": null,
+  "msg": "错误原因"
+}
+```
+
+部分业务失败仍可能使用 HTTP 200，因此调用方必须同时判断：
+
+1. HTTP 状态和响应 `Content-Type`。
+2. JSON 中是否存在非零 `code`。
+3. 图片响应是否存在有效的 `data[].b64_json` 或 `data[].url`。
+4. 视频状态是否进入 `failed` 或 `cancelled`。
+
+常见错误包括 API Key 无效或已撤销、模型不存在或未开放、模型不支持当前操作或规格、算力余额不足、当前规格未设置价格，以及上游连接中断。失败生成会按原扣费来源退款。
+
+## 接入检查清单
+
+- 启动时或定期调用 `/models`，不要假设存在默认模型。
+- 使用模型返回的 `id`，不要使用显示名称 `name`。
+- 根据 `modality + operations` 选择接口，不要接入文本补全接口。
+- 图片同时兼容 Base64 和 URL，音频与视频下载按二进制处理。
+- 视频保存任务 ID 和模型 ID，完成轮询后再下载。
+- 每个生成请求使用唯一的 `Idempotency-Key`，日志只记录 Key 的内部编号或前缀。
+- 对所有 JSON 响应检查非零 `code`，不要只判断 HTTP 200。
+
+接口统一响应的内部约定和安全边界见[接口响应约定](/docs/backend/api-response)。

@@ -14,7 +14,7 @@ import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { videoReferenceCapabilities, videoReferenceLabel, VIDEO_REFERENCE_LIMITS } from "@/lib/video-reference";
 import { resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
-import { deleteStoredGenerationRecord, GENERATION_HISTORY_CHANGED_EVENT, readStoredGenerationRecords, saveGenerationRecord } from "@/services/generation-history";
+import { deleteStoredGenerationRecord, GENERATION_HISTORY_CHANGED_EVENT, readWorkbenchGenerationRecords, saveGenerationRecord } from "@/services/generation-history";
 import { resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { workspaceOwnerId } from "@/services/workspace-changes";
 import { requestVideoGeneration, storeGeneratedVideo } from "@/services/api/video";
@@ -722,7 +722,7 @@ function LogCard({ log, selected, active, onSelectedChange, onClick }: { log: Ge
 async function readStoredLogs(ownerId: string) {
     if (typeof window === "undefined") return [];
     try {
-        const logs = await readStoredGenerationRecords<GenerationLog>(ownerId, "video");
+        const logs = await readWorkbenchGenerationRecords<GenerationLog>(ownerId, "video");
         return (await Promise.all(logs.map(normalizeLog))).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
     } catch {
         return [];

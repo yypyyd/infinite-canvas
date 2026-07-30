@@ -235,8 +235,8 @@ export async function resolveGenerationHistoryMedia(item: GenerationHistoryItem)
     return urls.filter(Boolean);
 }
 
-export async function readStoredGenerationRecords<T extends { ownerId?: string }>(ownerId: string, kind: GenerationKind) {
-    return readOwnedLogs<T>(generationStore(kind), ownerId);
+export async function readWorkbenchGenerationRecords<T extends { ownerId?: string }>(ownerId: string, kind: GenerationKind) {
+    return readOwnedLogs<T>(generationStore(kind), ownerId).filter((item) => (item as RawGenerationLog).source !== "canvas");
 }
 
 export function clearGenerationRecordMemory(ownerId: string) {

@@ -19,7 +19,7 @@ import { useThemeStore } from "@/stores/use-theme-store";
 import { nanoid } from "nanoid";
 import { formatBytes, formatDuration, getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
 import { requestEdit, requestGeneration } from "@/services/api/image";
-import { deleteStoredGenerationRecord, GENERATION_HISTORY_CHANGED_EVENT, readStoredGenerationRecords, saveGenerationRecord } from "@/services/generation-history";
+import { deleteStoredGenerationRecord, GENERATION_HISTORY_CHANGED_EVENT, readWorkbenchGenerationRecords, saveGenerationRecord } from "@/services/generation-history";
 import { resolveImageUrl, resolveImageVariantUrl, uploadImage } from "@/services/image-storage";
 import { workspaceOwnerId } from "@/services/workspace-changes";
 import { useAssetStore } from "@/stores/use-asset-store";
@@ -844,7 +844,7 @@ function LogCard({ log, selected, active, onSelectedChange, onClick }: { log: Ge
 async function readStoredLogs(ownerId: string) {
     if (typeof window === "undefined") return [];
     try {
-        const values = await readStoredGenerationRecords<GenerationLog>(ownerId, "image");
+        const values = await readWorkbenchGenerationRecords<GenerationLog>(ownerId, "image");
         const logs = await Promise.all(values.map(normalizeLog));
         return logs.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
     } catch {

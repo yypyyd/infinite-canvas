@@ -53,7 +53,7 @@ func TestImageGenerationHTTPBillingAndIdempotency(t *testing.T) {
 	settings.Public.ModelChannel = model.PublicModelChannelSetting{
 		AvailableModels: []string{"router-image-model"},
 		Models: []model.ModelDefinition{{ID: "router-image-model", Name: "Router Image", Modality: "image", Operations: []string{"generation"}, ResolutionTiers: []string{"1k"}, Enabled: true}},
-		PricingRules: []model.PricingRule{{Model: "router-image-model", Modality: "image", Operation: "generation", Unit: "image", BillingMode: "fixed", Credits: 2, Enabled: true}},
+		PricingRules: []model.PricingRule{{Model: "router-image-model", Modality: "image", Operation: "generation", Unit: "image", ResolutionTier: "1k", BillingMode: "fixed", Credits: 2, Enabled: true}},
 		GroupRatios: map[string]float64{"default": 1},
 	}
 	settings.Private.Channels = []model.ModelChannel{{

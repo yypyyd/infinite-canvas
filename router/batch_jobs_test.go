@@ -20,8 +20,8 @@ func prepareRouterLegacyBatchBilling(t *testing.T, tenant routerTestTenant) {
 		AvailableModels: []string{"router-batch-image"},
 		Models: []model.ModelDefinition{{ID: "router-batch-image", Name: "Router Batch Image", Modality: "image", Operations: []string{"generation", "edit"}, Enabled: true, ResolutionTiers: []string{"1k"}}},
 		PricingRules: []model.PricingRule{
-			{Model: "router-batch-image", Modality: "image", Operation: "generation", Unit: "image", BillingMode: "fixed", Credits: 1, Enabled: true},
-			{Model: "router-batch-image", Modality: "image", Operation: "edit", Unit: "image", BillingMode: "fixed", Credits: 1, Enabled: true},
+			{Model: "router-batch-image", Modality: "image", Operation: "generation", Unit: "image", ResolutionTier: "1k", BillingMode: "fixed", Credits: 1, Enabled: true},
+			{Model: "router-batch-image", Modality: "image", Operation: "edit", Unit: "image", ResolutionTier: "1k", BillingMode: "fixed", Credits: 1, Enabled: true},
 		},
 		DefaultImageModel: "router-batch-image",
 	}

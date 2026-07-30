@@ -55,6 +55,25 @@ type ModelDefinition struct {
 	Remark          string   `json:"remark"`
 }
 
+// PublicAPIModel describes one non-text model exposed to API Key callers.
+type PublicAPIModel struct {
+	ID              string   `json:"id"`
+	Object          string   `json:"object"`
+	Created         int64    `json:"created"`
+	OwnedBy         string   `json:"owned_by"`
+	Name            string   `json:"name"`
+	Modality        string   `json:"modality"`
+	Operations      []string `json:"operations"`
+	AspectRatios    []string `json:"aspectRatios"`
+	ResolutionTiers []string `json:"resolutionTiers"`
+	Durations       []int    `json:"durations"`
+}
+
+type PublicAPIModelList struct {
+	Object string           `json:"object"`
+	Data   []PublicAPIModel `json:"data"`
+}
+
 // PricingRule stores model credit billing rules.
 type PricingRule struct {
 	Model           string  `json:"model"`
@@ -62,7 +81,6 @@ type PricingRule struct {
 	Operation       string  `json:"operation"`
 	Unit            string  `json:"unit"`
 	ResolutionTier  string  `json:"resolutionTier"`
-	DurationSeconds int     `json:"durationSeconds"`
 	BillingMode     string  `json:"billingMode"`
 	Credits         int     `json:"credits"`
 	MinCredits      int     `json:"minCredits"`

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { App, Avatar, Button, Card, Descriptions, Empty, Form, Image as AntImage, Input, Modal, Pagination, Progress, Select, Skeleton, Table, Tabs, Tag, Typography, type TableColumnsType } from "antd";
+import { App, Avatar, Button, Card, Descriptions, Empty, Form, Image as AntImage, Input, Modal, Pagination, Progress, Segmented, Select, Skeleton, Table, Tabs, Tag, Typography, type TableColumnsType } from "antd";
 import dayjs from "dayjs";
 import { saveAs } from "file-saver";
 import { CircleUserRound, Clock3, Cloud, Code2, Coins, Copy, ExternalLink, Film, History, ImageIcon, KeyRound, ListChecks, PencilLine, Plus, ReceiptText, RefreshCw, Search, ShieldCheck, Trash2, WalletCards } from "lucide-react";
@@ -964,6 +964,7 @@ function APIKeySection() {
     const [createOpen, setCreateOpen] = useState(false);
     const [createdKey, setCreatedKey] = useState<CreatedUserAPIKey | null>(null);
     const [endpoint, setEndpoint] = useState("/api/v1");
+    const [exampleType, setExampleType] = useState<"models" | "image">("models");
     const queryKey = ["user-api-keys", organizationId];
     const keysQuery = useQuery({
         queryKey,
@@ -990,7 +991,13 @@ function APIKeySection() {
         onError: (error) => message.error(error instanceof Error ? error.message : "撤销失败"),
     });
     const activeCount = keysQuery.data?.filter((item) => item.status === "active").length || 0;
-    const curlExample = `curl ${endpoint}/chat/completions -H "Authorization: Bearer YOUR_API_KEY" -H "Content-Type: application/json" -d '{"model":"YOUR_MODEL","messages":[{"role":"user","content":"你好"}]}'`;
+    const modelCurlExample = `curl "${endpoint}/models" \\
+  -H "Authorization: Bearer YOUR_API_KEY"`;
+    const imageCurlExample = `curl -X POST "${endpoint}/images/generations" \\
+  -H "Authorization: Bearer YOUR_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"model":"YOUR_IMAGE_MODEL","prompt":"生成一张商品主图","size":"1024x1024","n":1}'`;
+    const curlExample = exampleType === "models" ? modelCurlExample : imageCurlExample;
 
     useEffect(() => setEndpoint(`${window.location.origin}/api/v1`), []);
 
@@ -1072,24 +1079,34 @@ function APIKeySection() {
                             <Code2 className="size-4 text-primary" />
                             快速接入
                         </div>
-                        <p className="mt-2 text-sm leading-6 text-muted-foreground">使用 Bearer 鉴权访问 <code>/api/v1/*</code>。Key 自动绑定当前企业，无需传企业编号。</p>
+                        <p className="mt-2 text-sm leading-6 text-muted-foreground">使用 Bearer 鉴权访问图片、视频和音频模型。Key 自动绑定当前企业，无需传企业编号。</p>
                         <div className="mt-5 rounded-2xl bg-muted/70 p-4">
                             <div className="flex items-center justify-between gap-3">
                                 <span className="text-xs text-muted-foreground">API Endpoint</span>
                                 <Button type="text" size="small" icon={<Copy className="size-3.5" />} onClick={() => copyText(endpoint, "接口地址已复制")} />
                             </div>
                             <code className="mt-2 block break-all text-xs leading-5">{endpoint}</code>
+                            <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+                                <code>GET /models</code>
+                                <code>POST /images/generations</code>
+                                <code>POST /videos</code>
+                            </div>
                         </div>
                         <div className="mt-3 rounded-2xl bg-muted/70 p-4">
                             <div className="flex items-center justify-between gap-3">
-                                <span className="text-xs text-muted-foreground">Curl 示例</span>
+                                <Segmented
+                                    size="small"
+                                    value={exampleType}
+                                    options={[{ label: "获取模型", value: "models" }, { label: "图片生成", value: "image" }]}
+                                    onChange={(value) => setExampleType(value as "models" | "image")}
+                                />
                                 <Button type="text" size="small" icon={<Copy className="size-3.5" />} onClick={() => copyText(curlExample, "示例已复制")} />
                             </div>
                             <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-all text-xs leading-5">{curlExample}</pre>
                         </div>
                         <div className="mt-4 flex gap-2 text-xs leading-5 text-muted-foreground">
                             <ShieldCheck className="mt-0.5 size-3.5 shrink-0" />
-                            Key 仅能访问 AI 接口，不能登录账号、管理企业或进入后台。
+                            模型列表不会返回文本模型；Key 不能登录账号、管理企业或进入后台。
                         </div>
                     </aside>
                 </div>

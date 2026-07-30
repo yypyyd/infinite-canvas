@@ -218,7 +218,7 @@ description: 当前后端主要数据表与字段说明
 | --- | --- | --- |
 | `availableModels` | string[] | 系统可用模型列表 |
 | `models` | object[] | 模型中心配置，包含模型名称、类型、支持操作、启用状态、排序、宽高比和分辨率档；渠道新模型会自动补入，图片默认 1K、视频默认 720P |
-| `pricingRules` | object[] | 模型算力点配置；新增模型会按模型能力自动生成默认规则 |
+| `pricingRules` | object[] | 管理员显式维护的模型算力点配置；新增或同步模型不会自动生成价格 |
 | `groupRatios` | object | 用户分组倍率配置 |
 | `defaultModel` | string | 默认模型 |
 | `defaultImageModel` | string | 默认图片模型 |
@@ -233,9 +233,9 @@ description: 当前后端主要数据表与字段说明
 | `model` | string | 模型名称 |
 | `operation` | string | 由模型中心 `operations` 自动展开的内部操作类型 |
 | `unit` | string | 由模型类型自动生成的内部计费单位 |
-| `resolutionTier` | string | 分辨率价格档；为空时是默认价格 |
+| `resolutionTier` | string | 图片和视频必填的分辨率价格档；请求必须精确命中，不提供默认价格兜底 |
 | `billingMode` | string | 计费模式：`fixed` 固定单价，`ratio` 倍率计费 |
-| `credits` | number | 固定计费模式下的基础单价 |
+| `credits` | number | 固定计费模式下的基础单价；视频按实际秒数乘以对应分辨率单价 |
 | `modelRatio` | number | 倍率计费模式下的模型倍率 |
 | `completionRatio` | number | 补全倍率，预留给后续 token usage 结算 |
 

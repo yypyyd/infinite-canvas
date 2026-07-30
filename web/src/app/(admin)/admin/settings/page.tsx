@@ -579,7 +579,6 @@ function normalizePricingRules(items: Partial<AdminSettings["public"]["modelChan
             operation: normalizePricingToken(item.operation || "generation"),
             unit: normalizePricingToken(item.unit || (item.modality === "video" ? "second" : "image")),
             resolutionTier: normalizePricingToken(item.resolutionTier || ""),
-            durationSeconds: Math.max(0, Math.floor(Number(item.durationSeconds) || 0)),
             billingMode: item.billingMode === "ratio" ? "ratio" : "fixed",
             credits: Math.max(0, Number(item.credits) || 0),
             minCredits: Math.max(0, Number(item.minCredits) || 0),
@@ -587,7 +586,8 @@ function normalizePricingRules(items: Partial<AdminSettings["public"]["modelChan
             completionRatio: Math.max(0, Number(item.completionRatio) || 1),
             enabled: item.enabled !== false,
             remark: item.remark || "",
-        }));
+        }))
+        .filter((item) => (item.modality === "image" || item.modality === "video" ? Boolean(item.resolutionTier) : !item.resolutionTier));
 }
 
 function normalizePrivateSetting(setting: Partial<AdminSettings["private"]> = {}): AdminSettings["private"] {

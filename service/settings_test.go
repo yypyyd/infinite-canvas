@@ -93,6 +93,22 @@ func TestNormalizeSettingsPublishesEnabledChannelModelsAndRepairsDefaults(t *tes
 	}
 }
 
+func TestPublicAPIModelsReturnsOnlyEnabledNonTextModels(t *testing.T) {
+	items := publicAPIModels(model.PublicModelChannelSetting{
+		AvailableModels: []string{"text-model", "image-model", "video-model", "audio-model"},
+		Models: []model.ModelDefinition{
+			{ID: "text-model", Name: "Text", Modality: "text", Enabled: true},
+			{ID: "image-model", Name: "Image", Modality: "image", Operations: []string{"generation", "edit"}, ResolutionTiers: []string{"1k", "2k"}, Enabled: true},
+			{ID: "video-model", Name: "Video", Modality: "video", Operations: []string{"generation"}, ResolutionTiers: []string{"720p"}, Durations: []int{5, 10}, Enabled: true},
+			{ID: "audio-model", Name: "Audio", Modality: "audio", Operations: []string{"speech"}, Enabled: false},
+		},
+	})
+
+	if len(items) != 2 || items[0].ID != "image-model" || items[0].Object != "model" || items[0].OwnedBy != "infinite-canvas" || items[1].ID != "video-model" || !reflect.DeepEqual(items[1].Durations, []int{5, 10}) {
+		t.Fatalf("public API models = %#v", items)
+	}
+}
+
 func TestNormalizeSettingsAddsNewChannelModelsToExistingCatalog(t *testing.T) {
 	settings := normalizeSettings(model.Settings{
 		Public: model.PublicSetting{ModelChannel: model.PublicModelChannelSetting{Models: []model.ModelDefinition{
@@ -110,7 +126,9 @@ func TestNormalizeSettingsAddsNewChannelModelsToExistingCatalog(t *testing.T) {
 	if want := []string{"gpt-image-2", "firefly-video"}; !reflect.DeepEqual(settings.Public.ModelChannel.AvailableModels, want) {
 		t.Fatalf("available models = %#v, want %#v", settings.Public.ModelChannel.AvailableModels, want)
 	}
-	assertHasPricingRule(t, settings.Public.ModelChannel.PricingRules, "gpt-image-2", "image", "generation", "image", "")
+	if len(settings.Public.ModelChannel.PricingRules) != 0 {
+		t.Fatalf("channel sync added pricing rules: %#v", settings.Public.ModelChannel.PricingRules)
+	}
 }
 
 func TestNormalizeSettingsMergesEnabledChannelCapabilitiesIntoCatalog(t *testing.T) {
@@ -142,132 +160,29 @@ func TestNormalizeSettingsMergesEnabledChannelCapabilitiesIntoCatalog(t *testing
 	}
 }
 
-func TestNormalizeSettingsAppendsDefaultPricingRulesForEnabledModels(t *testing.T) {
+func TestNormalizeSettingsKeepsOnlyExplicitPricingRules(t *testing.T) {
 	settings := normalizeSettings(model.Settings{
 		Public: model.PublicSetting{
 			ModelChannel: model.PublicModelChannelSetting{
-				Models: []model.ModelDefinition{
-					{ID: "gpt-5.5", Modality: "text", Enabled: true},
-					{ID: "gpt-image-2", Modality: "image", Enabled: true},
-					{ID: "dall-e-3", Modality: "image", Enabled: true},
-					{ID: "custom-image", Modality: "image", Operations: []string{"generation", "edit"}, Enabled: true},
-					{ID: "firefly-video", Modality: "video", Enabled: true},
-					{ID: "tts-1", Modality: "audio", Enabled: true},
-					{ID: "disabled-video", Modality: "video", Enabled: false},
+				Models: []model.ModelDefinition{{ID: "gpt-image-2", Modality: "image", Enabled: true}, {ID: "firefly-video", Modality: "video", Enabled: true}},
+				PricingRules: []model.PricingRule{
+					{Model: "gpt-image-2", Modality: "IMAGE", Operation: "generation", Unit: "image", ResolutionTier: "2K", BillingMode: "fixed", Credits: 4, Enabled: true},
+					{Model: "firefly-video", Modality: "video", Operation: "generation", Unit: "second", BillingMode: "fixed", Credits: 1, Enabled: true},
 				},
 			},
 		},
 	})
 
 	rules := settings.Public.ModelChannel.PricingRules
-	assertHasPricingRule(t, rules, "gpt-5.5", "text", "completion", "request", "")
-	assertHasPricingRule(t, rules, "gpt-image-2", "image", "generation", "image", "")
-	assertHasPricingRule(t, rules, "gpt-image-2", "image", "edit", "image", "")
-	assertHasPricingRule(t, rules, "dall-e-3", "image", "generation", "image", "")
-	assertNoPricingRule(t, rules, "dall-e-3", "image", "edit", "image", "")
-	assertHasPricingRule(t, rules, "custom-image", "image", "generation", "image", "")
-	assertHasPricingRule(t, rules, "custom-image", "image", "edit", "image", "")
-	assertHasPricingRule(t, rules, "firefly-video", "video", "generation", "second", "")
-	assertHasPricingRule(t, rules, "tts-1", "audio", "speech", "request", "")
-	assertNoPricingRule(t, rules, "disabled-video", "video", "generation", "second", "")
-}
-
-func TestNormalizeSettingsKeepsExistingFallbackPricingRules(t *testing.T) {
-	existing := model.PricingRule{
-		Model:          "firefly-video",
-		Modality:       "video",
-		Operation:      "generation",
-		Unit:           "second",
-		BillingMode:    "fixed",
-		Credits:        3,
-		Enabled:        true,
-		ResolutionTier: "",
+	if len(rules) != 1 || rules[0].Model != "gpt-image-2" || rules[0].Modality != "image" || rules[0].ResolutionTier != "2k" || rules[0].Credits != 4 {
+		t.Fatalf("pricing rules = %#v, want only normalized explicit rule", rules)
 	}
-	settings := normalizeSettings(model.Settings{
-		Public: model.PublicSetting{
-			ModelChannel: model.PublicModelChannelSetting{
-				Models: []model.ModelDefinition{
-					{ID: "firefly-video", Modality: "video", Enabled: true},
-				},
-				PricingRules: []model.PricingRule{existing},
-			},
-		},
-	})
-
-	matches := 0
-	for _, rule := range settings.Public.ModelChannel.PricingRules {
-		if rule.Model == "firefly-video" && rule.Modality == "video" && rule.Operation == "generation" && rule.Unit == "second" && rule.ResolutionTier == "" {
-			matches++
-			if rule.Credits != 3 {
-				t.Fatalf("existing fallback credits = %d, want 3", rule.Credits)
-			}
-		}
-	}
-	if matches != 1 {
-		t.Fatalf("fallback rule count = %d, want 1", matches)
-	}
-}
-
-func TestNormalizeSettingsAddsFallbackBesideResolutionPricingRule(t *testing.T) {
-	settings := normalizeSettings(model.Settings{
-		Public: model.PublicSetting{
-			ModelChannel: model.PublicModelChannelSetting{
-				Models: []model.ModelDefinition{
-					{ID: "firefly-image-5", Modality: "image", Enabled: true},
-				},
-				PricingRules: []model.PricingRule{{
-					Model:          "firefly-image-5",
-					Modality:       "image",
-					Operation:      "generation",
-					Unit:           "image",
-					ResolutionTier: "2K",
-					BillingMode:    "fixed",
-					Credits:        4,
-					Enabled:        true,
-				}},
-			},
-		},
-	})
-
-	rules := settings.Public.ModelChannel.PricingRules
-	assertHasPricingRule(t, rules, "firefly-image-5", "image", "generation", "image", "2k")
-	assertHasPricingRule(t, rules, "firefly-image-5", "image", "generation", "image", "")
-	assertHasPricingRule(t, rules, "firefly-image-5", "image", "edit", "image", "")
 }
 
 func TestDefaultModelOperationsIncludesOfficialEditableModels(t *testing.T) {
 	for _, modelName := range []string{"flux-klein-2", "firefly-image-5"} {
 		if got := defaultModelOperations(modelName, "image"); !reflect.DeepEqual(got, []string{"generation", "edit"}) {
 			t.Fatalf("defaultModelOperations(%q) = %#v", modelName, got)
-		}
-	}
-}
-
-func assertHasPricingRule(t *testing.T, rules []model.PricingRule, modelName string, modality string, operation string, unit string, resolutionTier string) {
-	t.Helper()
-	for _, rule := range rules {
-		if rule.Model == modelName &&
-			rule.Modality == modality &&
-			rule.Operation == operation &&
-			rule.Unit == unit &&
-			rule.ResolutionTier == resolutionTier &&
-			rule.Enabled {
-			return
-		}
-	}
-	t.Fatalf("missing pricing rule model=%s modality=%s operation=%s unit=%s resolution=%s in %#v", modelName, modality, operation, unit, resolutionTier, rules)
-}
-
-func assertNoPricingRule(t *testing.T, rules []model.PricingRule, modelName string, modality string, operation string, unit string, resolutionTier string) {
-	t.Helper()
-	for _, rule := range rules {
-		if rule.Model == modelName &&
-			rule.Modality == modality &&
-			rule.Operation == operation &&
-			rule.Unit == unit &&
-			rule.ResolutionTier == resolutionTier &&
-			rule.Enabled {
-			t.Fatalf("unexpected pricing rule model=%s modality=%s operation=%s unit=%s resolution=%s", modelName, modality, operation, unit, resolutionTier)
 		}
 	}
 }

@@ -10,6 +10,7 @@ import { stageWorkspaceChange, stageWorkspaceRecord, type PendingWorkspaceChange
 export const GENERATION_HISTORY_CHANGED_EVENT = "infinite-canvas:generation-history-changed";
 
 type GenerationKind = "image" | "video";
+export type GenerationRecordStatus = "生成中" | "成功" | "部分失败" | "失败";
 type RawGenerationLog = Record<string, unknown> & { id?: string; ownerId?: string; createdAt?: number; kind?: GenerationKind; version?: number };
 
 type StoredImage = { dataUrl?: string; storageKey?: string };
@@ -47,7 +48,7 @@ type StoredImageLog = {
     imageCount?: number;
     size?: string;
     quality?: string;
-    status?: "成功" | "失败";
+    status?: GenerationRecordStatus;
     images?: StoredImage[];
     canvasId?: string;
     source?: "canvas";
@@ -64,7 +65,7 @@ type StoredVideoLog = {
     size?: string;
     resolution?: string;
     seconds?: string;
-    status?: "成功" | "失败";
+    status?: GenerationRecordStatus;
     video?: StoredVideo;
     error?: string;
     canvasId?: string;
@@ -80,7 +81,7 @@ export type GenerationHistoryItem = {
     model: string;
     createdAt: number;
     durationMs: number;
-    status: "成功" | "失败";
+    status: GenerationRecordStatus;
     resultCount: number;
     previewUrls: string[];
     mediaUrl: string;
@@ -124,35 +125,41 @@ export async function saveGenerationRecord(ownerId: string, kind: GenerationKind
 
 export function saveCanvasImageGenerationRecord(
     ownerId: string,
-    input: { prompt: string; model: string; size?: string; quality?: string; images: UploadedImage[]; durationMs?: number; canvasId: string },
+    input: { id?: string; prompt: string; model: string; size?: string; quality?: string; images: UploadedImage[]; imageCount?: number; failCount?: number; status?: GenerationRecordStatus; durationMs?: number; canvasId: string },
 ) {
-    if (!input.images.length) return;
+    const id = input.id || nanoid();
+    const current = imageLogs.get(logKey(ownerId, id));
+    const failCount = input.failCount || 0;
     return saveGenerationRecord(ownerId, "image", {
-        id: nanoid(),
-        createdAt: Date.now(),
+        ...current,
+        id,
+        createdAt: current?.createdAt || Date.now(),
         title: input.prompt.slice(0, 12) || "未命名",
         prompt: input.prompt,
         model: input.model,
         durationMs: input.durationMs || 0,
         successCount: input.images.length,
-        failCount: 0,
-        imageCount: input.images.length,
+        failCount,
+        imageCount: input.imageCount ?? input.images.length,
         size: input.size || "",
         quality: input.quality || "",
-        status: "成功",
+        status: input.status || (input.images.length ? (failCount ? "部分失败" : "成功") : "失败"),
         images: input.images.map((image) => ({ dataUrl: "", storageKey: image.storageKey })),
         canvasId: input.canvasId,
         source: "canvas",
-    });
+    }).then(() => id);
 }
 
 export function saveCanvasVideoGenerationRecord(
     ownerId: string,
-    input: { prompt: string; model: string; size?: string; resolution?: string; seconds?: string; video: UploadedFile; durationMs?: number; canvasId: string },
+    input: { id?: string; prompt: string; model: string; size?: string; resolution?: string; seconds?: string; video?: UploadedFile; status?: GenerationRecordStatus; error?: string; durationMs?: number; canvasId: string },
 ) {
+    const id = input.id || nanoid();
+    const current = videoLogs.get(logKey(ownerId, id));
     return saveGenerationRecord(ownerId, "video", {
-        id: nanoid(),
-        createdAt: Date.now(),
+        ...current,
+        id,
+        createdAt: current?.createdAt || Date.now(),
         title: input.prompt.slice(0, 12) || "未命名",
         prompt: input.prompt,
         model: input.model,
@@ -160,11 +167,12 @@ export function saveCanvasVideoGenerationRecord(
         size: input.size || "",
         resolution: input.resolution || "",
         seconds: input.seconds || "",
-        status: "成功",
-        video: { url: "", storageKey: input.video.storageKey },
+        status: input.status || (input.video ? "成功" : "失败"),
+        video: input.video ? { url: "", storageKey: input.video.storageKey } : undefined,
+        error: input.error,
         canvasId: input.canvasId,
         source: "canvas",
-    });
+    }).then(() => id);
 }
 
 export async function deleteStoredGenerationRecord(ownerId: string, kind: GenerationKind, id: string) {

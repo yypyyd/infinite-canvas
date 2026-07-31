@@ -7,6 +7,7 @@ import { nanoid } from "nanoid";
 import { saveAs } from "file-saver";
 
 import { AssetPickerModal, type InsertAssetPayload } from "@/app/(user)/canvas/components/asset-picker-modal";
+import { flushActiveWorkspaceChanges } from "@/components/layout/workspace-provider";
 import { ModelPicker } from "@/components/model-picker";
 import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
 import { VideoSettingsPanel, normalizeVideoResolutionValue, normalizeVideoSizeValue, videoResolutionLabel, videoSizeLabel } from "@/components/video-settings-panel";
@@ -14,7 +15,7 @@ import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { videoReferenceCapabilities, videoReferenceLabel, VIDEO_REFERENCE_LIMITS } from "@/lib/video-reference";
 import { resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
-import { deleteStoredGenerationRecord, GENERATION_HISTORY_CHANGED_EVENT, readWorkbenchGenerationRecords, saveGenerationRecord } from "@/services/generation-history";
+import { deleteStoredGenerationRecord, GENERATION_HISTORY_CHANGED_EVENT, readWorkbenchGenerationRecords, saveGenerationRecord, type GenerationRecordStatus } from "@/services/generation-history";
 import { resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { workspaceOwnerId } from "@/services/workspace-changes";
 import { requestVideoGeneration, storeGeneratedVideo } from "@/services/api/video";
@@ -59,7 +60,7 @@ type GenerationLog = {
     size: string;
     resolution: string;
     seconds: string;
-    status: "成功" | "失败";
+    status: GenerationRecordStatus;
     video?: GeneratedVideo;
     error?: string;
 };
@@ -116,7 +117,13 @@ export default function VideoPage() {
     }, [historyOwnerId]);
 
     useEffect(() => {
-        const refresh = () => void readStoredLogs(historyOwnerId).then(setLogs);
+        let refreshVersion = 0;
+        const refresh = () => {
+            const version = ++refreshVersion;
+            void readStoredLogs(historyOwnerId).then((nextLogs) => {
+                if (version === refreshVersion) setLogs(nextLogs);
+            });
+        };
         window.addEventListener(GENERATION_HISTORY_CHANGED_EVENT, refresh);
         return () => window.removeEventListener(GENERATION_HISTORY_CHANGED_EVENT, refresh);
     }, [historyOwnerId]);
@@ -193,7 +200,20 @@ export default function VideoPage() {
         setResults([{ id: nanoid(), status: "pending" }]);
         const batchStartedAt = performance.now();
         setStartedAt(batchStartedAt);
+        const pendingLog = buildLog({
+            ownerId: historyOwnerId,
+            prompt: snapshot.text,
+            model,
+            config: snapshot.config,
+            references: snapshot.references,
+            videoReferences: snapshot.videoReferences,
+            audioReferences: snapshot.audioReferences,
+            durationMs: 0,
+            status: "生成中",
+        });
         try {
+            await saveLog(pendingLog);
+            await flushActiveWorkspaceChanges();
             const stored = await storeGeneratedVideo(await requestVideoGeneration(snapshot.config, snapshot.text, snapshot.references, snapshot.videoReferences, snapshot.audioReferences));
             const nextVideo: GeneratedVideo = {
                 id: nanoid(),
@@ -206,38 +226,14 @@ export default function VideoPage() {
                 mimeType: stored.mimeType,
             };
             setResults([{ id: nextVideo.id, status: "success", video: nextVideo }]);
-            await saveLog(
-                buildLog({
-                    ownerId: historyOwnerId,
-                    prompt: snapshot.text,
-                    model,
-                    config: snapshot.config,
-                    references: snapshot.references,
-                    videoReferences: snapshot.videoReferences,
-                    audioReferences: snapshot.audioReferences,
-                    durationMs: nextVideo.durationMs,
-                    status: "成功",
-                    video: nextVideo,
-                }),
-            );
+            await saveLog({ ...pendingLog, durationMs: nextVideo.durationMs, status: "成功", video: nextVideo });
+            await flushActiveWorkspaceChanges().catch(() => {});
             message.success("视频已生成");
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : "生成失败";
             setResults([{ id: nanoid(), status: "failed", error: errorMessage }]);
-            await saveLog(
-                buildLog({
-                    ownerId: historyOwnerId,
-                    prompt: snapshot.text,
-                    model,
-                    config: snapshot.config,
-                    references: snapshot.references,
-                    videoReferences: snapshot.videoReferences,
-                    audioReferences: snapshot.audioReferences,
-                    durationMs: performance.now() - batchStartedAt,
-                    status: "失败",
-                    error: errorMessage,
-                }),
-            );
+            await saveLog({ ...pendingLog, durationMs: performance.now() - batchStartedAt, status: "失败", error: errorMessage });
+            await flushActiveWorkspaceChanges().catch(() => {});
             message.error(errorMessage);
         } finally {
             setRunning(false);
@@ -320,7 +316,7 @@ export default function VideoPage() {
 
     const saveLog = async (log: GenerationLog) => {
         await saveGenerationRecord(historyOwnerId, "video", serializeLog(log) as unknown as Record<string, unknown>);
-        await refreshLogs();
+        setLogs((current) => [log, ...current.filter((item) => item.id !== log.id)].sort((a, b) => b.createdAt - a.createdAt));
     };
 
     const refreshLogs = async () => setLogs(await readStoredLogs(historyOwnerId));
@@ -338,7 +334,7 @@ export default function VideoPage() {
         if (log.config.videoSeconds) updateConfig("videoSeconds", log.config.videoSeconds);
         if (log.config.videoGenerateAudio) updateConfig("videoGenerateAudio", log.config.videoGenerateAudio);
         if (log.config.videoWatermark) updateConfig("videoWatermark", log.config.videoWatermark);
-        setResults(log.video ? [{ id: log.video.id, status: "success", video: log.video }] : [{ id: log.id, status: "failed", error: log.error || "生成失败" }]);
+        setResults(log.video ? [{ id: log.video.id, status: "success", video: log.video }] : [{ id: log.id, status: log.status === "生成中" ? "pending" : "failed", error: log.status === "生成中" ? undefined : log.error || "生成失败" }]);
     };
 
     return (
@@ -701,7 +697,9 @@ function LogCard({ log, selected, active, onSelectedChange, onClick }: { log: Ge
         <button
             type="button"
             className={`block w-full rounded-lg border p-2 text-left transition ${active ? "border-stone-900 bg-blue-50 dark:border-stone-100 dark:bg-blue-950/20" : "border-stone-200 bg-background hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-stone-900"}`}
-            onClick={onClick}
+            onClick={() => {
+                if (log.status !== "生成中") onClick();
+            }}
         >
             <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2">
                 <Checkbox className="mt-0.5" checked={selected} onClick={(event) => event.stopPropagation()} onChange={(event) => onSelectedChange(event.target.checked)} />
@@ -714,7 +712,7 @@ function LogCard({ log, selected, active, onSelectedChange, onClick }: { log: Ge
                     </div>
                 </div>
                 <div className="grid justify-items-end gap-2">
-                    <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none" color={log.status === "成功" ? "blue" : "red"}>
+                    <Tag icon={log.status === "生成中" ? <LoaderCircle className="size-3 animate-spin" /> : undefined} className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none" color={log.status === "成功" ? "blue" : log.status === "生成中" ? "processing" : "red"}>
                         {log.status}
                     </Tag>
                     <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none" color="green">

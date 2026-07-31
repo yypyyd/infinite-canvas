@@ -357,31 +357,73 @@ function InfiniteCanvasPage() {
     const generationRequestsRef = useRef(new Map<string, CanvasGenerationRequest>());
     const hasUnsavedChangesRef = useRef(false);
 
-    const recordGeneratedImages = useCallback(
-        (prompt: string, generationConfig: AiConfig, images: UploadedImage[], startedAt?: number) =>
-            saveCanvasImageGenerationRecord(historyOwnerId, {
+    const startImageGenerationRecord = useCallback(
+        async (prompt: string, generationConfig: AiConfig, imageCount: number) => {
+            const id = await saveCanvasImageGenerationRecord(historyOwnerId, {
+                prompt,
+                model: generationConfig.model,
+                size: generationConfig.size,
+                quality: generationConfig.quality,
+                images: [],
+                imageCount,
+                status: "生成中",
+                canvasId: projectId,
+            });
+            await flushActiveWorkspaceChanges();
+            return id;
+        },
+        [historyOwnerId, projectId],
+    );
+    const finishImageGenerationRecord = useCallback(
+        async (id: string, prompt: string, generationConfig: AiConfig, images: UploadedImage[], imageCount: number, failCount: number, startedAt: number) => {
+            await saveCanvasImageGenerationRecord(historyOwnerId, {
+                id,
                 prompt,
                 model: generationConfig.model,
                 size: generationConfig.size,
                 quality: generationConfig.quality,
                 images,
-                durationMs: startedAt ? performance.now() - startedAt : 0,
+                imageCount,
+                failCount,
+                durationMs: performance.now() - startedAt,
                 canvasId: projectId,
-            }),
+            });
+            await flushActiveWorkspaceChanges().catch(() => {});
+        },
         [historyOwnerId, projectId],
     );
-    const recordGeneratedVideo = useCallback(
-        (prompt: string, generationConfig: AiConfig, video: UploadedFile, startedAt?: number) =>
-            saveCanvasVideoGenerationRecord(historyOwnerId, {
+    const startVideoGenerationRecord = useCallback(
+        async (prompt: string, generationConfig: AiConfig) => {
+            const id = await saveCanvasVideoGenerationRecord(historyOwnerId, {
+                prompt,
+                model: generationConfig.model,
+                size: generationConfig.size,
+                resolution: generationConfig.vquality,
+                seconds: generationConfig.videoSeconds,
+                status: "生成中",
+                canvasId: projectId,
+            });
+            await flushActiveWorkspaceChanges();
+            return id;
+        },
+        [historyOwnerId, projectId],
+    );
+    const finishVideoGenerationRecord = useCallback(
+        async (id: string, prompt: string, generationConfig: AiConfig, video: UploadedFile | undefined, startedAt: number, error?: string) => {
+            await saveCanvasVideoGenerationRecord(historyOwnerId, {
+                id,
                 prompt,
                 model: generationConfig.model,
                 size: generationConfig.size,
                 resolution: generationConfig.vquality,
                 seconds: generationConfig.videoSeconds,
                 video,
-                durationMs: startedAt ? performance.now() - startedAt : 0,
+                error,
+                durationMs: performance.now() - startedAt,
                 canvasId: projectId,
-            }),
+            });
+            await flushActiveWorkspaceChanges().catch(() => {});
+        },
         [historyOwnerId, projectId],
     );
 
@@ -1899,14 +1941,17 @@ function InfiniteCanvasPage() {
             setDialogNodeId(childId);
             const controller = startGenerationRequest(childId, node.id, childId);
             const generationStartedAt = performance.now();
+            let generationRecordId = "";
             try {
+                generationRecordId = await startImageGenerationRecord(prompt, generationConfig, 1);
                 const image = await requestEdit(generationConfig, prompt, [source], { id: `${node.id}-mask`, name: "mask.png", type: "image/png", dataUrl: payload.maskDataUrl }, { signal: controller.signal }).then((items) => items[0]);
                 const uploaded = await uploadImage(image.dataUrl);
                 throwIfGenerationCanceled(controller.signal);
                 const size = fitNodeSize(uploaded.width, uploaded.height, node.width, node.height);
                 setNodes((prev) => prev.map((item) => (item.id === childId ? { ...item, width: size.width, height: size.height, metadata: { ...item.metadata, ...imageMetadata(uploaded), prompt, ...generationMetadata } } : item)));
-                await recordGeneratedImages(prompt, generationConfig, [uploaded], generationStartedAt);
+                await finishImageGenerationRecord(generationRecordId, prompt, generationConfig, [uploaded], 1, 0, generationStartedAt);
             } catch (error) {
+                if (generationRecordId) await finishImageGenerationRecord(generationRecordId, prompt, generationConfig, [], 1, 1, generationStartedAt);
                 if (isGenerationCanceled(error)) return;
                 const errorDetails = error instanceof Error ? error.message : "局部修改失败";
                 message.error(errorDetails);
@@ -1916,7 +1961,7 @@ function InfiniteCanvasPage() {
                 clearRunningNodeId(childId);
             }
         },
-        [clearRunningNodeId, effectiveConfig, finishGenerationRequest, isAiConfigReady, managedModels, message, openConfigDialog, recordGeneratedImages, startGenerationRequest],
+        [clearRunningNodeId, effectiveConfig, finishGenerationRequest, finishImageGenerationRecord, isAiConfigReady, managedModels, message, openConfigDialog, startGenerationRequest, startImageGenerationRecord],
     );
 
     const upscaleImageNode = useCallback(async (node: CanvasNodeData, params: CanvasImageUpscaleParams) => {
@@ -1983,7 +2028,9 @@ function InfiniteCanvasPage() {
             setDialogNodeId(childId);
             const controller = startGenerationRequest(childId, node.id, childId);
             const generationStartedAt = performance.now();
+            let generationRecordId = "";
             try {
+                generationRecordId = await startImageGenerationRecord(prompt, generationConfig, 1);
                 const image = await requestEdit(
                     generationConfig,
                     prompt,
@@ -1995,8 +2042,9 @@ function InfiniteCanvasPage() {
                 throwIfGenerationCanceled(controller.signal);
                 const size = fitNodeSize(uploaded.width, uploaded.height, imageConfig.width, imageConfig.height);
                 setNodes((prev) => prev.map((item) => (item.id === childId ? { ...item, width: size.width, height: size.height, metadata: { ...item.metadata, ...imageMetadata(uploaded), prompt, ...generationMetadata } } : item)));
-                await recordGeneratedImages(prompt, generationConfig, [uploaded], generationStartedAt);
+                await finishImageGenerationRecord(generationRecordId, prompt, generationConfig, [uploaded], 1, 0, generationStartedAt);
             } catch (error) {
+                if (generationRecordId) await finishImageGenerationRecord(generationRecordId, prompt, generationConfig, [], 1, 1, generationStartedAt);
                 if (isGenerationCanceled(error)) return;
                 const errorDetails = error instanceof Error ? error.message : "生成失败";
                 setNodes((prev) => prev.map((item) => (item.id === childId ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails } } : item)));
@@ -2005,7 +2053,7 @@ function InfiniteCanvasPage() {
                 clearRunningNodeId(childId);
             }
         },
-        [clearRunningNodeId, effectiveConfig, finishGenerationRequest, managedModels, message, openConfigDialog, recordGeneratedImages, startGenerationRequest],
+        [clearRunningNodeId, effectiveConfig, finishGenerationRequest, finishImageGenerationRecord, managedModels, message, openConfigDialog, startGenerationRequest, startImageGenerationRecord],
     );
 
     const handleFontSizeChange = useCallback((nodeId: string, fontSize: number) => {
@@ -2209,6 +2257,8 @@ function InfiniteCanvasPage() {
                 return;
             }
             let pendingChildIds: string[] = [];
+            let activeImageRecord: { id: string; count: number; startedAt: number } | undefined;
+            let activeVideoRecord: { id: string; startedAt: number } | undefined;
             if (markSourceStatus) setNodes((prev) => prev.map((node) => (node.id === nodeId ? { ...node, metadata: { ...node.metadata, prompt: statusPrompt, status: NODE_STATUS_LOADING, errorDetails: undefined } } : node)));
 
             try {
@@ -2312,6 +2362,7 @@ function InfiniteCanvasPage() {
                     let hasSuccess = false;
                     let hasFailure = false;
                     const generationStartedAt = performance.now();
+                    activeImageRecord = { id: await startImageGenerationRecord(effectivePrompt, generationConfig, count), count, startedAt: generationStartedAt };
                     const generatedImages = await Promise.all(
                         targetIds.map(async (targetId) => {
                             try {
@@ -2362,10 +2413,13 @@ function InfiniteCanvasPage() {
                     const successfulImages = generatedImages.filter((image): image is UploadedImage => Boolean(image));
                     if (count > 1) finishGenerationRequest(rootId, runController);
                     if (runController.signal.aborted) {
+                        await finishImageGenerationRecord(activeImageRecord.id, effectivePrompt, generationConfig, successfulImages, count, count - successfulImages.length, generationStartedAt);
+                        activeImageRecord = undefined;
                         setNodes((prev) => prev.map((node) => (node.id === nodeId && isConfigNode && node.metadata?.status === NODE_STATUS_LOADING ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_IDLE, errorDetails: undefined } } : node)));
                         return;
                     }
-                    await recordGeneratedImages(effectivePrompt, generationConfig, successfulImages, generationStartedAt);
+                    await finishImageGenerationRecord(activeImageRecord.id, effectivePrompt, generationConfig, successfulImages, count, count - successfulImages.length, generationStartedAt);
+                    activeImageRecord = undefined;
                     if (hasFailure) message.error(hasSuccess ? "部分图片生成失败" : "全部图片生成失败");
                     setNodes((prev) =>
                         prev.map((node) =>
@@ -2414,6 +2468,7 @@ function InfiniteCanvasPage() {
                     if (!isEmptyVideoNode) setConnections((prev) => [...prev, { id: nanoid(), fromNodeId: nodeId, toNodeId: videoId }]);
                     startGenerationRequest(videoId, nodeId, nodeId, runController);
                     const generationStartedAt = performance.now();
+                    activeVideoRecord = { id: await startVideoGenerationRecord(effectivePrompt, generationConfig), startedAt: generationStartedAt };
                     try {
                         const video = await storeGeneratedVideo(
                             await requestVideoGeneration(generationConfig, effectivePrompt, generationContext.referenceImages, generationContext.referenceVideos, generationContext.referenceAudios, { signal: runController.signal }),
@@ -2444,7 +2499,8 @@ function InfiniteCanvasPage() {
                                     : node,
                             ),
                         );
-                        await recordGeneratedVideo(effectivePrompt, generationConfig, video, generationStartedAt);
+                        await finishVideoGenerationRecord(activeVideoRecord.id, effectivePrompt, generationConfig, video, generationStartedAt);
+                        activeVideoRecord = undefined;
                     } finally {
                         finishGenerationRequest(videoId, runController);
                     }
@@ -2542,8 +2598,10 @@ function InfiniteCanvasPage() {
                     ),
                 );
             } catch (error) {
-                if (isGenerationCanceled(error)) return;
                 const errorDetails = error instanceof Error ? error.message : "生成失败";
+                if (activeImageRecord) await finishImageGenerationRecord(activeImageRecord.id, effectivePrompt, generationConfig, [], activeImageRecord.count, activeImageRecord.count, activeImageRecord.startedAt);
+                if (activeVideoRecord) await finishVideoGenerationRecord(activeVideoRecord.id, effectivePrompt, generationConfig, undefined, activeVideoRecord.startedAt, errorDetails);
+                if (isGenerationCanceled(error)) return;
                 message.error(errorDetails);
                 setNodes((prev) =>
                     prev.map((node) => (node.id === nodeId || pendingChildIds.includes(node.id) ? (node.id === nodeId && !markSourceStatus ? node : { ...node, metadata: { ...node.metadata, status: NODE_STATUS_ERROR, errorDetails } }) : node)),
@@ -2553,7 +2611,7 @@ function InfiniteCanvasPage() {
                 clearRunningNodeId(nodeId);
             }
         },
-        [clearRunningNodeId, effectiveConfig, finishGenerationRequest, managedModels, openConfigDialog, recordGeneratedImages, recordGeneratedVideo, startGenerationRequest],
+        [clearRunningNodeId, effectiveConfig, finishGenerationRequest, finishImageGenerationRecord, finishVideoGenerationRecord, managedModels, openConfigDialog, startGenerationRequest, startImageGenerationRecord, startVideoGenerationRecord],
     );
 
     const createCommercePackage = useCallback(
@@ -2767,8 +2825,12 @@ function InfiniteCanvasPage() {
             const controller = startGenerationRequest(node.id, node.id, node.id);
             setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_LOADING, errorDetails: undefined } } : item)));
             const generationStartedAt = performance.now();
+            let imageRecordId: string | undefined;
+            let videoRecordId: string | undefined;
 
             try {
+                imageRecordId = node.type !== CanvasNodeType.Text && node.type !== CanvasNodeType.Video && node.type !== CanvasNodeType.Audio ? await startImageGenerationRecord(prompt, generationConfig, 1) : undefined;
+                videoRecordId = node.type === CanvasNodeType.Video ? await startVideoGenerationRecord(prompt, generationConfig) : undefined;
                 if (node.type === CanvasNodeType.Text) {
                     if (!context) return;
                     let streamed = "";
@@ -2812,7 +2874,7 @@ function InfiniteCanvasPage() {
                                 : item,
                         ),
                     );
-                    await recordGeneratedVideo(prompt, generationConfig, video, generationStartedAt);
+                    await finishVideoGenerationRecord(videoRecordId!, prompt, generationConfig, video, generationStartedAt);
                     return;
                 }
                 if (node.type === CanvasNodeType.Audio) {
@@ -2852,10 +2914,12 @@ function InfiniteCanvasPage() {
                             : item,
                     ),
                 );
-                await recordGeneratedImages(prompt, generationConfig, [uploadedImage], generationStartedAt);
+                await finishImageGenerationRecord(imageRecordId!, prompt, generationConfig, [uploadedImage], 1, 0, generationStartedAt);
             } catch (error) {
-                if (isGenerationCanceled(error)) return;
                 const errorDetails = error instanceof Error ? error.message : "生成失败";
+                if (imageRecordId) await finishImageGenerationRecord(imageRecordId, prompt, generationConfig, [], 1, 1, generationStartedAt);
+                if (videoRecordId) await finishVideoGenerationRecord(videoRecordId, prompt, generationConfig, undefined, generationStartedAt, errorDetails);
+                if (isGenerationCanceled(error)) return;
                 message.error(errorDetails);
                 setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails } } : item)));
             } finally {
@@ -2863,7 +2927,7 @@ function InfiniteCanvasPage() {
                 clearRunningNodeId(node.id);
             }
         },
-        [clearRunningNodeId, effectiveConfig, finishGenerationRequest, managedModels, message, openConfigDialog, recordGeneratedImages, recordGeneratedVideo, startGenerationRequest],
+        [clearRunningNodeId, effectiveConfig, finishGenerationRequest, finishImageGenerationRecord, finishVideoGenerationRecord, managedModels, message, openConfigDialog, startGenerationRequest, startImageGenerationRecord, startVideoGenerationRecord],
     );
 
     const generateImageFromTextNode = useCallback(
@@ -2961,10 +3025,9 @@ function InfiniteCanvasPage() {
             setSelectedNodeIds(new Set(created.map((node) => node.id)));
             setSelectedConnectionId(null);
             if (created[0]) setDialogNodeId(created[0].id);
-            await recordGeneratedImages(images[0]?.prompt || "", { ...effectiveConfig, model: effectiveConfig.imageModel || effectiveConfig.model }, stored.map((item) => item.storedImage));
             return created.map((node, index) => ({ nodeId: node.id, storageKey: stored[index].storedImage.storageKey }));
         },
-        [effectiveConfig, recordGeneratedImages, screenToCanvas, size.height, size.width],
+        [screenToCanvas, size.height, size.width],
     );
 
     const insertAssistantVideo = useCallback(
@@ -2991,10 +3054,9 @@ function InfiniteCanvasPage() {
             setSelectedNodeIds(new Set([node.id]));
             setSelectedConnectionId(null);
             setDialogNodeId(node.id);
-            await recordGeneratedVideo(video.prompt, { ...effectiveConfig, model: effectiveConfig.videoModel || effectiveConfig.model }, video);
             return { nodeId: node.id, storageKey: video.storageKey };
         },
-        [effectiveConfig, recordGeneratedVideo, screenToCanvas, selectedNodeIds, size.height, size.width],
+        [screenToCanvas, selectedNodeIds, size.height, size.width],
     );
 
     const arrangeAssistantNodes = useCallback(

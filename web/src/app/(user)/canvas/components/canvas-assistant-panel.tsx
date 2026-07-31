@@ -6,6 +6,7 @@ import { Button, Modal, Tooltip } from "antd";
 import { motion } from "motion/react";
 
 import { ImageGenerationPending } from "@/components/image-generation-pending";
+import { flushActiveWorkspaceChanges } from "@/components/layout/workspace-provider";
 import { ModelPicker } from "@/components/model-picker";
 import { useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { CreditSymbol, requestCreditQuote, type PricingRule } from "@/constant/credits";
@@ -15,7 +16,7 @@ import { nanoid } from "nanoid";
 import { cn } from "@/lib/utils";
 import { requestEdit, requestGeneration } from "@/services/api/image";
 import { requestVideoGeneration, storeGeneratedVideo } from "@/services/api/video";
-import { saveCanvasImageGenerationRecord } from "@/services/generation-history";
+import { saveCanvasImageGenerationRecord, saveCanvasVideoGenerationRecord } from "@/services/generation-history";
 import { workspaceOwnerId } from "@/services/workspace-changes";
 import { claimAgentToolExecution, confirmAgentTool, createAgentSession, getAgentRun, getAgentToolResultReceipt, streamAgentRun, submitAgentMessage, submitAgentToolResult, type AgentEvent, type AgentToolResult } from "@/services/api/agent";
 import type { UploadedFile } from "@/services/file-storage";
@@ -325,6 +326,10 @@ export function CanvasAssistantPanel({
                             void claimAgentToolExecution(runId, callId, toolExecutorToken.current).catch(() => toolAbortController.abort());
                         }, 30_000);
                         let result: AgentToolResult;
+                        let generationRecord:
+                            | { kind: "image"; id: string; prompt: string; config: AiConfig; count: number; startedAt: number }
+                            | { kind: "video"; id: string; prompt: string; config: AiConfig; startedAt: number }
+                            | undefined;
                         try {
                             if (toolName === "image.generate" && "count" in toolArguments) {
                                 updateMessage(sessionId, assistantMessageId, { text: "正在调用生图工具", isLoading: true });
@@ -336,12 +341,40 @@ export function CanvasAssistantPanel({
                                     toolReferences.map(async (item) => ({ id: item.id, name: `${item.title}.png`, type: "image/png", dataUrl: await imageToDataUrl(item), storageKey: item.storageKey })),
                                 );
                                 const idempotencyKey = `agent:${runId}:${callId}`;
+                                const generationStartedAt = performance.now();
+                                const imageCount = Math.max(1, Number(toolArguments.count) || 1);
+                                const generationRecordId = await saveCanvasImageGenerationRecord(historyOwnerId, {
+                                    prompt: toolArguments.prompt,
+                                    model: toolConfig.model,
+                                    size: toolConfig.size,
+                                    quality: toolConfig.quality,
+                                    images: [],
+                                    imageCount,
+                                    status: "生成中",
+                                    canvasId: projectId,
+                                });
+                                await flushActiveWorkspaceChanges();
+                                generationRecord = { kind: "image", id: generationRecordId, prompt: toolArguments.prompt, config: toolConfig, count: imageCount, startedAt: generationStartedAt };
                                 const generated = referenceImages.length
                                     ? await requestEdit(toolConfig, toolArguments.prompt, referenceImages, undefined, { signal: toolAbortController.signal, idempotencyKey })
                                     : await requestGeneration(toolConfig, toolArguments.prompt, { signal: toolAbortController.signal, idempotencyKey });
                                 const storedResults = await Promise.allSettled(generated.map(async (image) => ({ generated: image, stored: await uploadImage(image.dataUrl) })));
                                 const stored = storedResults.filter((item): item is PromiseFulfilledResult<{ generated: (typeof generated)[number]; stored: Awaited<ReturnType<typeof uploadImage>> }> => item.status === "fulfilled").map((item) => item.value);
                                 if (!stored.length) throw storedResults.find((item): item is PromiseRejectedResult => item.status === "rejected")?.reason || new Error("生成图片保存失败");
+                                await saveCanvasImageGenerationRecord(historyOwnerId, {
+                                    id: generationRecordId,
+                                    prompt: toolArguments.prompt,
+                                    model: toolConfig.model,
+                                    size: toolConfig.size,
+                                    quality: toolConfig.quality,
+                                    images: stored.map((item) => item.stored),
+                                    imageCount,
+                                    failCount: imageCount - stored.length,
+                                    durationMs: performance.now() - generationStartedAt,
+                                    canvasId: projectId,
+                                });
+                                await flushActiveWorkspaceChanges().catch(() => {});
+                                generationRecord = undefined;
                                 const canvasImages = stored.map(({ generated: image, stored }) => ({ id: image.id, dataUrl: stored.url, storageKey: stored.storageKey, prompt: toolArguments.prompt, agentRunId: runId, agentToolCallId: callId }));
                                 await claimAgentToolExecution(runId, callId, toolExecutorToken.current);
                                 const inserted = await onInsertImages(canvasImages);
@@ -356,8 +389,33 @@ export function CanvasAssistantPanel({
                                 const reference = toolArguments.imageNodeId ? refs.find((item) => item.id === toolArguments.imageNodeId && item.type === CanvasNodeType.Image && item.dataUrl) : undefined;
                                 if (toolArguments.imageNodeId && !reference) throw new Error("未找到指定的本轮参考图片节点");
                                 const referenceImages: ReferenceImage[] = reference ? [{ id: reference.id, name: `${reference.title}.png`, type: "image/png", dataUrl: await imageToDataUrl(reference), storageKey: reference.storageKey }] : [];
+                                const generationStartedAt = performance.now();
+                                const generationRecordId = await saveCanvasVideoGenerationRecord(historyOwnerId, {
+                                    prompt: toolArguments.prompt,
+                                    model: toolConfig.model,
+                                    size: toolConfig.size,
+                                    resolution: toolConfig.vquality,
+                                    seconds: toolConfig.videoSeconds,
+                                    status: "生成中",
+                                    canvasId: projectId,
+                                });
+                                await flushActiveWorkspaceChanges();
+                                generationRecord = { kind: "video", id: generationRecordId, prompt: toolArguments.prompt, config: toolConfig, startedAt: generationStartedAt };
                                 const stored = await storeGeneratedVideo(await requestVideoGeneration(toolConfig, toolArguments.prompt, referenceImages, [], [], { signal: toolAbortController.signal, idempotencyKey: `agent:${runId}:${callId}` }));
                                 if (!stored.storageKey) throw new Error("生成的视频未保存到工作区");
+                                await saveCanvasVideoGenerationRecord(historyOwnerId, {
+                                    id: generationRecordId,
+                                    prompt: toolArguments.prompt,
+                                    model: toolConfig.model,
+                                    size: toolConfig.size,
+                                    resolution: toolConfig.vquality,
+                                    seconds: toolConfig.videoSeconds,
+                                    video: stored,
+                                    durationMs: performance.now() - generationStartedAt,
+                                    canvasId: projectId,
+                                });
+                                await flushActiveWorkspaceChanges().catch(() => {});
+                                generationRecord = undefined;
                                 await claimAgentToolExecution(runId, callId, toolExecutorToken.current);
                                 const video = await onInsertVideo({ ...stored, prompt: toolArguments.prompt, agentRunId: runId, agentToolCallId: callId });
                                 updateMessage(sessionId, assistantMessageId, { text: "已生成并插入视频，正在整理结果", isLoading: true });
@@ -386,6 +444,33 @@ export function CanvasAssistantPanel({
                                 throw new Error("不支持的画布工具调用");
                             }
                         } catch (error) {
+                            if (generationRecord?.kind === "image") {
+                                await saveCanvasImageGenerationRecord(historyOwnerId, {
+                                    id: generationRecord.id,
+                                    prompt: generationRecord.prompt,
+                                    model: generationRecord.config.model,
+                                    size: generationRecord.config.size,
+                                    quality: generationRecord.config.quality,
+                                    images: [],
+                                    imageCount: generationRecord.count,
+                                    failCount: generationRecord.count,
+                                    durationMs: performance.now() - generationRecord.startedAt,
+                                    canvasId: projectId,
+                                });
+                            } else if (generationRecord?.kind === "video") {
+                                await saveCanvasVideoGenerationRecord(historyOwnerId, {
+                                    id: generationRecord.id,
+                                    prompt: generationRecord.prompt,
+                                    model: generationRecord.config.model,
+                                    size: generationRecord.config.size,
+                                    resolution: generationRecord.config.vquality,
+                                    seconds: generationRecord.config.videoSeconds,
+                                    error: error instanceof Error ? error.message : "生成失败",
+                                    durationMs: performance.now() - generationRecord.startedAt,
+                                    canvasId: projectId,
+                                });
+                            }
+                            if (generationRecord) await flushActiveWorkspaceChanges().catch(() => {});
                             window.clearInterval(leaseHeartbeat);
                             const appliedResult = onRestoreToolResult(runId, callId);
                             handledToolCalls.current.delete(toolKey);
@@ -424,7 +509,7 @@ export function CanvasAssistantPanel({
                 setIsRunning(inFlightRuns.current.size > 0);
             }
         },
-        [effectiveConfig, isAiConfigReady, managedModels, onApplyDestructiveTool, onArrangeNodes, onInsertImages, onInsertText, onInsertVideo, onPersistToolResult, onRestoreToolResult, updateMessage],
+        [effectiveConfig, historyOwnerId, isAiConfigReady, managedModels, onApplyDestructiveTool, onArrangeNodes, onInsertImages, onInsertText, onInsertVideo, onPersistToolResult, onRestoreToolResult, projectId, updateMessage],
     );
 
     useEffect(() => {
@@ -474,10 +559,24 @@ export function CanvasAssistantPanel({
         appendMessage(session.id, { id: assistantId, role: "assistant", mode: nextMode, text: nextMode === "image" ? "正在生成图片" : "正在回答", isLoading: true });
         setPrompt("");
         setIsRunning(true);
+        let generationRecordId = "";
+        let generationStartedAt = 0;
 
         try {
             if (nextMode === "image") {
-                const generationStartedAt = performance.now();
+                generationStartedAt = performance.now();
+                const imageCount = Math.max(1, Number(requestConfig.count) || 1);
+                generationRecordId = await saveCanvasImageGenerationRecord(historyOwnerId, {
+                    prompt: text,
+                    model: requestConfig.model,
+                    size: requestConfig.size,
+                    quality: requestConfig.quality,
+                    images: [],
+                    imageCount,
+                    status: "生成中",
+                    canvasId: projectId,
+                });
+                await flushActiveWorkspaceChanges();
                 const referenceImages: ReferenceImage[] = await Promise.all(
                     refs.filter((item) => item.dataUrl).map(async (item) => ({ id: item.id, name: `${item.title}.png`, type: "image/png", dataUrl: await imageToDataUrl(item), storageKey: item.storageKey })),
                 );
@@ -486,14 +585,19 @@ export function CanvasAssistantPanel({
                 const storedImages = storedResults.filter((item): item is PromiseFulfilledResult<{ generated: (typeof images)[number]; stored: Awaited<ReturnType<typeof uploadImage>> }> => item.status === "fulfilled").map((item) => item.value);
                 if (!storedImages.length) throw storedResults.find((item): item is PromiseRejectedResult => item.status === "rejected")?.reason || new Error("生成图片保存失败");
                 await saveCanvasImageGenerationRecord(historyOwnerId, {
+                    id: generationRecordId,
                     prompt: text,
                     model: requestConfig.model,
                     size: requestConfig.size,
                     quality: requestConfig.quality,
                     images: storedImages.map((item) => item.stored),
+                    imageCount,
+                    failCount: imageCount - storedImages.length,
                     durationMs: performance.now() - generationStartedAt,
                     canvasId: projectId,
                 });
+                await flushActiveWorkspaceChanges().catch(() => {});
+                generationRecordId = "";
                 const storageFailCount = images.length - storedImages.length;
                 updateMessage(session.id, assistantId, {
                     text: storageFailCount ? `生成了 ${images.length} 张图片，其中 ${storageFailCount} 张保存失败` : `生成了 ${storedImages.length} 张图片`,
@@ -521,6 +625,21 @@ export function CanvasAssistantPanel({
             });
             await followAgentRun(submission.run.id, session.id, assistantId, refs);
         } catch (error) {
+            if (generationRecordId) {
+                await saveCanvasImageGenerationRecord(historyOwnerId, {
+                    id: generationRecordId,
+                    prompt: text,
+                    model: requestConfig.model,
+                    size: requestConfig.size,
+                    quality: requestConfig.quality,
+                    images: [],
+                    imageCount: Math.max(1, Number(requestConfig.count) || 1),
+                    failCount: Math.max(1, Number(requestConfig.count) || 1),
+                    durationMs: performance.now() - generationStartedAt,
+                    canvasId: projectId,
+                });
+                await flushActiveWorkspaceChanges().catch(() => {});
+            }
             updateMessage(session.id, assistantId, { text: error instanceof Error ? error.message : "操作失败", isLoading: false });
         } finally {
             setIsRunning(inFlightRuns.current.size > 0);

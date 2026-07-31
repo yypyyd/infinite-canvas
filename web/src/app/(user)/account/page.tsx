@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { App, Avatar, Button, Card, Descriptions, Empty, Form, Image as AntImage, Input, Modal, Pagination, Progress, Segmented, Select, Skeleton, Table, Tabs, Tag, Typography, type TableColumnsType } from "antd";
 import dayjs from "dayjs";
 import { saveAs } from "file-saver";
-import { BookOpen, CircleUserRound, Clock3, Cloud, Code2, Coins, Copy, ExternalLink, Film, History, ImageIcon, KeyRound, ListChecks, PencilLine, Plus, ReceiptText, RefreshCw, Search, ShieldCheck, Trash2, WalletCards } from "lucide-react";
+import { BookOpen, CircleUserRound, Clock3, Cloud, Code2, Coins, Copy, ExternalLink, Film, History, ImageIcon, KeyRound, ListChecks, LoaderCircle, PencilLine, Plus, ReceiptText, RefreshCw, Search, ShieldCheck, Trash2, WalletCards } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
@@ -520,7 +520,7 @@ function HistorySection() {
     const ownerId = useUserStore((state) => (state.user ? workspaceOwnerId(state.user.id, state.user.organizationId) : "guest"));
     const [keyword, setKeyword] = useState("");
     const [kind, setKind] = useState<"all" | "image" | "video">("all");
-    const [status, setStatus] = useState<"all" | "成功" | "失败">("all");
+    const [status, setStatus] = useState<"all" | GenerationHistoryItem["status"]>("all");
     const [page, setPage] = useState(1);
     const [selected, setSelected] = useState<GenerationHistoryItem | null>(null);
     const query = useQuery({
@@ -607,7 +607,9 @@ function HistorySection() {
                             className="sm:w-32"
                             options={[
                                 { label: "全部状态", value: "all" },
+                                { label: "生成中", value: "生成中" },
                                 { label: "成功", value: "成功" },
+                                { label: "部分失败", value: "部分失败" },
                                 { label: "失败", value: "失败" },
                             ]}
                         />
@@ -646,6 +648,10 @@ function HistorySection() {
     );
 }
 
+function generationStatusColor(status: GenerationHistoryItem["status"]) {
+    return status === "成功" ? "green" : status === "生成中" ? "processing" : status === "部分失败" ? "orange" : "red";
+}
+
 function HistoryCard({ item, onOpen, onDelete }: { item: GenerationHistoryItem; onOpen: () => void; onDelete: () => void }) {
     const previewQuery = useQuery({
         queryKey: ["generation-history-preview", item.ownerId, item.kind, item.id],
@@ -673,7 +679,7 @@ function HistoryCard({ item, onOpen, onDelete }: { item: GenerationHistoryItem; 
                         <h3 className="truncate font-medium">{item.title}</h3>
                         <p className="mt-1 line-clamp-2 min-h-10 text-sm leading-5 text-muted-foreground">{item.prompt || "未填写提示词"}</p>
                     </div>
-                    <Tag className="m-0 shrink-0" color={item.status === "成功" ? "green" : "red"}>
+                    <Tag icon={item.status === "生成中" ? <LoaderCircle className="size-3 animate-spin" /> : undefined} className="m-0 shrink-0" color={generationStatusColor(item.status)}>
                         {item.status}
                     </Tag>
                 </div>
@@ -755,14 +761,14 @@ function HistoryDetailModal({ item, onClose, onDelete }: { item: GenerationHisto
                                 </div>
                             </AntImage.PreviewGroup>
                         ) : (
-                            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="本地结果文件不存在" />
+                            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={item.status === "生成中" ? "正在生成结果" : "本地结果文件不存在"} />
                         )
                     ) : videoUrl ? (
                         <div className="overflow-hidden rounded-xl bg-black">
                             <video src={videoUrl} controls className="max-h-[52vh] w-full" />
                         </div>
                     ) : (
-                        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="本地结果文件不存在" />
+                        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={item.status === "生成中" ? "正在生成结果" : "本地结果文件不存在"} />
                     )}
                     <Descriptions
                         size="small"
@@ -773,7 +779,7 @@ function HistoryDetailModal({ item, onClose, onDelete }: { item: GenerationHisto
                                 key: "status",
                                 label: "状态",
                                 children: (
-                                    <Tag className="m-0" color={item.status === "成功" ? "green" : "red"}>
+                                    <Tag icon={item.status === "生成中" ? <LoaderCircle className="size-3 animate-spin" /> : undefined} className="m-0" color={generationStatusColor(item.status)}>
                                         {item.status}
                                     </Tag>
                                 ),

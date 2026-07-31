@@ -6,6 +6,7 @@ import { App, Button, Checkbox, Drawer, Empty, Image, Input, Modal, Tag, Tooltip
 import { saveAs } from "file-saver";
 
 import { ImageSettingsPanel } from "@/components/image-settings-panel";
+import { flushActiveWorkspaceChanges } from "@/components/layout/workspace-provider";
 import { ModelPicker } from "@/components/model-picker";
 import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
 import { AssetPickerModal, type InsertAssetPayload } from "@/app/(user)/canvas/components/asset-picker-modal";
@@ -19,7 +20,7 @@ import { useThemeStore } from "@/stores/use-theme-store";
 import { nanoid } from "nanoid";
 import { formatBytes, formatDuration, getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
 import { requestEdit, requestGeneration } from "@/services/api/image";
-import { deleteStoredGenerationRecord, GENERATION_HISTORY_CHANGED_EVENT, readWorkbenchGenerationRecords, saveGenerationRecord } from "@/services/generation-history";
+import { deleteStoredGenerationRecord, GENERATION_HISTORY_CHANGED_EVENT, readWorkbenchGenerationRecords, saveGenerationRecord, type GenerationRecordStatus } from "@/services/generation-history";
 import { resolveImageUrl, resolveImageVariantUrl, uploadImage } from "@/services/image-storage";
 import { workspaceOwnerId } from "@/services/workspace-changes";
 import { useAssetStore } from "@/stores/use-asset-store";
@@ -60,7 +61,7 @@ type GenerationLog = {
     imageCount: number;
     size: string;
     quality: string;
-    status: "成功" | "失败";
+    status: GenerationRecordStatus;
     images: GeneratedImage[];
     thumbnails: string[];
 };
@@ -139,7 +140,13 @@ export default function ImagePage() {
     }, [historyOwnerId]);
 
     useEffect(() => {
-        const refresh = () => void readStoredLogs(historyOwnerId).then(setLogs);
+        let refreshVersion = 0;
+        const refresh = () => {
+            const version = ++refreshVersion;
+            void readStoredLogs(historyOwnerId).then((nextLogs) => {
+                if (version === refreshVersion) setLogs(nextLogs);
+            });
+        };
         window.addEventListener(GENERATION_HISTORY_CHANGED_EVENT, refresh);
         return () => window.removeEventListener(GENERATION_HISTORY_CHANGED_EVENT, refresh);
     }, [historyOwnerId]);
@@ -197,54 +204,75 @@ export default function ImagePage() {
         setResults(Array.from({ length: generationCount }, () => ({ id: nanoid(), status: "pending" })));
         const batchStartedAt = performance.now();
         setStartedAt(batchStartedAt);
-
-        const tasks = Array.from({ length: generationCount }, (_, index) => runGenerationSlot(index, snapshot));
-
-        const result = await Promise.allSettled(tasks);
-        const successImages = result.filter((item): item is PromiseFulfilledResult<GeneratedImage> => item.status === "fulfilled").map((item) => item.value);
-        const successCount = successImages.length;
-        const failCount = generationCount - successCount;
-        const failed = result.find((item): item is PromiseRejectedResult => item.status === "rejected");
+        const pendingLog = buildLog({
+            ownerId: historyOwnerId,
+            prompt: text,
+            model,
+            config: { ...snapshot.config, count: String(generationCount) },
+            references: snapshot.references,
+            durationMs: 0,
+            successCount: 0,
+            failCount: 0,
+            status: "生成中",
+            images: [],
+        });
+        const logImages: GeneratedImage[] = [];
+        let completedCount = 0;
+        let generationSuccessCount = 0;
+        let failCount = 0;
+        let storageFailCount = 0;
+        let firstFailure: unknown;
+        let firstStorageFailure: unknown;
 
         try {
-            const storedResults = await Promise.allSettled(
-                successImages.map(async (image) => {
-                    const stored = await uploadImage(image.dataUrl);
-                    return { ...image, dataUrl: stored.url, storageKey: stored.storageKey, width: stored.width, height: stored.height, bytes: stored.bytes, mimeType: stored.mimeType };
-                }),
+            await saveLog(pendingLog);
+            await flushActiveWorkspaceChanges();
+            await Promise.all(
+                Array.from({ length: generationCount }, (_, index) =>
+                    runGenerationSlot(index, snapshot)
+                        .then(async (image) => {
+                            generationSuccessCount += 1;
+                            try {
+                                const stored = await uploadImage(image.dataUrl);
+                                const logImage = { ...image, dataUrl: stored.url, storageKey: stored.storageKey, width: stored.width, height: stored.height, bytes: stored.bytes, mimeType: stored.mimeType };
+                                logImages.push(logImage);
+                                setResults((value) => updateResultAt(value, index, { status: "success", image: logImage }));
+                            } catch (error) {
+                                storageFailCount += 1;
+                                failCount += 1;
+                                firstStorageFailure ||= error;
+                                firstFailure ||= error;
+                            }
+                        })
+                        .catch((error) => {
+                            failCount += 1;
+                            firstFailure ||= error;
+                        })
+                        .finally(async () => {
+                            completedCount += 1;
+                            await saveLog({
+                                ...pendingLog,
+                                durationMs: performance.now() - batchStartedAt,
+                                successCount: logImages.length,
+                                failCount,
+                                status: completedCount < generationCount ? "生成中" : logImages.length ? (failCount ? "部分失败" : "成功") : "失败",
+                                images: [...logImages],
+                                thumbnails: logImages.map((image) => image.dataUrl),
+                            });
+                        }),
+                ),
             );
-            const logImages = storedResults.filter((item): item is PromiseFulfilledResult<GeneratedImage> => item.status === "fulfilled").map((item) => item.value);
-            const storageFailCount = successImages.length - logImages.length;
-            const storageFailure = storedResults.find((item): item is PromiseRejectedResult => item.status === "rejected");
-            const storedImages = new Map(logImages.map((image) => [image.id, image]));
-            setResults((value) =>
-                value.map((result) => {
-                    const stored = result.image ? storedImages.get(result.image.id) : undefined;
-                    return stored ? { ...result, image: stored } : result;
-                }),
-            );
-            await saveLog(
-                buildLog({
-                    ownerId: historyOwnerId,
-                    prompt: text,
-                    model,
-                    config: { ...snapshot.config, count: String(generationCount) },
-                    references: snapshot.references,
-                    durationMs: performance.now() - batchStartedAt,
-                    successCount: logImages.length,
-                    failCount: failCount + storageFailCount,
-                    status: logImages.length ? "成功" : "失败",
-                    images: logImages,
-                }),
-            );
+            await flushActiveWorkspaceChanges();
             if (storageFailCount) {
-                const detail = storageFailure?.reason instanceof Error ? storageFailure.reason.message : "保存失败";
-                logImages.length ? message.warning(`已生成 ${successCount} 张图片，其中 ${storageFailCount} 张未写入生成记录`) : message.error(`图片已生成，但生成记录保存失败：${detail}`);
-            } else if (successCount && failCount) {
-                message.warning(`成功生成 ${successCount} 张，失败 ${failCount} 张`);
+                const detail = firstStorageFailure instanceof Error ? firstStorageFailure.message : "保存失败";
+                logImages.length ? message.warning(`已生成 ${generationSuccessCount} 张图片，其中 ${storageFailCount} 张未写入生成记录`) : message.error(`图片已生成，但生成记录保存失败：${detail}`);
+            } else if (generationSuccessCount && failCount) {
+                message.warning(`成功生成 ${generationSuccessCount} 张，失败 ${failCount} 张`);
             } else {
-                successCount ? message.success("图片已生成") : message.error(failed?.reason instanceof Error ? failed.reason.message : "生成失败");
+                generationSuccessCount ? message.success("图片已生成") : message.error(firstFailure instanceof Error ? firstFailure.message : "生成失败");
             }
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "生成记录保存失败");
         } finally {
             setRunning(false);
         }
@@ -313,7 +341,7 @@ export default function ImagePage() {
 
     const saveLog = async (log: GenerationLog) => {
         await saveGenerationRecord(historyOwnerId, "image", serializeLog(log) as unknown as Record<string, unknown>);
-        await refreshLogs();
+        setLogs((current) => [log, ...current.filter((item) => item.id !== log.id)].sort((a, b) => b.createdAt - a.createdAt));
     };
 
     const refreshLogs = async () => setLogs(await readStoredLogs(historyOwnerId));
@@ -327,7 +355,11 @@ export default function ImagePage() {
         if (log.config.quality) updateConfig("quality", log.config.quality);
         if (log.config.size) updateConfig("size", log.config.size);
         if (log.config.count) updateConfig("count", log.config.count);
-        setResults(log.images.map((image) => ({ id: image.id, status: "success", image })));
+        setResults(
+            log.status === "生成中"
+                ? [...log.images.map((image) => ({ id: image.id, status: "success" as const, image })), ...Array.from({ length: Math.max(0, log.imageCount - log.successCount - log.failCount) }, () => ({ id: nanoid(), status: "pending" as const }))]
+                : log.images.map((image) => ({ id: image.id, status: "success", image })),
+        );
     };
 
     const buildRequestSnapshot = () => {
@@ -810,7 +842,9 @@ function LogCard({ log, selected, active, onSelectedChange, onClick }: { log: Ge
         <button
             type="button"
             className={`block w-full rounded-lg border p-2 text-left transition ${active ? "border-stone-900 bg-blue-50 dark:border-stone-100 dark:bg-blue-950/20" : "border-stone-200 bg-background hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-stone-900"}`}
-            onClick={onClick}
+            onClick={() => {
+                if (log.status !== "生成中") onClick();
+            }}
         >
             <div className="grid grid-cols-[minmax(128px,1fr)_auto] gap-2">
                 <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-2">
@@ -827,16 +861,22 @@ function LogCard({ log, selected, active, onSelectedChange, onClick }: { log: Ge
                     </div>
                 </div>
                 <div className="grid justify-items-end gap-2">
-                    <div className="flex gap-1">
-                        <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none" color="blue">
-                            成功 {log.successCount ?? log.imageCount}
+                    {log.status === "生成中" ? (
+                        <Tag icon={<LoaderCircle className="size-3 animate-spin" />} className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none" color="processing">
+                            生成中 {log.successCount + log.failCount}/{log.imageCount}
                         </Tag>
-                        {log.failCount ? (
-                            <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none" color="red">
-                                失败 {log.failCount}
+                    ) : (
+                        <div className="flex gap-1">
+                            <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none" color="blue">
+                                成功 {log.successCount ?? log.imageCount}
                             </Tag>
-                        ) : null}
-                    </div>
+                            {log.failCount ? (
+                                <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none" color="red">
+                                    失败 {log.failCount}
+                                </Tag>
+                            ) : null}
+                        </div>
+                    )}
                     <div className="flex flex-wrap justify-end gap-1">
                         <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none">{log.imageCount} 张</Tag>
                         <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none" color="green">

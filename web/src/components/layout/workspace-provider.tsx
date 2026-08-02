@@ -33,6 +33,7 @@ export function WorkspaceProvider() {
         let running = false;
         let saveWaiters: Array<() => void> = [];
         let timer: ReturnType<typeof setTimeout> | null = null;
+        let lastSaveError: Error | null = null;
         if (!token || !userId || !organizationId) {
             useCanvasStore.getState().switchOwner("guest");
             useAssetStore.getState().switchOwner("guest");
@@ -68,8 +69,10 @@ export function WorkspaceProvider() {
                 await Promise.all([hydrateOwnerAssets(ownerId), applyGenerationRecordSnapshot(ownerId, workspace.records, pending)]);
                 statusStore.setUsage(usage.usedBytes, usage.quotaBytes, usage.projectCount, usage.assetCount, usage.fileCount);
                 statusStore.markSaved();
+                lastSaveError = null;
             } catch (error) {
                 const text = error instanceof Error ? error.message : "账号数据保存失败";
+                lastSaveError = error instanceof Error ? error : new Error(text);
                 statusStore.setStatus(navigator.onLine ? "error" : "offline", text);
             } finally {
                 running = false;
@@ -80,12 +83,12 @@ export function WorkspaceProvider() {
 
         const flush = async () => {
             if (!readPendingWorkspaceChanges(ownerId).length) return;
-            if (!navigator.onLine) throw new Error("当前离线，无法切换企业");
+            if (!navigator.onLine) throw new Error("当前离线，无法保存账号数据");
             for (let attempt = 0; attempt < 3; attempt++) {
                 await save(false);
                 if (!readPendingWorkspaceChanges(ownerId).length) return;
             }
-            throw new Error("当前企业仍有数据未保存，请稍后重试");
+            throw lastSaveError || new Error("当前账号仍有数据未保存，请稍后重试");
         };
         activeWorkspaceFlush = flush;
 

@@ -2,7 +2,7 @@
 
 import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { ProTable, type ProColumns } from "@ant-design/pro-components";
-import { Button, Card, Col, Form, Input, InputNumber, Modal, Row, Space, Tag, Tooltip, Typography } from "antd";
+import { Button, Card, Col, Flex, Form, Input, InputNumber, Modal, Row, Space, Tag, Tooltip, Typography } from "antd";
 import dayjs from "dayjs";
 import { useEffect, useState } from "react";
 
@@ -43,10 +43,19 @@ export default function AdminCreditLogsPage() {
 
     const columns: ProColumns<AdminCreditLog>[] = [
         {
-            title: "用户 ID",
-            dataIndex: "userId",
-            width: 220,
-            render: (_, item) => <Typography.Text copyable>{item.userId}</Typography.Text>,
+            title: "用户",
+            dataIndex: "username",
+            width: 260,
+            render: (_, item) => (
+                <Flex vertical style={{ minWidth: 0 }}>
+                    <Typography.Text strong ellipsis>
+                        {item.username || "未知用户"}
+                    </Typography.Text>
+                    <Typography.Text type="secondary" copyable={{ text: item.userId }} ellipsis>
+                        {item.userId}
+                    </Typography.Text>
+                </Flex>
+            ),
         },
         {
             title: "类型",
@@ -111,7 +120,7 @@ export default function AdminCreditLogsPage() {
                                 <Form.Item label="关键词">
                                     <Input.Search
                                         value={keywordText}
-                                        placeholder="搜索用户 ID、类型、备注或关联 ID"
+                                        placeholder="搜索用户名、用户 ID、类型、备注或关联 ID"
                                         allowClear
                                         enterButton={<SearchOutlined />}
                                         onSearch={() => searchLogs(keywordText)}

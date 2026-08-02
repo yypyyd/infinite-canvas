@@ -36,6 +36,7 @@ export type AdminUserListResponse = {
 export type AdminCreditLog = {
     id: string;
     userId: string;
+    username: string;
     organizationId: string;
     creditSource: "personal" | "organization";
     type: string;

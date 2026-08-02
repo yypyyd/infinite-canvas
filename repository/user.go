@@ -18,7 +18,7 @@ func ListUsers(q model.Query) ([]model.User, int64, error) {
 	tx := db.Model(&model.User{})
 	if keyword := strings.TrimSpace(q.Keyword); keyword != "" {
 		like := "%" + keyword + "%"
-		tx = tx.Where("username LIKE ? OR display_name LIKE ? OR email LIKE ?", like, like, like)
+		tx = tx.Where("id LIKE ? OR username LIKE ? OR display_name LIKE ? OR email LIKE ?", like, like, like, like)
 	}
 
 	var total int64
@@ -121,7 +121,7 @@ func ListCreditLogs(q model.Query) ([]model.CreditLog, int64, error) {
 	if err != nil {
 		return nil, 0, err
 	}
-	return listCreditLogs(db.Model(&model.CreditLog{}), q)
+	return listCreditLogs(db.Model(&model.CreditLog{}).Joins("LEFT JOIN users ON users.id = credit_logs.user_id"), q, true)
 }
 
 func ListUserCreditLogs(userID string, q model.Query) ([]model.CreditLog, int64, error) {
@@ -129,24 +129,31 @@ func ListUserCreditLogs(userID string, q model.Query) ([]model.CreditLog, int64,
 	if err != nil {
 		return nil, 0, err
 	}
-	return listCreditLogs(db.Model(&model.CreditLog{}).Where("user_id = ?", userID), q)
+	return listCreditLogs(db.Model(&model.CreditLog{}).Where("user_id = ?", userID), q, false)
 }
 
-func listCreditLogs(tx *gorm.DB, q model.Query) ([]model.CreditLog, int64, error) {
+func listCreditLogs(tx *gorm.DB, q model.Query, includeUsername bool) ([]model.CreditLog, int64, error) {
 	q.Normalize()
 	if keyword := strings.TrimSpace(q.Keyword); keyword != "" {
 		like := "%" + keyword + "%"
-		tx = tx.Where("(user_id LIKE ? OR type LIKE ? OR remark LIKE ? OR related_id LIKE ?)", like, like, like, like)
+		if includeUsername {
+			tx = tx.Where("(credit_logs.user_id LIKE ? OR users.username LIKE ? OR credit_logs.type LIKE ? OR credit_logs.remark LIKE ? OR credit_logs.related_id LIKE ?)", like, like, like, like, like)
+		} else {
+			tx = tx.Where("(credit_logs.user_id LIKE ? OR credit_logs.type LIKE ? OR credit_logs.remark LIKE ? OR credit_logs.related_id LIKE ?)", like, like, like, like)
+		}
 	}
 	if logType := strings.TrimSpace(q.Type); logType != "" {
-		tx = tx.Where("type = ?", logType)
+		tx = tx.Where("credit_logs.type = ?", logType)
 	}
 	var total int64
 	if err := tx.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 	var logs []model.CreditLog
-	err := tx.Order("created_at desc").Offset(q.Offset()).Limit(q.PageSize).Find(&logs).Error
+	if includeUsername {
+		tx = tx.Select("credit_logs.*, users.username AS username")
+	}
+	err := tx.Order("credit_logs.created_at desc").Offset(q.Offset()).Limit(q.PageSize).Find(&logs).Error
 	return logs, total, err
 }
 

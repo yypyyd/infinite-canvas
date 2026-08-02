@@ -223,10 +223,12 @@ export default function ImagePage() {
         let storageFailCount = 0;
         let firstFailure: unknown;
         let firstStorageFailure: unknown;
+        let generationStarted = false;
 
         try {
             await saveLog(pendingLog);
             await flushActiveWorkspaceChanges();
+            generationStarted = true;
             await Promise.all(
                 Array.from({ length: generationCount }, (_, index) =>
                     runGenerationSlot(index, snapshot)
@@ -272,7 +274,13 @@ export default function ImagePage() {
                 generationSuccessCount ? message.success("图片已生成") : message.error(firstFailure instanceof Error ? firstFailure.message : "生成失败");
             }
         } catch (error) {
-            message.error(error instanceof Error ? error.message : "生成记录保存失败");
+            const errorMessage = error instanceof Error ? error.message : "生成记录保存失败";
+            if (!generationStarted) {
+                const failedLog = { ...pendingLog, durationMs: performance.now() - batchStartedAt, failCount: generationCount, status: "失败" as const };
+                await saveLog(failedLog);
+                setResults((current) => current.map((item) => (item.status === "pending" ? { ...item, status: "failed" as const, error: errorMessage } : item)));
+            }
+            message.error(errorMessage);
         } finally {
             setRunning(false);
         }

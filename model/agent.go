@@ -30,6 +30,7 @@ const (
 	AgentStepStatusCancelled AgentStepStatus = "cancelled"
 
 	AgentEventRunStarted           AgentEventType = "run.started"
+	AgentEventPlanCreated          AgentEventType = "plan.created"
 	AgentEventMessageDelta         AgentEventType = "message.delta"
 	AgentEventToolConfirmationRequired AgentEventType = "tool.confirmation_required"
 	AgentEventToolCall             AgentEventType = "tool.call"

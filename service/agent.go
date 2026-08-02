@@ -19,7 +19,8 @@ import (
 )
 
 const (
-	agentSystemPrompt = "你是画布创作助手。每次运行最多调用一个工具。image.generate 用于生成图片；video.generate 用于生成一个视频，可使用本轮选中图片作为参考；canvas.add_text 用于插入文本节点；canvas.arrange 仅用于重排下一条系统消息所列的本次授权选中节点；canvas.delete 仅用于删除本次授权选中节点；canvas.update_text 仅用于修改本次授权选中的文本节点。canvas.delete 和 canvas.update_text 必须由用户批准，批准前不得声称已执行。工具成功前不得声称生成或操作完成，收到工具结果后只根据真实结果总结。"
+	agentSystemPrompt = "你是画布创作助手。一次运行最多调用八个工具，并在每个工具返回真实结果后决定下一步。需要两个及以上工具时，第一步必须调用 canvas.plan，先列出简短计划；简单单步任务无需计划。image.generate 用于生成图片；video.generate 用于生成一个视频，可使用本轮选中或本轮新生成的图片作为参考；canvas.add_text 用于插入文本节点；canvas.arrange 用于重排本轮授权选中或本轮新生成的节点；canvas.delete 仅用于删除本轮授权选中或新生成且当前仍选中的节点；canvas.update_text 仅用于修改本轮授权选中或新生成且当前仍选中的文本节点。生成结果会自动与来源节点建立关系。canvas.delete 和 canvas.update_text 必须由用户批准，批准前不得声称已执行。工具成功前不得声称生成或操作完成；收到工具结果后继续完成计划，全部完成后只根据真实结果简洁总结。"
+	agentMaxToolCalls = 8
 	agentWaitingToolTimeout = 15 * time.Minute
 	agentWaitingToolTimeoutError = "工具结果等待超时"
 	agentToolExecutionLease = 90 * time.Second
@@ -72,6 +73,11 @@ type AgentToolPosition struct {
 	Y      float64 `json:"y"`
 }
 
+type AgentToolPlan struct {
+	Summary string   `json:"summary"`
+	Steps   []string `json:"steps"`
+}
+
 type SubmitAgentToolResultRequest struct {
 	CallID        string              `json:"callId"`
 	ExecutionToken string              `json:"executionToken,omitempty"`
@@ -84,6 +90,7 @@ type SubmitAgentToolResultRequest struct {
 	NodeID    string              `json:"nodeId,omitempty"`
 	Text      string              `json:"text,omitempty"`
 	Placement string              `json:"placement,omitempty"`
+	Plan      *AgentToolPlan      `json:"plan,omitempty"`
 }
 
 type ConfirmAgentToolRequest struct {
@@ -124,8 +131,9 @@ type canvasArrangeArguments struct {
 }
 
 type canvasAddTextArguments struct {
-	Text      string `json:"text"`
-	Placement string `json:"placement"`
+	Text          string   `json:"text"`
+	Placement     string   `json:"placement"`
+	SourceNodeIDs []string `json:"sourceNodeIds,omitempty"`
 }
 
 type canvasDeleteArguments struct {
@@ -135,6 +143,17 @@ type canvasDeleteArguments struct {
 type canvasUpdateTextArguments struct {
 	NodeID string `json:"nodeId"`
 	Text   string `json:"text"`
+}
+
+type canvasPlanArguments struct {
+	Summary string   `json:"summary"`
+	Steps   []string `json:"steps"`
+}
+
+type agentNodeAuthorization struct {
+	NodeIDs      map[string]struct{}
+	ImageNodeIDs map[string]struct{}
+	TextNodeIDs  map[string]struct{}
 }
 
 type agentToolCall struct {
@@ -221,7 +240,7 @@ func SubmitAgentMessage(user model.AuthUser, sessionID string, request SubmitAge
 	agentRuns.Lock()
 	_, alreadyRunning := agentRuns.cancels[run.ID]
 	agentRuns.Unlock()
-	if run.Status == model.AgentRunStatusRunning && !alreadyRunning { startAgentRun(run, user.Group, nil) }
+	if run.Status == model.AgentRunStatusRunning && !alreadyRunning { startAgentRun(run, user.Group) }
 	return AgentRunSubmission{Message: message, Run: run}, nil
 }
 
@@ -234,7 +253,7 @@ func SubmitAgentToolResult(user model.AuthUser, runID string, request SubmitAgen
 	if request.Status != "success" && request.Status != "failed" { return model.AgentRun{}, safeMessageError{message: "工具结果状态无效"} }
 	if request.Status == "failed" {
 		if request.Error == "" { return model.AgentRun{}, safeMessageError{message: "工具失败时必须返回错误"} }
-		if len(request.Images) != 0 || request.Video != nil || len(request.NodeIDs) != 0 || len(request.Positions) != 0 || request.NodeID != "" || request.Text != "" || request.Placement != "" {
+		if len(request.Images) != 0 || request.Video != nil || len(request.NodeIDs) != 0 || len(request.Positions) != 0 || request.NodeID != "" || request.Text != "" || request.Placement != "" || request.Plan != nil {
 			return model.AgentRun{}, safeMessageError{message: "工具失败结果无效"}
 		}
 	} else if request.Error != "" {
@@ -245,7 +264,9 @@ func SubmitAgentToolResult(user model.AuthUser, runID string, request SubmitAgen
 	if err != nil { return model.AgentRun{}, err }
 	toolStep, err := repository.GetAgentToolStep(user.OrganizationID, user.ID, runID, request.CallID)
 	if err != nil { return model.AgentRun{}, err }
-	toolArguments, raw, err := decodeAgentToolArguments(toolStep.ToolName, toolStep.Input, run.Context)
+	authorization, err := agentRunNodeAuthorization(run)
+	if err != nil { return model.AgentRun{}, err }
+	toolArguments, _, err := decodeAgentToolArguments(toolStep.ToolName, toolStep.Input, authorization)
 	if err != nil { return model.AgentRun{}, err }
 	if request.Status == "success" {
 		if err := validateAgentToolSuccess(toolStep.ToolName, toolArguments, &request); err != nil { return model.AgentRun{}, err }
@@ -267,7 +288,7 @@ func SubmitAgentToolResult(user model.AuthUser, runID string, request SubmitAgen
 	if errors.Is(err, repository.ErrAgentToolResultConflict) { return model.AgentRun{}, safeMessageError{message: "工具结果与已保存回执不一致"} }
 	if errors.Is(err, repository.ErrAgentToolExecutionClaimed) { return model.AgentRun{}, safeMessageError{message: "工具执行租约已失效"} }
 	if err != nil { return model.AgentRun{}, err }
-	if resume { startAgentRun(run, user.Group, &agentToolCall{ID: request.CallID, Name: toolStep.ToolName, Arguments: toolArguments, Raw: raw}) }
+	if resume { startAgentRun(run, user.Group) }
 	return run, nil
 }
 
@@ -328,7 +349,9 @@ func ConfirmAgentTool(user model.AuthUser, runID string, request ConfirmAgentToo
 	if toolStep.ToolName != "canvas.delete" && toolStep.ToolName != "canvas.update_text" {
 		return model.AgentRun{}, safeMessageError{message: "该工具无需确认"}
 	}
-	toolArguments, raw, err := decodeAgentToolArguments(toolStep.ToolName, toolStep.Input, run.Context)
+	authorization, err := agentRunNodeAuthorization(run)
+	if err != nil { return model.AgentRun{}, err }
+	toolArguments, _, err := decodeAgentToolArguments(toolStep.ToolName, toolStep.Input, authorization)
 	if err != nil { return model.AgentRun{}, err }
 
 	rejectedObservation, err := json.Marshal(map[string]string{"status": "rejected", "error": "用户拒绝执行该工具调用"})
@@ -347,7 +370,7 @@ func ConfirmAgentTool(user model.AuthUser, runID string, request ConfirmAgentToo
 		time.AfterFunc(agentWaitingToolTimeout, func() { _ = expireWaitingAgentRun(user.OrganizationID, user.ID, runID) })
 	}
 	if resume {
-		startAgentRun(run, user.Group, &agentToolCall{ID: request.CallID, Name: toolStep.ToolName, Arguments: toolArguments, Raw: raw})
+		startAgentRun(run, user.Group)
 	}
 	return run, nil
 }
@@ -378,9 +401,10 @@ func CancelAgentRun(user model.AuthUser, runID string) (model.AgentRun, error) {
 	return run, nil
 }
 
-func startAgentRun(run model.AgentRun, userGroup string, toolCall *agentToolCall) {
-	requestID := run.ID + "-plan"
-	if toolCall != nil { requestID = run.ID + "-" + toolCall.ID }
+func startAgentRun(run model.AgentRun, userGroup string) {
+	toolSteps, err := repository.ListCompletedAgentToolSteps(run.OrganizationID, run.UserID, run.ID)
+	if err != nil { return }
+	requestID := fmt.Sprintf("%s-completion-%d", run.ID, len(toolSteps)+1)
 	timestamp := time.Now().UTC()
 	if err := repository.ClaimAgentRunExecution(run.OrganizationID, run.UserID, run.ID, newID("agent-execution"), timestamp.Format(timestampLayout), timestamp.Add(-agentRunningTimeout).Format(timestampLayout)); err != nil { return }
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -395,10 +419,10 @@ func startAgentRun(run model.AgentRun, userGroup string, toolCall *agentToolCall
 		agentRuns.Unlock()
 		return
 	}
-	go executeAgentRun(ctx, cancel, run, userGroup, requestID, toolCall)
+	go executeAgentRun(ctx, cancel, run, userGroup, requestID)
 }
 
-func executeAgentRun(ctx context.Context, cancel context.CancelFunc, run model.AgentRun, userGroup, requestID string, previousToolCall *agentToolCall) {
+func executeAgentRun(ctx context.Context, cancel context.CancelFunc, run model.AgentRun, userGroup, requestID string) {
 	defer func() {
 		cancel()
 		agentRuns.Lock()
@@ -406,10 +430,9 @@ func executeAgentRun(ctx context.Context, cancel context.CancelFunc, run model.A
 		agentRuns.Unlock()
 	}()
 
-	completion, err := requestAgentCompletion(ctx, run, userGroup, requestID, previousToolCall)
+	completion, err := requestAgentCompletion(ctx, run, userGroup, requestID)
 	if err != nil { failAgentRunUnlessCancelled(run, err); return }
 	if completion.ToolCall != nil {
-		if previousToolCall != nil { failAgentRunUnlessCancelled(run, errors.New("agent requested an unexpected second tool call")); return }
 		payload, _ := json.Marshal(map[string]any{"callId": completion.ToolCall.ID, "name": completion.ToolCall.Name, "arguments": completion.ToolCall.Arguments})
 		timestamp := now()
 		step := model.AgentStep{ID: newID("agent-step"), OrganizationID: run.OrganizationID, UserID: run.UserID, RunID: run.ID, Type: model.AgentStepTypeTool, Status: model.AgentStepStatusRunning, ToolCallID: completion.ToolCall.ID, ToolName: completion.ToolCall.Name, Input: completion.ToolCall.Raw, StartedAt: timestamp, CreatedAt: timestamp, UpdatedAt: timestamp}
@@ -420,8 +443,12 @@ func executeAgentRun(ctx context.Context, cancel context.CancelFunc, run model.A
 				failAgentRunUnlessCancelled(run, err)
 			}
 		} else {
-			event := model.AgentEvent{ID: newID("agent-event"), Type: model.AgentEventToolCall, Payload: string(payload), CreatedAt: timestamp}
-			if err := repository.WaitAgentRunForTool(run.OrganizationID, run.UserID, run.ID, completion.Content, step, event, timestamp); err != nil {
+			events := []model.AgentEvent{}
+			if completion.ToolCall.Name == "canvas.plan" {
+				events = append(events, model.AgentEvent{ID: newID("agent-event"), Type: model.AgentEventPlanCreated, Payload: string(payload), CreatedAt: timestamp})
+			}
+			events = append(events, model.AgentEvent{ID: newID("agent-event"), Type: model.AgentEventToolCall, Payload: string(payload), CreatedAt: timestamp})
+			if err := repository.WaitAgentRunForTool(run.OrganizationID, run.UserID, run.ID, completion.Content, step, timestamp, events...); err != nil {
 				failAgentRunUnlessCancelled(run, err)
 			} else {
 				time.AfterFunc(agentWaitingToolTimeout, func() { _ = expireWaitingAgentRun(run.OrganizationID, run.UserID, run.ID) })
@@ -457,8 +484,10 @@ func expireWaitingAgentRun(organizationID, userID, runID string) error {
 	return err
 }
 
-func requestAgentCompletion(ctx context.Context, run model.AgentRun, userGroup, requestID string, previousToolCall *agentToolCall) (completion agentCompletion, err error) {
+func requestAgentCompletion(ctx context.Context, run model.AgentRun, userGroup, requestID string) (completion agentCompletion, err error) {
 	messages, err := repository.ListRecentAgentMessages(run.OrganizationID, run.UserID, run.SessionID, 30)
+	if err != nil { return completion, err }
+	toolSteps, err := repository.ListCompletedAgentToolSteps(run.OrganizationID, run.UserID, run.ID)
 	if err != nil { return completion, err }
 	pricingRequest := PricingRequest{Model: run.Model, Modality: "text", Operation: "completion", Unit: "request", Quantity: 1}
 	selection, err := SelectModelChannel(pricingRequest)
@@ -478,24 +507,25 @@ func requestAgentCompletion(ctx context.Context, run model.AgentRun, userGroup, 
 		if finishErr := FinishGenerationTask(task, status, message); finishErr != nil && err == nil { completion, err = agentCompletion{}, finishErr }
 	}()
 
-	requestMessages := make([]agentChatMessage, 0, len(messages)+4)
+	requestMessages := make([]agentChatMessage, 0, len(messages)+len(toolSteps)*2+4)
 	requestMessages = append(requestMessages,
 		agentChatMessage{Role: "system", Content: agentSystemPrompt},
 		agentChatMessage{Role: "system", Content: run.Context},
 	)
 	for _, message := range messages { requestMessages = append(requestMessages, agentChatMessage{Role: string(message.Role), Content: message.Content}) }
+	for _, step := range toolSteps {
+		requestMessages = append(requestMessages,
+			agentChatMessage{Role: "assistant", Content: nil, ToolCalls: []agentChatToolCall{{ID: step.ToolCallID, Type: "function", Function: agentChatToolFunction{Name: step.ToolName, Arguments: step.Input}}}},
+			agentChatMessage{Role: "tool", ToolCallID: step.ToolCallID, Content: step.Output},
+		)
+	}
+	if len(toolSteps) >= agentMaxToolCalls {
+		requestMessages = append(requestMessages, agentChatMessage{Role: "system", Content: "本次运行已达到工具调用上限，请根据已有真实结果直接总结，不要再请求工具。"})
+	}
 	bodyValue := map[string]any{"model": selection.Model.UpstreamModel, "messages": requestMessages, "stream": false}
-	if previousToolCall == nil {
+	if len(toolSteps) < agentMaxToolCalls {
 		bodyValue["tools"] = agentToolSchemas()
 		bodyValue["tool_choice"] = "auto"
-	} else {
-		toolOutput, outputErr := repository.GetAgentToolOutput(run.OrganizationID, run.UserID, run.ID, previousToolCall.ID)
-		if outputErr != nil { return completion, outputErr }
-		requestMessages = append(requestMessages,
-			agentChatMessage{Role: "assistant", Content: nil, ToolCalls: []agentChatToolCall{{ID: previousToolCall.ID, Type: "function", Function: agentChatToolFunction{Name: previousToolCall.Name, Arguments: previousToolCall.Raw}}}},
-			agentChatMessage{Role: "tool", ToolCallID: previousToolCall.ID, Content: toolOutput},
-		)
-		bodyValue["messages"] = requestMessages
 	}
 	body, err := json.Marshal(bodyValue)
 	if err != nil { return completion, err }
@@ -529,12 +559,15 @@ func requestAgentCompletion(ctx context.Context, run model.AgentRun, userGroup, 
 	completion.Content = strings.TrimSpace(message.Content)
 	if len(message.ToolCalls) > 1 { return completion, errors.New("agent upstream returned multiple tool calls") }
 	if len(message.ToolCalls) == 1 {
+		if len(toolSteps) >= agentMaxToolCalls { return completion, errors.New("agent exceeded tool call limit") }
 		call := message.ToolCalls[0]
 		if call.Type != "function" { return completion, errors.New("agent upstream returned unsupported tool call") }
-		arguments, raw, decodeErr := decodeAgentToolArguments(call.Function.Name, call.Function.Arguments, run.Context)
+		if call.Function.Name == "canvas.plan" && len(toolSteps) != 0 { return completion, errors.New("agent requested a duplicate plan") }
+		authorization, authorizationErr := agentRunNodeAuthorization(run)
+		if authorizationErr != nil { return completion, authorizationErr }
+		arguments, raw, decodeErr := decodeAgentToolArguments(call.Function.Name, call.Function.Arguments, authorization)
 		if decodeErr != nil { return completion, decodeErr }
-		call.ID = strings.TrimSpace(call.ID)
-		if call.ID == "" { call.ID = newID("agent-tool-call") }
+		call.ID = newID("agent-tool-call")
 		completion.ToolCall = &agentToolCall{ID: call.ID, Name: call.Function.Name, Arguments: arguments, Raw: raw}
 		return completion, nil
 	}
@@ -573,9 +606,46 @@ func normalizeAgentCanvasContext(value AgentCanvasContext) (AgentCanvasContext, 
 	return result, nil
 }
 
-func decodeAgentToolArguments(name, value, contextJSON string) (any, string, error) {
+func agentRunNodeAuthorization(run model.AgentRun) (agentNodeAuthorization, error) {
+	authorization := agentNodeAuthorization{NodeIDs: map[string]struct{}{}, ImageNodeIDs: map[string]struct{}{}, TextNodeIDs: map[string]struct{}{}}
+	var canvasContext AgentCanvasContext
+	if err := json.Unmarshal([]byte(run.Context), &canvasContext); err != nil { return authorization, errors.New("agent canvas context invalid") }
+	for _, node := range canvasContext.Nodes {
+		authorization.NodeIDs[node.ID] = struct{}{}
+		if node.Type == "image" { authorization.ImageNodeIDs[node.ID] = struct{}{} }
+		if node.Type == "text" { authorization.TextNodeIDs[node.ID] = struct{}{} }
+	}
+	steps, err := repository.ListCompletedAgentToolSteps(run.OrganizationID, run.UserID, run.ID)
+	if err != nil { return authorization, err }
+	for _, step := range steps {
+		var result SubmitAgentToolResultRequest
+		if json.Unmarshal([]byte(step.Output), &result) != nil || result.Status != "success" { continue }
+		for _, image := range result.Images {
+			authorization.NodeIDs[image.NodeID], authorization.ImageNodeIDs[image.NodeID] = struct{}{}, struct{}{}
+		}
+		if result.Video != nil { authorization.NodeIDs[result.Video.NodeID] = struct{}{} }
+		if result.NodeID != "" {
+			authorization.NodeIDs[result.NodeID] = struct{}{}
+			if step.ToolName == "canvas.add_text" { authorization.TextNodeIDs[result.NodeID] = struct{}{} }
+		}
+		for _, id := range result.NodeIDs { authorization.NodeIDs[id] = struct{}{} }
+	}
+	return authorization, nil
+}
+
+func decodeAgentToolArguments(name, value string, authorization agentNodeAuthorization) (any, string, error) {
 	var arguments any
 	switch name {
+	case "canvas.plan":
+		var input canvasPlanArguments
+		if err := decodeAgentJSONValue(value, &input); err != nil { return nil, "", errors.New("canvas.plan arguments invalid") }
+		input.Summary = strings.TrimSpace(input.Summary)
+		if input.Summary == "" || utf8.RuneCountInString(input.Summary) > 120 || len(input.Steps) < 2 || len(input.Steps) > 7 { return nil, "", errors.New("canvas.plan arguments invalid") }
+		for i := range input.Steps {
+			input.Steps[i] = strings.TrimSpace(input.Steps[i])
+			if input.Steps[i] == "" || utf8.RuneCountInString(input.Steps[i]) > 80 { return nil, "", errors.New("canvas.plan steps invalid") }
+		}
+		arguments = input
 	case "image.generate":
 		var input struct { Prompt string `json:"prompt"`; Count *int `json:"count"` }
 		if err := decodeAgentJSONValue(value, &input); err != nil { return nil, "", errors.New("image.generate arguments invalid") }
@@ -594,27 +664,19 @@ func decodeAgentToolArguments(name, value, contextJSON string) (any, string, err
 		if input.Duration != nil { duration = *input.Duration }
 		if duration < 1 || duration > 20 { return nil, "", errors.New("video.generate duration invalid") }
 		if input.ImageNodeID != "" {
-			var canvasContext AgentCanvasContext
-			if err := json.Unmarshal([]byte(contextJSON), &canvasContext); err != nil { return nil, "", errors.New("agent canvas context invalid") }
-			_, selected := stringSet(canvasContext.SelectedNodeIDs)[input.ImageNodeID]
-			valid := false
-			for _, node := range canvasContext.Nodes { if node.ID == input.ImageNodeID && node.Type == "image" { valid = true; break } }
-			if !selected || !valid { return nil, "", errors.New("video.generate imageNodeId unauthorized") }
+			if _, valid := authorization.ImageNodeIDs[input.ImageNodeID]; !valid { return nil, "", errors.New("video.generate imageNodeId unauthorized") }
 		}
 		arguments = videoGenerateArguments{Prompt: input.Prompt, Duration: duration, ImageNodeID: input.ImageNodeID}
 	case "canvas.arrange":
 		var input struct { NodeIDs []string `json:"nodeIds"`; Mode string `json:"mode"`; Gap *int `json:"gap"` }
 		if err := decodeAgentJSONValue(value, &input); err != nil { return nil, "", errors.New("canvas.arrange arguments invalid") }
 		if len(input.NodeIDs) < 2 || len(input.NodeIDs) > 20 { return nil, "", errors.New("canvas.arrange nodeIds invalid") }
-		var canvasContext AgentCanvasContext
-		if err := json.Unmarshal([]byte(contextJSON), &canvasContext); err != nil { return nil, "", errors.New("agent canvas context invalid") }
-		authorized := stringSet(canvasContext.SelectedNodeIDs)
 		seen := make(map[string]struct{}, len(input.NodeIDs))
 		for i, id := range input.NodeIDs {
 			id = strings.TrimSpace(id)
 			if id == "" { return nil, "", errors.New("canvas.arrange nodeIds invalid") }
 			if _, exists := seen[id]; exists { return nil, "", errors.New("canvas.arrange nodeIds invalid") }
-			if _, exists := authorized[id]; !exists { return nil, "", errors.New("canvas.arrange nodeIds unauthorized") }
+			if _, exists := authorization.NodeIDs[id]; !exists { return nil, "", errors.New("canvas.arrange nodeIds unauthorized") }
 			seen[id], input.NodeIDs[i] = struct{}{}, id
 		}
 		input.Mode = strings.TrimSpace(input.Mode)
@@ -624,24 +686,31 @@ func decodeAgentToolArguments(name, value, contextJSON string) (any, string, err
 		if gap < 16 || gap > 400 { return nil, "", errors.New("canvas.arrange gap invalid") }
 		arguments = canvasArrangeArguments{NodeIDs: input.NodeIDs, Mode: input.Mode, Gap: gap}
 	case "canvas.add_text":
-		var input struct { Text string `json:"text"`; Placement string `json:"placement"` }
+		var input struct { Text string `json:"text"`; Placement string `json:"placement"`; SourceNodeIDs []string `json:"sourceNodeIds"` }
 		if err := decodeAgentJSONValue(value, &input); err != nil { return nil, "", errors.New("canvas.add_text arguments invalid") }
 		input.Text, input.Placement = strings.TrimSpace(input.Text), strings.TrimSpace(input.Placement)
 		if input.Text == "" || utf8.RuneCountInString(input.Text) > 4000 { return nil, "", errors.New("canvas.add_text text invalid") }
 		if input.Placement == "" { input.Placement = "center" }
 		if input.Placement != "center" && input.Placement != "right_of_selection" { return nil, "", errors.New("canvas.add_text placement invalid") }
-		arguments = canvasAddTextArguments{Text: input.Text, Placement: input.Placement}
+		if len(input.SourceNodeIDs) > 20 { return nil, "", errors.New("canvas.add_text sourceNodeIds invalid") }
+		seen := make(map[string]struct{}, len(input.SourceNodeIDs))
+		for i, id := range input.SourceNodeIDs {
+			id = strings.TrimSpace(id)
+			if id == "" { return nil, "", errors.New("canvas.add_text sourceNodeIds invalid") }
+			if _, exists := seen[id]; exists { return nil, "", errors.New("canvas.add_text sourceNodeIds invalid") }
+			if _, exists := authorization.NodeIDs[id]; !exists { return nil, "", errors.New("canvas.add_text sourceNodeIds unauthorized") }
+			seen[id], input.SourceNodeIDs[i] = struct{}{}, id
+		}
+		arguments = canvasAddTextArguments{Text: input.Text, Placement: input.Placement, SourceNodeIDs: input.SourceNodeIDs}
 	case "canvas.delete":
 		var input canvasDeleteArguments
 		if err := decodeAgentJSONValue(value, &input); err != nil || len(input.NodeIDs) < 1 || len(input.NodeIDs) > 20 { return nil, "", errors.New("canvas.delete arguments invalid") }
-		var canvasContext AgentCanvasContext
-		if err := json.Unmarshal([]byte(contextJSON), &canvasContext); err != nil { return nil, "", errors.New("agent canvas context invalid") }
-		authorized, seen := stringSet(canvasContext.SelectedNodeIDs), make(map[string]struct{}, len(input.NodeIDs))
+		seen := make(map[string]struct{}, len(input.NodeIDs))
 		for i, id := range input.NodeIDs {
 			id = strings.TrimSpace(id)
 			if id == "" { return nil, "", errors.New("canvas.delete nodeIds invalid") }
 			if _, exists := seen[id]; exists { return nil, "", errors.New("canvas.delete nodeIds invalid") }
-			if _, exists := authorized[id]; !exists { return nil, "", errors.New("canvas.delete nodeIds unauthorized") }
+			if _, exists := authorization.NodeIDs[id]; !exists { return nil, "", errors.New("canvas.delete nodeIds unauthorized") }
 			seen[id], input.NodeIDs[i] = struct{}{}, id
 		}
 		arguments = input
@@ -650,12 +719,7 @@ func decodeAgentToolArguments(name, value, contextJSON string) (any, string, err
 		if err := decodeAgentJSONValue(value, &input); err != nil { return nil, "", errors.New("canvas.update_text arguments invalid") }
 		input.NodeID, input.Text = strings.TrimSpace(input.NodeID), strings.TrimSpace(input.Text)
 		if input.NodeID == "" || utf8.RuneCountInString(input.Text) > 4000 { return nil, "", errors.New("canvas.update_text arguments invalid") }
-		var canvasContext AgentCanvasContext
-		if err := json.Unmarshal([]byte(contextJSON), &canvasContext); err != nil { return nil, "", errors.New("agent canvas context invalid") }
-		if _, selected := stringSet(canvasContext.SelectedNodeIDs)[input.NodeID]; !selected { return nil, "", errors.New("canvas.update_text nodeId unauthorized") }
-		valid := false
-		for _, node := range canvasContext.Nodes { if node.ID == input.NodeID && node.Type == "text" { valid = true; break } }
-		if !valid { return nil, "", errors.New("canvas.update_text nodeId invalid") }
+		if _, valid := authorization.TextNodeIDs[input.NodeID]; !valid { return nil, "", errors.New("canvas.update_text nodeId unauthorized") }
 		arguments = input
 	default:
 		return nil, "", errors.New("agent upstream returned unsupported tool call")
@@ -675,9 +739,17 @@ func decodeAgentJSONValue(value string, target any) error {
 
 func validateAgentToolSuccess(name string, arguments any, request *SubmitAgentToolResultRequest) error {
 	switch name {
+	case "canvas.plan":
+		input := arguments.(canvasPlanArguments)
+		if request.Plan == nil || request.Video != nil || len(request.Images) != 0 || len(request.NodeIDs) != 0 || len(request.Positions) != 0 || request.NodeID != "" || request.Text != "" || request.Placement != "" {
+			return safeMessageError{message: "执行计划工具结果无效"}
+		}
+		request.Plan.Summary = strings.TrimSpace(request.Plan.Summary)
+		for i := range request.Plan.Steps { request.Plan.Steps[i] = strings.TrimSpace(request.Plan.Steps[i]) }
+		if request.Plan.Summary != input.Summary || !sameStringSlice(request.Plan.Steps, input.Steps) { return safeMessageError{message: "执行计划工具结果无效"} }
 	case "image.generate":
 		input := arguments.(imageGenerateArguments)
-		if request.Video != nil || len(request.Images) < 1 || len(request.Images) > input.Count || len(request.NodeIDs) != 0 || len(request.Positions) != 0 || request.NodeID != "" || request.Text != "" || request.Placement != "" {
+		if request.Plan != nil || request.Video != nil || len(request.Images) < 1 || len(request.Images) > input.Count || len(request.NodeIDs) != 0 || len(request.Positions) != 0 || request.NodeID != "" || request.Text != "" || request.Placement != "" {
 			return safeMessageError{message: "图片生成工具结果无效"}
 		}
 		for i := range request.Images {
@@ -685,14 +757,14 @@ func validateAgentToolSuccess(name string, arguments any, request *SubmitAgentTo
 			if request.Images[i].NodeID == "" || request.Images[i].StorageKey == "" { return safeMessageError{message: "工具结果图片无效"} }
 		}
 	case "video.generate":
-		if request.Video == nil || len(request.Images) != 0 || len(request.NodeIDs) != 0 || len(request.Positions) != 0 || request.NodeID != "" || request.Text != "" || request.Placement != "" {
+		if request.Plan != nil || request.Video == nil || len(request.Images) != 0 || len(request.NodeIDs) != 0 || len(request.Positions) != 0 || request.NodeID != "" || request.Text != "" || request.Placement != "" {
 			return safeMessageError{message: "视频生成工具结果无效"}
 		}
 		request.Video.NodeID, request.Video.StorageKey = strings.TrimSpace(request.Video.NodeID), strings.TrimSpace(request.Video.StorageKey)
 		if request.Video.NodeID == "" || request.Video.StorageKey == "" { return safeMessageError{message: "工具结果视频无效"} }
 	case "canvas.arrange":
 		input := arguments.(canvasArrangeArguments)
-		if request.Video != nil || len(request.Images) != 0 || request.NodeID != "" || request.Text != "" || request.Placement != "" || !sameTrimmedStringSet(request.NodeIDs, input.NodeIDs) || len(request.Positions) != len(input.NodeIDs) {
+		if request.Plan != nil || request.Video != nil || len(request.Images) != 0 || request.NodeID != "" || request.Text != "" || request.Placement != "" || !sameTrimmedStringSet(request.NodeIDs, input.NodeIDs) || len(request.Positions) != len(input.NodeIDs) {
 			return safeMessageError{message: "画布排列工具结果无效"}
 		}
 		expected, seen := stringSet(input.NodeIDs), make(map[string]struct{}, len(request.Positions))
@@ -706,18 +778,18 @@ func validateAgentToolSuccess(name string, arguments any, request *SubmitAgentTo
 	case "canvas.add_text":
 		input := arguments.(canvasAddTextArguments)
 		request.NodeID, request.Placement = strings.TrimSpace(request.NodeID), strings.TrimSpace(request.Placement)
-		if request.Video != nil || len(request.Images) != 0 || len(request.NodeIDs) != 0 || len(request.Positions) != 0 || request.NodeID == "" || request.Text != "" || request.Placement != input.Placement {
+		if request.Plan != nil || request.Video != nil || len(request.Images) != 0 || len(request.NodeIDs) != 0 || len(request.Positions) != 0 || request.NodeID == "" || request.Text != "" || request.Placement != input.Placement {
 			return safeMessageError{message: "文本节点工具结果无效"}
 		}
 	case "canvas.delete":
 		input := arguments.(canvasDeleteArguments)
-		if request.Video != nil || len(request.Images) != 0 || len(request.Positions) != 0 || request.NodeID != "" || request.Text != "" || request.Placement != "" || !sameTrimmedStringSet(request.NodeIDs, input.NodeIDs) {
+		if request.Plan != nil || request.Video != nil || len(request.Images) != 0 || len(request.Positions) != 0 || request.NodeID != "" || request.Text != "" || request.Placement != "" || !sameTrimmedStringSet(request.NodeIDs, input.NodeIDs) {
 			return safeMessageError{message: "删除节点工具结果无效"}
 		}
 	case "canvas.update_text":
 		input := arguments.(canvasUpdateTextArguments)
 		request.NodeID, request.Text = strings.TrimSpace(request.NodeID), strings.TrimSpace(request.Text)
-		if request.Video != nil || len(request.Images) != 0 || len(request.NodeIDs) != 0 || len(request.Positions) != 0 || request.Placement != "" || request.NodeID != input.NodeID || request.Text != input.Text {
+		if request.Plan != nil || request.Video != nil || len(request.Images) != 0 || len(request.NodeIDs) != 0 || len(request.Positions) != 0 || request.Placement != "" || request.NodeID != input.NodeID || request.Text != input.Text {
 			return safeMessageError{message: "更新文本工具结果无效"}
 		}
 	default:
@@ -729,6 +801,8 @@ func validateAgentToolSuccess(name string, arguments any, request *SubmitAgentTo
 func agentToolResultOutput(name string, request SubmitAgentToolResultRequest) any {
 	if request.Status == "failed" { return struct { Error string `json:"error"` }{request.Error} }
 	switch name {
+	case "canvas.plan":
+		return struct { Plan *AgentToolPlan `json:"plan"` }{request.Plan}
 	case "image.generate":
 		return struct { Images []AgentToolImage `json:"images"` }{request.Images}
 	case "video.generate":
@@ -746,12 +820,13 @@ func agentToolResultOutput(name string, request SubmitAgentToolResultRequest) an
 
 func agentToolSchemas() []any {
 	return []any{
+		map[string]any{"type": "function", "function": map[string]any{"name": "canvas.plan", "description": "当任务需要两个及以上工具时，先向用户展示本轮简短执行计划；单步任务不要调用", "parameters": map[string]any{"type": "object", "properties": map[string]any{"summary": map[string]any{"type": "string", "maxLength": 120}, "steps": map[string]any{"type": "array", "minItems": 2, "maxItems": 7, "items": map[string]any{"type": "string", "maxLength": 80}}}, "required": []string{"summary", "steps"}, "additionalProperties": false}}},
 		map[string]any{"type": "function", "function": map[string]any{"name": "image.generate", "description": "根据提示词生成一至四张图片", "parameters": map[string]any{"type": "object", "properties": map[string]any{"prompt": map[string]any{"type": "string", "maxLength": 8000}, "count": map[string]any{"type": "integer", "minimum": 1, "maximum": 4, "default": 1}}, "required": []string{"prompt"}, "additionalProperties": false}}},
 		map[string]any{"type": "function", "function": map[string]any{"name": "video.generate", "description": "生成一个视频，可使用本轮选中图片作为参考", "parameters": map[string]any{"type": "object", "properties": map[string]any{"prompt": map[string]any{"type": "string", "maxLength": 8000}, "duration": map[string]any{"type": "integer", "minimum": 1, "maximum": 20, "default": 6}, "imageNodeId": map[string]any{"type": "string"}}, "required": []string{"prompt"}, "additionalProperties": false}}},
-		map[string]any{"type": "function", "function": map[string]any{"name": "canvas.arrange", "description": "重排本次授权的选中节点", "parameters": map[string]any{"type": "object", "properties": map[string]any{"nodeIds": map[string]any{"type": "array", "minItems": 2, "maxItems": 20, "uniqueItems": true, "items": map[string]any{"type": "string"}}, "mode": map[string]any{"type": "string", "enum": []string{"horizontal", "vertical", "grid"}}, "gap": map[string]any{"type": "integer", "minimum": 16, "maximum": 400, "default": 40}}, "required": []string{"nodeIds", "mode"}, "additionalProperties": false}}},
-		map[string]any{"type": "function", "function": map[string]any{"name": "canvas.add_text", "description": "在画布中插入文本节点", "parameters": map[string]any{"type": "object", "properties": map[string]any{"text": map[string]any{"type": "string", "maxLength": 4000}, "placement": map[string]any{"type": "string", "enum": []string{"center", "right_of_selection"}, "default": "center"}}, "required": []string{"text"}, "additionalProperties": false}}},
-		map[string]any{"type": "function", "function": map[string]any{"name": "canvas.delete", "description": "删除本次授权的选中节点，执行前需要用户确认", "parameters": map[string]any{"type": "object", "properties": map[string]any{"nodeIds": map[string]any{"type": "array", "minItems": 1, "maxItems": 20, "uniqueItems": true, "items": map[string]any{"type": "string"}}}, "required": []string{"nodeIds"}, "additionalProperties": false}}},
-		map[string]any{"type": "function", "function": map[string]any{"name": "canvas.update_text", "description": "修改本次授权选中的文本节点，执行前需要用户确认", "parameters": map[string]any{"type": "object", "properties": map[string]any{"nodeId": map[string]any{"type": "string"}, "text": map[string]any{"type": "string", "maxLength": 4000}}, "required": []string{"nodeId", "text"}, "additionalProperties": false}}},
+		map[string]any{"type": "function", "function": map[string]any{"name": "canvas.arrange", "description": "重排本次授权选中或本轮新生成的节点", "parameters": map[string]any{"type": "object", "properties": map[string]any{"nodeIds": map[string]any{"type": "array", "minItems": 2, "maxItems": 20, "uniqueItems": true, "items": map[string]any{"type": "string"}}, "mode": map[string]any{"type": "string", "enum": []string{"horizontal", "vertical", "grid"}}, "gap": map[string]any{"type": "integer", "minimum": 16, "maximum": 400, "default": 40}}, "required": []string{"nodeIds", "mode"}, "additionalProperties": false}}},
+		map[string]any{"type": "function", "function": map[string]any{"name": "canvas.add_text", "description": "在画布中插入文本节点，可通过 sourceNodeIds 关联本轮授权或新生成的来源节点", "parameters": map[string]any{"type": "object", "properties": map[string]any{"text": map[string]any{"type": "string", "maxLength": 4000}, "placement": map[string]any{"type": "string", "enum": []string{"center", "right_of_selection"}, "default": "center"}, "sourceNodeIds": map[string]any{"type": "array", "maxItems": 20, "uniqueItems": true, "items": map[string]any{"type": "string"}}}, "required": []string{"text"}, "additionalProperties": false}}},
+		map[string]any{"type": "function", "function": map[string]any{"name": "canvas.delete", "description": "删除本次授权选中或本轮新生成且当前仍选中的节点，执行前需要用户确认", "parameters": map[string]any{"type": "object", "properties": map[string]any{"nodeIds": map[string]any{"type": "array", "minItems": 1, "maxItems": 20, "uniqueItems": true, "items": map[string]any{"type": "string"}}}, "required": []string{"nodeIds"}, "additionalProperties": false}}},
+		map[string]any{"type": "function", "function": map[string]any{"name": "canvas.update_text", "description": "修改本次授权选中或本轮新生成且当前仍选中的文本节点，执行前需要用户确认", "parameters": map[string]any{"type": "object", "properties": map[string]any{"nodeId": map[string]any{"type": "string"}, "text": map[string]any{"type": "string", "maxLength": 4000}}, "required": []string{"nodeId", "text"}, "additionalProperties": false}}},
 	}
 }
 
@@ -764,6 +839,12 @@ func sameTrimmedStringSet(values, expected []string) bool {
 		if _, exists := seen[value]; exists { return false }
 		seen[value], values[i] = struct{}{}, value
 	}
+	return true
+}
+
+func sameStringSlice(values, expected []string) bool {
+	if len(values) != len(expected) { return false }
+	for i := range values { if values[i] != expected[i] { return false } }
 	return true
 }
 

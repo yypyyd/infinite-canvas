@@ -3014,14 +3014,26 @@ function InfiniteCanvasPage() {
                     position: { x, y: center.y - nodeSize.height / 2 },
                     width: nodeSize.width,
                     height: nodeSize.height,
-                    metadata: { ...imageMetadata({ ...storedImage, width: meta.width, height: meta.height }), prompt: image.prompt, agentRunId: image.agentRunId, agentToolCallId: image.agentToolCallId },
+                    metadata: { ...imageMetadata({ ...storedImage, width: meta.width, height: meta.height }), prompt: image.prompt, agentRunId: image.agentRunId, agentToolCallId: image.agentToolCallId, sourceNodeIds: image.sourceNodeIds },
                 };
                 x += nodeSize.width + gap;
                 return node;
             });
             const nextNodes = [...nodesRef.current, ...created];
+            const existingConnections = new Set(connectionsRef.current.map((connection) => `${connection.fromNodeId}:${connection.toNodeId}`));
+            const createdConnections = created.flatMap((node, index) =>
+                (stored[index].image.sourceNodeIds || []).flatMap((sourceNodeId) => {
+                    const connection = normalizeConnection(sourceNodeId, node.id, nextNodes, "source");
+                    if (!connection || existingConnections.has(`${connection.fromNodeId}:${connection.toNodeId}`)) return [];
+                    existingConnections.add(`${connection.fromNodeId}:${connection.toNodeId}`);
+                    return [{ id: nanoid(), ...connection }];
+                }),
+            );
+            const nextConnections = [...connectionsRef.current, ...createdConnections];
             nodesRef.current = nextNodes;
+            connectionsRef.current = nextConnections;
             setNodes(nextNodes);
+            setConnections(nextConnections);
             setSelectedNodeIds(new Set(created.map((node) => node.id)));
             setSelectedConnectionId(null);
             if (created[0]) setDialogNodeId(created[0].id);
@@ -3034,7 +3046,7 @@ function InfiniteCanvasPage() {
         async (video: UploadedFile & CanvasAssistantVideo) => {
             if (!video.storageKey) throw new Error("视频尚未保存到工作区");
             const center = screenToCanvas((containerRef.current?.getBoundingClientRect().left || 0) + size.width / 2, (containerRef.current?.getBoundingClientRect().top || 0) + size.height / 2);
-            const selected = nodesRef.current.filter((node) => selectedNodeIds.has(node.id));
+            const selected = nodesRef.current.filter((node) => video.sourceNodeIds?.includes(node.id));
             const nodeSize = fitNodeSize(video.width || 1280, video.height || 720, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
             const position = selected.length
                 ? { x: Math.max(...selected.map((node) => node.position.x + node.width)) + 40, y: Math.min(...selected.map((node) => node.position.y)) }
@@ -3046,26 +3058,37 @@ function InfiniteCanvasPage() {
                 position,
                 width: nodeSize.width,
                 height: nodeSize.height,
-                metadata: { ...videoMetadata(video), prompt: video.prompt, agentRunId: video.agentRunId, agentToolCallId: video.agentToolCallId },
+                metadata: { ...videoMetadata(video), prompt: video.prompt, agentRunId: video.agentRunId, agentToolCallId: video.agentToolCallId, sourceNodeIds: video.sourceNodeIds },
             };
             const nextNodes = [...nodesRef.current, node];
+            const existingConnections = new Set(connectionsRef.current.map((connection) => `${connection.fromNodeId}:${connection.toNodeId}`));
+            const createdConnections = (video.sourceNodeIds || []).flatMap((sourceNodeId) => {
+                const connection = normalizeConnection(sourceNodeId, node.id, nextNodes, "source");
+                if (!connection || existingConnections.has(`${connection.fromNodeId}:${connection.toNodeId}`)) return [];
+                existingConnections.add(`${connection.fromNodeId}:${connection.toNodeId}`);
+                return [{ id: nanoid(), ...connection }];
+            });
+            const nextConnections = [...connectionsRef.current, ...createdConnections];
             nodesRef.current = nextNodes;
+            connectionsRef.current = nextConnections;
             setNodes(nextNodes);
+            setConnections(nextConnections);
             setSelectedNodeIds(new Set([node.id]));
             setSelectedConnectionId(null);
             setDialogNodeId(node.id);
             return { nodeId: node.id, storageKey: video.storageKey };
         },
-        [screenToCanvas, selectedNodeIds, size.height, size.width],
+        [screenToCanvas, size.height, size.width],
     );
 
     const arrangeAssistantNodes = useCallback(
-        (nodeIds: string[], mode: "horizontal" | "vertical" | "grid", gap: number) => {
+        (nodeIds: string[], mode: "horizontal" | "vertical" | "grid", gap: number, agentMeta: { runId: string; authorizedNodeIds: string[] }) => {
             const requested = new Set(nodeIds);
             const targets = nodeIds.map((id) => nodesRef.current.find((node) => node.id === id));
             if (targets.some((node) => !node)) throw new Error("待排列节点已不存在");
             if (targets.some((node) => node?.metadata?.isBatchRoot || node?.metadata?.batchRootId)) throw new Error("批次节点暂不支持自动排列");
-            if (nodeIds.some((id) => !selectedNodeIds.has(id))) throw new Error("只能排列当前仍选中的节点");
+            const authorized = new Set([...agentMeta.authorizedNodeIds, ...selectedNodeIdsRef.current, ...nodesRef.current.filter((node) => node.metadata?.agentRunId === agentMeta.runId).map((node) => node.id)]);
+            if (nodeIds.some((id) => !authorized.has(id))) throw new Error("只能排列本轮授权或新生成的节点");
 
             const resolved = targets as CanvasNodeData[];
             const originX = Math.min(...resolved.map((node) => node.position.x));
@@ -3093,7 +3116,7 @@ function InfiniteCanvasPage() {
             setSelectedConnectionId(null);
             return positions;
         },
-        [selectedNodeIds],
+        [],
     );
 
     const restoreAssistantToolResult = useCallback((runId: string, callId: string) => useCanvasStore.getState().openProject(projectId)?.agentToolReceipts?.[`${runId}:${callId}`]?.result, [projectId]);
@@ -3165,22 +3188,32 @@ function InfiniteCanvasPage() {
     );
 
     const insertAssistantText = useCallback(
-        (text: string, placement: "center" | "right_of_selection" = "center", agentMeta?: { runId: string; callId: string }) => {
+        (text: string, placement: "center" | "right_of_selection" = "center", agentMeta?: { runId: string; callId: string; sourceNodeIds?: string[] }) => {
             const center = screenToCanvas((containerRef.current?.getBoundingClientRect().left || 0) + size.width / 2, (containerRef.current?.getBoundingClientRect().top || 0) + size.height / 2);
-            const selected = nodesRef.current.filter((node) => selectedNodeIds.has(node.id));
+            const selected = nodesRef.current.filter((node) => agentMeta?.sourceNodeIds?.includes(node.id) || selectedNodeIds.has(node.id));
             const textSpec = getNodeSpec(CanvasNodeType.Text);
             const position =
                 placement === "right_of_selection" && selected.length
                     ? { x: Math.max(...selected.map((node) => node.position.x + node.width)) + 40 + textSpec.width / 2, y: Math.min(...selected.map((node) => node.position.y)) + textSpec.height / 2 }
                     : center;
             const node = {
-                ...createCanvasNode(CanvasNodeType.Text, position, { content: text, status: NODE_STATUS_SUCCESS, agentRunId: agentMeta?.runId, agentToolCallId: agentMeta?.callId }),
+                ...createCanvasNode(CanvasNodeType.Text, position, { content: text, status: NODE_STATUS_SUCCESS, agentRunId: agentMeta?.runId, agentToolCallId: agentMeta?.callId, sourceNodeIds: agentMeta?.sourceNodeIds }),
                 title: text.slice(0, 32) || "Assistant Text",
             };
 
             const nextNodes = [...nodesRef.current, node];
+            const existingConnections = new Set(connectionsRef.current.map((connection) => `${connection.fromNodeId}:${connection.toNodeId}`));
+            const createdConnections = (agentMeta?.sourceNodeIds || []).flatMap((sourceNodeId) => {
+                const connection = normalizeConnection(sourceNodeId, node.id, nextNodes, "source");
+                if (!connection || existingConnections.has(`${connection.fromNodeId}:${connection.toNodeId}`)) return [];
+                existingConnections.add(`${connection.fromNodeId}:${connection.toNodeId}`);
+                return [{ id: nanoid(), ...connection }];
+            });
+            const nextConnections = [...connectionsRef.current, ...createdConnections];
             nodesRef.current = nextNodes;
+            connectionsRef.current = nextConnections;
             setNodes(nextNodes);
+            setConnections(nextConnections);
             setSelectedNodeIds(new Set([node.id]));
             setSelectedConnectionId(null);
             return node.id;

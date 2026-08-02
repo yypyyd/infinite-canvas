@@ -35,20 +35,21 @@ export type AgentCanvasContext = {
 };
 
 export type AgentToolArguments =
+    | { summary: string; steps: string[] }
     | { prompt: string; count: number }
     | { prompt: string; duration: number; imageNodeId?: string }
     | { nodeIds: string[]; mode: "horizontal" | "vertical" | "grid"; gap: number }
-    | { text: string; placement: "center" | "right_of_selection" }
+    | { text: string; placement: "center" | "right_of_selection"; sourceNodeIds?: string[] }
     | { nodeIds: string[] }
     | { nodeId: string; text: string };
 
-export type AgentToolName = "image.generate" | "video.generate" | "canvas.arrange" | "canvas.add_text" | "canvas.delete" | "canvas.update_text";
+export type AgentToolName = "canvas.plan" | "image.generate" | "video.generate" | "canvas.arrange" | "canvas.add_text" | "canvas.delete" | "canvas.update_text";
 
 export type AgentEvent = {
     id: string;
     runId: string;
     sequence: number;
-    type: "run.started" | "message.delta" | "tool.confirmation_required" | "tool.call" | "tool.completed" | "run.completed" | "run.failed" | "run.cancelled";
+    type: "run.started" | "plan.created" | "message.delta" | "tool.confirmation_required" | "tool.call" | "tool.completed" | "run.completed" | "run.failed" | "run.cancelled";
     data: {
         content?: string;
         error?: string;
@@ -69,13 +70,14 @@ export function submitAgentMessage(sessionId: string, runId: string, content: st
 }
 
 export type AgentToolResult =
+    | { callId: string; status: "success"; plan: { summary: string; steps: string[] }; images?: never; video?: never; nodeIds?: never; positions?: never; nodeId?: never; text?: never; placement?: never; error?: never }
     | { callId: string; status: "success"; images: { nodeId: string; storageKey: string }[]; video?: never; nodeIds?: never; positions?: never; nodeId?: never; text?: never; placement?: never; error?: never }
     | { callId: string; status: "success"; video: { nodeId: string; storageKey: string }; images?: never; nodeIds?: never; positions?: never; nodeId?: never; text?: never; placement?: never; error?: never }
     | { callId: string; status: "success"; nodeIds: string[]; positions: { nodeId: string; x: number; y: number }[]; images?: never; video?: never; nodeId?: never; text?: never; placement?: never; error?: never }
     | { callId: string; status: "success"; nodeId: string; placement: "center" | "right_of_selection"; images?: never; video?: never; nodeIds?: never; positions?: never; text?: never; error?: never }
     | { callId: string; status: "success"; nodeIds: string[]; images?: never; video?: never; positions?: never; nodeId?: never; text?: never; placement?: never; error?: never }
     | { callId: string; status: "success"; nodeId: string; text: string; images?: never; video?: never; nodeIds?: never; positions?: never; placement?: never; error?: never }
-    | { callId: string; status: "failed"; error: string; images?: never; video?: never; nodeIds?: never; positions?: never; nodeId?: never; text?: never; placement?: never };
+    | { callId: string; status: "failed"; error: string; plan?: never; images?: never; video?: never; nodeIds?: never; positions?: never; nodeId?: never; text?: never; placement?: never };
 
 export function submitAgentToolResult(runId: string, executionToken: string, result: AgentToolResult) {
     return apiPost<AgentRun>(`/api/v1/agent/runs/${runId}/tool-results`, { ...result, executionToken });
@@ -87,6 +89,10 @@ export function claimAgentToolExecution(runId: string, callId: string, token: st
 
 export function getAgentRun(runId: string) {
     return apiGet<AgentRun>(`/api/v1/agent/runs/${runId}`);
+}
+
+export function cancelAgentRun(runId: string) {
+    return apiPost<AgentRun>(`/api/v1/agent/runs/${runId}/cancel`);
 }
 
 export function getAgentToolResultReceipt(runId: string, callId: string) {

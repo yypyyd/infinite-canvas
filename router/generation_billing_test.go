@@ -21,7 +21,7 @@ func TestImageGenerationHTTPBillingAndIdempotency(t *testing.T) {
 		upstreamCalls.Add(1)
 		var payload map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&payload)
-		if r.URL.Path != "/v1/images/generations" || r.Header.Get("Authorization") != "Bearer router-generation-key" || r.Header.Get("Idempotency-Key") == "" || payload["model"] != "router-upstream-image" {
+		if r.URL.Path != "/v1/images/generations" || r.Header.Get("Authorization") != "Bearer router-generation-key" || r.Header.Get("Idempotency-Key") == "" || payload["model"] != "router-upstream-image" || payload["response_format"] != "b64_json" {
 			http.Error(w, "invalid upstream request", http.StatusBadRequest)
 			return
 		}
@@ -204,7 +204,7 @@ func assertRouterTestSharedGenerationAccounting(t *testing.T, tenant routerTestT
 
 func routerTestImageGeneration(t *testing.T, client *http.Client, baseURL, organizationID, requestID, prompt string) (int, []byte) {
 	t.Helper()
-	body, err := json.Marshal(map[string]any{"model": "router-image-model", "prompt": prompt, "n": 2, "size": "1024x1024"})
+	body, err := json.Marshal(map[string]any{"model": "router-image-model", "prompt": prompt, "n": 2, "size": "1024x1024", "response_format": "b64_json"})
 	if err != nil {
 		t.Fatal(err)
 	}

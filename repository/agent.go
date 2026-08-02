@@ -124,7 +124,7 @@ func CompleteAgentRun(organizationID, userID, runID, messageID, deltaEventID, co
 	})
 }
 
-func WaitAgentRunForTool(organizationID, userID, runID, completionOutput string, toolStep model.AgentStep, event model.AgentEvent, timestamp string) error {
+func WaitAgentRunForTool(organizationID, userID, runID, completionOutput string, toolStep model.AgentStep, timestamp string, events ...model.AgentEvent) error {
 	db, err := DB()
 	if err != nil { return err }
 	return db.Transaction(func(tx *gorm.DB) error {
@@ -134,7 +134,9 @@ func WaitAgentRunForTool(organizationID, userID, runID, completionOutput string,
 		if result.Error != nil { return result.Error }
 		if result.RowsAffected != 1 { return gorm.ErrRecordNotFound }
 		if err := tx.Create(&toolStep).Error; err != nil { return err }
-		if err := appendAgentEvent(tx, run, event); err != nil { return err }
+		for _, event := range events {
+			if err := appendAgentEvent(tx, run, event); err != nil { return err }
+		}
 		result = tx.Model(&model.AgentRun{}).Where("organization_id = ? AND user_id = ? AND id = ? AND status = ?", organizationID, userID, runID, model.AgentRunStatusRunning).Updates(map[string]any{"status": model.AgentRunStatusWaitingTool, "updated_at": timestamp})
 		if result.Error != nil { return result.Error }
 		if result.RowsAffected != 1 { return gorm.ErrRecordNotFound }
@@ -322,6 +324,14 @@ func GetAgentToolStep(organizationID, userID, runID, callID string) (model.Agent
 	var step model.AgentStep
 	err = db.Where("organization_id = ? AND user_id = ? AND run_id = ? AND tool_call_id = ? AND type = ?", organizationID, userID, runID, callID, model.AgentStepTypeTool).First(&step).Error
 	return step, err
+}
+
+func ListCompletedAgentToolSteps(organizationID, userID, runID string) ([]model.AgentStep, error) {
+	db, err := DB()
+	if err != nil { return nil, err }
+	var steps []model.AgentStep
+	err = db.Where("organization_id = ? AND user_id = ? AND run_id = ? AND type = ? AND status = ?", organizationID, userID, runID, model.AgentStepTypeTool, model.AgentStepStatusCompleted).Order("created_at asc").Find(&steps).Error
+	return steps, err
 }
 
 func ClaimAgentRunExecution(organizationID, userID, runID, token, timestamp, deadline string) error {

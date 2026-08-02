@@ -58,6 +58,7 @@ export type CanvasNodeMetadata = {
     durationMs?: number;
     agentRunId?: string;
     agentToolCallId?: string;
+    sourceNodeIds?: string[];
     splitFromNodeId?: string;
     splitRow?: number;
     splitColumn?: number;
@@ -99,6 +100,7 @@ export type CanvasAssistantImage = {
     prompt: string;
     agentRunId?: string;
     agentToolCallId?: string;
+    sourceNodeIds?: string[];
 };
 
 export type CanvasAssistantVideo = {
@@ -107,6 +109,7 @@ export type CanvasAssistantVideo = {
     prompt: string;
     agentRunId: string;
     agentToolCallId: string;
+    sourceNodeIds?: string[];
 };
 
 export type CanvasAssistantConfirmation = {
@@ -124,10 +127,12 @@ export type CanvasAssistantMessage = {
     text: string;
     isLoading?: boolean;
     references?: CanvasAssistantReference[];
+    authorizedNodeIds?: string[];
     images?: CanvasAssistantImage[];
     runId?: string;
     lastEventSequence?: number;
     confirmation?: CanvasAssistantConfirmation;
+    plan?: { summary: string; steps: string[] };
 };
 
 export type CanvasAssistantSession = {

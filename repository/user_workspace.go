@@ -143,7 +143,11 @@ func ApplyUserWorkspaceMutations(organizationID string, userID string, mutations
 			assets = append(assets, item)
 			if err := replaceUserFileReferences(tx, organizationID, mutation.Domain, mutation.ObjectID, mutation.RecordID, mutation.StorageKeys, mutation.Deleted, updatedAt); err != nil { return err }
 		}
-		if err := tx.Save(&model.UserWorkspaceState{OrganizationID: organizationID, UpdatedAt: updatedAt}).Error; err != nil { return err }
+		state := tx.Model(&model.UserWorkspaceState{}).Where("organization_id = ?", organizationID).Update("updated_at", updatedAt)
+		if state.Error != nil { return state.Error }
+		if state.RowsAffected == 0 {
+			if err := tx.Create(&model.UserWorkspaceState{OrganizationID: organizationID, UpdatedAt: updatedAt}).Error; err != nil { return err }
+		}
 		return saveOrganizationAuditLogs(tx, auditLogs)
 	})
 	return projects, assets, records, err

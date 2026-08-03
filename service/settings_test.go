@@ -149,13 +149,13 @@ func TestNormalizeSettingsMergesEnabledChannelCapabilitiesIntoCatalog(t *testing
 	if got.Name != "Firefly Ray" || got.Modality != "video" || !reflect.DeepEqual(got.Operations, []string{"generation"}) || got.Sort != 7 || got.Remark != "public model" || !got.Enabled {
 		t.Fatalf("model metadata changed: %#v", got)
 	}
-	if want := []string{"16:9", "21:9", "9:16"}; !reflect.DeepEqual(got.AspectRatios, want) {
+	if want := []string{"4:3", "16:9", "21:9", "9:16"}; !reflect.DeepEqual(got.AspectRatios, want) {
 		t.Fatalf("aspect ratios = %#v, want %#v", got.AspectRatios, want)
 	}
-	if want := []string{"720p", "1080p"}; !reflect.DeepEqual(got.ResolutionTiers, want) {
+	if want := []string{"480p", "720p", "1080p"}; !reflect.DeepEqual(got.ResolutionTiers, want) {
 		t.Fatalf("resolution tiers = %#v, want %#v", got.ResolutionTiers, want)
 	}
-	if want := []int{5, 10}; !reflect.DeepEqual(got.Durations, want) {
+	if want := []int{4, 5, 10}; !reflect.DeepEqual(got.Durations, want) {
 		t.Fatalf("durations = %#v, want %#v", got.Durations, want)
 	}
 	if got.MaxReferenceImages != 6 || got.ReferenceMode != "asset" {

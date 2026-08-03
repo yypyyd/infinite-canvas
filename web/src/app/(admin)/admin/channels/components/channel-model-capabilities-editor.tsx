@@ -15,7 +15,7 @@ const operationOptions = [
 ];
 const imageResolutionOptions = ["1k", "2k", "4k"];
 const videoResolutionOptions = ["480p", "720p", "1080p"];
-const videoDurationOptions = [4, 5, 6, 8, 10, 12, 15, 16, 20];
+const videoDurationOptions = Array.from({ length: 27 }, (_, index) => index + 4);
 const aspectRatioOptions = ["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "21:9"];
 const referenceModeOptions = [
     { label: "帧参考（frame）", value: "frame" },

@@ -15,7 +15,7 @@ const modalityOptions = [
 ];
 const aspectRatioOptions = ["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16"];
 const resolutionOptions = ["1k", "2k", "4k", "480p", "720p", "1080p"];
-const durationOptions = [4, 5, 6, 8, 10, 12, 15, 16, 20];
+const durationOptions = Array.from({ length: 27 }, (_, index) => index + 4);
 const modalityLabel = Object.fromEntries(modalityOptions.map((item) => [item.value, item.label]));
 const operationLabel: Record<string, string> = { generation: "生成", edit: "编辑", completion: "补全", speech: "语音" };
 const unitLabel: Record<string, string> = { image: "张", second: "秒", request: "次", token: "Token" };

@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"encoding/json"
 	"mime/multipart"
+	"net/textproto"
 	"strings"
 	"testing"
 )
@@ -36,6 +38,43 @@ func TestReplaceMultipartAIRequestModel(t *testing.T) {
 	request := readMultipartAIRequest(body, contentType)
 	if request.ModelName != "upstream-image" {
 		t.Fatalf("model = %q, want upstream-image", request.ModelName)
+	}
+}
+
+func TestAdaptVividAIImageRequestDoesNotTreatQualityAsResolution(t *testing.T) {
+	body, _ := adaptVividAIImageRequestBody([]byte(`{"model":"image","prompt":"test","size":"1024x1024","quality":"high"}`), "application/json")
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["size"] != "1024x1024" {
+		t.Fatalf("size = %q, want 1024x1024", payload["size"])
+	}
+}
+
+func TestAdaptVividAIImageMultipartPreservesReferenceContentType(t *testing.T) {
+	var source strings.Builder
+	writer := multipart.NewWriter(&source)
+	_ = writer.WriteField("model", "image")
+	_ = writer.WriteField("prompt", "test")
+	header := make(textproto.MIMEHeader)
+	header.Set("Content-Disposition", `form-data; name="image"; filename="reference.png"`)
+	header.Set("Content-Type", "image/png")
+	file, _ := writer.CreatePart(header)
+	_, _ = file.Write([]byte("png"))
+	_ = writer.Close()
+
+	body, contentType, err := adaptVividAIImageMultipartBody([]byte(source.String()), writer.FormDataContentType())
+	if err != nil {
+		t.Fatal(err)
+	}
+	form, err := readMultipartForm(body, contentType)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer form.RemoveAll()
+	if files := form.File["image"]; len(files) != 1 || files[0].Header.Get("Content-Type") != "image/png" {
+		t.Fatalf("files = %#v, want one image/png reference", files)
 	}
 }
 

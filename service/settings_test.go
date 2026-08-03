@@ -173,6 +173,26 @@ func TestChannelModelSupportsReferenceImageLimit(t *testing.T) {
 	}
 }
 
+func TestNormalizeModelChannelAllowsOneImageForEditByDefault(t *testing.T) {
+	channel := normalizeModelChannel(model.ModelChannel{Models: []model.ChannelModel{
+		{Model: "image-model", Modality: "image", Operations: []string{"edit"}, ResolutionTiers: []string{"4k"}},
+		{Model: "video-model", Modality: "video", Operations: []string{"generation"}},
+	}})
+	imageModel := channel.Models[0]
+	if imageModel.MaxReferenceImages != 1 {
+		t.Fatalf("image edit reference limit = %d, want 1", imageModel.MaxReferenceImages)
+	}
+	if !channelModelSupportsRequest(imageModel, PricingRequest{Model: "image-model", Modality: "image", Operation: "edit", ResolutionTier: "4k", ReferenceImages: 1}) {
+		t.Fatal("expected 4k image edit with one reference image to be supported")
+	}
+	if channelModelSupportsRequest(imageModel, PricingRequest{Model: "image-model", Modality: "image", Operation: "edit", ResolutionTier: "4k", ReferenceImages: 2}) {
+		t.Fatal("expected two reference images to require an explicit limit")
+	}
+	if channelModelSupportsRequest(channel.Models[1], PricingRequest{Model: "video-model", Modality: "video", Operation: "generation", ReferenceImages: 1}) {
+		t.Fatal("expected the video reference image limit to remain unchanged")
+	}
+}
+
 func TestNormalizeSettingsKeepsOnlyExplicitPricingRules(t *testing.T) {
 	settings := normalizeSettings(model.Settings{
 		Public: model.PublicSetting{

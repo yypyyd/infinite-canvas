@@ -1042,6 +1042,9 @@ func normalizeModelChannel(channel model.ModelChannel) model.ModelChannel {
 		item.Durations = normalizeDurations(item.Durations)
 		item.MaxReferenceImages = max(0, item.MaxReferenceImages)
 		item.ReferenceMode = normalizeReferenceMode(item.ReferenceMode)
+		if item.Modality == "image" && item.MaxReferenceImages == 0 && containsPricingValue(item.Operations, "edit") {
+			item.MaxReferenceImages = 1
+		}
 		if item.Modality != "image" && item.Modality != "video" {
 			item.MaxReferenceImages = 0
 			item.ReferenceMode = "none"

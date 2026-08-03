@@ -129,6 +129,8 @@ func TestModelChannelSelectionsFilterOperationAndResolution(t *testing.T) {
 	oneK := normalizePricingRequest(PricingRequest{Model: "gpt-image-2", Modality: "image", Operation: "generation", Unit: "image", ResolutionTier: "1k"})
 	if selections := modelChannelSelectionsForRequest(channels, oneK); len(selections) != 2 {
 		t.Fatalf("1k selection count = %d, want 2", len(selections))
+	} else if remaining := modelChannelSelectionsExcluding(selections, []string{"1k-only"}); len(remaining) != 1 || remaining[0].Channel.Name != "full" {
+		t.Fatalf("remaining selections = %#v, want full channel", remaining)
 	}
 
 	edit := normalizePricingRequest(PricingRequest{Model: "gpt-image-2", Modality: "image", Operation: "edit", Unit: "image", ResolutionTier: "1k"})

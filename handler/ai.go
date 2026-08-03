@@ -11,6 +11,7 @@ import (
 	"math"
 	"mime"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/textproto"
 	"net/url"
@@ -127,32 +128,19 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		FailError(w, err)
 		return
 	}
-	channel := selection.Channel
-	upstreamModel := selection.Model.UpstreamModel
-	body, contentType, err = replaceAIRequestModel(body, contentType, upstreamModel)
+	request, err := buildAIUpstreamRequest(r, path, body, contentType, selection, "")
 	if err != nil {
-		log.Printf("AI proxy replace upstream model failed: model=%s upstream=%s err=%v", requestMeta.ModelName, upstreamModel, err)
+		log.Printf("AI proxy build request failed: model=%s channel=%s err=%v", requestMeta.ModelName, selection.Channel.Name, err)
 		Fail(w, "AI 接口请求失败")
 		return
-	}
-	request, err := http.NewRequest(http.MethodPost, service.BuildModelChannelURL(channel, path), bytes.NewReader(body))
-	if err != nil {
-		log.Printf("AI proxy build request failed: url=%s err=%v", service.BuildModelChannelURL(channel, path), err)
-		Fail(w, "AI 接口请求失败")
-		return
-	}
-	request.Header.Set("Authorization", "Bearer "+channel.APIKey)
-	if requestID := strings.TrimSpace(r.Header.Get("X-Request-ID")); requestID != "" { request.Header.Set("X-Request-ID", requestID) }
-	if contentType != "" {
-		request.Header.Set("Content-Type", contentType)
 	}
 	task, err := service.BeginGenerationTask(service.GenerationTaskInput{
 		UserID:         user.ID,
 		OrganizationID: user.OrganizationID,
 		RequestID:      strings.TrimSpace(r.Header.Get("Idempotency-Key")),
 		Model:          requestMeta.ModelName,
-		UpstreamModel:  upstreamModel,
-		ChannelName:    channel.Name,
+		UpstreamModel:  selection.Model.UpstreamModel,
+		ChannelName:    selection.Channel.Name,
 		Path:           path,
 		Modality:       pricingRequest.Modality,
 		Operation:      pricingRequest.Operation,
@@ -171,15 +159,105 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 			log.Printf("AI proxy finish generation task failed: task=%s status=%s err=%v", task.ID, status, err)
 		}
 	}
-	failed := false
-	onFailure := func(message string) {
-		failed = true
-		finishTask("failed", message)
+	excludedChannels := []string{}
+	for {
+		response, responseBody, requestErr := doAIRequestWithRetry(request, nil)
+		timeoutRecovery := imageTaskRecoveryUnavailable
+		if requestErr == nil && response != nil && isAIImageGatewayTimeout(response.StatusCode) && !isAIContentPolicyRejection(responseBody) {
+			recoveredBody, message, recovery := recoverGatewayTimedOutImageTask(w, request)
+			timeoutRecovery = recovery
+			if recovery == imageTaskRecoveryHandled {
+				_ = response.Body.Close()
+				if message != "" {
+					finishTask(model.GenerationTaskStatusFailed, message)
+					Fail(w, message)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json; charset=utf-8")
+				_, _ = w.Write(recoveredBody)
+				finishTask(model.GenerationTaskStatusSuccess, "")
+				return
+			}
+		}
+		if shouldFailoverAIImageRequest(path, response, responseBody, requestErr, timeoutRecovery == imageTaskRecoveryUnsupported) {
+			excludedChannels = append(excludedChannels, selection.Channel.Name)
+			nextSelection, selectErr := service.SelectModelChannelExcluding(pricingRequest, excludedChannels)
+			if selectErr == nil {
+				nextRequest, buildErr := buildAIUpstreamRequest(r, path, body, contentType, nextSelection, task.RequestID)
+				if buildErr == nil {
+					if updateErr := service.UpdateGenerationTaskChannel(&task, nextSelection.Channel.Name, nextSelection.Model.UpstreamModel); updateErr != nil {
+						log.Printf("AI proxy update failover channel failed: task=%s channel=%s err=%v", task.ID, nextSelection.Channel.Name, updateErr)
+					} else {
+						if response != nil {
+							_ = response.Body.Close()
+						}
+						statusCode := 0
+						if response != nil {
+							statusCode = response.StatusCode
+						}
+						log.Printf("AI proxy failover channel: model=%s path=%s from=%s to=%s status=%d err=%v", requestMeta.ModelName, path, selection.Channel.Name, nextSelection.Channel.Name, statusCode, requestErr)
+						selection = nextSelection
+						request = nextRequest
+						continue
+					}
+				}
+			}
+		}
+
+		failed := false
+		onFailure := func(message string) {
+			failed = true
+			finishTask(model.GenerationTaskStatusFailed, message)
+		}
+		writeAIResponse(w, request, response, responseBody, requestErr, onFailure, nil)
+		if !failed {
+			finishTask(model.GenerationTaskStatusSuccess, "")
+		}
+		return
 	}
-	copyAIResponse(w, request, onFailure, nil, nil)
-	if !failed {
-		finishTask("success", "")
+}
+
+func buildAIUpstreamRequest(r *http.Request, path string, body []byte, contentType string, selection service.ModelChannelSelection, idempotencyKey string) (*http.Request, error) {
+	body, contentType, err := replaceAIRequestModel(body, contentType, selection.Model.UpstreamModel)
+	if err != nil {
+		return nil, err
 	}
+	request, err := http.NewRequest(http.MethodPost, service.BuildModelChannelURL(selection.Channel, path), bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Authorization", "Bearer "+selection.Channel.APIKey)
+	if requestID := strings.TrimSpace(r.Header.Get("X-Request-ID")); requestID != "" {
+		request.Header.Set("X-Request-ID", requestID)
+	}
+	if contentType != "" {
+		request.Header.Set("Content-Type", contentType)
+	}
+	if idempotencyKey != "" {
+		request.Header.Set("Idempotency-Key", idempotencyKey)
+	}
+	return request, nil
+}
+
+func shouldFailoverAIImageRequest(path string, response *http.Response, body []byte, err error, timeoutRecoveryUnsupported bool) bool {
+	if path != "/images/generations" && path != "/images/edits" {
+		return false
+	}
+	if err != nil {
+		return isDefiniteAIConnectionFailure(err)
+	}
+	if response == nil || isAIContentPolicyRejection(body) {
+		return false
+	}
+	if isAIImageGatewayTimeout(response.StatusCode) {
+		return timeoutRecoveryUnsupported
+	}
+	return (response.StatusCode == http.StatusInternalServerError || response.StatusCode == http.StatusBadGateway || response.StatusCode == http.StatusServiceUnavailable) && isRetryableAIUpstreamError(response.StatusCode, body)
+}
+
+func isDefiniteAIConnectionFailure(err error) bool {
+	var operationError *net.OpError
+	return errors.As(err, &operationError) && strings.EqualFold(operationError.Op, "dial")
 }
 
 type chatGPT2APIImageTask struct {
@@ -195,6 +273,14 @@ type recoverableImageTask struct {
 	Data    []map[string]any `json:"data"`
 	Error   string           `json:"error"`
 }
+
+type imageTaskRecoveryState uint8
+
+const (
+	imageTaskRecoveryUnavailable imageTaskRecoveryState = iota
+	imageTaskRecoveryUnsupported
+	imageTaskRecoveryHandled
+)
 
 func isChatGPT2APIImageTaskChannel(baseURL string, path string) bool {
 	if path != "/images/generations" {
@@ -346,11 +432,11 @@ func normalizeChatGPT2APIImageTaskData(baseURL string, apiKey string, data []map
 	return result
 }
 
-func recoverGatewayTimedOutImageTask(w http.ResponseWriter, request *http.Request) ([]byte, string, bool) {
+func recoverGatewayTimedOutImageTask(w http.ResponseWriter, request *http.Request) ([]byte, string, imageTaskRecoveryState) {
 	requestID := strings.TrimSpace(request.Header.Get("Idempotency-Key"))
 	path := request.URL.Path
 	if requestID == "" || (!strings.HasSuffix(path, "/images/generations") && !strings.HasSuffix(path, "/images/edits")) {
-		return nil, "", false
+		return nil, "", imageTaskRecoveryUnavailable
 	}
 	taskURL := *request.URL
 	if strings.HasSuffix(path, "/generations") {
@@ -369,22 +455,28 @@ func recoverGatewayTimedOutImageTask(w http.ResponseWriter, request *http.Reques
 	for {
 		pollRequest, err := http.NewRequest(http.MethodGet, taskURL.String(), nil)
 		if err != nil {
-			return nil, "", false
+			return nil, "", imageTaskRecoveryUnavailable
 		}
 		pollRequest.Header.Set("Authorization", request.Header.Get("Authorization"))
 		response, err := http.DefaultClient.Do(pollRequest)
 		if err != nil {
 			if !supported {
-				return nil, "", false
+				return nil, "", imageTaskRecoveryUnavailable
 			}
 		} else {
 			body, readErr := io.ReadAll(io.LimitReader(response.Body, 48<<20))
 			_ = response.Body.Close()
-			if response.StatusCode == http.StatusNotFound || response.StatusCode == http.StatusMethodNotAllowed {
+			if response.StatusCode == http.StatusMethodNotAllowed || response.StatusCode == http.StatusNotImplemented {
 				if !supported {
-					return nil, "", false
+					return nil, "", imageTaskRecoveryUnsupported
 				}
-				return nil, "AI 接口请求失败：上游任务不存在", true
+				return nil, "AI 接口请求失败：上游任务不存在", imageTaskRecoveryHandled
+			}
+			if response.StatusCode == http.StatusNotFound {
+				if !supported {
+					return nil, "", imageTaskRecoveryUnavailable
+				}
+				return nil, "AI 接口请求失败：上游任务不存在", imageTaskRecoveryHandled
 			}
 			if readErr == nil && response.StatusCode < http.StatusBadRequest {
 				var task recoverableImageTask
@@ -395,31 +487,31 @@ func recoverGatewayTimedOutImageTask(w http.ResponseWriter, request *http.Reques
 					case "completed", "success":
 						data := normalizeChatGPT2APIImageTaskData(baseURL, apiKey, task.Data)
 						if len(data) == 0 {
-							return nil, "AI 接口请求失败：上游任务没有返回图片", true
+							return nil, "AI 接口请求失败：上游任务没有返回图片", imageTaskRecoveryHandled
 						}
 						result, _ := json.Marshal(map[string]any{"created": task.Created, "data": data})
-						return result, "", true
+						return result, "", imageTaskRecoveryHandled
 					case "failed", "error":
 						message := safeUpstreamText(task.Error)
 						if message == "" {
 							message = "上游生图任务失败"
 						}
-						return nil, "AI 接口请求失败：" + message, true
+						return nil, "AI 接口请求失败：" + message, imageTaskRecoveryHandled
 					case "queued", "pending", "running", "processing", "in_progress":
 						// Keep polling below.
 					default:
 						if !supported {
-							return nil, "", false
+							return nil, "", imageTaskRecoveryUnavailable
 						}
 					}
 				}
 			}
 		}
 		if !supported {
-			return nil, "", false
+			return nil, "", imageTaskRecoveryUnavailable
 		}
 		if time.Now().After(deadline) {
-			return nil, "AI 接口请求失败：上游生图任务等待超时", true
+			return nil, "AI 接口请求失败：上游生图任务等待超时", imageTaskRecoveryHandled
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-cache, no-transform")
@@ -470,6 +562,10 @@ func writeAIKeepAlive(w http.ResponseWriter) {
 
 func copyAIResponse(w http.ResponseWriter, request *http.Request, onFailure func(string), adapter func([]byte) ([]byte, string, bool), retryPolicy *aiRetryPolicy) {
 	response, body, err := doAIRequestWithRetry(request, retryPolicy)
+	writeAIResponse(w, request, response, body, err, onFailure, adapter)
+}
+
+func writeAIResponse(w http.ResponseWriter, request *http.Request, response *http.Response, body []byte, err error, onFailure func(string), adapter func([]byte) ([]byte, string, bool)) {
 	if err != nil {
 		log.Printf("AI proxy request failed: url=%s err=%v", request.URL.String(), err)
 		message := "AI 接口请求失败：上游连接中断，请稍后重试"
@@ -482,8 +578,8 @@ func copyAIResponse(w http.ResponseWriter, request *http.Request, onFailure func
 	defer response.Body.Close()
 
 	if response.StatusCode >= http.StatusBadRequest {
-		if isAIImageGatewayTimeout(response.StatusCode) {
-			if recoveredBody, message, supported := recoverGatewayTimedOutImageTask(w, request); supported {
+		if isAIImageGatewayTimeout(response.StatusCode) && !isAIContentPolicyRejection(body) {
+			if recoveredBody, message, recovery := recoverGatewayTimedOutImageTask(w, request); recovery == imageTaskRecoveryHandled {
 				if message != "" {
 					if onFailure != nil {
 						onFailure(message)
@@ -592,14 +688,22 @@ func aiRetryPolicyForRequest(baseURL string, modelName string, path string) *aiR
 }
 
 func isRetryableAIUpstreamError(statusCode int, body []byte) bool {
-	if statusCode == http.StatusRequestTimeout || statusCode == http.StatusBadGateway || statusCode == http.StatusServiceUnavailable || statusCode == http.StatusGatewayTimeout {
-		return true
+	if isAIContentPolicyRejection(body) {
+		return false
 	}
 	text := strings.ToLower(string(body))
+	if statusCode == http.StatusRequestTimeout || statusCode == http.StatusInternalServerError || statusCode == http.StatusBadGateway || statusCode == http.StatusServiceUnavailable || statusCode == http.StatusGatewayTimeout {
+		return true
+	}
 	return strings.Contains(text, "timeout_error") ||
 		strings.Contains(text, "system under load") ||
 		strings.Contains(text, "temporary unavailable") ||
 		strings.Contains(text, "temporarily unavailable")
+}
+
+func isAIContentPolicyRejection(body []byte) bool {
+	text := strings.ToLower(string(body))
+	return strings.Contains(text, "content policy") || strings.Contains(text, "content_policy") || strings.Contains(text, "content-policy") || strings.Contains(text, "policy rejection")
 }
 
 func copyVideoGenerationsContent(w http.ResponseWriter, request *http.Request) {

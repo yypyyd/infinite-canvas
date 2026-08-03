@@ -119,10 +119,44 @@ func FinishGenerationTask(task model.GenerationTask, status model.GenerationTask
 		if task.Credits > 0 {
 			log = &model.CreditLog{ID: newID("credit"), UserID: task.UserID, OrganizationID: task.OrganizationID, CreditSource: task.CreditSource, Type: model.CreditLogTypeAIRefund, Amount: task.Credits, Remark: "模型调用失败返还 " + task.Model, Extra: string(extra), CreatedAt: task.UpdatedAt}
 		}
-		_, err := repository.FailGenerationTaskAndRefund(task, log)
-		return err
+		return retryGenerationTaskWrite(func() error {
+			_, err := repository.FailGenerationTaskAndRefund(task, log)
+			return err
+		})
 	}
-	return repository.CompleteGenerationTask(task)
+	return retryGenerationTaskWrite(func() error { return repository.CompleteGenerationTask(task) })
+}
+
+// UpdateGenerationTaskChannel records a failover channel before the next upstream request starts.
+func UpdateGenerationTaskChannel(task *model.GenerationTask, channelName string, upstreamModel string) error {
+	updatedAt := now()
+	err := retryGenerationTaskWrite(func() error { return repository.UpdateRunningGenerationTaskChannel(task.ID, channelName, upstreamModel, updatedAt) })
+	if err == nil {
+		task.ChannelName = channelName
+		task.UpstreamModel = upstreamModel
+		task.UpdatedAt = updatedAt
+	}
+	return err
+}
+
+func retryGenerationTaskWrite(operation func() error) error {
+	var err error
+	for attempt := 0; attempt < 4; attempt++ {
+		err = operation()
+		if !isGenerationTaskWriteConflict(err) || attempt == 3 {
+			return err
+		}
+		time.Sleep(time.Duration(attempt+1) * 100 * time.Millisecond)
+	}
+	return err
+}
+
+func isGenerationTaskWriteConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "database is locked") || strings.Contains(message, "database table is locked") || strings.Contains(message, "sqlite_busy") || strings.Contains(message, "sqlite_locked")
 }
 
 func AdminDashboard() (model.AdminDashboard, error) {

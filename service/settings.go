@@ -880,12 +880,18 @@ func findSavedChannel(channel model.ModelChannel, saved []model.ModelChannel, in
 }
 
 func SelectModelChannel(request PricingRequest) (ModelChannelSelection, error) {
+	return SelectModelChannelExcluding(request, nil)
+}
+
+// SelectModelChannelExcluding selects a compatible channel that has not already failed this request.
+func SelectModelChannelExcluding(request PricingRequest, excludedChannels []string) (ModelChannelSelection, error) {
 	settings, err := repository.GetSettings()
 	if err != nil {
 		return ModelChannelSelection{}, err
 	}
 	request = normalizePricingRequest(request)
 	selections := modelChannelSelectionsForRequest(normalizePrivateSetting(settings.Private).Channels, request)
+	selections = modelChannelSelectionsExcluding(selections, excludedChannels)
 	if len(selections) == 0 {
 		reason := "当前操作或规格"
 		if request.ReferenceImages > 0 {
@@ -905,6 +911,20 @@ func SelectModelChannel(request PricingRequest) (ModelChannelSelection, error) {
 		}
 	}
 	return selections[0], nil
+}
+
+func modelChannelSelectionsExcluding(selections []ModelChannelSelection, excludedChannels []string) []ModelChannelSelection {
+	excluded := map[string]bool{}
+	for _, channel := range excludedChannels {
+		excluded[channel] = true
+	}
+	result := make([]ModelChannelSelection, 0, len(selections))
+	for _, selection := range selections {
+		if !excluded[selection.Channel.Name] {
+			result = append(result, selection)
+		}
+	}
+	return result
 }
 
 func BuildModelChannelURL(channel model.ModelChannel, path string) string {

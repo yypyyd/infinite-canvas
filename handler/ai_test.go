@@ -2,7 +2,10 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"mime/multipart"
+	"net"
+	"net/http"
 	"net/textproto"
 	"strings"
 	"testing"
@@ -84,6 +87,7 @@ func TestRetryableAIUpstreamError(t *testing.T) {
 		body   string
 	}{
 		{408, `{"error_code":"timeout_error","message":"system under load"}`},
+		{500, `{"message":"image generation service unavailable"}`},
 		{503, `{"detail":"provider temporary unavailable"}`},
 		{502, `{}`},
 		{504, `{}`},
@@ -95,6 +99,39 @@ func TestRetryableAIUpstreamError(t *testing.T) {
 	}
 	if isRetryableAIUpstreamError(400, []byte(`{"detail":"invalid request body"}`)) {
 		t.Fatal("invalid request body should not be retryable")
+	}
+	if isRetryableAIUpstreamError(502, []byte(`{"detail":"chatgpt content policy rejection"}`)) {
+		t.Fatal("content policy rejection should not be retryable")
+	}
+	if isRetryableAIUpstreamError(502, []byte(`{"code":"content_policy_violation"}`)) {
+		t.Fatal("content policy code should not be retryable")
+	}
+}
+
+func TestShouldFailoverAIImageRequest(t *testing.T) {
+	if !shouldFailoverAIImageRequest("/images/edits", &http.Response{StatusCode: 500}, []byte(`{"message":"unavailable"}`), nil, false) {
+		t.Fatal("image 500 should fail over")
+	}
+	if shouldFailoverAIImageRequest("/images/generations", &http.Response{StatusCode: 502}, []byte(`{"message":"content policy rejection"}`), nil, false) {
+		t.Fatal("content policy rejection should not fail over")
+	}
+	if shouldFailoverAIImageRequest("/images/generations", &http.Response{StatusCode: 400}, []byte(`{"code":"timeout_error"}`), nil, false) {
+		t.Fatal("image client error should not fail over")
+	}
+	if !shouldFailoverAIImageRequest("/images/generations", nil, nil, &net.OpError{Op: "dial", Err: errors.New("connection refused")}, false) {
+		t.Fatal("image connection establishment error should fail over")
+	}
+	if shouldFailoverAIImageRequest("/images/generations", nil, nil, &net.OpError{Op: "read", Err: errors.New("connection reset")}, false) {
+		t.Fatal("ambiguous image read error should not fail over")
+	}
+	if shouldFailoverAIImageRequest("/images/generations", &http.Response{StatusCode: 504}, nil, nil, false) {
+		t.Fatal("image 504 should recover the original task before failover")
+	}
+	if !shouldFailoverAIImageRequest("/images/generations", &http.Response{StatusCode: 504}, nil, nil, true) {
+		t.Fatal("image 504 should fail over when task recovery is explicitly unsupported")
+	}
+	if shouldFailoverAIImageRequest("/videos", &http.Response{StatusCode: 503}, nil, nil, false) {
+		t.Fatal("video request should not use image failover")
 	}
 }
 

@@ -183,6 +183,26 @@ func CompleteGenerationTask(task model.GenerationTask) error {
 	}).Error
 }
 
+// UpdateRunningGenerationTaskChannel records the channel currently handling a running task.
+func UpdateRunningGenerationTaskChannel(taskID string, channelName string, upstreamModel string, updatedAt string) error {
+	db, err := DB()
+	if err != nil {
+		return err
+	}
+	result := db.Model(&model.GenerationTask{}).Where("id = ? AND status = ?", taskID, model.GenerationTaskStatusRunning).Updates(map[string]any{
+		"channel_name":   channelName,
+		"upstream_model": upstreamModel,
+		"updated_at":     updatedAt,
+	})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return errors.New("generation task is not running")
+	}
+	return nil
+}
+
 func ReconcileCompletedBatchGenerationTasks(timestamp string, limit int) (scanned int, repaired int, rejected int, err error) {
 	db, err := DB()
 	if err != nil { return 0, 0, 0, err }

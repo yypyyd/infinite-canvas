@@ -12,6 +12,7 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"strconv"
 	"strings"
@@ -113,7 +114,7 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		FailError(w, err)
 		return
 	}
-	pricingRequest := pricingRequestForAIPath(path, requestMeta)
+	pricingRequest := service.NormalizePricingRequest(pricingRequestForAIPath(path, requestMeta))
 	selection, err := service.SelectModelChannel(pricingRequest)
 	if err != nil {
 		log.Printf("AI proxy select channel failed: model=%s operation=%s resolution=%s err=%v", requestMeta.ModelName, pricingRequest.Operation, pricingRequest.ResolutionTier, err)
@@ -1012,7 +1013,7 @@ func adaptVividAIImageRequestBody(body []byte, contentType string) ([]byte, stri
 	result := map[string]any{}
 	copyStringField(result, payload, "model", "model")
 	copyStringField(result, payload, "prompt", "prompt")
-	if size := vividAIImageSize(payloadString(payload, "size", "ratio"), payloadString(payload, "resolution", "resolution_name", "resolutionTier", "quality")); size != "" {
+	if size := vividAIImageSize(payloadString(payload, "size", "ratio"), payloadString(payload, "resolution", "resolution_name", "resolutionTier")); size != "" {
 		result["size"] = size
 	}
 	encoded, err := json.Marshal(result)
@@ -1032,7 +1033,7 @@ func adaptVividAIImageMultipartBody(body []byte, contentType string) ([]byte, st
 	writer := multipart.NewWriter(&buffer)
 	_ = writer.WriteField("model", firstFormValue(form, "model"))
 	_ = writer.WriteField("prompt", firstFormValue(form, "prompt"))
-	if size := vividAIImageSize(firstFormValue(form, "size", "ratio"), firstFormValue(form, "resolution", "resolution_name", "resolutionTier", "quality")); size != "" {
+	if size := vividAIImageSize(firstFormValue(form, "size", "ratio"), firstFormValue(form, "resolution", "resolution_name", "resolutionTier")); size != "" {
 		_ = writer.WriteField("size", size)
 	}
 	for _, file := range form.File["image"] {
@@ -1170,7 +1171,12 @@ func copyMultipartFile(writer *multipart.Writer, field string, header *multipart
 		return err
 	}
 	defer file.Close()
-	target, err := writer.CreateFormFile(field, header.Filename)
+	partHeader := make(textproto.MIMEHeader)
+	partHeader.Set("Content-Disposition", mime.FormatMediaType("form-data", map[string]string{"name": field, "filename": header.Filename}))
+	if contentType := header.Header.Get("Content-Type"); contentType != "" {
+		partHeader.Set("Content-Type", contentType)
+	}
+	target, err := writer.CreatePart(partHeader)
 	if err != nil {
 		return err
 	}

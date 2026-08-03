@@ -597,6 +597,11 @@ func normalizePricingRequest(request PricingRequest) PricingRequest {
 	return request
 }
 
+// NormalizePricingRequest resolves the request fields used by routing, billing, and task logs.
+func NormalizePricingRequest(request PricingRequest) PricingRequest {
+	return normalizePricingRequest(request)
+}
+
 func selectPricingRule(rules []model.PricingRule, request PricingRequest) (model.PricingRule, bool) {
 	var selected model.PricingRule
 	bestScore := -1

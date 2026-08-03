@@ -142,9 +142,9 @@ function resolutionTierForRequest(modality: string, size: string, resolution: st
 function imageResolutionTier(size: string) {
     const dimensions = imageRequestDimensions(size);
     if (dimensions) {
-        const longest = Math.max(dimensions.width, dimensions.height);
-        if (longest <= 1024) return "1k";
-        if (longest <= 2048) return "2k";
+        const pixels = dimensions.width * dimensions.height;
+        if (pixels <= 2048 * 1024) return "1k";
+        if (pixels <= 2048 * 2048) return "2k";
         return "4k";
     }
     return "1k";

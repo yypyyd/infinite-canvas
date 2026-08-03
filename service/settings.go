@@ -428,10 +428,10 @@ func mergeEnabledChannelCapabilities(items []model.ModelDefinition, channels []m
 			continue
 		}
 		items[index].Modality = capability.modality
-		items[index].Operations = normalizeModelOperations(capability.operations, items[index].ID, capability.modality)
-		items[index].AspectRatios = normalizeStringList(capability.aspectRatios, normalizePricingToken)
-		items[index].ResolutionTiers = normalizeStringList(capability.resolutionTiers, normalizeResolutionTier)
-		items[index].Durations = normalizeDurations(capability.durations)
+		items[index].Operations = normalizeModelOperations(append(items[index].Operations, capability.operations...), items[index].ID, capability.modality)
+		items[index].AspectRatios = normalizeStringList(append(items[index].AspectRatios, capability.aspectRatios...), normalizePricingToken)
+		items[index].ResolutionTiers = normalizeStringList(append(items[index].ResolutionTiers, capability.resolutionTiers...), normalizeResolutionTier)
+		items[index].Durations = normalizeDurations(append(items[index].Durations, capability.durations...))
 		items[index].MaxReferenceImages = capability.maxReferenceImages
 		items[index].ReferenceMode = normalizeReferenceMode(capability.referenceMode)
 		if capability.modality != "image" && capability.modality != "video" {
@@ -699,14 +699,10 @@ func normalizeResolutionTier(value string) string {
 func normalizeImageResolutionTier(size string) string {
 	size = strings.ToLower(strings.TrimSpace(size))
 	if width, height, ok := parsePricingDimensions(size); ok {
-		longest := width
-		if height > longest {
-			longest = height
-		}
-		if longest <= 1024 {
+		if width <= 2048*1024/height {
 			return "1k"
 		}
-		if longest <= 2048 {
+		if width <= 2048*2048/height {
 			return "2k"
 		}
 		return "4k"

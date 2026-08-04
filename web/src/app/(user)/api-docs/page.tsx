@@ -295,7 +295,6 @@ function ModelDetails({ model, rules, endpoint, operation, operations, onOperati
 
             <div className="mt-6 flex flex-wrap gap-2">
                 <Link href="/account?tab=api" className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-primary px-3.5 text-sm font-medium text-primary-foreground transition hover:bg-primary/90"><KeyRound className="size-4" />创建 API Key</Link>
-                <Link href="/docs/api/integration" className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-border px-3.5 text-sm font-medium transition hover:bg-muted">完整接入文档<ChevronRight className="size-4" /></Link>
             </div>
         </div>
     );

@@ -61,7 +61,7 @@ func GetActiveUserAPIKeyByHash(keyHash string) (model.UserAPIKey, bool, error) {
 	return item, err == nil, err
 }
 
-func RevokeUserAPIKey(organizationID string, userID string, id string, timestamp string, auditLogs ...model.OrganizationAuditLog) error {
+func DeleteUserAPIKey(organizationID string, userID string, id string, auditLogs ...model.OrganizationAuditLog) error {
 	db, err := DB()
 	if err != nil {
 		return err
@@ -71,7 +71,7 @@ func RevokeUserAPIKey(organizationID string, userID string, id string, timestamp
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").First(&organization, "id = ?", organizationID).Error; err != nil {
 			return err
 		}
-		result := tx.Model(&model.UserAPIKey{}).Where("organization_id = ? AND user_id = ? AND id = ? AND status = ?", organizationID, userID, id, model.UserAPIKeyStatusActive).Updates(map[string]any{"status": model.UserAPIKeyStatusRevoked, "revoked_at": timestamp, "updated_at": timestamp})
+		result := tx.Where("organization_id = ? AND user_id = ? AND id = ?", organizationID, userID, id).Delete(&model.UserAPIKey{})
 		if result.Error != nil {
 			return result.Error
 		}

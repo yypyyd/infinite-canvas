@@ -63,7 +63,7 @@ func CreateUserAPIKey(user model.AuthUser, name string) (model.UserAPIKeyCredent
 	return model.UserAPIKeyCredential{UserAPIKey: item, Secret: secret}, err
 }
 
-func RevokeUserAPIKey(user model.AuthUser, id string) error {
+func DeleteUserAPIKey(user model.AuthUser, id string) error {
 	organization, _, err := ResolveOrganizationAccess(user, user.OrganizationID)
 	if err != nil {
 		return err
@@ -73,9 +73,9 @@ func RevokeUserAPIKey(user model.AuthUser, id string) error {
 		return safeMessageError{message: "API Key 不存在"}
 	}
 	timestamp := now()
-	err = repository.RevokeUserAPIKey(organization.ID, user.ID, id, timestamp, newAuditLog(user.ID, organization.ID, "api_key.revoke", "api_key", id, map[string]string{"id": id}, timestamp))
+	err = repository.DeleteUserAPIKey(organization.ID, user.ID, id, newAuditLog(user.ID, organization.ID, "api_key.delete", "api_key", id, map[string]string{"id": id}, timestamp))
 	if errors.Is(err, repository.ErrUserAPIKeyNotFound) {
-		return safeMessageError{message: "API Key 不存在或已撤销"}
+		return safeMessageError{message: "API Key 不存在"}
 	}
 	return err
 }

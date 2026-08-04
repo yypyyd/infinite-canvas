@@ -162,6 +162,6 @@ export async function createUserAPIKey(token: string, name: string) {
     return apiPost<CreatedUserAPIKey>("/api/api-keys", { name }, token);
 }
 
-export async function revokeUserAPIKey(token: string, id: string) {
+export async function deleteUserAPIKey(token: string, id: string) {
     return apiDelete<boolean>(`/api/api-keys/${encodeURIComponent(id)}`, token);
 }

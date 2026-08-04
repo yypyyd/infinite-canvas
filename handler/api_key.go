@@ -46,13 +46,13 @@ func CreateUserAPIKey(w http.ResponseWriter, r *http.Request) {
 	OK(w, item)
 }
 
-func RevokeUserAPIKey(w http.ResponseWriter, r *http.Request, id string) {
+func DeleteUserAPIKey(w http.ResponseWriter, r *http.Request, id string) {
 	user, ok := service.UserFromContext(r.Context())
 	if !ok {
 		Fail(w, "未登录或权限不足")
 		return
 	}
-	if err := service.RevokeUserAPIKey(user, id); err != nil {
+	if err := service.DeleteUserAPIKey(user, id); err != nil {
 		FailError(w, err)
 		return
 	}

@@ -72,7 +72,7 @@ description: settings 表中 public 和 private 配置结构说明
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `availableModels` | string[] | 系统可用模型，由模型中心中已启用的模型生成 |
-| `models` | object[] | 模型中心配置，包含模型名称、类型、支持操作、启用状态、排序、宽高比、分辨率档、视频时长、参考图上限和参考模式；保存设置时按对外模型名汇总所有同类型启用渠道的能力，`/api/v1/models` 额外返回 `max_reference_images` 与 `reference_mode` |
+| `models` | object[] | 模型中心配置，包含模型名称、类型、支持操作、启用状态、排序、宽高比、分辨率档、视频时长、参考图片/视频/音频单项上限、参考素材合计上限、生成音轨能力和参考模式；保存设置时按对外模型名汇总所有同类型启用渠道的能力，`/api/v1/models` 额外返回对应的 snake_case 能力字段 |
 | `pricingRules` | object[] | 管理员显式维护的模型算力点配置，后端模型接口调用前按模型预扣，上游失败时返还；新增或同步模型不会自动生成价格 |
 | `groupRatios` | object | 用户分组倍率，例如 `default`、`vip`、`svip` |
 | `defaultModel` | string | 默认模型，从 `availableModels` 中选择；为空或失效时优先选择文本模型 |

@@ -23,15 +23,19 @@ type ModelChannel struct {
 
 // ChannelModel stores one public model's upstream mapping and channel-specific capabilities.
 type ChannelModel struct {
-	Model              string   `json:"model"`
-	UpstreamModel      string   `json:"upstreamModel"`
-	Modality           string   `json:"modality"`
-	Operations         []string `json:"operations"`
-	AspectRatios       []string `json:"aspectRatios"`
-	ResolutionTiers    []string `json:"resolutionTiers"`
-	Durations          []int    `json:"durations"`
-	MaxReferenceImages int      `json:"maxReferenceImages"`
-	ReferenceMode      string   `json:"referenceMode"`
+	Model                 string   `json:"model"`
+	UpstreamModel         string   `json:"upstreamModel"`
+	Modality              string   `json:"modality"`
+	Operations            []string `json:"operations"`
+	AspectRatios          []string `json:"aspectRatios"`
+	ResolutionTiers       []string `json:"resolutionTiers"`
+	Durations             []int    `json:"durations"`
+	MaxReferenceImages    int      `json:"maxReferenceImages"`
+	MaxReferenceVideos    int      `json:"maxReferenceVideos"`
+	MaxReferenceAudios    int      `json:"maxReferenceAudios"`
+	MaxReferenceMedia     int      `json:"maxReferenceMedia"`
+	SupportsGenerateAudio bool   `json:"supportsGenerateAudio"`
+	ReferenceMode         string   `json:"referenceMode"`
 }
 
 type DiscoveredModel struct {
@@ -42,40 +46,53 @@ type DiscoveredModel struct {
 	SupportedResolutions        []string `json:"supportedResolutions"`
 	SupportedDurations          []int    `json:"supportedDurations"`
 	MaxReferenceImages          int      `json:"maxReferenceImages"`
+	MaxReferenceVideos          int      `json:"maxReferenceVideos"`
+	MaxReferenceAudios          int      `json:"maxReferenceAudios"`
+	MaxReferenceMedia           int      `json:"maxReferenceMedia"`
+	SupportsGenerateAudio       bool     `json:"supportsGenerateAudio"`
 	ReferenceMode               string   `json:"referenceMode"`
 	ReferenceCapabilityProvided bool     `json:"referenceCapabilityProvided"`
+	MediaCapabilityProvided     bool     `json:"mediaCapabilityProvided"`
 }
 
 // ModelDefinition stores public model management metadata.
 type ModelDefinition struct {
-	ID                 string   `json:"id"`
-	Name               string   `json:"name"`
-	Modality           string   `json:"modality"`
-	Operations         []string `json:"operations"`
-	Enabled            bool     `json:"enabled"`
-	Sort               int      `json:"sort"`
-	AspectRatios       []string `json:"aspectRatios"`
-	ResolutionTiers    []string `json:"resolutionTiers"`
-	Durations          []int    `json:"durations"`
-	MaxReferenceImages int      `json:"maxReferenceImages"`
-	ReferenceMode      string   `json:"referenceMode"`
-	Remark             string   `json:"remark"`
+	ID                    string   `json:"id"`
+	Name                  string   `json:"name"`
+	Modality              string   `json:"modality"`
+	Operations            []string `json:"operations"`
+	Enabled               bool     `json:"enabled"`
+	Sort                  int      `json:"sort"`
+	AspectRatios          []string `json:"aspectRatios"`
+	ResolutionTiers       []string `json:"resolutionTiers"`
+	Durations             []int    `json:"durations"`
+	MaxReferenceImages    int      `json:"maxReferenceImages"`
+	MaxReferenceVideos    int      `json:"maxReferenceVideos"`
+	MaxReferenceAudios    int      `json:"maxReferenceAudios"`
+	MaxReferenceMedia     int      `json:"maxReferenceMedia"`
+	SupportsGenerateAudio bool   `json:"supportsGenerateAudio"`
+	ReferenceMode         string   `json:"referenceMode"`
+	Remark                string   `json:"remark"`
 }
 
 // PublicAPIModel describes one non-text model exposed to API Key callers.
 type PublicAPIModel struct {
-	ID                 string   `json:"id"`
-	Object             string   `json:"object"`
-	Created            int64    `json:"created"`
-	OwnedBy            string   `json:"owned_by"`
-	Name               string   `json:"name"`
-	Modality           string   `json:"modality"`
-	Operations         []string `json:"operations"`
-	AspectRatios       []string `json:"aspectRatios"`
-	ResolutionTiers    []string `json:"resolutionTiers"`
-	Durations          []int    `json:"durations"`
-	MaxReferenceImages int      `json:"max_reference_images"`
-	ReferenceMode      string   `json:"reference_mode"`
+	ID                    string   `json:"id"`
+	Object                string   `json:"object"`
+	Created               int64    `json:"created"`
+	OwnedBy               string   `json:"owned_by"`
+	Name                  string   `json:"name"`
+	Modality              string   `json:"modality"`
+	Operations            []string `json:"operations"`
+	AspectRatios          []string `json:"aspectRatios"`
+	ResolutionTiers       []string `json:"resolutionTiers"`
+	Durations             []int    `json:"durations"`
+	MaxReferenceImages    int      `json:"max_reference_images"`
+	MaxReferenceVideos    int      `json:"max_reference_videos"`
+	MaxReferenceAudios    int      `json:"max_reference_audios"`
+	MaxReferenceMedia     int      `json:"max_reference_media"`
+	SupportsGenerateAudio bool   `json:"supports_generate_audio"`
+	ReferenceMode         string   `json:"reference_mode"`
 }
 
 type PublicAPIModelList struct {

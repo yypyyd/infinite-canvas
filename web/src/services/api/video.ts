@@ -1,8 +1,9 @@
 import axios from "axios";
 
 import { dataUrlToFile } from "@/lib/image-utils";
+import { videoReferenceCapabilities, VIDEO_REFERENCE_LIMITS } from "@/lib/video-reference";
 import { defaultVideoDurations, defaultVideoRatios, defaultVideoResolutions, normalizeVideoRatio, normalizeVideoResolution, videoOutputSize } from "@/lib/video-format";
-import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
+import { getMediaBlob, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
 import { requestImageQuestion, type ChatCompletionMessage } from "@/services/api/image";
 import { authorizationHeaders, organizationHeaders } from "@/services/api/request";
@@ -38,11 +39,16 @@ export async function requestVideoCreativeAnalysis(config: AiConfig, sourceUrl: 
 export async function requestVideoGeneration(config: AiConfig, prompt: string, references: ReferenceImage[] = [], videoReferences: ReferenceVideo[] = [], audioReferences: ReferenceAudio[] = [], options?: RequestOptions): Promise<VideoGenerationResult> {
     const model = (config.model || config.videoModel).trim();
     if (!model) throw new Error("请先配置视频模型");
-    if (videoReferences.length || audioReferences.length) throw new Error("OpenAI 兼容视频接口只接受参考图片，请移除参考视频和参考音频");
     const definition = findVideoModel(model);
+    const referenceCapabilities = videoReferenceCapabilities(model, definition ? [definition] : undefined);
     const maxReferenceImages = definition?.maxReferenceImages || 0;
     if (references.length && maxReferenceImages === 0) throw new Error("当前视频模型不支持参考图");
     if (references.length > maxReferenceImages) throw new Error(`当前视频模型最多支持 ${maxReferenceImages} 张参考图`);
+    if (videoReferences.length && !referenceCapabilities.video) throw new Error("当前视频模型不支持参考视频");
+    if (audioReferences.length && !referenceCapabilities.audio) throw new Error("当前视频模型不支持参考音频");
+    if (videoReferences.length > referenceCapabilities.maxVideos) throw new Error(`当前视频模型最多支持 ${referenceCapabilities.maxVideos} 个参考视频`);
+    if (audioReferences.length > referenceCapabilities.maxAudios) throw new Error(`当前视频模型最多支持 ${referenceCapabilities.maxAudios} 个参考音频`);
+    if (references.length + videoReferences.length + audioReferences.length > referenceCapabilities.maxMedia) throw new Error(`当前视频模型所有参考素材合计最多支持 ${referenceCapabilities.maxMedia} 个`);
     const ratio = supportedValue(definition?.aspectRatios, normalizeVideoRatio(config.size), defaultVideoRatios[0]);
     const resolution = supportedValue(definition?.resolutionTiers, normalizeVideoResolution(config.vquality), defaultVideoResolutions[0]);
     const duration = supportedNumber(definition?.durations, Number(config.videoSeconds), defaultVideoDurations[0]);
@@ -52,8 +58,15 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
     body.append("prompt", prompt);
     body.append("seconds", String(duration));
     body.append("size", videoOutputSize(resolution, ratio));
-    const referenceFiles = await Promise.all(references.map(async (reference) => dataUrlToFile({ ...reference, dataUrl: await imageToDataUrl(reference) })));
+    if (referenceCapabilities.generateAudio) body.append("generate_audio", String(config.videoGenerateAudio !== "false"));
+    const [referenceFiles, referenceVideoFiles, referenceAudioFiles] = await Promise.all([
+        Promise.all(references.map(async (reference) => dataUrlToFile({ ...reference, dataUrl: await imageToDataUrl(reference) }))),
+        Promise.all(videoReferences.map((reference) => mediaReferenceToFile(reference, "video"))),
+        Promise.all(audioReferences.map((reference) => mediaReferenceToFile(reference, "audio"))),
+    ]);
     referenceFiles.forEach((reference) => body.append("input_reference", reference));
+    referenceVideoFiles.forEach((reference) => body.append("reference_videos", reference));
+    referenceAudioFiles.forEach((reference) => body.append("reference_audios", reference));
 
     try {
         const created = unwrapVideoResponse((await axios.post<ApiVideoResponse>("/api/v1/videos", body, { headers: aiHeaders(options?.idempotencyKey), signal: options?.signal })).data);
@@ -90,6 +103,18 @@ function aiHeaders(idempotencyKey?: string) {
 
 function findVideoModel(model: string) {
     return useConfigStore.getState().publicSettings?.modelChannel.models?.find((item) => item.id === model);
+}
+
+async function mediaReferenceToFile(reference: ReferenceVideo | ReferenceAudio, kind: "video" | "audio") {
+    let blob = reference.storageKey ? await getMediaBlob(reference.storageKey) : null;
+    if (!blob && reference.url) {
+        const response = await fetch(reference.url);
+        if (response.ok) blob = await response.blob();
+    }
+    if (!blob) throw new Error(`参考${kind === "video" ? "视频" : "音频"}读取失败，请重新上传`);
+    const maxBytes = kind === "video" ? VIDEO_REFERENCE_LIMITS.videoMaxBytes : VIDEO_REFERENCE_LIMITS.audioMaxBytes;
+    if (blob.size > maxBytes) throw new Error(`参考${kind === "video" ? "视频不能超过 50MB" : "音频不能超过 15MB"}`);
+    return new File([blob], reference.name || `reference-${kind}`, { type: reference.type || blob.type || (kind === "video" ? "video/mp4" : "audio/mpeg") });
 }
 
 function supportedValue(items: string[] | undefined, value: string, fallback: string) {

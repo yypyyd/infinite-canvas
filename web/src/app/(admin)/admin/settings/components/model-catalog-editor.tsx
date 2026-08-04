@@ -224,6 +224,10 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
                                         model.resolutionTiers.join(" / "),
                                         model.durations.length ? `${model.durations.join(" / ")} 秒` : "",
                                         model.maxReferenceImages ? `最多 ${model.maxReferenceImages} 张参考图` : "",
+                                        model.maxReferenceVideos ? `最多 ${model.maxReferenceVideos} 个参考视频` : "",
+                                        model.maxReferenceAudios ? `最多 ${model.maxReferenceAudios} 个参考音频` : "",
+                                        model.maxReferenceMedia ? `参考素材合计 ${model.maxReferenceMedia} 个` : "",
+                                        model.supportsGenerateAudio ? "生成音轨" : "",
                                     ]
                                         .filter(Boolean)
                                         .join(" · ")}
@@ -477,6 +481,10 @@ function createModel(id: string, modality: string, sort: number, channelModel?: 
         resolutionTiers: channelModel?.resolutionTiers?.length ? channelModel.resolutionTiers : defaultResolutionTiers(resolvedModality),
         durations: resolvedModality === "video" ? uniqueNumbers(channelModel?.durations?.length ? channelModel.durations : [6, 10]) : [],
         maxReferenceImages: channelModel?.maxReferenceImages || 0,
+        maxReferenceVideos: channelModel?.maxReferenceVideos || 0,
+        maxReferenceAudios: channelModel?.maxReferenceAudios || 0,
+        maxReferenceMedia: channelModel?.maxReferenceMedia || 0,
+        supportsGenerateAudio: channelModel?.supportsGenerateAudio || false,
         referenceMode: channelModel?.referenceMode || "none",
         remark: "",
     };
@@ -493,6 +501,10 @@ function syncModelCapabilities(model: AdminManagedModel, channelModel?: AdminCha
         resolutionTiers: channelModel.resolutionTiers.length ? channelModel.resolutionTiers : model.resolutionTiers,
         durations: modality === "video" && channelModel.durations.length ? channelModel.durations : model.durations,
         maxReferenceImages: channelModel.maxReferenceImages,
+        maxReferenceVideos: channelModel.maxReferenceVideos,
+        maxReferenceAudios: channelModel.maxReferenceAudios,
+        maxReferenceMedia: channelModel.maxReferenceMedia,
+        supportsGenerateAudio: channelModel.supportsGenerateAudio,
         referenceMode: channelModel.referenceMode,
     };
 }
@@ -521,6 +533,10 @@ function normalizeModels(models: AdminManagedModel[]): AdminManagedModel[] {
                 resolutionTiers: supportsResolution ? unique(model.resolutionTiers) : [],
                 durations: modality === "video" ? uniqueNumbers(model.durations) : [],
                 maxReferenceImages: supportsResolution ? Math.max(0, Math.floor(Number(model.maxReferenceImages) || 0)) : 0,
+                maxReferenceVideos: modality === "video" ? Math.max(0, Math.floor(Number(model.maxReferenceVideos) || 0)) : 0,
+                maxReferenceAudios: modality === "video" ? Math.max(0, Math.floor(Number(model.maxReferenceAudios) || 0)) : 0,
+                maxReferenceMedia: modality === "video" ? Math.max(0, Math.floor(Number(model.maxReferenceMedia) || 0)) : 0,
+                supportsGenerateAudio: modality === "video" && model.supportsGenerateAudio === true,
                 referenceMode: supportsResolution && (model.referenceMode === "frame" || model.referenceMode === "asset") ? model.referenceMode : "none",
                 remark: model.remark || "",
             };

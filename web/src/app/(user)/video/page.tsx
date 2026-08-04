@@ -104,6 +104,8 @@ export default function VideoPage() {
     const model = effectiveConfig.videoModel || effectiveConfig.model;
     const referenceCapabilities = videoReferenceCapabilities(model, managedModels);
     const imageReferenceLimit = referenceCapabilities.maxImages;
+    const referenceCount = references.length + videoReferences.length + audioReferences.length;
+    const referenceSlots = Math.max(0, referenceCapabilities.maxMedia - referenceCount);
     const referenceAccept = [referenceCapabilities.image ? "image/*" : "", referenceCapabilities.video ? "video/mp4,video/quicktime" : "", referenceCapabilities.audio ? "audio/mpeg,audio/wav,audio/x-wav,.mp3,.wav" : ""].filter(Boolean).join(",");
     const canGenerate = Boolean(prompt.trim());
     const creditQuote = requestCreditQuote({
@@ -145,16 +147,36 @@ export default function VideoPage() {
     }, [historyOwnerId]);
 
     useEffect(() => {
-        setReferences((current) => current.slice(0, imageReferenceLimit));
-    }, [imageReferenceLimit]);
+        const imageCount = Math.min(references.length, imageReferenceLimit, referenceCapabilities.maxMedia);
+        const videoCount = Math.min(videoReferences.length, referenceCapabilities.maxVideos, Math.max(0, referenceCapabilities.maxMedia - imageCount));
+        const audioCount = Math.min(audioReferences.length, referenceCapabilities.maxAudios, Math.max(0, referenceCapabilities.maxMedia - imageCount - videoCount));
+        if (references.length > imageCount) setReferences((current) => current.slice(0, imageCount));
+        if (videoReferences.length > videoCount) setVideoReferences((current) => current.slice(0, videoCount));
+        if (audioReferences.length > audioCount) setAudioReferences((current) => current.slice(0, audioCount));
+    }, [audioReferences.length, imageReferenceLimit, referenceCapabilities.maxAudios, referenceCapabilities.maxMedia, referenceCapabilities.maxVideos, references.length, videoReferences.length]);
 
     const addReferences = async (files?: FileList | null) => {
         const selectedFiles = Array.from(files || []);
         const unsupported = selectedFiles.filter((file) => (file.type.startsWith("image/") ? !referenceCapabilities.image : file.type.startsWith("video/") ? !referenceCapabilities.video : isSupportedAudioFile(file) ? !referenceCapabilities.audio : true));
         if (unsupported.length) message.warning("已忽略当前模型不支持的参考素材");
-        const imageFiles = referenceCapabilities.image ? selectedFiles.filter((file) => file.type.startsWith("image/") && file.size <= VIDEO_REFERENCE_LIMITS.imageMaxBytes).slice(0, Math.max(0, imageReferenceLimit - references.length)) : [];
-        const videoFiles = referenceCapabilities.video ? selectedFiles.filter((file) => file.type.startsWith("video/") && file.size <= VIDEO_REFERENCE_LIMITS.videoMaxBytes).slice(0, VIDEO_REFERENCE_LIMITS.videos - videoReferences.length) : [];
-        const audioFiles = referenceCapabilities.audio ? selectedFiles.filter((file) => isSupportedAudioFile(file) && file.size <= VIDEO_REFERENCE_LIMITS.audioMaxBytes).slice(0, VIDEO_REFERENCE_LIMITS.audios - audioReferences.length) : [];
+        let remainingImages = Math.max(0, imageReferenceLimit - references.length);
+        let remainingVideos = Math.max(0, referenceCapabilities.maxVideos - videoReferences.length);
+        let remainingAudios = Math.max(0, referenceCapabilities.maxAudios - audioReferences.length);
+        let remainingMedia = referenceSlots;
+        const candidateFiles = selectedFiles.filter((file) => (file.type.startsWith("image/") ? referenceCapabilities.image && file.size <= VIDEO_REFERENCE_LIMITS.imageMaxBytes : file.type.startsWith("video/") ? referenceCapabilities.video && file.size <= VIDEO_REFERENCE_LIMITS.videoMaxBytes : isSupportedAudioFile(file) && referenceCapabilities.audio && file.size <= VIDEO_REFERENCE_LIMITS.audioMaxBytes));
+        const acceptedFiles = candidateFiles.filter((file) => {
+            if (!remainingMedia) return false;
+            if (file.type.startsWith("image/") && remainingImages) remainingImages--;
+            else if (file.type.startsWith("video/") && remainingVideos) remainingVideos--;
+            else if (isSupportedAudioFile(file) && remainingAudios) remainingAudios--;
+            else return false;
+            remainingMedia--;
+            return true;
+        });
+        if (candidateFiles.length > acceptedFiles.length) message.warning(`已按单项及合计 ${referenceCapabilities.maxMedia} 个的上限截取参考素材`);
+        const imageFiles = acceptedFiles.filter((file) => file.type.startsWith("image/"));
+        const videoFiles = acceptedFiles.filter((file) => file.type.startsWith("video/"));
+        const audioFiles = acceptedFiles.filter(isSupportedAudioFile);
         if (referenceCapabilities.image && selectedFiles.some((file) => file.type.startsWith("image/") && file.size > VIDEO_REFERENCE_LIMITS.imageMaxBytes)) message.warning("已忽略超过 30MB 的参考图");
         const nextReferences = await Promise.all(
             imageFiles.map(async (file) => {
@@ -179,8 +201,8 @@ export default function VideoPage() {
             message.warning,
         );
         setReferences((value) => [...value, ...nextReferences].slice(0, imageReferenceLimit));
-        setVideoReferences((value) => [...value, ...nextVideoReferences].slice(0, VIDEO_REFERENCE_LIMITS.videos));
-        setAudioReferences((value) => [...value, ...nextAudioReferences].slice(0, VIDEO_REFERENCE_LIMITS.audios));
+        setVideoReferences((value) => [...value, ...nextVideoReferences].slice(0, referenceCapabilities.maxVideos));
+        setAudioReferences((value) => [...value, ...nextAudioReferences].slice(0, referenceCapabilities.maxAudios));
     };
 
     const addReferencesFromClipboard = async () => {
@@ -196,7 +218,7 @@ export default function VideoPage() {
                 return;
             }
             const nextReferences = await Promise.all(
-                blobs.slice(0, Math.max(0, imageReferenceLimit - references.length)).map(async (blob, index) => {
+                blobs.slice(0, Math.min(referenceSlots, Math.max(0, imageReferenceLimit - references.length))).map(async (blob, index) => {
                     const image = await uploadImage(blob);
                     return { id: nanoid(), name: `clipboard-${index + 1}.png`, type: image.mimeType, dataUrl: image.url, storageKey: image.storageKey };
                 }),
@@ -298,10 +320,12 @@ export default function VideoPage() {
         if (payload.kind === "text") {
             setPrompt(payload.content);
         } else if (payload.kind === "image" && referenceCapabilities.image) {
+            if (!referenceSlots || references.length >= imageReferenceLimit) return void message.warning(`当前模型所有参考素材合计最多支持 ${referenceCapabilities.maxMedia} 个`);
             const stored = await uploadImage(payload.dataUrl);
             setReferences((value) => [...value, { id: nanoid(), name: payload.title, type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey }].slice(0, imageReferenceLimit));
         } else if (payload.kind === "video" && referenceCapabilities.video) {
-            setVideoReferences((value) => [...value, { id: nanoid(), name: payload.title, type: "video/mp4", url: payload.url, storageKey: payload.storageKey, width: payload.width, height: payload.height }].slice(0, VIDEO_REFERENCE_LIMITS.videos));
+            if (!referenceSlots || videoReferences.length >= referenceCapabilities.maxVideos) return void message.warning(`当前模型所有参考素材合计最多支持 ${referenceCapabilities.maxMedia} 个`);
+            setVideoReferences((value) => [...value, { id: nanoid(), name: payload.title, type: "video/mp4", url: payload.url, storageKey: payload.storageKey, width: payload.width, height: payload.height }].slice(0, referenceCapabilities.maxVideos));
         } else {
             message.warning("当前模型不支持该类型的参考素材");
         }
@@ -402,15 +426,17 @@ export default function VideoPage() {
                                 <Input.TextArea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={7} placeholder="描述镜头运动、主体动作、场景氛围和画面风格" />
                             </div>
 
+                            {referenceCapabilities.maxMedia ? <div className="text-xs text-muted-foreground">参考图片、视频和音频合计 {referenceCount}/{referenceCapabilities.maxMedia} 个</div> : null}
+
                             {referenceCapabilities.image ? (
                                 <div className="min-w-0">
                                     <div className="mb-2 flex items-center justify-between gap-3">
                                         <span className="text-base font-semibold">参考图</span>
                                         <div className="flex gap-2">
-                                            <Button size="small" disabled={references.length >= imageReferenceLimit} icon={<ClipboardPaste className="size-3.5" />} onClick={() => void addReferencesFromClipboard()}>
+                                            <Button size="small" disabled={!referenceSlots || references.length >= imageReferenceLimit} icon={<ClipboardPaste className="size-3.5" />} onClick={() => void addReferencesFromClipboard()}>
                                                 剪切板
                                             </Button>
-                                            <Button size="small" disabled={references.length >= imageReferenceLimit} icon={<Upload className="size-3.5" />} onClick={() => fileInputRef.current?.click()}>
+                                            <Button size="small" disabled={!referenceSlots || references.length >= imageReferenceLimit} icon={<Upload className="size-3.5" />} onClick={() => fileInputRef.current?.click()}>
                                                 上传
                                             </Button>
                                         </div>
@@ -440,7 +466,7 @@ export default function VideoPage() {
                                 <div className="min-w-0">
                                     <div className="mb-2 flex items-center justify-between gap-3">
                                         <span className="text-base font-semibold">参考视频</span>
-                                        <Button size="small" icon={<Upload className="size-3.5" />} onClick={() => fileInputRef.current?.click()}>
+                                        <Button size="small" disabled={!referenceSlots || videoReferences.length >= referenceCapabilities.maxVideos} icon={<Upload className="size-3.5" />} onClick={() => fileInputRef.current?.click()}>
                                             上传
                                         </Button>
                                     </div>
@@ -460,7 +486,7 @@ export default function VideoPage() {
                                                 </button>
                                             </div>
                                         ))}
-                                        {!videoReferences.length ? <div className="flex min-w-full items-center justify-center text-sm text-stone-500">暂无参考视频，最多 3 个</div> : null}
+                                        {!videoReferences.length ? <div className="flex min-w-full items-center justify-center text-sm text-stone-500">暂无参考视频，最多 {referenceCapabilities.maxVideos} 个</div> : null}
                                     </div>
                                 </div>
                             ) : null}
@@ -469,7 +495,7 @@ export default function VideoPage() {
                                 <div className="min-w-0">
                                     <div className="mb-2 flex items-center justify-between gap-3">
                                         <span className="text-base font-semibold">参考音频</span>
-                                        <Button size="small" icon={<Upload className="size-3.5" />} onClick={() => fileInputRef.current?.click()}>
+                                        <Button size="small" disabled={!referenceSlots || audioReferences.length >= referenceCapabilities.maxAudios} icon={<Upload className="size-3.5" />} onClick={() => fileInputRef.current?.click()}>
                                             上传
                                         </Button>
                                     </div>
@@ -493,7 +519,7 @@ export default function VideoPage() {
                                                 </button>
                                             </div>
                                         ))}
-                                        {!audioReferences.length ? <div className="flex min-w-full items-center justify-center text-center text-sm text-stone-500">暂无参考音频，最多 3 个，mp3/wav，单个 15MB 内</div> : null}
+                                        {!audioReferences.length ? <div className="flex min-w-full items-center justify-center text-center text-sm text-stone-500">暂无参考音频，最多 {referenceCapabilities.maxAudios} 个，mp3/wav，单个 15MB 内</div> : null}
                                     </div>
                                 </div>
                             ) : null}

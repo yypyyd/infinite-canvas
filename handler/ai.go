@@ -809,6 +809,9 @@ type aiRequestMeta struct {
 	ResolutionTier  string
 	Duration        int
 	ReferenceImages int
+	ReferenceVideos int
+	ReferenceAudios int
+	GenerateAudio   bool
 }
 
 func readAIRequest(r *http.Request) ([]byte, string, aiRequestMeta, error) {
@@ -920,13 +923,17 @@ func readMultipartAIRequest(body []byte, contentType string) aiRequestMeta {
 		Resolution:      firstFormValue(form, "resolution_name", "resolution", "vquality"),
 		ResolutionTier:  firstFormValue(form, "resolutionTier"),
 		Duration:        readIntValue(firstFormValue(form, "seconds", "duration", "videoSeconds"), 1),
-		ReferenceImages: len(form.File["image"]) + len(form.File["image[]"]) + len(form.File["input_reference"]) + len(form.File["input_reference[]"]),
+		ReferenceImages: len(form.File["image"]) + len(form.File["image[]"]) + len(form.File["input_reference"]) + len(form.File["input_reference[]"]) + len(form.File["reference_images"]) + len(form.File["reference_images[]"]),
+		ReferenceVideos: len(form.File["reference_videos"]) + len(form.File["reference_videos[]"]),
+		ReferenceAudios: len(form.File["reference_audios"]) + len(form.File["reference_audios[]"]),
+		GenerateAudio:   len(form.Value["generate_audio"]) > 0,
 	}
 }
 
 func readJSONAIRequest(body []byte) aiRequestMeta {
 	var payload map[string]any
 	_ = json.Unmarshal(body, &payload)
+	_, generateAudio := payload["generate_audio"]
 	return aiRequestMeta{
 		ModelName:       readStringField(payload, "model"),
 		Count:           readIntField(payload, 1, "n"),
@@ -936,6 +943,9 @@ func readJSONAIRequest(body []byte) aiRequestMeta {
 		ResolutionTier:  readStringField(payload, "resolutionTier"),
 		Duration:        readIntField(payload, 1, "duration", "seconds", "videoSeconds"),
 		ReferenceImages: referenceImageCount(firstAnyValue(payload, "reference_images", "input_reference", "input_reference[]")),
+		ReferenceVideos: referenceImageCount(firstAnyValue(payload, "reference_videos", "reference_videos[]")),
+		ReferenceAudios: referenceImageCount(firstAnyValue(payload, "reference_audios", "reference_audios[]")),
+		GenerateAudio:   generateAudio,
 	}
 }
 
@@ -1009,6 +1019,9 @@ func pricingRequestForAIPath(path string, request aiRequestMeta) service.Pricing
 		Resolution:      request.Resolution,
 		Quantity:        1,
 		ReferenceImages: request.ReferenceImages,
+		ReferenceVideos: request.ReferenceVideos,
+		ReferenceAudios: request.ReferenceAudios,
+		GenerateAudio:   request.GenerateAudio,
 	}
 	switch path {
 	case "/images/generations":

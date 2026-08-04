@@ -1,16 +1,18 @@
 export const VIDEO_REFERENCE_LIMITS = {
-    videos: 0,
-    audios: 0,
     imageMaxBytes: 30 * 1024 * 1024,
-    videoMaxBytes: 0,
-    audioMaxBytes: 0,
+    videoMaxBytes: 50 * 1024 * 1024,
+    audioMaxBytes: 15 * 1024 * 1024,
 };
 
-export type VideoModelDefinition = { id: string; maxReferenceImages?: number };
+export type VideoModelDefinition = { id: string; maxReferenceImages?: number; maxReferenceVideos?: number; maxReferenceAudios?: number; maxReferenceMedia?: number; supportsGenerateAudio?: boolean };
 
 export function videoReferenceCapabilities(model: string, definitions?: VideoModelDefinition[]) {
-    const maxImages = Math.max(0, Math.floor(Number(definitions?.find((item) => item.id === model)?.maxReferenceImages) || 0));
-    return { image: maxImages > 0, video: false, audio: false, maxImages };
+    const definition = definitions?.find((item) => item.id === model);
+    const maxImages = Math.max(0, Math.floor(Number(definition?.maxReferenceImages) || 0));
+    const maxVideos = Math.max(0, Math.floor(Number(definition?.maxReferenceVideos) || 0));
+    const maxAudios = Math.max(0, Math.floor(Number(definition?.maxReferenceAudios) || 0));
+    const maxMedia = Math.max(0, Math.floor(Number(definition?.maxReferenceMedia) || maxImages + maxVideos + maxAudios));
+    return { image: maxImages > 0, video: maxVideos > 0, audio: maxAudios > 0, generateAudio: definition?.supportsGenerateAudio === true, maxImages, maxVideos, maxAudios, maxMedia };
 }
 
 export function videoReferenceLabel(kind: "image" | "video" | "audio", index: number) {

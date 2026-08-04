@@ -1,7 +1,7 @@
 "use client";
 
 import { DeleteOutlined } from "@ant-design/icons";
-import { Alert, Button, Card, Col, Empty, Flex, Form, Input, InputNumber, Row, Select, Tag, Typography } from "antd";
+import { Alert, Button, Card, Col, Empty, Flex, Form, Input, InputNumber, Row, Select, Switch, Tag, Typography } from "antd";
 import { useMemo } from "react";
 
 import type { AdminChannelModel, AdminManagedModel } from "@/services/api/admin";
@@ -29,7 +29,7 @@ export function ChannelModelCapabilitiesEditor({ managedModels }: { managedModel
 
     return (
         <Flex vertical gap={12}>
-            <Alert type="info" showIcon title="渠道只声明上游能力" description="模型售价和对外开放能力仍在模型中心统一维护；这里配置当前渠道实际能处理的类型、操作、比例、分辨率、时长和参考图数量，路由会先匹配能力再按渠道权重选择。" />
+            <Alert type="info" showIcon title="渠道只声明上游能力" description="模型售价和对外开放能力仍在模型中心统一维护；这里配置当前渠道实际能处理的类型、操作、比例、分辨率、时长、参考素材和生成音轨能力，路由会先匹配能力再按渠道权重选择。" />
             <Form.List name="models">
                 {(fields, { remove }) =>
                     fields.length ? (
@@ -123,6 +123,30 @@ export function ChannelModelCapabilitiesEditor({ managedModels }: { managedModel
                                                     <Col xs={24} md={12}>
                                                         <Form.Item name={[field.name, "referenceMode"]} label="参考模式" extra="frame 表示帧参考，asset 表示素材参考；不支持参考图时选择 none。">
                                                             <Select options={referenceModeOptions} />
+                                                        </Form.Item>
+                                                    </Col>
+                                                </>
+                                            ) : null}
+                                            {modality === "video" ? (
+                                                <>
+                                                    <Col xs={24} md={6}>
+                                                        <Form.Item name={[field.name, "maxReferenceVideos"]} label="最多参考视频" extra="填写 0 表示不接受参考视频。">
+                                                            <InputNumber min={0} precision={0} className="w-full" addonAfter="个" />
+                                                        </Form.Item>
+                                                    </Col>
+                                                    <Col xs={24} md={6}>
+                                                        <Form.Item name={[field.name, "maxReferenceAudios"]} label="最多参考音频" extra="填写 0 表示不接受参考音频。">
+                                                            <InputNumber min={0} precision={0} className="w-full" addonAfter="个" />
+                                                        </Form.Item>
+                                                    </Col>
+                                                    <Col xs={24} md={6}>
+                                                        <Form.Item name={[field.name, "maxReferenceMedia"]} label="参考素材合计" extra="图片、视频、音频合计上限；填写 0 表示不额外限制。">
+                                                            <InputNumber min={0} precision={0} className="w-full" addonAfter="个" />
+                                                        </Form.Item>
+                                                    </Col>
+                                                    <Col xs={24} md={6}>
+                                                        <Form.Item name={[field.name, "supportsGenerateAudio"]} label="支持生成音轨" valuePropName="checked">
+                                                            <Switch checkedChildren="支持" unCheckedChildren="不支持" />
                                                         </Form.Item>
                                                     </Col>
                                                 </>

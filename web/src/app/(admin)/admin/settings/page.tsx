@@ -510,6 +510,10 @@ function normalizeManagedModels(items: Partial<AdminManagedModel>[], availableMo
                   resolutionTiers: defaultResolutionTiers(modality),
                   durations: [],
                   maxReferenceImages: 0,
+                  maxReferenceVideos: 0,
+                  maxReferenceAudios: 0,
+                  maxReferenceMedia: 0,
+                  supportsGenerateAudio: false,
                   referenceMode: "none" as const,
                   remark: "",
               };
@@ -533,6 +537,10 @@ function normalizeManagedModels(items: Partial<AdminManagedModel>[], availableMo
                 resolutionTiers: supportsResolution ? Array.from(new Set((item.resolutionTiers || []).map(normalizeResolutionTier).filter(Boolean))) : [],
                 durations: modality === "video" ? normalizeDurations(item.durations) : [],
                 maxReferenceImages: supportsResolution ? Math.max(0, Math.floor(Number(item.maxReferenceImages) || 0)) : 0,
+                maxReferenceVideos: modality === "video" ? Math.max(0, Math.floor(Number(item.maxReferenceVideos) || 0)) : 0,
+                maxReferenceAudios: modality === "video" ? Math.max(0, Math.floor(Number(item.maxReferenceAudios) || 0)) : 0,
+                maxReferenceMedia: modality === "video" ? Math.max(0, Math.floor(Number(item.maxReferenceMedia) || 0)) : 0,
+                supportsGenerateAudio: modality === "video" && item.supportsGenerateAudio === true,
                 referenceMode: supportsResolution ? normalizeReferenceMode(item.referenceMode) : "none",
                 remark: item.remark || "",
             } as AdminManagedModel;
@@ -658,6 +666,10 @@ function normalizeChannelModels(items: Partial<AdminChannelModel>[] = []): Admin
                 resolutionTiers: Array.from(new Set((item.resolutionTiers || []).map(normalizeResolutionTier).filter(Boolean))),
                 durations: normalizeDurations(item.durations),
                 maxReferenceImages: Math.max(0, Math.floor(Number(item.maxReferenceImages) || 0)),
+                maxReferenceVideos: Math.max(0, Math.floor(Number(item.maxReferenceVideos) || 0)),
+                maxReferenceAudios: Math.max(0, Math.floor(Number(item.maxReferenceAudios) || 0)),
+                maxReferenceMedia: Math.max(0, Math.floor(Number(item.maxReferenceMedia) || 0)),
+                supportsGenerateAudio: item.supportsGenerateAudio === true,
                 referenceMode: normalizeReferenceMode(item.referenceMode),
             },
         ];
@@ -730,6 +742,10 @@ function collectChannelModels(channels: AdminModelChannel[]) {
                       resolutionTiers: Array.from(new Set([...current.resolutionTiers, ...item.resolutionTiers])),
                       durations: normalizeDurations([...current.durations, ...item.durations]),
                       maxReferenceImages: Math.max(current.maxReferenceImages, item.maxReferenceImages),
+                      maxReferenceVideos: Math.max(current.maxReferenceVideos, item.maxReferenceVideos),
+                      maxReferenceAudios: Math.max(current.maxReferenceAudios, item.maxReferenceAudios),
+                      maxReferenceMedia: Math.max(current.maxReferenceMedia, item.maxReferenceMedia),
+                      supportsGenerateAudio: current.supportsGenerateAudio || item.supportsGenerateAudio,
                       referenceMode: useIncomingReference ? item.referenceMode : current.referenceMode,
                   }
                 : item,

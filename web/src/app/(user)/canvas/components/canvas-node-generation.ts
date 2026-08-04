@@ -27,7 +27,7 @@ export type NodeGenerationInput = {
     audio?: ReferenceAudio;
 };
 
-export type NodeReferenceCapabilities = { image: boolean; video: boolean; audio: boolean; maxImages?: number };
+export type NodeReferenceCapabilities = { image: boolean; video: boolean; audio: boolean; maxImages?: number; maxVideos?: number; maxAudios?: number; maxMedia?: number };
 
 export function buildNodeGenerationContext(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[], prompt: string, capabilities?: NodeReferenceCapabilities): NodeGenerationContext {
     const inputs = filterNodeGenerationInputs(buildNodeGenerationInputs(nodeId, nodes, connections), capabilities);
@@ -59,11 +59,28 @@ export function buildNodeGenerationContext(nodeId: string, nodes: CanvasNodeData
 export function filterNodeGenerationInputs(inputs: NodeGenerationInput[], capabilities?: NodeReferenceCapabilities) {
     if (!capabilities) return inputs;
     let imageCount = 0;
+    let videoCount = 0;
+    let audioCount = 0;
+    let mediaCount = 0;
     return inputs.filter((input) => {
         if (input.type === "text") return true;
-        if (input.type === "image") return capabilities.image && (capabilities.maxImages === undefined || imageCount++ < capabilities.maxImages);
-        if (input.type === "video") return capabilities.video;
-        return capabilities.audio;
+        if (capabilities.maxMedia !== undefined && mediaCount >= capabilities.maxMedia) return false;
+        if (input.type === "image" && capabilities.image && (capabilities.maxImages === undefined || imageCount < capabilities.maxImages)) {
+            imageCount++;
+            mediaCount++;
+            return true;
+        }
+        if (input.type === "video" && capabilities.video && (capabilities.maxVideos === undefined || videoCount < capabilities.maxVideos)) {
+            videoCount++;
+            mediaCount++;
+            return true;
+        }
+        if (input.type === "audio" && capabilities.audio && (capabilities.maxAudios === undefined || audioCount < capabilities.maxAudios)) {
+            audioCount++;
+            mediaCount++;
+            return true;
+        }
+        return false;
     });
 }
 

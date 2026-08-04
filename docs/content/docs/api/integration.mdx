@@ -52,6 +52,10 @@ curl "https://huantu.xyz/api/v1/models" \
       "resolutionTiers": ["1k", "2k"],
       "durations": [],
       "max_reference_images": 6,
+      "max_reference_videos": 0,
+      "max_reference_audios": 0,
+      "max_reference_media": 0,
+      "supports_generate_audio": false,
       "reference_mode": "none"
     }
   ]
@@ -68,6 +72,10 @@ curl "https://huantu.xyz/api/v1/models" \
 | `resolutionTiers` | 支持的分辨率档；空数组表示当前未公布限制 |
 | `durations` | 视频支持的秒数；非视频模型通常为空数组 |
 | `max_reference_images` | 最多支持的参考图数量；`0` 表示不支持参考图 |
+| `max_reference_videos` | 最多支持的参考视频数量；`0` 表示不支持参考视频 |
+| `max_reference_audios` | 最多支持的参考音频数量；`0` 表示不支持参考音频 |
+| `max_reference_media` | 参考图片、视频和音频的合计上限；`0` 表示没有额外的合计限制 |
+| `supports_generate_audio` | 是否接受 `generate_audio` 并支持生成音轨 |
 | `reference_mode` | 参考方式：`frame`、`asset` 或 `none` |
 
 文本模型不会出现在该列表中，对外接入也不应使用 `/chat/completions`。
@@ -166,12 +174,22 @@ curl -X POST "https://huantu.xyz/api/v1/videos" \
   -F "size=1280x720"
 ```
 
-如果 `max_reference_images` 大于 `0`，可重复提交同名 `input_reference` 文件，数量不能超过模型公布的上限：
+如果 `max_reference_images` 大于 `0`，可重复提交同名 `input_reference` 文件，数量不能超过模型公布的上限；也兼容使用 `reference_images`：
 
 ```bash
 -F "input_reference=@./reference-1.png" \
 -F "input_reference=@./reference-2.png"
 ```
+
+模型公布的 `max_reference_videos`、`max_reference_audios` 大于 `0` 时，可重复提交对应的参考素材；`supports_generate_audio=true` 时可通过 `generate_audio` 控制是否生成音轨：
+
+```bash
+-F "reference_videos=@./reference.mp4" \
+-F "reference_audios=@./reference.mp3" \
+-F "generate_audio=true"
+```
+
+参考视频单个不超过 50MB，参考音频单个不超过 15MB；各类型数量不能超过对应上限，图片、视频和音频总数也不能超过 `max_reference_media`。例如 Seedance 公布图片 9、视频 3、音频 3、合计 9 时，可以提交 `3 张图片 + 3 个视频 + 3 个音频`，不能同时提交 15 个参考素材。
 
 `seconds` 必须使用模型 `durations` 中的值。`size` 的比例和分辨率应分别匹配 `aspectRatios` 与 `resolutionTiers`，例如 `1280x720` 表示 16:9、720P。
 

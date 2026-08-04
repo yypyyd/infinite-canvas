@@ -500,6 +500,10 @@ function capabilityTags(model: MarketplaceModel) {
         ...model.resolutionTiers.map((item) => item.toUpperCase()),
         ...model.durations.map((item) => `${item} 秒`),
         ...(model.maxReferenceImages ? [`${model.maxReferenceImages} 张参考图`] : []),
+        ...(model.maxReferenceVideos ? [`${model.maxReferenceVideos} 个参考视频`] : []),
+        ...(model.maxReferenceAudios ? [`${model.maxReferenceAudios} 个参考音频`] : []),
+        ...(model.maxReferenceMedia ? [`参考素材合计 ${model.maxReferenceMedia} 个`] : []),
+        ...(model.supportsGenerateAudio ? ["生成音轨"] : []),
     ];
 }
 
@@ -530,7 +534,14 @@ function buildSnippet(endpoint: string, model: MarketplaceModel, operation: Mode
         return `curl -X POST "${endpoint}/images/generations" \\\n  -H "Authorization: Bearer YOUR_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -H "Idempotency-Key: YOUR_UNIQUE_REQUEST_ID" \\\n  -d '${JSON.stringify(payload, null, 2)}'`;
     }
     if (model.modality === "video") {
-        const fields = [...(model.durations[0] ? [`seconds=${model.durations[0]}`] : []), ...(ratio && resolution ? [`size=${videoOutputSize(resolution, ratio)}`] : []), ...(model.maxReferenceImages ? ["input_reference=@./reference.png"] : [])];
+        const fields = [
+            ...(model.durations[0] ? [`seconds=${model.durations[0]}`] : []),
+            ...(ratio && resolution ? [`size=${videoOutputSize(resolution, ratio)}`] : []),
+            ...(model.maxReferenceImages ? ["input_reference=@./reference.png"] : []),
+            ...(model.maxReferenceVideos ? ["reference_videos=@./reference.mp4"] : []),
+            ...(model.maxReferenceAudios ? ["reference_audios=@./reference.mp3"] : []),
+            ...(model.supportsGenerateAudio ? ["generate_audio=true"] : []),
+        ];
         return `curl -X POST "${endpoint}/videos" \\\n  -H "Authorization: Bearer YOUR_API_KEY" \\\n  -H "Idempotency-Key: YOUR_UNIQUE_REQUEST_ID" \\\n  -F "model=${model.id}" \\\n  -F "prompt=商品在柔和光影中缓慢旋转"${fields.length ? ` \\\n${fields.map((field) => `  -F "${field}"`).join(" \\\n")}` : ""}`;
     }
     return `curl -X POST "${endpoint}/audio/speech" \\\n  -H "Authorization: Bearer YOUR_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -H "Idempotency-Key: YOUR_UNIQUE_REQUEST_ID" \\\n  -d '${JSON.stringify({ model: model.id, input: "欢迎使用道生画境开放接口。", voice: "alloy", response_format: "mp3" }, null, 2)}' \\\n  --output speech.mp3`;
@@ -548,8 +559,13 @@ function imageQuality(resolution: string) {
 }
 
 function referenceCapabilityValues(model: MarketplaceModel) {
-    if (!model.maxReferenceImages) return [];
-    return [`最多 ${model.maxReferenceImages} 张`, model.referenceMode === "frame" ? "帧参考" : model.referenceMode === "asset" ? "素材参考" : "普通参考"];
+    return [
+        ...(model.maxReferenceImages ? [`最多 ${model.maxReferenceImages} 张图片`, model.referenceMode === "frame" ? "帧参考" : model.referenceMode === "asset" ? "素材参考" : "普通参考"] : []),
+        ...(model.maxReferenceVideos ? [`最多 ${model.maxReferenceVideos} 个视频`] : []),
+        ...(model.maxReferenceAudios ? [`最多 ${model.maxReferenceAudios} 个音频`] : []),
+        ...(model.maxReferenceMedia ? [`所有参考素材合计最多 ${model.maxReferenceMedia} 个`] : []),
+        ...(model.supportsGenerateAudio ? ["支持生成音轨"] : []),
+    ];
 }
 
 function operationLabel(operation: string) {

@@ -162,4 +162,14 @@ func TestVideoModelChannelSelectionsFilterResolutionRatioAndDuration(t *testing.
 	if selections := modelChannelSelectionsForRequest(channels, hd); len(selections) != 1 || selections[0].Channel.Name != "standard-video" {
 		t.Fatalf("720p 16:9 5s selections = %#v, want standard-video", selections)
 	}
+
+	landscape480p := normalizePricingRequest(PricingRequest{Model: "video-model", Modality: "video", Operation: "generation", Unit: "second", Size: "854x480", Resolution: "480p", Quantity: 5})
+	if selections := modelChannelSelectionsForRequest(channels, landscape480p); landscape480p.AspectRatio != "16:9" || len(selections) != 1 || selections[0].Channel.Name != "standard-video" {
+		t.Fatalf("480p 16:9 5s selections = %#v with ratio %s, want standard-video", selections, landscape480p.AspectRatio)
+	}
+
+	portrait480p := normalizePricingRequest(PricingRequest{Model: "video-model", Modality: "video", Operation: "generation", Unit: "second", Size: "480x854", Resolution: "480p", Quantity: 10})
+	if selections := modelChannelSelectionsForRequest(channels, portrait480p); portrait480p.AspectRatio != "9:16" || len(selections) != 1 || selections[0].Channel.Name != "hd-video" {
+		t.Fatalf("480p 9:16 10s selections = %#v with ratio %s, want hd-video", selections, portrait480p.AspectRatio)
+	}
 }

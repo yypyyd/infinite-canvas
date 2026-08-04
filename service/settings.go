@@ -751,6 +751,13 @@ func normalizeVideoAspectRatio(value string) string {
 	if !ok {
 		return ""
 	}
+	ratio := float64(width) / float64(height)
+	if math.Abs(ratio-16.0/9.0) < 0.01 {
+		return "16:9"
+	}
+	if math.Abs(ratio-9.0/16.0) < 0.01 {
+		return "9:16"
+	}
 	a, b := width, height
 	for b != 0 {
 		a, b = b, a%b

@@ -28,7 +28,7 @@ export default function CommerceProductDetailPage() {
         await client.invalidateQueries({ queryKey: commerceQueryKeys.root(organizationId) });
     }
     function openSKU(item?: ProductSKU) {
-        const value = item || { productId: id, status: "active", imageStorageKeys: [] };
+        const value = item || { productId: id, status: "active" as const, attributes: {}, imageStorageKeys: [] };
         setDraft(value);
         form.setFieldsValue({ ...value, attributesText: JSON.stringify(value.attributes || {}, null, 2), imageStorageKeysText: (value.imageStorageKeys || []).join("\n") });
     }

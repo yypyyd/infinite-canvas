@@ -577,7 +577,7 @@ function inferModelAspectRatios(modelName: string) {
 function normalizePricingRules(items: Partial<AdminSettings["public"]["modelChannel"]["pricingRules"][number]>[]): AdminPricingRule[] {
     return items
         .filter((item) => item.model)
-        .map((item) => ({
+        .map<AdminPricingRule>((item) => ({
             model: item.model || "",
             modality: normalizePricingToken(item.modality || "image"),
             operation: normalizePricingToken(item.operation || "generation"),

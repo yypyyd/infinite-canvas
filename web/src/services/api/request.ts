@@ -12,7 +12,7 @@ export function getActiveOrganizationId() {
     return activeOrganizationId;
 }
 
-export function organizationHeaders(organizationId = activeOrganizationId) {
+export function organizationHeaders(organizationId = activeOrganizationId): Record<string, string> {
     const value = organizationId.trim();
     return value ? { "X-Organization-ID": value } : {};
 }
@@ -78,7 +78,7 @@ export async function apiDelete<T>(url: string, token?: string) {
     });
 }
 
-export function authorizationHeaders(token?: string) {
+export function authorizationHeaders(token?: string): Record<string, string> {
     return token && token !== COOKIE_SESSION_TOKEN ? { Authorization: `Bearer ${token}` } : {};
 }
 

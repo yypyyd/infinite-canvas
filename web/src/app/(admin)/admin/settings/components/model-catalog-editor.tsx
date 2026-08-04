@@ -503,10 +503,10 @@ function defaultResolutionTiers(modality: string) {
     return [];
 }
 
-function normalizeModels(models: AdminManagedModel[]) {
+function normalizeModels(models: AdminManagedModel[]): AdminManagedModel[] {
     const seen = new Set<string>();
     return models
-        .map((model, index) => {
+        .map<AdminManagedModel>((model, index) => {
             const modality = model.modality || inferModelModality(model.id);
             const supportsResolution = modality === "image" || modality === "video";
             return {

@@ -12,7 +12,7 @@ import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 
 type VideoResponse = { id: string; status?: string; error?: { message?: string } };
-type ApiVideoResponse = VideoResponse | { code?: number; data?: VideoResponse | null; msg?: string };
+type ApiVideoResponse = VideoResponse | { code: number; data: VideoResponse | null; msg?: string };
 type RequestOptions = { signal?: AbortSignal; idempotencyKey?: string };
 
 const VIDEO_POLL_INTERVAL_MS = 2500;
@@ -100,7 +100,7 @@ function supportedNumber(items: number[] | undefined, value: number, fallback: n
     return items?.length ? (items.includes(value) ? value : items[0]) : fallback;
 }
 
-function unwrapVideoResponse(payload: ApiVideoResponse) {
+function unwrapVideoResponse(payload: ApiVideoResponse): VideoResponse {
     if (!payload) throw new Error("接口没有返回视频任务");
     if ("code" in payload && typeof payload.code === "number") {
         if (payload.code !== 0) throw new Error(payload.msg || "请求失败");

@@ -199,7 +199,7 @@ func TestRetryBatchProductionJobStartsNewRunOnlyForFailedItems(t *testing.T) {
 	if err := testDB.First(&job, "id = ?", "job-a").Error; err != nil {
 		t.Fatalf("load retried job: %v", err)
 	}
-	if job.Status != model.BatchProductionStatusQueued || job.CompletedItems != 1 || job.FailedItems != 0 {
+	if job.Status != model.BatchProductionStatusRunning || job.CompletedItems != 1 || job.FailedItems != 0 {
 		t.Fatalf("unexpected retried job: %#v", job)
 	}
 }

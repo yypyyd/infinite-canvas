@@ -546,10 +546,7 @@ function InfiniteCanvasPage() {
         const restoreRequest = ++restoreRequestRef.current;
         const savedProject = lastSavedProjectRef.current;
         const hadInterruptedGeneration = project.nodes.some((node) => node.metadata?.status === NODE_STATUS_LOADING);
-        const [restoredNodes, restoredSessions] = await Promise.all([
-            hydrateCanvasImages(resetInterruptedGeneration(project.nodes)),
-            hydrateAssistantImages(project.chatSessions || []),
-        ]);
+        const [restoredNodes, restoredSessions] = await Promise.all([hydrateCanvasImages(resetInterruptedGeneration(project.nodes)), hydrateAssistantImages(project.chatSessions || [])]);
         if (restoreRequest !== restoreRequestRef.current) return;
         if (preserveLocalChanges && (generationRequestsRef.current.size || hasUnsavedChangesRef.current || lastSavedProjectRef.current !== savedProject)) return;
         setNodes(restoredNodes);
@@ -969,50 +966,47 @@ function InfiniteCanvasPage() {
         [effectiveConfig.canvasImageCount, effectiveConfig.count, effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, getCanvasCenter],
     );
 
-    const deleteNodes = useCallback(
-        (ids: Set<string>) => {
-            if (!ids.size) return;
-            const allIds = new Set(ids);
-            nodesRef.current.forEach((node) => {
-                if (ids.has(node.id)) node.metadata?.batchChildIds?.forEach((childId) => allIds.add(childId));
+    const deleteNodes = useCallback((ids: Set<string>) => {
+        if (!ids.size) return;
+        const allIds = new Set(ids);
+        nodesRef.current.forEach((node) => {
+            if (ids.has(node.id)) node.metadata?.batchChildIds?.forEach((childId) => allIds.add(childId));
+        });
+        setNodes((prev) => {
+            const next = prev.filter((node) => !allIds.has(node.id));
+            return next.map((node) => {
+                const childIds = node.metadata?.batchChildIds?.filter((childId) => !allIds.has(childId));
+                if (!node.metadata?.isBatchRoot || childIds?.length === node.metadata.batchChildIds?.length) return node;
+                const primaryImageId = childIds?.includes(node.metadata.primaryImageId || "") ? node.metadata.primaryImageId : childIds?.[0];
+                const primaryNode = next.find((item) => item.id === primaryImageId);
+                return {
+                    ...node,
+                    metadata: {
+                        ...node.metadata,
+                        batchChildIds: childIds,
+                        primaryImageId,
+                        content: primaryNode?.metadata?.content || node.metadata.content,
+                        naturalWidth: primaryNode?.metadata?.naturalWidth || node.metadata.naturalWidth,
+                        naturalHeight: primaryNode?.metadata?.naturalHeight || node.metadata.naturalHeight,
+                    },
+                };
             });
-            setNodes((prev) => {
-                const next = prev.filter((node) => !allIds.has(node.id));
-                return next.map((node) => {
-                    const childIds = node.metadata?.batchChildIds?.filter((childId) => !allIds.has(childId));
-                    if (!node.metadata?.isBatchRoot || childIds?.length === node.metadata.batchChildIds?.length) return node;
-                    const primaryImageId = childIds?.includes(node.metadata.primaryImageId || "") ? node.metadata.primaryImageId : childIds?.[0];
-                    const primaryNode = next.find((item) => item.id === primaryImageId);
-                    return {
-                        ...node,
-                        metadata: {
-                            ...node.metadata,
-                            batchChildIds: childIds,
-                            primaryImageId,
-                            content: primaryNode?.metadata?.content || node.metadata.content,
-                            naturalWidth: primaryNode?.metadata?.naturalWidth || node.metadata.naturalWidth,
-                            naturalHeight: primaryNode?.metadata?.naturalHeight || node.metadata.naturalHeight,
-                        },
-                    };
-                });
-            });
-            setConnections((prev) => prev.filter((conn) => !allIds.has(conn.fromNodeId) && !allIds.has(conn.toNodeId)));
-            setSelectedNodeIds(new Set());
-            setSelectedConnectionId(null);
-            setHoveredNodeId((current) => (current && allIds.has(current) ? null : current));
-            setToolbarNodeId((current) => (current && allIds.has(current) ? null : current));
-            setDialogNodeId((current) => (current && allIds.has(current) ? null : current));
-            setEditingNodeId((current) => (current && allIds.has(current) ? null : current));
-            setInfoNodeId((current) => (current && allIds.has(current) ? null : current));
-            setCropNodeId((current) => (current && allIds.has(current) ? null : current));
-            setMaskEditNodeId((current) => (current && allIds.has(current) ? null : current));
-            setAngleNodeId((current) => (current && allIds.has(current) ? null : current));
-            setPreviewNodeId((current) => (current && allIds.has(current) ? null : current));
-            setRunningNodeId((current) => (current && allIds.has(current) ? null : current));
-            setContextMenu((current) => (current?.type === "node" && allIds.has(current.nodeId) ? null : current));
-        },
-        [],
-    );
+        });
+        setConnections((prev) => prev.filter((conn) => !allIds.has(conn.fromNodeId) && !allIds.has(conn.toNodeId)));
+        setSelectedNodeIds(new Set());
+        setSelectedConnectionId(null);
+        setHoveredNodeId((current) => (current && allIds.has(current) ? null : current));
+        setToolbarNodeId((current) => (current && allIds.has(current) ? null : current));
+        setDialogNodeId((current) => (current && allIds.has(current) ? null : current));
+        setEditingNodeId((current) => (current && allIds.has(current) ? null : current));
+        setInfoNodeId((current) => (current && allIds.has(current) ? null : current));
+        setCropNodeId((current) => (current && allIds.has(current) ? null : current));
+        setMaskEditNodeId((current) => (current && allIds.has(current) ? null : current));
+        setAngleNodeId((current) => (current && allIds.has(current) ? null : current));
+        setPreviewNodeId((current) => (current && allIds.has(current) ? null : current));
+        setRunningNodeId((current) => (current && allIds.has(current) ? null : current));
+        setContextMenu((current) => (current?.type === "node" && allIds.has(current.nodeId) ? null : current));
+    }, []);
 
     const deleteConnection = useCallback((connectionId: string) => {
         setConnections((prev) => prev.filter((conn) => conn.id !== connectionId));
@@ -2710,15 +2704,19 @@ function InfiniteCanvasPage() {
                     const thirdRowY = secondRowY + scriptNode.height + rowGap;
                     let composerContent = `爆款脚本：@[node:${scriptNode.id}]\n\n成片要求：${result.videoPrompt}`;
                     const configNode = {
-                        ...createCanvasNode(CanvasNodeType.Config, { x: leftX + NODE_DEFAULT_SIZE[CanvasNodeType.Config].width / 2, y: thirdRowY + NODE_DEFAULT_SIZE[CanvasNodeType.Config].height / 2 }, {
-                            generationMode: "video",
-                            model: effectiveConfig.videoModel || effectiveConfig.model,
-                            size: effectiveConfig.size,
-                            seconds: effectiveConfig.videoSeconds,
-                            vquality: effectiveConfig.vquality,
-                            composerContent,
-                            prompt: composerContent,
-                        }),
+                        ...createCanvasNode(
+                            CanvasNodeType.Config,
+                            { x: leftX + NODE_DEFAULT_SIZE[CanvasNodeType.Config].width / 2, y: thirdRowY + NODE_DEFAULT_SIZE[CanvasNodeType.Config].height / 2 },
+                            {
+                                generationMode: "video",
+                                model: effectiveConfig.videoModel || effectiveConfig.model,
+                                size: effectiveConfig.size,
+                                seconds: effectiveConfig.videoSeconds,
+                                vquality: effectiveConfig.vquality,
+                                composerContent,
+                                prompt: composerContent,
+                            },
+                        ),
                         title: "爆款视频配置",
                     };
                     configNodeId = configNode.id;
@@ -3081,43 +3079,40 @@ function InfiniteCanvasPage() {
         [screenToCanvas, size.height, size.width],
     );
 
-    const arrangeAssistantNodes = useCallback(
-        (nodeIds: string[], mode: "horizontal" | "vertical" | "grid", gap: number, agentMeta: { runId: string; authorizedNodeIds: string[] }) => {
-            const requested = new Set(nodeIds);
-            const targets = nodeIds.map((id) => nodesRef.current.find((node) => node.id === id));
-            if (targets.some((node) => !node)) throw new Error("待排列节点已不存在");
-            if (targets.some((node) => node?.metadata?.isBatchRoot || node?.metadata?.batchRootId)) throw new Error("批次节点暂不支持自动排列");
-            const authorized = new Set([...agentMeta.authorizedNodeIds, ...selectedNodeIdsRef.current, ...nodesRef.current.filter((node) => node.metadata?.agentRunId === agentMeta.runId).map((node) => node.id)]);
-            if (nodeIds.some((id) => !authorized.has(id))) throw new Error("只能排列本轮授权或新生成的节点");
+    const arrangeAssistantNodes = useCallback((nodeIds: string[], mode: "horizontal" | "vertical" | "grid", gap: number, agentMeta: { runId: string; authorizedNodeIds: string[] }) => {
+        const requested = new Set(nodeIds);
+        const targets = nodeIds.map((id) => nodesRef.current.find((node) => node.id === id));
+        if (targets.some((node) => !node)) throw new Error("待排列节点已不存在");
+        if (targets.some((node) => node?.metadata?.isBatchRoot || node?.metadata?.batchRootId)) throw new Error("批次节点暂不支持自动排列");
+        const authorized = new Set([...agentMeta.authorizedNodeIds, ...selectedNodeIdsRef.current, ...nodesRef.current.filter((node) => node.metadata?.agentRunId === agentMeta.runId).map((node) => node.id)]);
+        if (nodeIds.some((id) => !authorized.has(id))) throw new Error("只能排列本轮授权或新生成的节点");
 
-            const resolved = targets as CanvasNodeData[];
-            const originX = Math.min(...resolved.map((node) => node.position.x));
-            const originY = Math.min(...resolved.map((node) => node.position.y));
-            const columns = mode === "grid" ? Math.ceil(Math.sqrt(resolved.length)) : resolved.length;
-            const columnWidths = Array.from({ length: columns }, (_, column) => Math.max(...resolved.filter((_, index) => index % columns === column).map((node) => node.width)));
-            const rows = Math.ceil(resolved.length / columns);
-            const rowHeights = Array.from({ length: rows }, (_, row) => Math.max(...resolved.slice(row * columns, (row + 1) * columns).map((node) => node.height)));
-            const positions = resolved.map((node, index) => {
-                if (mode === "horizontal") return { nodeId: node.id, x: originX + resolved.slice(0, index).reduce((sum, item) => sum + item.width + gap, 0), y: originY };
-                if (mode === "vertical") return { nodeId: node.id, x: originX, y: originY + resolved.slice(0, index).reduce((sum, item) => sum + item.height + gap, 0) };
-                const column = index % columns;
-                const row = Math.floor(index / columns);
-                return {
-                    nodeId: node.id,
-                    x: originX + columnWidths.slice(0, column).reduce((sum, width) => sum + width + gap, 0),
-                    y: originY + rowHeights.slice(0, row).reduce((sum, height) => sum + height + gap, 0),
-                };
-            });
-            const positionById = new Map(positions.map((position) => [position.nodeId, position]));
-            const nextNodes = nodesRef.current.map((node) => (requested.has(node.id) ? { ...node, position: { x: positionById.get(node.id)!.x, y: positionById.get(node.id)!.y } } : node));
-            nodesRef.current = nextNodes;
-            setNodes(nextNodes);
-            setSelectedNodeIds(new Set(nodeIds));
-            setSelectedConnectionId(null);
-            return positions;
-        },
-        [],
-    );
+        const resolved = targets as CanvasNodeData[];
+        const originX = Math.min(...resolved.map((node) => node.position.x));
+        const originY = Math.min(...resolved.map((node) => node.position.y));
+        const columns = mode === "grid" ? Math.ceil(Math.sqrt(resolved.length)) : resolved.length;
+        const columnWidths = Array.from({ length: columns }, (_, column) => Math.max(...resolved.filter((_, index) => index % columns === column).map((node) => node.width)));
+        const rows = Math.ceil(resolved.length / columns);
+        const rowHeights = Array.from({ length: rows }, (_, row) => Math.max(...resolved.slice(row * columns, (row + 1) * columns).map((node) => node.height)));
+        const positions = resolved.map((node, index) => {
+            if (mode === "horizontal") return { nodeId: node.id, x: originX + resolved.slice(0, index).reduce((sum, item) => sum + item.width + gap, 0), y: originY };
+            if (mode === "vertical") return { nodeId: node.id, x: originX, y: originY + resolved.slice(0, index).reduce((sum, item) => sum + item.height + gap, 0) };
+            const column = index % columns;
+            const row = Math.floor(index / columns);
+            return {
+                nodeId: node.id,
+                x: originX + columnWidths.slice(0, column).reduce((sum, width) => sum + width + gap, 0),
+                y: originY + rowHeights.slice(0, row).reduce((sum, height) => sum + height + gap, 0),
+            };
+        });
+        const positionById = new Map(positions.map((position) => [position.nodeId, position]));
+        const nextNodes = nodesRef.current.map((node) => (requested.has(node.id) ? { ...node, position: { x: positionById.get(node.id)!.x, y: positionById.get(node.id)!.y } } : node));
+        nodesRef.current = nextNodes;
+        setNodes(nextNodes);
+        setSelectedNodeIds(new Set(nodeIds));
+        setSelectedConnectionId(null);
+        return positions;
+    }, []);
 
     const restoreAssistantToolResult = useCallback((runId: string, callId: string) => useCanvasStore.getState().openProject(projectId)?.agentToolReceipts?.[`${runId}:${callId}`]?.result, [projectId]);
 

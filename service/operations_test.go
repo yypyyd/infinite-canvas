@@ -67,7 +67,7 @@ func TestOperationsAlertsRespectBoundaryAndDisabledThresholds(t *testing.T) {
 func TestInspectDataConsistencySnapshotFindsRepairableIssues(t *testing.T) {
 	snapshot := repository.DataConsistencySnapshot{
 		Organizations: []model.Organization{{ID: "organization-consistency"}},
-		Users: []model.User{{ID: "user-consistency", Credits: 9}},
+		Users:         []model.User{{ID: "user-consistency", Credits: 9}},
 		Files: []model.UserFile{
 			{ID: "file-state", OrganizationID: "organization-consistency", StorageKey: "image:state", ObjectKey: "organizations/organization-consistency/files/state.png", Hash: "hash-state", MimeType: "image/png", Size: 10, UnreferencedAt: "old"},
 			{ID: "file-batch", OrganizationID: "organization-consistency", StorageKey: "image:batch", ObjectKey: "organizations/organization-consistency/batch-results/batch.png", Hash: "hash-batch", MimeType: "image/png", Size: 20, UnreferencedAt: "old"},
@@ -77,16 +77,24 @@ func TestInspectDataConsistencySnapshotFindsRepairableIssues(t *testing.T) {
 			{ID: "reference-dangling", OrganizationID: "organization-consistency", Domain: "asset", ObjectID: "asset-b", StorageKey: "image:missing"},
 		},
 		GenerationTasks: []model.GenerationTask{{ID: "task-consistency", OrganizationID: "organization-consistency", UserID: "user-consistency", Credits: 1, Status: model.GenerationTaskStatusSuccess}},
-		CreditLogs: []model.CreditLog{{ID: "log-consistency", UserID: "user-consistency", Type: model.CreditLogTypeAIConsume, Amount: -1, Balance: 9, RelatedID: "task-consistency"}},
-		BatchItems: []model.BatchProductionItem{{ID: "batch-item-consistency", OrganizationID: "organization-consistency", Status: model.BatchProductionStatusCompleted, ResultStorageKey: "image:batch"}},
+		CreditLogs:      []model.CreditLog{{ID: "log-consistency", UserID: "user-consistency", Type: model.CreditLogTypeAIConsume, Amount: -1, Balance: 9, RelatedID: "task-consistency"}},
+		BatchItems:      []model.BatchProductionItem{{ID: "batch-item-consistency", OrganizationID: "organization-consistency", Status: model.BatchProductionStatusCompleted, ResultStorageKey: "image:batch"}},
 	}
 	objects := []dataConsistencyObject{
 		{Key: "organizations/organization-consistency/files/state.png", Hash: "hash-state", MimeType: "image/png", Size: 10},
 		{Key: "organizations/organization-consistency/batch-results/batch.png", Hash: "hash-batch", MimeType: "image/png", Size: 20},
 	}
 	report := inspectDataConsistencySnapshot(snapshot, objects, "ok")
-	if report.TotalIssues != 3 || report.Repairable != 3 || report.Summary["media_reference"] != 2 || report.Summary["batch_result"] != 1 { t.Fatalf("unexpected consistency report: %#v", report) }
+	if report.TotalIssues != 3 || report.Repairable != 3 || report.Summary["media_reference"] != 2 || report.Summary["batch_result"] != 1 {
+		t.Fatalf("unexpected consistency report: %#v", report)
+	}
 	codes := map[string]bool{}
-	for _, issue := range report.Issues { codes[issue.Code] = true }
-	for _, code := range []string{"dangling_file_reference", "file_reference_state_mismatch", "batch_result_reference_mismatch"} { if !codes[code] { t.Fatalf("missing issue %q: %#v", code, report.Issues) } }
+	for _, issue := range report.Issues {
+		codes[issue.Code] = true
+	}
+	for _, code := range []string{"dangling_file_reference", "file_reference_state_mismatch", "batch_result_reference_mismatch"} {
+		if !codes[code] {
+			t.Fatalf("missing issue %q: %#v", code, report.Issues)
+		}
+	}
 }

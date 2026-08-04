@@ -7,14 +7,14 @@ description: 使用 Docker Compose 部署道生画境
 
 如果你希望在自己的机器或服务器上运行项目，可以直接使用 Docker Compose。
 
-## 使用发布镜像
+## 从当前源码启动
 
 ```bash
 git clone https://github.com/yypyyd/infinite-canvas.git
 cd infinite-canvas
 cp .env.example .env
 # 编辑 .env，填写至少 12 位的 ADMIN_PASSWORD 和至少 32 位的 JWT_SECRET
-docker compose up -d
+docker compose up -d --build
 ```
 
 启动后访问：
@@ -30,13 +30,12 @@ http://localhost:3000
 密码：.env 中的 ADMIN_PASSWORD
 ```
 
-## 本地构建镜像
+## 使用已有发布镜像
 
-如果需要基于当前源码构建镜像：
+已有发布镜像时，可指定镜像地址并省略本地构建：
 
 ```bash
-cp .env.example .env
-docker compose -f docker-compose.local.yml up -d --build
+INFINITE_CANVAS_IMAGE=ghcr.io/your-name/infinite-canvas:tag docker compose up -d
 ```
 
 `NEXT_PUBLIC_DOC_URL`、`NEXT_PUBLIC_REPOSITORY_URL`、`NEXT_PUBLIC_VERSION_URL` 和 `NEXT_PUBLIC_CREDIT_PURCHASE_URL` 会在构建前端镜像时写入。自托管如需隐藏原项目作者维护的算力购买入口，可在构建前把 `NEXT_PUBLIC_CREDIT_PURCHASE_URL` 设为 `off`。
@@ -45,18 +44,18 @@ docker compose -f docker-compose.local.yml up -d --build
 
 文档站位于 `docs/` 目录，按带服务端能力的 Next.js standalone 应用单独构建，不打进主应用镜像。
 
-使用发布镜像：
+从当前源码构建：
 
 ```bash
 cd docs
-docker compose up -d
+docker compose up -d --build
 ```
 
-基于当前源码本地构建：
+使用已有发布镜像：
 
 ```bash
 cd docs
-docker compose -f docker-compose.local.yml up -d --build
+INFINITE_CANVAS_DOCS_IMAGE=ghcr.io/your-name/infinite-canvas-docs:tag docker compose up -d
 ```
 
 ## 数据目录

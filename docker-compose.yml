@@ -1,6 +1,14 @@
 services:
   app:
-    image: ${INFINITE_CANVAS_IMAGE:-ghcr.io/yypyyd/infinite-canvas:latest}
+    image: ${INFINITE_CANVAS_IMAGE:-infinite-canvas:local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_DOC_URL: ${NEXT_PUBLIC_DOC_URL:-https://docs.canvas.best}
+        NEXT_PUBLIC_REPOSITORY_URL: ${NEXT_PUBLIC_REPOSITORY_URL:-https://github.com/yypyyd/infinite-canvas}
+        NEXT_PUBLIC_VERSION_URL: ${NEXT_PUBLIC_VERSION_URL:-https://raw.githubusercontent.com/yypyyd/infinite-canvas/main/VERSION}
+        NEXT_PUBLIC_CREDIT_PURCHASE_URL: ${NEXT_PUBLIC_CREDIT_PURCHASE_URL:-https://pay.ldxp.cn/shop/ODLR2IW6}
     container_name: infinite-canvas
     env_file:
       - .env
@@ -10,7 +18,7 @@ services:
       - "3000:3000"
     restart: unless-stopped
   batch-worker:
-    image: ${INFINITE_CANVAS_IMAGE:-ghcr.io/yypyyd/infinite-canvas:latest}
+    image: ${INFINITE_CANVAS_IMAGE:-infinite-canvas:local}
     profiles: ["worker"]
     env_file:
       - .env

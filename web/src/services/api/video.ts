@@ -22,13 +22,7 @@ export type VideoGenerationResult = { blob?: Blob; url?: string; mimeType?: stri
 export type VideoCreativeMode = "analysis" | "viral";
 export type VideoCreativeResult = { analysis: string; script: string; videoPrompt: string; frames: string[] };
 
-export async function requestVideoCreativeAnalysis(
-    config: AiConfig,
-    sourceUrl: string,
-    mode: VideoCreativeMode,
-    context: { platform: string; audience?: string; sellingPoint?: string },
-    options?: RequestOptions,
-): Promise<VideoCreativeResult> {
+export async function requestVideoCreativeAnalysis(config: AiConfig, sourceUrl: string, mode: VideoCreativeMode, context: { platform: string; audience?: string; sellingPoint?: string }, options?: RequestOptions): Promise<VideoCreativeResult> {
     const frames = await extractVideoKeyFrames(sourceUrl, 6, options?.signal);
     const prompt = buildVideoCreativePrompt(mode, context);
     const messages: ChatCompletionMessage[] = [
@@ -145,10 +139,14 @@ function delay(ms: number, signal?: AbortSignal) {
     return new Promise<void>((resolve, reject) => {
         if (signal?.aborted) return reject(new DOMException("Aborted", "AbortError"));
         const timer = setTimeout(resolve, ms);
-        signal?.addEventListener("abort", () => {
-            clearTimeout(timer);
-            reject(new DOMException("Aborted", "AbortError"));
-        }, { once: true });
+        signal?.addEventListener(
+            "abort",
+            () => {
+                clearTimeout(timer);
+                reject(new DOMException("Aborted", "AbortError"));
+            },
+            { once: true },
+        );
     });
 }
 
@@ -224,7 +222,10 @@ function buildVideoCreativePrompt(mode: VideoCreativeMode, context: { platform: 
 }
 
 function parseVideoCreativeResult(answer: string, mode: VideoCreativeMode) {
-    const normalized = answer.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+    const normalized = answer
+        .trim()
+        .replace(/^```(?:json)?\s*/i, "")
+        .replace(/\s*```$/, "");
     if (!normalized) throw new Error("视频解析没有返回内容");
     const jsonCandidate = normalized.startsWith("{") ? normalized : normalized.match(/\{[\s\S]*\}/)?.[0] || normalized;
     let value: { analysis?: unknown; script?: unknown; videoPrompt?: unknown };

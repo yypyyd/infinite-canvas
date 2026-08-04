@@ -72,7 +72,12 @@ export const useAssetStore = create<AssetStore>()((set, get) => ({
     },
     removeAsset: (id) => {
         const removed = get().assets.find((asset) => asset.id === id);
-        set((state) => ownerAssetsState(state, state.assets.filter((asset) => asset.id !== id)));
+        set((state) =>
+            ownerAssetsState(
+                state,
+                state.assets.filter((asset) => asset.id !== id),
+            ),
+        );
         if (removed) stageWorkspaceDelete(get().ownerId, "asset", id, removed.version || 0);
     },
     replaceAssets: (assets) => set((state) => ownerAssetsState(state, assets)),

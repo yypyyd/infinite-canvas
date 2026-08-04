@@ -38,7 +38,9 @@ type WorkspaceChangeRequest struct {
 
 func UserWorkspace(user model.AuthUser) (WorkspacePayload, error) {
 	organization, _, err := EnsureOrganization(user)
-	if err != nil { return WorkspacePayload{}, err }
+	if err != nil {
+		return WorkspacePayload{}, err
+	}
 	organizationID := organization.ID
 	projects, err := repository.ListUserProjects(organizationID)
 	if err != nil {
@@ -66,7 +68,9 @@ func UserWorkspace(user model.AuthUser) (WorkspacePayload, error) {
 }
 
 func ApplyUserWorkspaceChanges(user model.AuthUser, request WorkspaceChangeRequest) (WorkspacePayload, error) {
-	if err := RequireOrganizationWrite(user); err != nil { return WorkspacePayload{}, err }
+	if err := RequireOrganizationWrite(user); err != nil {
+		return WorkspacePayload{}, err
+	}
 	organizationID := user.OrganizationID
 	if len(request.Changes) > 200 {
 		return WorkspacePayload{}, safeMessageError{message: "单次最多保存 200 条数据"}
@@ -92,15 +96,23 @@ func ApplyUserWorkspaceChanges(user model.AuthUser, request WorkspaceChangeReque
 			return WorkspacePayload{}, safeMessageError{message: "生成记录类型无效"}
 		}
 		storageKeys := make(map[string]bool)
-		if !change.Deleted { collectUserStorageKeys(data, storageKeys) }
+		if !change.Deleted {
+			collectUserStorageKeys(data, storageKeys)
+		}
 		keys := make([]string, 0, len(storageKeys))
-		for key := range storageKeys { keys = append(keys, key) }
+		for key := range storageKeys {
+			keys = append(keys, key)
+		}
 		mutations = append(mutations, model.UserWorkspaceMutation{RecordID: newID("version"), Domain: change.Domain, ObjectID: change.ObjectID, Title: summary.Title, Kind: summary.Kind, Data: string(data), Deleted: change.Deleted, ExpectedVersion: change.Version, StorageKeys: keys})
 	}
 	timestamp := now()
 	projects, assets, generationRecords, err := repository.ApplyUserWorkspaceMutations(organizationID, user.ID, mutations, timestamp, newAuditLog(user.ID, organizationID, "workspace.save", "workspace", organizationID, len(request.Changes), timestamp))
-	if errors.Is(err, repository.ErrWorkspaceVersionConflict) { return WorkspacePayload{}, safeMessageError{message: "企业数据已被其他成员更新，请刷新后重新编辑"} }
-	if errors.Is(err, repository.ErrWorkspaceFileMissing) { return WorkspacePayload{}, safeMessageError{message: "企业媒体文件不存在，请重新上传后保存"} }
+	if errors.Is(err, repository.ErrWorkspaceVersionConflict) {
+		return WorkspacePayload{}, safeMessageError{message: "企业数据已被其他成员更新，请刷新后重新编辑"}
+	}
+	if errors.Is(err, repository.ErrWorkspaceFileMissing) {
+		return WorkspacePayload{}, safeMessageError{message: "企业媒体文件不存在，请重新上传后保存"}
+	}
 	if err == nil {
 		_ = cleanupUserWorkspaceFiles(organizationID)
 	}

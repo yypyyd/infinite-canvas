@@ -139,9 +139,7 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
         const model = { ...form.getFieldsValue(), modality: selectedModality } as AdminManagedModel;
         const supportsResolution = selectedModality === "image" || selectedModality === "video";
         const requestedTier = unique([pricingTierInput])[0] || "";
-        const resolutionTier = supportsResolution
-            ? requestedTier || unique(model.resolutionTiers).find((item) => !draftRules.some((rule) => rule.resolutionTier === item))
-            : draftRules.length ? undefined : "";
+        const resolutionTier = supportsResolution ? requestedTier || unique(model.resolutionTiers).find((item) => !draftRules.some((rule) => rule.resolutionTier === item)) : draftRules.length ? undefined : "";
         if (resolutionTier === undefined) {
             message.warning(supportsResolution ? "请选择或输入一个新的分辨率档" : "该模型价格已经添加");
             return;
@@ -220,7 +218,15 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
                             width: 220,
                             render: (_: unknown, model: AdminManagedModel) => (
                                 <Typography.Text type="secondary" className="text-xs">
-                                    {[capabilityLabel(model.operations), model.aspectRatios.join(" / "), model.resolutionTiers.join(" / "), model.durations.length ? `${model.durations.join(" / ")} 秒` : "", model.maxReferenceImages ? `最多 ${model.maxReferenceImages} 张参考图` : ""].filter(Boolean).join(" · ")}
+                                    {[
+                                        capabilityLabel(model.operations),
+                                        model.aspectRatios.join(" / "),
+                                        model.resolutionTiers.join(" / "),
+                                        model.durations.length ? `${model.durations.join(" / ")} 秒` : "",
+                                        model.maxReferenceImages ? `最多 ${model.maxReferenceImages} 张参考图` : "",
+                                    ]
+                                        .filter(Boolean)
+                                        .join(" · ")}
                                 </Typography.Text>
                             ),
                         },
@@ -270,7 +276,12 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
                     <Typography.Title level={5}>基本信息</Typography.Title>
                     <Row gutter={16}>
                         <Col span={16}>
-                            <Form.Item name="id" label="模型 ID" rules={[{ required: true, whitespace: true, message: "请输入模型 ID" }]} extra={editingModel ? "模型 ID 保存后不允许修改，避免渠道和历史规则失联。" : "可从已有渠道选择，也可直接输入任意模型 ID。"}>
+                            <Form.Item
+                                name="id"
+                                label="模型 ID"
+                                rules={[{ required: true, whitespace: true, message: "请输入模型 ID" }]}
+                                extra={editingModel ? "模型 ID 保存后不允许修改，避免渠道和历史规则失联。" : "可从已有渠道选择，也可直接输入任意模型 ID。"}
+                            >
                                 {editingModel ? (
                                     <Input disabled />
                                 ) : (
@@ -358,13 +369,17 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
                                     allowClear
                                     size="small"
                                     value={pricingTierInput}
-                                    options={unique([...resolutionOptions, ...selectedResolutionTiers]).filter((item) => !draftRules.some((rule) => rule.resolutionTier === item)).map((item) => ({ label: item.toUpperCase(), value: item }))}
+                                    options={unique([...resolutionOptions, ...selectedResolutionTiers])
+                                        .filter((item) => !draftRules.some((rule) => rule.resolutionTier === item))
+                                        .map((item) => ({ label: item.toUpperCase(), value: item }))}
                                     placeholder="选择或输入分辨率档"
                                     style={{ width: 180 }}
                                     onChange={setPricingTierInput}
                                 />
                             ) : null}
-                            <Button size="small" icon={<PlusOutlined />} onClick={addPricingRule}>添加价格</Button>
+                            <Button size="small" icon={<PlusOutlined />} onClick={addPricingRule}>
+                                添加价格
+                            </Button>
                         </Space>
                     </Flex>
                     <Flex vertical gap={12}>
@@ -374,7 +389,11 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
                                 key={rule.resolutionTier || "model"}
                                 size="small"
                                 title={pricingTierLabel(rule, selectedModality)}
-                                extra={<Button type="text" danger size="small" icon={<DeleteOutlined />} onClick={() => setDraftRules((current) => current.filter((_, ruleIndex) => ruleIndex !== index))}>删除</Button>}
+                                extra={
+                                    <Button type="text" danger size="small" icon={<DeleteOutlined />} onClick={() => setDraftRules((current) => current.filter((_, ruleIndex) => ruleIndex !== index))}>
+                                        删除
+                                    </Button>
+                                }
                             >
                                 <Row gutter={12}>
                                     {selectedModality === "image" || selectedModality === "video" ? (

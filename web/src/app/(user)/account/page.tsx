@@ -12,7 +12,19 @@ import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
 import { CREDIT_PURCHASE_URL, CreditSymbol } from "@/constant/credits";
 import { useCopyText } from "@/hooks/use-copy-text";
 import { formatDuration } from "@/lib/image-utils";
-import { changePassword, createUserAPIKey, deleteUserAPIKey, fetchCreditLogs, fetchGenerationTasks, fetchUserAPIKeys, updateProfile as updateUserProfile, type CreditLog, type CreatedUserAPIKey, type GenerationTask, type UserAPIKey } from "@/services/api/auth";
+import {
+    changePassword,
+    createUserAPIKey,
+    deleteUserAPIKey,
+    fetchCreditLogs,
+    fetchGenerationTasks,
+    fetchUserAPIKeys,
+    updateProfile as updateUserProfile,
+    type CreditLog,
+    type CreatedUserAPIKey,
+    type GenerationTask,
+    type UserAPIKey,
+} from "@/services/api/auth";
 import { countGenerationHistory, deleteGenerationHistory, GENERATION_HISTORY_CHANGED_EVENT, readGenerationHistory, resolveGenerationHistoryMedia, resolveGenerationHistoryPreview, type GenerationHistoryItem } from "@/services/generation-history";
 import { workspaceOwnerId } from "@/services/workspace-changes";
 import { useUserStore } from "@/stores/use-user-store";
@@ -168,7 +180,9 @@ function AccountContent() {
                     <Tabs activeKey={activeTab} items={accountTabs} onChange={(key) => router.replace(key === "profile" ? "/account" : `/account?tab=${key}`, { scroll: false })} tabBarStyle={{ margin: 0 }} />
                 </div>
 
-                <div className="mt-5">{activeTab === "profile" ? <ProfileSection /> : activeTab === "tasks" ? <TaskSection /> : activeTab === "history" ? <HistorySection /> : activeTab === "credits" ? <CreditsSection /> : <APIKeySection key={user.organizationId} />}</div>
+                <div className="mt-5">
+                    {activeTab === "profile" ? <ProfileSection /> : activeTab === "tasks" ? <TaskSection /> : activeTab === "history" ? <HistorySection /> : activeTab === "credits" ? <CreditsSection /> : <APIKeySection key={user.organizationId} />}
+                </div>
             </div>
         </main>
     );
@@ -1105,7 +1119,10 @@ function APIKeySection() {
                                 <Segmented
                                     size="small"
                                     value={exampleType}
-                                    options={[{ label: "获取模型", value: "models" }, { label: "图片生成", value: "image" }]}
+                                    options={[
+                                        { label: "获取模型", value: "models" },
+                                        { label: "图片生成", value: "image" },
+                                    ]}
                                     onChange={(value) => setExampleType(value as "models" | "image")}
                                 />
                                 <Button type="text" size="small" icon={<Copy className="size-3.5" />} onClick={() => copyText(curlExample, "示例已复制")} />
@@ -1132,7 +1149,11 @@ function APIKeySection() {
                 title="API Key 创建成功"
                 open={Boolean(createdKey)}
                 onCancel={closeCreatedKey}
-                footer={<Button type="primary" onClick={closeCreatedKey}>我已保存</Button>}
+                footer={
+                    <Button type="primary" onClick={closeCreatedKey}>
+                        我已保存
+                    </Button>
+                }
                 destroyOnHidden
             >
                 <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">

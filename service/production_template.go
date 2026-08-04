@@ -31,7 +31,9 @@ var builtinProductionTemplates = []builtinProductionTemplateDefinition{
 
 func findBuiltinProductionTemplate(id string) (builtinProductionTemplateDefinition, bool) {
 	for _, definition := range builtinProductionTemplates {
-		if definition.ID == id { return definition, true }
+		if definition.ID == id {
+			return definition, true
+		}
 	}
 	return builtinProductionTemplateDefinition{}, false
 }
@@ -44,36 +46,54 @@ var productionTemplateVariables = map[string]bool{
 }
 
 type productionTemplateSpec struct {
-	Width int `json:"width"`
-	Height int `json:"height"`
-	Format string `json:"format"`
-	Quality int `json:"quality"`
-	DefaultQuantity int `json:"defaultQuantity"`
-	RequireReference bool `json:"requireReference"`
-	RequireSellingPoints bool `json:"requireSellingPoints"`
-	RequireBrand bool `json:"requireBrand"`
-	AllowSPUWithoutSKU bool `json:"allowSpuWithoutSku"`
-	Variables []string `json:"variables"`
-	FilenamePattern string `json:"filenamePattern"`
+	Width                int      `json:"width"`
+	Height               int      `json:"height"`
+	Format               string   `json:"format"`
+	Quality              int      `json:"quality"`
+	DefaultQuantity      int      `json:"defaultQuantity"`
+	RequireReference     bool     `json:"requireReference"`
+	RequireSellingPoints bool     `json:"requireSellingPoints"`
+	RequireBrand         bool     `json:"requireBrand"`
+	AllowSPUWithoutSKU   bool     `json:"allowSpuWithoutSku"`
+	Variables            []string `json:"variables"`
+	FilenamePattern      string   `json:"filenamePattern"`
 }
 
 func normalizeProductionTemplateSpec(specJSON string) (string, productionTemplateSpec, error) {
 	specJSON = strings.TrimSpace(specJSON)
-	if specJSON == "" { specJSON = `{"format":"png","quality":90,"defaultQuantity":1,"variables":[],"filenamePattern":"{spu}_{sku}_{template}_{variant}_{item}"}` }
+	if specJSON == "" {
+		specJSON = `{"format":"png","quality":90,"defaultQuantity":1,"variables":[],"filenamePattern":"{spu}_{sku}_{template}_{variant}_{item}"}`
+	}
 	var spec productionTemplateSpec
-	if err := json.Unmarshal([]byte(specJSON), &spec); err != nil { return "", spec, safeMessageError{message: "模板规格 JSON 无效"} }
-	if spec.DefaultQuantity == 0 { spec.DefaultQuantity = 1 }
-	if spec.DefaultQuantity < 1 || spec.DefaultQuantity > 10 || spec.Width < 0 || spec.Height < 0 || spec.Quality < 0 || spec.Quality > 100 { return "", spec, safeMessageError{message: "模板尺寸、质量或默认数量无效"} }
-	if spec.Format == "" { spec.Format = "png" }
-	if spec.Format != "png" && spec.Format != "jpeg" && spec.Format != "webp" { return "", spec, safeMessageError{message: "模板输出格式无效"} }
-	for _, variable := range spec.Variables { if !validProductionTemplateVariable(variable) { return "", spec, safeMessageError{message: "模板声明了不支持的变量：" + variable} } }
+	if err := json.Unmarshal([]byte(specJSON), &spec); err != nil {
+		return "", spec, safeMessageError{message: "模板规格 JSON 无效"}
+	}
+	if spec.DefaultQuantity == 0 {
+		spec.DefaultQuantity = 1
+	}
+	if spec.DefaultQuantity < 1 || spec.DefaultQuantity > 10 || spec.Width < 0 || spec.Height < 0 || spec.Quality < 0 || spec.Quality > 100 {
+		return "", spec, safeMessageError{message: "模板尺寸、质量或默认数量无效"}
+	}
+	if spec.Format == "" {
+		spec.Format = "png"
+	}
+	if spec.Format != "png" && spec.Format != "jpeg" && spec.Format != "webp" {
+		return "", spec, safeMessageError{message: "模板输出格式无效"}
+	}
+	for _, variable := range spec.Variables {
+		if !validProductionTemplateVariable(variable) {
+			return "", spec, safeMessageError{message: "模板声明了不支持的变量：" + variable}
+		}
+	}
 	value, _ := json.Marshal(spec)
 	return string(value), spec, nil
 }
 
 func validateProductionTemplateVariables(prompt string) error {
 	for _, match := range productionTemplateVariablePattern.FindAllStringSubmatch(prompt, -1) {
-		if !validProductionTemplateVariable(strings.TrimSpace(match[1])) { return safeMessageError{message: "模板包含不支持的变量：" + strings.TrimSpace(match[1])} }
+		if !validProductionTemplateVariable(strings.TrimSpace(match[1])) {
+			return safeMessageError{message: "模板包含不支持的变量：" + strings.TrimSpace(match[1])}
+		}
 	}
 	return nil
 }
@@ -87,17 +107,17 @@ func renderProductionTemplatePrompt(prompt string, product model.Product, sku *m
 		return "", err
 	}
 	values := map[string]string{
-		"product.name":            product.Name,
-		"product.category":        product.Category,
-		"product.description":     product.Description,
-		"product.sellingPoints":   strings.Join(product.SellingPoints, "；"),
-		"product.targetAudience":  product.TargetAudience,
-		"sku.name":                "",
-		"sku.code":                "",
-		"brand.name":              "",
-		"brand.tone":              "",
-		"brand.guidelines":        "",
-		"brand.prohibitedTerms":   "",
+		"product.name":           product.Name,
+		"product.category":       product.Category,
+		"product.description":    product.Description,
+		"product.sellingPoints":  strings.Join(product.SellingPoints, "；"),
+		"product.targetAudience": product.TargetAudience,
+		"sku.name":               "",
+		"sku.code":               "",
+		"brand.name":             "",
+		"brand.tone":             "",
+		"brand.guidelines":       "",
+		"brand.prohibitedTerms":  "",
 	}
 	if sku != nil {
 		values["sku.name"] = sku.Name

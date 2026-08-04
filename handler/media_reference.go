@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/yypyyd/infinite-canvas/config"
 	"github.com/google/uuid"
+	"github.com/yypyyd/infinite-canvas/config"
 )
 
 const (

@@ -20,7 +20,9 @@ func CreateAgentSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var request service.CreateAgentSessionRequest
-	if !decodeAgentJSON(w, r, &request) { return }
+	if !decodeAgentJSON(w, r, &request) {
+		return
+	}
 	session, err := service.CreateAgentSession(user, request)
 	if err != nil {
 		FailError(w, err)
@@ -36,7 +38,9 @@ func SubmitAgentMessage(w http.ResponseWriter, r *http.Request, sessionID string
 		return
 	}
 	var request service.SubmitAgentMessageRequest
-	if !decodeAgentJSON(w, r, &request) { return }
+	if !decodeAgentJSON(w, r, &request) {
+		return
+	}
 	submission, err := service.SubmitAgentMessage(user, sessionID, request)
 	if err != nil {
 		FailError(w, err)
@@ -52,7 +56,9 @@ func SubmitAgentToolResult(w http.ResponseWriter, r *http.Request, runID string)
 		return
 	}
 	var request service.SubmitAgentToolResultRequest
-	if !decodeAgentJSON(w, r, &request) { return }
+	if !decodeAgentJSON(w, r, &request) {
+		return
+	}
 	run, err := service.SubmitAgentToolResult(user, runID, request)
 	if err != nil {
 		FailError(w, err)
@@ -68,7 +74,9 @@ func ClaimAgentToolExecution(w http.ResponseWriter, r *http.Request, runID strin
 		return
 	}
 	var request service.ClaimAgentToolRequest
-	if !decodeAgentJSON(w, r, &request) { return }
+	if !decodeAgentJSON(w, r, &request) {
+		return
+	}
 	if err := service.ClaimAgentToolExecution(user, runID, request); err != nil {
 		FailError(w, err)
 		return
@@ -97,7 +105,9 @@ func ConfirmAgentTool(w http.ResponseWriter, r *http.Request, runID string) {
 		return
 	}
 	var request service.ConfirmAgentToolRequest
-	if !decodeAgentJSON(w, r, &request) { return }
+	if !decodeAgentJSON(w, r, &request) {
+		return
+	}
 	run, err := service.ConfirmAgentTool(user, runID, request)
 	if err != nil {
 		FailError(w, err)
@@ -141,7 +151,9 @@ func AgentRunEvents(w http.ResponseWriter, r *http.Request, runID string) {
 		return
 	}
 	after, ok := agentEventAfter(w, r)
-	if !ok { return }
+	if !ok {
+		return
+	}
 	if _, err := service.GetAgentRun(user, runID); err != nil {
 		FailError(w, err)
 		return
@@ -166,25 +178,39 @@ func AgentRunEvents(w http.ResponseWriter, r *http.Request, runID string) {
 
 	for {
 		events, err := service.ListAgentEvents(user, runID, after)
-		if err != nil { return }
+		if err != nil {
+			return
+		}
 		for _, event := range events {
-			if err := writeAgentEvent(w, event); err != nil { return }
+			if err := writeAgentEvent(w, event); err != nil {
+				return
+			}
 			after = event.Sequence
 		}
-		if len(events) > 0 { flusher.Flush() }
+		if len(events) > 0 {
+			flusher.Flush()
+		}
 		if len(events) < 100 {
 			run, err := service.GetAgentRun(user, runID)
-			if err != nil { return }
-			if run.Terminal() { return }
+			if err != nil {
+				return
+			}
+			if run.Terminal() {
+				return
+			}
 		}
-		if len(events) == 100 { continue }
+		if len(events) == 100 {
+			continue
+		}
 
 		select {
 		case <-r.Context().Done():
 			return
 		case <-pollTicker.C:
 		case <-heartbeatTicker.C:
-			if _, err := io.WriteString(w, ": heartbeat\n\n"); err != nil { return }
+			if _, err := io.WriteString(w, ": heartbeat\n\n"); err != nil {
+				return
+			}
 			flusher.Flush()
 		}
 	}
@@ -206,8 +232,12 @@ func decodeAgentJSON(w http.ResponseWriter, r *http.Request, target any) bool {
 
 func agentEventAfter(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	value := strings.TrimSpace(r.URL.Query().Get("after"))
-	if value == "" { value = strings.TrimSpace(r.Header.Get("Last-Event-ID")) }
-	if value == "" { return 0, true }
+	if value == "" {
+		value = strings.TrimSpace(r.Header.Get("Last-Event-ID"))
+	}
+	if value == "" {
+		return 0, true
+	}
 	after, err := strconv.ParseInt(value, 10, 64)
 	if err != nil || after < 0 {
 		Fail(w, "事件游标无效")
@@ -232,7 +262,9 @@ func writeAgentEvent(w io.Writer, event model.AgentEvent) error {
 		ID: event.ID, RunID: event.RunID, Sequence: event.Sequence, Type: event.Type,
 		Data: payload, CreatedAt: event.CreatedAt,
 	})
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	_, err = fmt.Fprintf(w, "id: %d\nevent: %s\ndata: %s\n\n", event.Sequence, event.Type, data)
 	return err
 }

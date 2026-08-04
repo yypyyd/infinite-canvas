@@ -108,7 +108,9 @@ export default function ModelSquarePage() {
                         <Sparkles className="size-5" />
                     </div>
                     <h1 className="mt-4 text-3xl font-semibold tracking-[-.045em] sm:text-5xl">模型广场</h1>
-                    <p className="mt-3 text-sm text-muted-foreground sm:text-base">本站当前共开放 <span className="font-semibold text-foreground tabular-nums">{models.length}</span> 个模型</p>
+                    <p className="mt-3 text-sm text-muted-foreground sm:text-base">
+                        本站当前共开放 <span className="font-semibold text-foreground tabular-nums">{models.length}</span> 个模型
+                    </p>
                     <p className="mx-auto mt-2 max-w-2xl text-xs leading-6 text-muted-foreground/80 sm:text-sm">发现可用的图片、视频与音频模型，比较实时价格和能力，选择适合你的模型。</p>
                     <div className="relative mx-auto mt-6 max-w-2xl">
                         <Input
@@ -135,39 +137,106 @@ export default function ModelSquarePage() {
                                 <h2 className="text-sm font-semibold">筛选模型</h2>
                                 <p className="mt-1 text-xs text-muted-foreground">按类型和能力快速查找</p>
                             </div>
-                            <Button type="text" size="small" icon={<RotateCcw className="size-3.5" />} disabled={!hasFilters} onClick={clearFilters}>重置</Button>
+                            <Button type="text" size="small" icon={<RotateCcw className="size-3.5" />} disabled={!hasFilters} onClick={clearFilters}>
+                                重置
+                            </Button>
                         </div>
                         <FilterSection title="模型类型">
-                            <FilterChip label="全部模型" count={models.length} active={modality === "all"} onClick={() => { setModality("all"); setPage(1); }} />
+                            <FilterChip
+                                label="全部模型"
+                                count={models.length}
+                                active={modality === "all"}
+                                onClick={() => {
+                                    setModality("all");
+                                    setPage(1);
+                                }}
+                            />
                             {(Object.keys(modalityMeta) as ModelModality[]).map((item) => {
                                 const meta = modalityMeta[item];
-                                return <FilterChip key={item} label={meta.label} count={models.filter((model) => model.modality === item).length} icon={meta.icon} active={modality === item} onClick={() => { setModality(item); setPage(1); }} />;
+                                return (
+                                    <FilterChip
+                                        key={item}
+                                        label={meta.label}
+                                        count={models.filter((model) => model.modality === item).length}
+                                        icon={meta.icon}
+                                        active={modality === item}
+                                        onClick={() => {
+                                            setModality(item);
+                                            setPage(1);
+                                        }}
+                                    />
+                                );
                             })}
                         </FilterSection>
                         <FilterSection title="开放能力" className="mt-5 border-t border-border pt-5">
-                            <FilterChip label="全部能力" count={models.length} active={operation === "all"} onClick={() => { setOperation("all"); setPage(1); }} />
+                            <FilterChip
+                                label="全部能力"
+                                count={models.length}
+                                active={operation === "all"}
+                                onClick={() => {
+                                    setOperation("all");
+                                    setPage(1);
+                                }}
+                            />
                             {(Object.keys(operationMeta) as ModelOperation[]).map((item) => (
-                                <FilterChip key={item} label={operationMeta[item]} count={models.filter((model) => modelOperations(model).includes(item)).length} active={operation === item} onClick={() => { setOperation(item); setPage(1); }} />
+                                <FilterChip
+                                    key={item}
+                                    label={operationMeta[item]}
+                                    count={models.filter((model) => modelOperations(model).includes(item)).length}
+                                    active={operation === item}
+                                    onClick={() => {
+                                        setOperation(item);
+                                        setPage(1);
+                                    }}
+                                />
                             ))}
                         </FilterSection>
                     </aside>
 
                     <section className="min-w-0">
                         <div className="mb-4 flex min-h-8 flex-wrap items-center justify-between gap-3">
-                            <p className="text-sm text-muted-foreground">找到 <span className="font-semibold text-foreground tabular-nums">{visibleModels.length}</span> 个模型</p>
-                            <div className="flex items-center gap-2 text-xs text-muted-foreground"><LayoutGrid className="size-3.5" />卡片视图</div>
+                            <p className="text-sm text-muted-foreground">
+                                找到 <span className="font-semibold text-foreground tabular-nums">{visibleModels.length}</span> 个模型
+                            </p>
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                <LayoutGrid className="size-3.5" />
+                                卡片视图
+                            </div>
                         </div>
                         {isLoading || !modelChannel ? (
-                            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{Array.from({ length: 6 }, (_, index) => <div key={index} className="rounded-2xl border border-border bg-card p-5"><Skeleton active paragraph={{ rows: 4 }} /></div>)}</div>
+                            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                                {Array.from({ length: 6 }, (_, index) => (
+                                    <div key={index} className="rounded-2xl border border-border bg-card p-5">
+                                        <Skeleton active paragraph={{ rows: 4 }} />
+                                    </div>
+                                ))}
+                            </div>
                         ) : pagedModels.length ? (
                             <>
                                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                                    {pagedModels.map((model) => <ModelCard key={model.id} model={model} rules={enabledPricingRules(modelChannel.pricingRules || [], model.id)} onDetails={() => chooseModel(model)} onCopy={() => copyText(model.id, "模型 ID 已复制")} />)}
+                                    {pagedModels.map((model) => (
+                                        <ModelCard key={model.id} model={model} rules={enabledPricingRules(modelChannel.pricingRules || [], model.id)} onDetails={() => chooseModel(model)} onCopy={() => copyText(model.id, "模型 ID 已复制")} />
+                                    ))}
                                 </div>
-                                {visibleModels.length > pageSize ? <div className="mt-6 flex justify-center"><Pagination current={currentPage} pageSize={pageSize} total={visibleModels.length} showSizeChanger={false} onChange={setPage} /></div> : null}
+                                {visibleModels.length > pageSize ? (
+                                    <div className="mt-6 flex justify-center">
+                                        <Pagination current={currentPage} pageSize={pageSize} total={visibleModels.length} showSizeChanger={false} onChange={setPage} />
+                                    </div>
+                                ) : null}
                             </>
                         ) : (
-                            <div className="rounded-2xl border border-dashed border-border bg-card/60 py-20"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有找到符合条件的模型"><Button onClick={() => { setKeyword(""); clearFilters(); }}>清除筛选</Button></Empty></div>
+                            <div className="rounded-2xl border border-dashed border-border bg-card/60 py-20">
+                                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有找到符合条件的模型">
+                                    <Button
+                                        onClick={() => {
+                                            setKeyword("");
+                                            clearFilters();
+                                        }}
+                                    >
+                                        清除筛选
+                                    </Button>
+                                </Empty>
+                            </div>
                         )}
                     </section>
                 </div>
@@ -193,13 +262,24 @@ export default function ModelSquarePage() {
 }
 
 function FilterSection({ title, className = "", children }: { title: string; className?: string; children: ReactNode }) {
-    return <div className={className}><h3 className="mb-2.5 text-xs font-semibold text-muted-foreground">{title}</h3><div className="flex flex-wrap gap-2">{children}</div></div>;
+    return (
+        <div className={className}>
+            <h3 className="mb-2.5 text-xs font-semibold text-muted-foreground">{title}</h3>
+            <div className="flex flex-wrap gap-2">{children}</div>
+        </div>
+    );
 }
 
 function FilterChip({ label, count, active, icon: Icon, onClick }: { label: string; count: number; active: boolean; icon?: LucideIcon; onClick: () => void }) {
     return (
-        <button type="button" onClick={onClick} className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition ${active ? "border-primary/35 bg-primary/10 text-primary" : "border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground"}`}>
-            {Icon ? <Icon className="size-3.5" /> : null}<span>{label}</span><span className={`rounded px-1.5 py-0.5 text-[10px] tabular-nums ${active ? "bg-primary/10" : "bg-muted"}`}>{count}</span>
+        <button
+            type="button"
+            onClick={onClick}
+            className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition ${active ? "border-primary/35 bg-primary/10 text-primary" : "border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+        >
+            {Icon ? <Icon className="size-3.5" /> : null}
+            <span>{label}</span>
+            <span className={`rounded px-1.5 py-0.5 text-[10px] tabular-nums ${active ? "bg-primary/10" : "bg-muted"}`}>{count}</span>
         </button>
     );
 }
@@ -212,13 +292,21 @@ function ModelCard({ model, rules, onDetails, onCopy }: { model: MarketplaceMode
         <article className="group flex min-h-[250px] flex-col rounded-2xl border border-border bg-card p-5 transition duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[0_14px_40px_rgba(29,29,31,.07)] dark:hover:shadow-none">
             <div className="flex items-start justify-between gap-3">
                 <div className="flex min-w-0 items-start gap-3">
-                    <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/15"><Icon className="size-[18px]" /></span>
+                    <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/15">
+                        <Icon className="size-[18px]" />
+                    </span>
                     <div className="min-w-0">
-                        <h2 className="truncate font-mono text-[15px] font-semibold" title={model.id}>{model.name || model.id}</h2>
-                        <p className="mt-1 truncate font-mono text-[11px] text-muted-foreground" title={model.id}>{model.id}</p>
+                        <h2 className="truncate font-mono text-[15px] font-semibold" title={model.id}>
+                            {model.name || model.id}
+                        </h2>
+                        <p className="mt-1 truncate font-mono text-[11px] text-muted-foreground" title={model.id}>
+                            {model.id}
+                        </p>
                     </div>
                 </div>
-                <button type="button" onClick={onCopy} className="rounded-lg border border-border p-2 text-muted-foreground transition hover:bg-muted hover:text-foreground" title="复制模型 ID"><Copy className="size-3.5" /></button>
+                <button type="button" onClick={onCopy} className="rounded-lg border border-border p-2 text-muted-foreground transition hover:bg-muted hover:text-foreground" title="复制模型 ID">
+                    <Copy className="size-3.5" />
+                </button>
             </div>
             <div className="mt-5 flex items-end justify-between gap-3 border-b border-border pb-4">
                 <div>
@@ -227,9 +315,19 @@ function ModelCard({ model, rules, onDetails, onCopy }: { model: MarketplaceMode
                 </div>
                 <span className="rounded-md bg-muted px-2 py-1 text-[11px] font-medium text-muted-foreground">{meta.label}模型</span>
             </div>
-            <p className="mt-4 line-clamp-2 min-h-10 text-xs leading-5 text-muted-foreground">{meta.description}，支持 {modelOperations(model).map((item) => operationMeta[item]).join("、") || "待配置能力"}。</p>
+            <p className="mt-4 line-clamp-2 min-h-10 text-xs leading-5 text-muted-foreground">
+                {meta.description}，支持{" "}
+                {modelOperations(model)
+                    .map((item) => operationMeta[item])
+                    .join("、") || "待配置能力"}
+                。
+            </p>
             <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1.5">
-                {tags.slice(0, 4).map((tag) => <span key={tag} className="text-[11px] text-muted-foreground/75">{tag}</span>)}
+                {tags.slice(0, 4).map((tag) => (
+                    <span key={tag} className="text-[11px] text-muted-foreground/75">
+                        {tag}
+                    </span>
+                ))}
                 {tags.length > 4 ? <span className="text-[11px] text-muted-foreground/50">+{tags.length - 4}</span> : null}
             </div>
             <button type="button" onClick={onDetails} className="mt-auto flex items-center justify-between pt-5 text-xs font-medium text-muted-foreground transition group-hover:text-foreground">
@@ -239,7 +337,17 @@ function ModelCard({ model, rules, onDetails, onCopy }: { model: MarketplaceMode
     );
 }
 
-function ModelDetails({ model, rules, endpoint, operation, operations, onOperationChange, onCopyModel, onCopyEndpoint, onCopySnippet }: {
+function ModelDetails({
+    model,
+    rules,
+    endpoint,
+    operation,
+    operations,
+    onOperationChange,
+    onCopyModel,
+    onCopyEndpoint,
+    onCopySnippet,
+}: {
     model: MarketplaceModel;
     rules: AdminPricingRule[];
     endpoint: string;
@@ -256,18 +364,34 @@ function ModelDetails({ model, rules, endpoint, operation, operations, onOperati
     return (
         <div className="pb-6">
             <div className="flex items-start gap-4 border-b border-border pb-6 pr-8">
-                <span className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/15"><Icon className="size-5" /></span>
+                <span className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/15">
+                    <Icon className="size-5" />
+                </span>
                 <div className="min-w-0 flex-1">
                     <div className="text-xs font-medium text-primary">{meta.label}模型</div>
                     <h2 className="mt-1 break-words text-2xl font-semibold tracking-[-.035em]">{model.name || model.id}</h2>
-                    <button type="button" onClick={onCopyModel} className="mt-1 flex max-w-full items-center gap-2 break-all text-left font-mono text-xs text-muted-foreground transition hover:text-primary">{model.id}<Copy className="size-3.5 shrink-0" /></button>
+                    <button type="button" onClick={onCopyModel} className="mt-1 flex max-w-full items-center gap-2 break-all text-left font-mono text-xs text-muted-foreground transition hover:text-primary">
+                        {model.id}
+                        <Copy className="size-3.5 shrink-0" />
+                    </button>
                     <p className="mt-3 text-sm leading-6 text-muted-foreground">{meta.description}。以下能力与价格来自后台当前公开配置。</p>
                 </div>
             </div>
 
             <section className="mt-6">
-                <div className="flex items-center gap-2 text-sm font-semibold"><Coins className="size-4 text-primary" />调用价格</div>
-                {rules.length ? <div className="mt-3 grid gap-3 sm:grid-cols-2">{rules.map((rule, index) => <PriceCard key={`${rule.operation}-${rule.resolutionTier}-${index}`} rule={rule} />)}</div> : <div className="mt-3 rounded-xl border border-dashed border-border bg-muted/45 px-4 py-3 text-xs leading-5 text-muted-foreground">当前操作暂未配置价格，调用时会提示“该模型或当前规格未设置价格”。</div>}
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                    <Coins className="size-4 text-primary" />
+                    调用价格
+                </div>
+                {rules.length ? (
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        {rules.map((rule, index) => (
+                            <PriceCard key={`${rule.operation}-${rule.resolutionTier}-${index}`} rule={rule} />
+                        ))}
+                    </div>
+                ) : (
+                    <div className="mt-3 rounded-xl border border-dashed border-border bg-muted/45 px-4 py-3 text-xs leading-5 text-muted-foreground">当前操作暂未配置价格，调用时会提示“该模型或当前规格未设置价格”。</div>
+                )}
             </section>
 
             <section className="mt-7">
@@ -283,18 +407,41 @@ function ModelDetails({ model, rules, endpoint, operation, operations, onOperati
 
             <section className="mt-7 overflow-hidden rounded-2xl border border-border">
                 <div className="flex flex-col gap-3 border-b border-border bg-muted/35 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div><h3 className="text-sm font-semibold">API 调用示例</h3><p className="mt-1 text-xs text-muted-foreground">替换 API Key 和提示词即可调用</p></div>
+                    <div>
+                        <h3 className="text-sm font-semibold">API 调用示例</h3>
+                        <p className="mt-1 text-xs text-muted-foreground">替换 API Key 和提示词即可调用</p>
+                    </div>
                     {operations.length > 1 ? <Segmented<ModelOperation> size="small" value={operation} options={operations.map((item) => ({ label: operationMeta[item], value: item }))} onChange={onOperationChange} /> : null}
                 </div>
                 <div className="border-b border-border px-4 py-3">
-                    <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground"><span>API Endpoint</span><Button type="text" size="small" icon={<Copy className="size-3.5" />} onClick={onCopyEndpoint} /></div>
+                    <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                        <span>API Endpoint</span>
+                        <Button type="text" size="small" icon={<Copy className="size-3.5" />} onClick={onCopyEndpoint} />
+                    </div>
                     <code className="mt-1 block break-all text-xs">{endpoint}</code>
                 </div>
-                {operation ? <div className="bg-muted/45"><div className="flex items-center justify-between border-b border-border px-4 py-2.5"><span className="font-mono text-[11px] text-muted-foreground">cURL</span><Button type="text" size="small" icon={<Copy className="size-3.5" />} onClick={onCopySnippet}>复制</Button></div><pre className="thin-scrollbar max-h-[380px] overflow-auto p-4 text-[11px] leading-6"><code>{snippet}</code></pre></div> : <div className="p-5 text-sm text-muted-foreground">当前模型未配置可用操作。</div>}
+                {operation ? (
+                    <div className="bg-muted/45">
+                        <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
+                            <span className="font-mono text-[11px] text-muted-foreground">cURL</span>
+                            <Button type="text" size="small" icon={<Copy className="size-3.5" />} onClick={onCopySnippet}>
+                                复制
+                            </Button>
+                        </div>
+                        <pre className="thin-scrollbar max-h-[380px] overflow-auto p-4 text-[11px] leading-6">
+                            <code>{snippet}</code>
+                        </pre>
+                    </div>
+                ) : (
+                    <div className="p-5 text-sm text-muted-foreground">当前模型未配置可用操作。</div>
+                )}
             </section>
 
             <div className="mt-6 flex flex-wrap gap-2">
-                <Link href="/account?tab=api" className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-primary px-3.5 text-sm font-medium text-primary-foreground transition hover:bg-primary/90"><KeyRound className="size-4" />创建 API Key</Link>
+                <Link href="/account?tab=api" className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-primary px-3.5 text-sm font-medium text-primary-foreground transition hover:bg-primary/90">
+                    <KeyRound className="size-4" />
+                    创建 API Key
+                </Link>
             </div>
         </div>
     );
@@ -303,15 +450,36 @@ function ModelDetails({ model, rules, endpoint, operation, operations, onOperati
 function PriceCard({ rule }: { rule: AdminPricingRule }) {
     return (
         <div className="rounded-xl bg-primary/[.055] p-3.5 ring-1 ring-primary/15">
-            <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground"><span className="font-medium text-foreground">{rule.resolutionTier ? rule.resolutionTier.toUpperCase() : "通用规格"}</span><span>{operationLabel(rule.operation)}</span></div>
-            <div className="mt-2 font-mono text-lg font-semibold text-primary">{rule.billingMode === "ratio" ? `${rule.modelRatio}×` : rule.credits}<span className="ml-1.5 font-sans text-[11px] font-normal text-muted-foreground">算力 / {unitLabel(rule.unit)}</span></div>
+            <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">{rule.resolutionTier ? rule.resolutionTier.toUpperCase() : "通用规格"}</span>
+                <span>{operationLabel(rule.operation)}</span>
+            </div>
+            <div className="mt-2 font-mono text-lg font-semibold text-primary">
+                {rule.billingMode === "ratio" ? `${rule.modelRatio}×` : rule.credits}
+                <span className="ml-1.5 font-sans text-[11px] font-normal text-muted-foreground">算力 / {unitLabel(rule.unit)}</span>
+            </div>
             {rule.minCredits > 0 ? <div className="mt-1 text-[11px] text-muted-foreground">单次最低 {rule.minCredits} 算力</div> : null}
         </div>
     );
 }
 
 function Capability({ label, values, fallback }: { label: string; values: Array<string | number>; fallback: string }) {
-    return <div className="rounded-xl border border-border bg-muted/35 p-3"><div className="text-[11px] font-medium text-muted-foreground">{label}</div><div className="mt-2 flex min-h-5 flex-wrap gap-1.5">{values.length ? values.map((value) => <span key={String(value)} className="rounded-md bg-card px-2 py-1 text-[11px] font-medium ring-1 ring-border">{value}</span>) : <span className="text-xs text-muted-foreground">{fallback}</span>}</div></div>;
+    return (
+        <div className="rounded-xl border border-border bg-muted/35 p-3">
+            <div className="text-[11px] font-medium text-muted-foreground">{label}</div>
+            <div className="mt-2 flex min-h-5 flex-wrap gap-1.5">
+                {values.length ? (
+                    values.map((value) => (
+                        <span key={String(value)} className="rounded-md bg-card px-2 py-1 text-[11px] font-medium ring-1 ring-border">
+                            {value}
+                        </span>
+                    ))
+                ) : (
+                    <span className="text-xs text-muted-foreground">{fallback}</span>
+                )}
+            </div>
+        </div>
+    );
 }
 
 function enabledPricingRules(rules: AdminPricingRule[], modelId: string, operation?: ModelOperation) {
@@ -344,7 +512,15 @@ function buildSnippet(endpoint: string, model: MarketplaceModel, operation: Mode
     const ratio = model.aspectRatios[0];
     const resolution = model.resolutionTiers[0];
     if (model.modality === "image" && operation === "edit") {
-        const fields = [`model=${model.id}`, "prompt=保留商品主体，把背景改成夜晚霓虹街道", "image=@./reference.png", ...(ratio ? [`size=${imageOutputSize(ratio)}`] : []), ...(resolution ? [`quality=${imageQuality(resolution)}`] : []), "n=1", "response_format=b64_json"];
+        const fields = [
+            `model=${model.id}`,
+            "prompt=保留商品主体，把背景改成夜晚霓虹街道",
+            "image=@./reference.png",
+            ...(ratio ? [`size=${imageOutputSize(ratio)}`] : []),
+            ...(resolution ? [`quality=${imageQuality(resolution)}`] : []),
+            "n=1",
+            "response_format=b64_json",
+        ];
         return `curl -X POST "${endpoint}/images/edits" \\\n  -H "Authorization: Bearer YOUR_API_KEY" \\\n  -H "Idempotency-Key: YOUR_UNIQUE_REQUEST_ID" \\\n${fields.map((field) => `  -F "${field}"`).join(" \\\n")}`;
     }
     if (model.modality === "image") {

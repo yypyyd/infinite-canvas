@@ -101,16 +101,16 @@ type PricingRule struct {
 
 // PublicModelChannelSetting stores frontend-visible model channel settings.
 type PublicModelChannelSetting struct {
-	AvailableModels    []string            `json:"availableModels"`
-	Models             []ModelDefinition   `json:"models"`
-	PricingRules       []PricingRule       `json:"pricingRules"`
-	GroupRatios        map[string]float64  `json:"groupRatios"`
-	ModelAspectRatios  map[string][]string `json:"modelAspectRatios"`
-	DefaultModel       string              `json:"defaultModel"`
-	DefaultImageModel  string              `json:"defaultImageModel"`
-	DefaultVideoModel  string              `json:"defaultVideoModel"`
-	DefaultTextModel   string              `json:"defaultTextModel"`
-	SystemPrompt       string              `json:"systemPrompt"`
+	AvailableModels   []string            `json:"availableModels"`
+	Models            []ModelDefinition   `json:"models"`
+	PricingRules      []PricingRule       `json:"pricingRules"`
+	GroupRatios       map[string]float64  `json:"groupRatios"`
+	ModelAspectRatios map[string][]string `json:"modelAspectRatios"`
+	DefaultModel      string              `json:"defaultModel"`
+	DefaultImageModel string              `json:"defaultImageModel"`
+	DefaultVideoModel string              `json:"defaultVideoModel"`
+	DefaultTextModel  string              `json:"defaultTextModel"`
+	SystemPrompt      string              `json:"systemPrompt"`
 }
 
 // PublicSetting stores frontend-visible settings.
@@ -164,14 +164,14 @@ type PrivateSetting struct {
 }
 
 type OperationsAlertSetting struct {
-	Enabled                             *bool  `json:"enabled"`
-	BatchQueuedThreshold                *int64 `json:"batchQueuedThreshold"`
-	BatchExpiredLeasesThreshold         *int64 `json:"batchExpiredLeasesThreshold"`
-	EmailPendingThreshold               *int64 `json:"emailPendingThreshold"`
-	EmailFailedThreshold                *int64 `json:"emailFailedThreshold"`
-	EmailExpiredLeasesThreshold         *int64 `json:"emailExpiredLeasesThreshold"`
-	ObjectDeletionPendingThreshold      *int64 `json:"objectDeletionPendingThreshold"`
-	ObjectDeletionFailedThreshold       *int64 `json:"objectDeletionFailedThreshold"`
+	Enabled                              *bool  `json:"enabled"`
+	BatchQueuedThreshold                 *int64 `json:"batchQueuedThreshold"`
+	BatchExpiredLeasesThreshold          *int64 `json:"batchExpiredLeasesThreshold"`
+	EmailPendingThreshold                *int64 `json:"emailPendingThreshold"`
+	EmailFailedThreshold                 *int64 `json:"emailFailedThreshold"`
+	EmailExpiredLeasesThreshold          *int64 `json:"emailExpiredLeasesThreshold"`
+	ObjectDeletionPendingThreshold       *int64 `json:"objectDeletionPendingThreshold"`
+	ObjectDeletionFailedThreshold        *int64 `json:"objectDeletionFailedThreshold"`
 	ObjectDeletionExpiredLeasesThreshold *int64 `json:"objectDeletionExpiredLeasesThreshold"`
 }
 
@@ -183,7 +183,7 @@ type EmailSetting struct {
 	SMTPFromEmail      string `json:"smtpFromEmail"`
 	SMTPFromName       string `json:"smtpFromName"`
 	SMTPSecurity       string `json:"smtpSecurity"`
-	PasswordConfigured bool  `json:"passwordConfigured"`
+	PasswordConfigured bool   `json:"passwordConfigured"`
 }
 
 type PromptSyncSetting struct {

@@ -1,9 +1,9 @@
 package router
 
 import (
+	"github.com/gin-gonic/gin"
 	"github.com/yypyyd/infinite-canvas/handler"
 	"github.com/yypyyd/infinite-canvas/middleware"
-	"github.com/gin-gonic/gin"
 )
 
 func New() *gin.Engine {
@@ -78,9 +78,15 @@ func New() *gin.Engine {
 	commerce.GET("/batch-jobs/:id", func(c *gin.Context) { handler.CommerceBatchJob(c.Writer, c.Request, c.Param("id")) })
 	commerce.GET("/batch-jobs/:id/items", func(c *gin.Context) { handler.CommerceBatchItems(c.Writer, c.Request, c.Param("id")) })
 	commerce.GET("/batch-jobs/:id/archive", func(c *gin.Context) { handler.DownloadCommerceBatchArchive(c.Writer, c.Request, c.Param("id")) })
-	commerce.POST("/batch-jobs/:id/items/:itemId/review", func(c *gin.Context) { handler.ReviewCommerceBatchItem(c.Writer, c.Request, c.Param("id"), c.Param("itemId")) })
-	commerce.POST("/batch-jobs/:id/items/:itemId/retry", func(c *gin.Context) { handler.RetryCommerceBatchItem(c.Writer, c.Request, c.Param("id"), c.Param("itemId")) })
-	commerce.POST("/batch-jobs/:id/items/:itemId/primary", func(c *gin.Context) { handler.SetCommerceBatchItemPrimary(c.Writer, c.Request, c.Param("id"), c.Param("itemId")) })
+	commerce.POST("/batch-jobs/:id/items/:itemId/review", func(c *gin.Context) {
+		handler.ReviewCommerceBatchItem(c.Writer, c.Request, c.Param("id"), c.Param("itemId"))
+	})
+	commerce.POST("/batch-jobs/:id/items/:itemId/retry", func(c *gin.Context) {
+		handler.RetryCommerceBatchItem(c.Writer, c.Request, c.Param("id"), c.Param("itemId"))
+	})
+	commerce.POST("/batch-jobs/:id/items/:itemId/primary", func(c *gin.Context) {
+		handler.SetCommerceBatchItemPrimary(c.Writer, c.Request, c.Param("id"), c.Param("itemId"))
+	})
 	commerce.POST("/batch-jobs/:id/cancel", func(c *gin.Context) { handler.CancelCommerceBatchJob(c.Writer, c.Request, c.Param("id")) })
 	commerce.POST("/batch-jobs/:id/retry", func(c *gin.Context) { handler.RetryCommerceBatchJob(c.Writer, c.Request, c.Param("id")) })
 	commerce.GET("/video-projects", gin.WrapF(handler.CommerceVideoProjects))
@@ -90,7 +96,9 @@ func New() *gin.Engine {
 	commerce.POST("/video-projects/:id/preflight", func(c *gin.Context) { handler.PreflightCommerceVideoProject(c.Writer, c.Request, c.Param("id")) })
 	commerce.GET("/video-projects/:id/versions", func(c *gin.Context) { handler.CommerceVideoProjectVersions(c.Writer, c.Request, c.Param("id")) })
 	commerce.POST("/video-projects/:id/versions", func(c *gin.Context) { handler.CreateCommerceVideoProjectVersion(c.Writer, c.Request, c.Param("id")) })
-	commerce.GET("/video-projects/:id/versions/:version", func(c *gin.Context) { handler.CommerceVideoProjectVersion(c.Writer, c.Request, c.Param("id"), c.Param("version")) })
+	commerce.GET("/video-projects/:id/versions/:version", func(c *gin.Context) {
+		handler.CommerceVideoProjectVersion(c.Writer, c.Request, c.Param("id"), c.Param("version"))
+	})
 	commerce.GET("/audit-logs", gin.WrapF(handler.CommerceAuditLogs))
 	api.GET("/settings", gin.WrapF(handler.Settings))
 	api.GET("/check-in", middleware.UserAuth, gin.WrapF(handler.CheckInStatus))

@@ -18,8 +18,8 @@ const (
 	AgentRunStatusWaitingConfirmation AgentRunStatus = "waiting_confirmation"
 	AgentRunStatusWaitingTool         AgentRunStatus = "waiting_tool"
 	AgentRunStatusCompleted           AgentRunStatus = "completed"
-	AgentRunStatusFailed      AgentRunStatus = "failed"
-	AgentRunStatusCancelled   AgentRunStatus = "cancelled"
+	AgentRunStatusFailed              AgentRunStatus = "failed"
+	AgentRunStatusCancelled           AgentRunStatus = "cancelled"
 
 	AgentStepTypeCompletion AgentStepType = "completion"
 	AgentStepTypeTool       AgentStepType = "tool"
@@ -29,15 +29,15 @@ const (
 	AgentStepStatusFailed    AgentStepStatus = "failed"
 	AgentStepStatusCancelled AgentStepStatus = "cancelled"
 
-	AgentEventRunStarted           AgentEventType = "run.started"
-	AgentEventPlanCreated          AgentEventType = "plan.created"
-	AgentEventMessageDelta         AgentEventType = "message.delta"
+	AgentEventRunStarted               AgentEventType = "run.started"
+	AgentEventPlanCreated              AgentEventType = "plan.created"
+	AgentEventMessageDelta             AgentEventType = "message.delta"
 	AgentEventToolConfirmationRequired AgentEventType = "tool.confirmation_required"
-	AgentEventToolCall             AgentEventType = "tool.call"
-	AgentEventToolCompleted AgentEventType = "tool.completed"
-	AgentEventRunCompleted  AgentEventType = "run.completed"
-	AgentEventRunFailed     AgentEventType = "run.failed"
-	AgentEventRunCancelled  AgentEventType = "run.cancelled"
+	AgentEventToolCall                 AgentEventType = "tool.call"
+	AgentEventToolCompleted            AgentEventType = "tool.completed"
+	AgentEventRunCompleted             AgentEventType = "run.completed"
+	AgentEventRunFailed                AgentEventType = "run.failed"
+	AgentEventRunCancelled             AgentEventType = "run.cancelled"
 )
 
 type AgentSession struct {

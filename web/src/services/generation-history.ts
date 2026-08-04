@@ -204,11 +204,7 @@ export async function applyGenerationRecordSnapshot(ownerId: string, records: Wo
         if (change.deleted) target.delete(change.objectId);
         else target.set(change.objectId, { ...change.data, id: change.objectId, ownerId, version: change.version });
     });
-    const projects = new Map(
-        records
-            .filter((record) => record.domain === "canvas_project" && !record.deleted && record.data)
-            .map((record) => [record.objectId, { ...record.data, id: record.objectId } as CanvasHistoryProject]),
-    );
+    const projects = new Map(records.filter((record) => record.domain === "canvas_project" && !record.deleted && record.data).map((record) => [record.objectId, { ...record.data, id: record.objectId } as CanvasHistoryProject]));
     pending.forEach((change) => {
         if (change.domain !== "canvas_project") return;
         if (change.deleted) projects.delete(change.objectId);

@@ -1,15 +1,15 @@
 package model
 
 type OperationsQueueHealth struct {
-	BatchQueued                     int64 `json:"batchQueued"`
-	BatchRunning                    int64 `json:"batchRunning"`
-	BatchExpiredLeases              int64 `json:"batchExpiredLeases"`
-	EmailPending                    int64 `json:"emailPending"`
-	EmailFailed                     int64 `json:"emailFailed"`
-	EmailExpiredLeases              int64 `json:"emailExpiredLeases"`
-	ObjectDeletionPending           int64 `json:"objectDeletionPending"`
-	ObjectDeletionFailed            int64 `json:"objectDeletionFailed"`
-	ObjectDeletionExpiredLeases     int64 `json:"objectDeletionExpiredLeases"`
+	BatchQueued                 int64 `json:"batchQueued"`
+	BatchRunning                int64 `json:"batchRunning"`
+	BatchExpiredLeases          int64 `json:"batchExpiredLeases"`
+	EmailPending                int64 `json:"emailPending"`
+	EmailFailed                 int64 `json:"emailFailed"`
+	EmailExpiredLeases          int64 `json:"emailExpiredLeases"`
+	ObjectDeletionPending       int64 `json:"objectDeletionPending"`
+	ObjectDeletionFailed        int64 `json:"objectDeletionFailed"`
+	ObjectDeletionExpiredLeases int64 `json:"objectDeletionExpiredLeases"`
 }
 
 type OperationsGenerationMetrics struct {

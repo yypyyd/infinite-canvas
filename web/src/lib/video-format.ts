@@ -49,8 +49,8 @@ export function videoOutputSize(resolution: string, ratio: string) {
     const shortSide = token === "4k" ? 2160 : Math.max(1, Number(token.replace(/p$/i, "")) || 720);
     const [ratioWidth, ratioHeight] = normalizeVideoRatio(ratio).split(":").map(Number);
     if (ratioWidth === ratioHeight) return `${shortSide}x${shortSide}`;
-    if (ratioWidth > ratioHeight) return `${even(shortSide * ratioWidth / ratioHeight)}x${even(shortSide)}`;
-    return `${even(shortSide)}x${even(shortSide * ratioHeight / ratioWidth)}`;
+    if (ratioWidth > ratioHeight) return `${even((shortSide * ratioWidth) / ratioHeight)}x${even(shortSide)}`;
+    return `${even(shortSide)}x${even((shortSide * ratioHeight) / ratioWidth)}`;
 }
 
 export function videoRatioLabel(value: string) {

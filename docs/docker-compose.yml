@@ -1,6 +1,9 @@
 services:
   docs:
-    image: ${INFINITE_CANVAS_DOCS_IMAGE:-ghcr.io/yypyyd/infinite-canvas-docs:latest}
+    image: ${INFINITE_CANVAS_DOCS_IMAGE:-infinite-canvas-docs:local}
+    build:
+      context: ..
+      dockerfile: docs/Dockerfile
     ports:
       - "3001:3000"
     restart: unless-stopped

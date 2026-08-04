@@ -32,14 +32,23 @@ func AdminOperationsHealth(w http.ResponseWriter, r *http.Request) {
 
 func AdminDataConsistency(w http.ResponseWriter, r *http.Request) {
 	result, err := service.InspectDataConsistency(r.Context())
-	if err != nil { FailError(w, err); return }
+	if err != nil {
+		FailError(w, err)
+		return
+	}
 	OK(w, result)
 }
 
 func AdminRepairDataConsistency(w http.ResponseWriter, r *http.Request) {
 	var input model.RepairDataConsistencyInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil { Fail(w, "请求参数无效"); return }
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		Fail(w, "请求参数无效")
+		return
+	}
 	result, err := service.RepairDataConsistencyIssue(r.Context(), input)
-	if err != nil { FailError(w, err); return }
+	if err != nil {
+		FailError(w, err)
+		return
+	}
 	OK(w, result)
 }

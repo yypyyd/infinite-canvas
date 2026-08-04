@@ -1141,7 +1141,7 @@ func fetchAdminChannelModels(channel model.ModelChannel) ([]model.DiscoveredMode
 	}
 	var payload struct {
 		Object string `json:"object"`
-		Data []struct {
+		Data   []struct {
 			ID                   string            `json:"id"`
 			Kind                 string            `json:"kind"`
 			SupportedRatios      []string          `json:"supported_ratios"`

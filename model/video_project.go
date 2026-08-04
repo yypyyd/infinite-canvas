@@ -38,13 +38,13 @@ type VideoTimelineSubtitle struct {
 }
 
 type VideoTimelineBGM struct {
-	StorageKey     string `json:"storageKey"`
-	Volume         int    `json:"volume"`
-	Loop           bool   `json:"loop"`
-	TrimStartMs    int    `json:"trimStartMs"`
-	FadeInMs       int    `json:"fadeInMs"`
-	FadeOutMs      int    `json:"fadeOutMs"`
-	RightsConfirmed bool  `json:"rightsConfirmed"`
+	StorageKey      string `json:"storageKey"`
+	Volume          int    `json:"volume"`
+	Loop            bool   `json:"loop"`
+	TrimStartMs     int    `json:"trimStartMs"`
+	FadeInMs        int    `json:"fadeInMs"`
+	FadeOutMs       int    `json:"fadeOutMs"`
+	RightsConfirmed bool   `json:"rightsConfirmed"`
 }
 
 type VideoOutputSpec struct {
@@ -82,19 +82,36 @@ type VideoProject struct {
 }
 
 type VideoProjectVersion struct {
-	ID             string        `json:"id" gorm:"primaryKey"`
-	OrganizationID string        `json:"organizationId" gorm:"not null;index;uniqueIndex:idx_video_project_version,priority:1"`
-	ProjectID      string        `json:"projectId" gorm:"index;uniqueIndex:idx_video_project_version,priority:2"`
-	Version        int           `json:"version" gorm:"uniqueIndex:idx_video_project_version,priority:3"`
-	TimelineJSON   string        `json:"-" gorm:"type:text"`
-	Timeline       VideoTimeline `json:"timeline" gorm:"-"`
-	OutputSpecJSON string        `json:"-" gorm:"type:text"`
+	ID             string          `json:"id" gorm:"primaryKey"`
+	OrganizationID string          `json:"organizationId" gorm:"not null;index;uniqueIndex:idx_video_project_version,priority:1"`
+	ProjectID      string          `json:"projectId" gorm:"index;uniqueIndex:idx_video_project_version,priority:2"`
+	Version        int             `json:"version" gorm:"uniqueIndex:idx_video_project_version,priority:3"`
+	TimelineJSON   string          `json:"-" gorm:"type:text"`
+	Timeline       VideoTimeline   `json:"timeline" gorm:"-"`
+	OutputSpecJSON string          `json:"-" gorm:"type:text"`
 	OutputSpec     VideoOutputSpec `json:"outputSpec" gorm:"-"`
-	CreatedBy      string        `json:"createdBy" gorm:"index"`
-	CreatedAt      string        `json:"createdAt"`
+	CreatedBy      string          `json:"createdBy" gorm:"index"`
+	CreatedAt      string          `json:"createdAt"`
 }
 
-type VideoProjectList struct { Items []VideoProject `json:"items"`; Total int `json:"total"` }
-type SaveVideoProjectInput struct { Name string `json:"name"`; Description string `json:"description"`; ProductID string `json:"productId"`; SKUID string `json:"skuId"`; ExpectedVersion int64 `json:"expectedVersion"`; Timeline VideoTimeline `json:"timeline"` }
-type VideoPreflight struct { CanFreeze bool `json:"canFreeze"`; DurationMs int `json:"durationMs"`; Issues []ProductionPreflightIssue `json:"issues"`; Output VideoOutputSpec `json:"output"` }
-type CreateVideoProjectVersionInput struct { ExpectedVersion int64 `json:"expectedVersion"` }
+type VideoProjectList struct {
+	Items []VideoProject `json:"items"`
+	Total int            `json:"total"`
+}
+type SaveVideoProjectInput struct {
+	Name            string        `json:"name"`
+	Description     string        `json:"description"`
+	ProductID       string        `json:"productId"`
+	SKUID           string        `json:"skuId"`
+	ExpectedVersion int64         `json:"expectedVersion"`
+	Timeline        VideoTimeline `json:"timeline"`
+}
+type VideoPreflight struct {
+	CanFreeze  bool                       `json:"canFreeze"`
+	DurationMs int                        `json:"durationMs"`
+	Issues     []ProductionPreflightIssue `json:"issues"`
+	Output     VideoOutputSpec            `json:"output"`
+}
+type CreateVideoProjectVersionInput struct {
+	ExpectedVersion int64 `json:"expectedVersion"`
+}

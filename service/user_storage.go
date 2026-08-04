@@ -8,17 +8,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yypyyd/infinite-canvas/config"
-	"github.com/yypyyd/infinite-canvas/model"
-	"github.com/yypyyd/infinite-canvas/repository"
 	"github.com/qiniu/go-sdk/v7/auth/qbox"
 	"github.com/qiniu/go-sdk/v7/client"
 	"github.com/qiniu/go-sdk/v7/storage"
+	"github.com/yypyyd/infinite-canvas/config"
+	"github.com/yypyyd/infinite-canvas/model"
+	"github.com/yypyyd/infinite-canvas/repository"
 )
 
 const (
-	maxUserFileSize = 80 << 20
-	userFileUploadLifetime = 20 * time.Minute
+	maxUserFileSize            = 80 << 20
+	userFileUploadLifetime     = 20 * time.Minute
 	userFileUploadCleanupGrace = 15 * time.Minute
 )
 
@@ -58,7 +58,9 @@ type UserFileConfirmRequest struct {
 }
 
 func PrepareUserWorkspaceFileUpload(user model.AuthUser, request UserFileUploadRequest) (UserFileUploadTicket, error) {
-	if err := RequireOrganizationWrite(user); err != nil { return UserFileUploadTicket{}, err }
+	if err := RequireOrganizationWrite(user); err != nil {
+		return UserFileUploadTicket{}, err
+	}
 	organizationID, userID := user.OrganizationID, user.ID
 	storageKey, mimeType, err := normalizeUserFileInput(request.StorageKey, request.MimeType, request.Size)
 	if err != nil {
@@ -69,7 +71,11 @@ func PrepareUserWorkspaceFileUpload(user model.AuthUser, request UserFileUploadR
 	}
 	requestTime := time.Now().UTC()
 	timestamp := requestTime.Format(timestampLayout)
-	if err := repository.ConsumeUserFileUploadRateLimit(organizationID, userID, requestTime.Truncate(time.Minute).Format(timestampLayout), timestamp); errors.Is(err, repository.ErrWorkspaceUploadRateExceeded) { return UserFileUploadTicket{}, safeMessageError{message: "上传请求过于频繁，请稍后重试"} } else if err != nil { return UserFileUploadTicket{}, err }
+	if err := repository.ConsumeUserFileUploadRateLimit(organizationID, userID, requestTime.Truncate(time.Minute).Format(timestampLayout), timestamp); errors.Is(err, repository.ErrWorkspaceUploadRateExceeded) {
+		return UserFileUploadTicket{}, safeMessageError{message: "上传请求过于频繁，请稍后重试"}
+	} else if err != nil {
+		return UserFileUploadTicket{}, err
+	}
 	existing, exists, err := repository.GetUserFile(organizationID, storageKey)
 	if err != nil {
 		return UserFileUploadTicket{}, err
@@ -91,32 +97,48 @@ func PrepareUserWorkspaceFileUpload(user model.AuthUser, request UserFileUploadR
 	expiresAtTime := requestTime.Add(userFileUploadLifetime)
 	expiresAt := expiresAtTime.Format(timestampLayout)
 	replaceObjectKey := ""
-	if replaceExisting { replaceObjectKey = existing.ObjectKey }
+	if replaceExisting {
+		replaceObjectKey = existing.ObjectKey
+	}
 	reservation := model.UserFileUploadReservation{ID: uploadID, OrganizationID: organizationID, UserID: userID, StorageKey: storageKey, ObjectKey: objectKey, MimeType: mimeType, Size: request.Size, ReplaceExisting: replaceExisting, ReplaceObjectKey: replaceObjectKey, ExpiresAt: expiresAt, CleanupAfter: expiresAtTime.Add(userFileUploadCleanupGrace).Format(timestampLayout), CreatedAt: timestamp}
 	reservation, err = repository.ReserveUserFileUpload(reservation, userStorageQuotaBytes(), timestamp)
-	if errors.Is(err, repository.ErrWorkspaceStorageQuotaExceeded) { return UserFileUploadTicket{}, safeMessageError{message: "企业云端存储空间不足"} }
-	if errors.Is(err, repository.ErrWorkspaceTemporaryQuotaExceeded) { return UserFileUploadTicket{}, safeMessageError{message: "企业临时文件清理空间已满，请稍后重试"} }
-	if errors.Is(err, repository.ErrWorkspaceFileLimitExceeded) { return UserFileUploadTicket{}, safeMessageError{message: "企业文件数量已达上限"} }
-	if errors.Is(err, repository.ErrWorkspaceUploadReservationLimitExceeded) { return UserFileUploadTicket{}, safeMessageError{message: "企业临时文件数量已达上限，请稍后重试"} }
-	if err != nil { return UserFileUploadTicket{}, err }
+	if errors.Is(err, repository.ErrWorkspaceStorageQuotaExceeded) {
+		return UserFileUploadTicket{}, safeMessageError{message: "企业云端存储空间不足"}
+	}
+	if errors.Is(err, repository.ErrWorkspaceTemporaryQuotaExceeded) {
+		return UserFileUploadTicket{}, safeMessageError{message: "企业临时文件清理空间已满，请稍后重试"}
+	}
+	if errors.Is(err, repository.ErrWorkspaceFileLimitExceeded) {
+		return UserFileUploadTicket{}, safeMessageError{message: "企业文件数量已达上限"}
+	}
+	if errors.Is(err, repository.ErrWorkspaceUploadReservationLimitExceeded) {
+		return UserFileUploadTicket{}, safeMessageError{message: "企业临时文件数量已达上限，请稍后重试"}
+	}
+	if err != nil {
+		return UserFileUploadTicket{}, err
+	}
 	policy := storage.PutPolicy{
-		Scope:       config.Cfg.QiniuBucket + ":" + objectKey,
-		Expires:     uint64(userFileUploadLifetime / time.Second),
-		FsizeMin:    request.Size,
-		FsizeLimit:  request.Size,
-		DetectMime:  1,
-		MimeLimit:   assetTypeFromMime(mimeType) + "/*",
-		EndUser:     userID,
-		ReturnBody:  `{"key":"$(key)","hash":"$(etag)","size":$(fsize),"mimeType":"$(mimeType)"}`,
+		Scope:      config.Cfg.QiniuBucket + ":" + objectKey,
+		Expires:    uint64(userFileUploadLifetime / time.Second),
+		FsizeMin:   request.Size,
+		FsizeLimit: request.Size,
+		DetectMime: 1,
+		MimeLimit:  assetTypeFromMime(mimeType) + "/*",
+		EndUser:    userID,
+		ReturnBody: `{"key":"$(key)","hash":"$(etag)","size":$(fsize),"mimeType":"$(mimeType)"}`,
 	}
 	return UserFileUploadTicket{UploadRequired: true, UploadID: reservation.ID, UploadURL: qiniuUploadURL(), UploadToken: policy.UploadToken(qiniuMac()), ObjectKey: objectKey, ExpiresAt: expiresAt}, nil
 }
 
 func ConfirmUserWorkspaceFileUpload(user model.AuthUser, request UserFileConfirmRequest) (model.UserFile, error) {
-	if err := RequireOrganizationWrite(user); err != nil { return model.UserFile{}, err }
+	if err := RequireOrganizationWrite(user); err != nil {
+		return model.UserFile{}, err
+	}
 	organizationID, userID := user.OrganizationID, user.ID
 	uploadID := strings.TrimSpace(request.UploadID)
-	if uploadID == "" { return model.UserFile{}, safeMessageError{message: "上传预留编号无效"} }
+	if uploadID == "" {
+		return model.UserFile{}, safeMessageError{message: "上传预留编号无效"}
+	}
 	storageKey, mimeType, err := normalizeUserFileInput(request.StorageKey, request.MimeType, request.Size)
 	if err != nil {
 		return model.UserFile{}, err
@@ -125,8 +147,12 @@ func ConfirmUserWorkspaceFileUpload(user model.AuthUser, request UserFileConfirm
 		return model.UserFile{}, err
 	}
 	reservation, ok, err := repository.GetUserFileUploadReservation(organizationID, userID, uploadID)
-	if err != nil { return model.UserFile{}, err }
-	if !ok || reservation.StorageKey != storageKey || reservation.MimeType != mimeType || reservation.Size != request.Size { return model.UserFile{}, safeMessageError{message: "上传预留不存在或已失效"} }
+	if err != nil {
+		return model.UserFile{}, err
+	}
+	if !ok || reservation.StorageKey != storageKey || reservation.MimeType != mimeType || reservation.Size != request.Size {
+		return model.UserFile{}, safeMessageError{message: "上传预留不存在或已失效"}
+	}
 	expectedKey := reservation.ObjectKey
 	if strings.TrimSpace(request.ObjectKey) != expectedKey {
 		return model.UserFile{}, safeMessageError{message: "云端文件路径无效"}
@@ -140,18 +166,30 @@ func ConfirmUserWorkspaceFileUpload(user model.AuthUser, request UserFileConfirm
 	}
 	timestamp := now()
 	saved, err := repository.ConfirmUserFileUpload(organizationID, userID, uploadID, newID("file"), info.Hash, info.MimeType, info.Fsize, userStorageQuotaBytes(), timestamp)
-	if errors.Is(err, repository.ErrWorkspaceUploadReservationUnavailable) { return model.UserFile{}, safeMessageError{message: "上传预留不存在或已过期，请重新上传"} }
-	if errors.Is(err, repository.ErrWorkspaceStorageQuotaExceeded) { return model.UserFile{}, safeMessageError{message: "企业云端存储空间不足"} }
-	if errors.Is(err, repository.ErrWorkspaceFileConflict) { return model.UserFile{}, safeMessageError{message: "文件存储编号已对应其他内容，请重新生成编号后上传"} }
-	if err != nil { return model.UserFile{}, err }
+	if errors.Is(err, repository.ErrWorkspaceUploadReservationUnavailable) {
+		return model.UserFile{}, safeMessageError{message: "上传预留不存在或已过期，请重新上传"}
+	}
+	if errors.Is(err, repository.ErrWorkspaceStorageQuotaExceeded) {
+		return model.UserFile{}, safeMessageError{message: "企业云端存储空间不足"}
+	}
+	if errors.Is(err, repository.ErrWorkspaceFileConflict) {
+		return model.UserFile{}, safeMessageError{message: "文件存储编号已对应其他内容，请重新生成编号后上传"}
+	}
+	if err != nil {
+		return model.UserFile{}, err
+	}
 	return saved, nil
 }
 
 func CancelUserWorkspaceFileUpload(user model.AuthUser, uploadID string) error {
 	organization, _, err := EnsureOrganization(user)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	uploadID = strings.TrimSpace(uploadID)
-	if uploadID == "" { return safeMessageError{message: "上传预留编号无效"} }
+	if uploadID == "" {
+		return safeMessageError{message: "上传预留编号无效"}
+	}
 	return repository.CancelUserFileUploadReservation(organization.ID, user.ID, uploadID, now())
 }
 
@@ -165,15 +203,21 @@ func organizationFileURL(organizationID string, storageKey, variant string, vali
 		return "", false
 	}
 	query, ok := userFileImageVariantQuery(item.MimeType, variant)
-	if !ok { return "", false }
+	if !ok {
+		return "", false
+	}
 	deadline := time.Now().Add(validity).Unix()
 	return storage.MakePrivateURLv2WithQueryString(qiniuMac(), strings.TrimRight(config.Cfg.QiniuDownloadDomain, "/"), item.ObjectKey, query, deadline), true
 }
 
 func userFileImageVariantQuery(mimeType, variant string) (string, bool) {
 	variant = strings.TrimSpace(variant)
-	if variant == "" { return "", true }
-	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(mimeType)), "image/") { return "", false }
+	if variant == "" {
+		return "", true
+	}
+	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(mimeType)), "image/") {
+		return "", false
+	}
 	switch variant {
 	case "thumb":
 		return "imageView2/1/w/160/h/160/format/webp/q/75", true
@@ -229,17 +273,29 @@ func cleanupPendingUserObjects() error {
 	for index := 0; index < 50; index++ {
 		claimedAt := time.Now().UTC()
 		item, claimed, err := repository.ClaimUserObjectDeletion(claimedAt.Format(timestampLayout), claimedAt.Add(2*time.Minute).Format(timestampLayout), newID("delete-lease"))
-		if err != nil { logWorkerError("object_deletion", "item_claim_failed", err); return err }
-		if !claimed { return nil }
+		if err != nil {
+			logWorkerError("object_deletion", "item_claim_failed", err)
+			return err
+		}
+		if !claimed {
+			return nil
+		}
 		logAttrs := []any{"organization_id", item.OrganizationID, "deletion_id", item.ID, "attempts", item.Attempts}
 		logWorkerInfo("object_deletion", "deletion_started", logAttrs...)
 		deletionErr := qiniuBucketManager().Delete(config.Cfg.QiniuBucket, item.ObjectKey)
 		var qiniuError *client.ErrorInfo
-		if errors.As(deletionErr, &qiniuError) && qiniuError.Code == 612 { deletionErr = nil }
+		if errors.As(deletionErr, &qiniuError) && qiniuError.Code == 612 {
+			deletionErr = nil
+		}
 		message := ""
-		if deletionErr != nil { message = "对象存储删除失败" }
+		if deletionErr != nil {
+			message = "对象存储删除失败"
+		}
 		delay := time.Minute * time.Duration(1<<min(item.Attempts-1, 6))
-		if err := repository.FinishUserObjectDeletion(item, deletionErr == nil, message, time.Now().UTC().Add(delay).Format(timestampLayout), now()); err != nil { logWorkerError("object_deletion", "deletion_finalize_failed", err, logAttrs...); return err }
+		if err := repository.FinishUserObjectDeletion(item, deletionErr == nil, message, time.Now().UTC().Add(delay).Format(timestampLayout), now()); err != nil {
+			logWorkerError("object_deletion", "deletion_finalize_failed", err, logAttrs...)
+			return err
+		}
 		if deletionErr != nil {
 			logWorkerError("object_deletion", "deletion_failed", deletionErr, logAttrs...)
 		} else {
@@ -254,11 +310,15 @@ func StartUserFileMaintenanceWorker() {
 	go func() {
 		for {
 			timestamp := now()
-			cutoff := time.Now().UTC().Add(-24*time.Hour).Format(timestampLayout)
+			cutoff := time.Now().UTC().Add(-24 * time.Hour).Format(timestampLayout)
 			organizationIDs, err := repository.ListUserFileMaintenanceOrganizations(timestamp, cutoff)
-			if err != nil { logWorkerError("file_maintenance", "organization_list_failed", err) }
+			if err != nil {
+				logWorkerError("file_maintenance", "organization_list_failed", err)
+			}
 			for _, organizationID := range organizationIDs {
-				if err := cleanupUserWorkspaceFiles(organizationID); err != nil { logWorkerError("file_maintenance", "organization_cleanup_failed", err, "organization_id", organizationID) }
+				if err := cleanupUserWorkspaceFiles(organizationID); err != nil {
+					logWorkerError("file_maintenance", "organization_cleanup_failed", err, "organization_id", organizationID)
+				}
 			}
 			_ = cleanupPendingUserObjects()
 			time.Sleep(time.Minute)
@@ -302,9 +362,13 @@ func normalizeUserFileInput(storageKey, mimeType string, size int64) (string, st
 		return "", "", safeMessageError{message: "仅支持图片、视频或音频文件"}
 	}
 	prefix, suffix, _ := strings.Cut(storageKey, ":")
-	if strings.HasPrefix(strings.ToLower(suffix), "batch-result-") { return "", "", safeMessageError{message: "文件存储编号使用了系统保留命名空间"} }
+	if strings.HasPrefix(strings.ToLower(suffix), "batch-result-") {
+		return "", "", safeMessageError{message: "文件存储编号使用了系统保留命名空间"}
+	}
 	expectedType := map[string]string{"image": "image", "video": "video", "video-reference": "video", "audio": "audio", "audio-reference": "audio"}[prefix]
-	if expectedType != "" && expectedType != assetType { return "", "", safeMessageError{message: "文件类型与存储编号不匹配"} }
+	if expectedType != "" && expectedType != assetType {
+		return "", "", safeMessageError{message: "文件类型与存储编号不匹配"}
+	}
 	return storageKey, mimeType, nil
 }
 
@@ -320,7 +384,9 @@ func ensureQiniuStorageConfigured() error {
 	if strings.TrimSpace(config.Cfg.QiniuAccessKey) == "" || strings.TrimSpace(config.Cfg.QiniuSecretKey) == "" || strings.TrimSpace(config.Cfg.QiniuBucket) == "" || strings.TrimSpace(config.Cfg.QiniuDownloadDomain) == "" {
 		return safeMessageError{message: "云端文件存储尚未配置"}
 	}
-	if !validHTTPSURL(config.Cfg.QiniuDownloadDomain) { return safeMessageError{message: "七牛私有下载域名必须使用 HTTPS"} }
+	if !validHTTPSURL(config.Cfg.QiniuDownloadDomain) {
+		return safeMessageError{message: "七牛私有下载域名必须使用 HTTPS"}
+	}
 	return nil
 }
 

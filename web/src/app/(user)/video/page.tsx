@@ -737,7 +737,11 @@ function LogCard({ log, selected, active, onSelectedChange, onClick }: { log: Ge
                     </div>
                 </div>
                 <div className="grid justify-items-end gap-2">
-                    <Tag icon={log.status === "生成中" ? <LoaderCircle className="size-3 animate-spin" /> : undefined} className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none" color={log.status === "成功" ? "blue" : log.status === "生成中" ? "processing" : "red"}>
+                    <Tag
+                        icon={log.status === "生成中" ? <LoaderCircle className="size-3 animate-spin" /> : undefined}
+                        className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none"
+                        color={log.status === "成功" ? "blue" : log.status === "生成中" ? "processing" : "red"}
+                    >
                         {log.status}
                     </Tag>
                     <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none" color="green">

@@ -96,7 +96,12 @@ export function ChannelModelCapabilitiesEditor({ managedModels }: { managedModel
                                             ) : null}
                                             {supportsResolution ? (
                                                 <Col xs={24} md={modality === "video" ? 12 : 24}>
-                                                    <Form.Item name={[field.name, "aspectRatios"]} label="支持比例" rules={[{ required: true, message: "请选择至少一个支持比例" }]} extra="可直接输入上游实际支持的比例；路由只会把请求发送到支持该比例的渠道。">
+                                                    <Form.Item
+                                                        name={[field.name, "aspectRatios"]}
+                                                        label="支持比例"
+                                                        rules={[{ required: true, message: "请选择至少一个支持比例" }]}
+                                                        extra="可直接输入上游实际支持的比例；路由只会把请求发送到支持该比例的渠道。"
+                                                    >
                                                         <Select mode="tags" tokenSeparators={[",", "\n"]} options={ratioOptions} />
                                                     </Form.Item>
                                                 </Col>

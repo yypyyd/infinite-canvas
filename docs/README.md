@@ -19,16 +19,16 @@ bun run build
 bun run start
 ```
 
-Run the published image with Docker Compose:
+Build and run the current source with Docker Compose:
 
 ```bash
-docker compose up -d
+docker compose up -d --build
 ```
 
-Or build locally with Docker Compose:
+Or use an existing published image:
 
 ```bash
-docker compose -f docker-compose.local.yml up -d --build
+INFINITE_CANVAS_DOCS_IMAGE=ghcr.io/your-name/infinite-canvas-docs:tag docker compose up -d
 ```
 
 ## Explore

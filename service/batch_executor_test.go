@@ -21,12 +21,14 @@ func TestBatchProductionPromptIncludesFrozenCommerceInput(t *testing.T) {
 	brand := &model.Brand{Name: "测试品牌", Tone: "克制", Guidelines: "保持蓝色", ProhibitedTerms: []string{"夸大"}}
 	sku := &model.ProductSKU{Name: "蓝色款", Attributes: map[string]string{"尺寸": "大", "颜色": "蓝"}}
 	preset, ok := findBuiltinProductionTemplate("product-main")
-	if !ok { t.Fatal("product-main production template is missing") }
+	if !ok {
+		t.Fatal("product-main production template is missing")
+	}
 	input := BatchProductionExecution{
-		Job: model.BatchProductionJob{PresetID: "product-main", PresetPrompt: preset.Prompt},
+		Job:     model.BatchProductionJob{PresetID: "product-main", PresetPrompt: preset.Prompt},
 		Product: model.Product{Name: "测试商品", Category: "家居", Description: "商品描述", SellingPoints: []string{"耐用", "轻巧"}},
-		Brand: brand,
-		SKU: sku,
+		Brand:   brand,
+		SKU:     sku,
 	}
 	prompt, err := batchProductionPrompt(input)
 	if err != nil {
@@ -200,7 +202,7 @@ func TestStandardBatchExecutorReturnsResumedTaskOnPreflightFailure(t *testing.T)
 	}
 	defer FinishGenerationTask(task, model.GenerationTaskStatusFailed, "test cleanup")
 	result, err := (StandardBatchProductionExecutor{}).Execute(context.Background(), BatchProductionExecution{
-		Job: model.BatchProductionJob{OrganizationID: organization.ID, CreatedBy: user.ID},
+		Job:  model.BatchProductionJob{OrganizationID: organization.ID, CreatedBy: user.ID},
 		Item: item, Product: model.Product{Name: "测试商品"},
 	})
 	if err == nil {

@@ -7,11 +7,11 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"github.com/yypyyd/infinite-canvas/config"
 	"github.com/yypyyd/infinite-canvas/model"
 	"github.com/yypyyd/infinite-canvas/repository"
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -139,7 +139,9 @@ func createRegisteredUser(user model.User, settings model.Settings, verification
 	organizationID := newID("org")
 	memberID := newID("member")
 	organizationName := strings.TrimSpace(user.DisplayName)
-	if organizationName == "" { organizationName = user.Username }
+	if organizationName == "" {
+		organizationName = user.Username
+	}
 	user.OrganizationID = organizationID
 	organization := model.Organization{ID: organizationID, Name: organizationName + "的企业", Slug: organizationID, Status: "active", Version: 1, CreatedBy: user.ID, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt}
 	membership := model.OrganizationMember{ID: memberID, OrganizationID: organizationID, UserID: user.ID, Role: model.OrganizationRoleOwner, Version: 1, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt}
@@ -224,8 +226,12 @@ func CurrentAuthUser(tokenText string) (model.AuthUser, bool) {
 
 func ApplyEffectiveCredits(user model.AuthUser) (model.AuthUser, error) {
 	organization, ok, err := repository.GetOrganization(user.OrganizationID)
-	if err != nil { return user, err }
-	if !ok { return user, safeMessageError{message: "企业不存在或已停用"} }
+	if err != nil {
+		return user, err
+	}
+	if !ok {
+		return user, safeMessageError{message: "企业不存在或已停用"}
+	}
 	return applyOrganizationCredits(user, organization), nil
 }
 
@@ -527,4 +533,3 @@ func normalizeUserGroup(group string) string {
 	}
 	return group
 }
-

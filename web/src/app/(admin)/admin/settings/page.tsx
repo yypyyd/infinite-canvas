@@ -719,16 +719,21 @@ function collectChannelModels(channels: AdminModelChannel[]) {
     for (const item of channels.filter((channel) => channel.enabled).flatMap((channel) => channel.models || [])) {
         const current = models.get(item.model);
         const useIncomingReference = !!current && (item.maxReferenceImages > current.maxReferenceImages || (item.maxReferenceImages === current.maxReferenceImages && current.referenceMode === "none" && item.referenceMode !== "none"));
-        models.set(item.model, current ? {
-            ...current,
-            modality: current.modality || item.modality,
-            operations: Array.from(new Set([...current.operations, ...item.operations])),
-            aspectRatios: Array.from(new Set([...current.aspectRatios, ...item.aspectRatios])),
-            resolutionTiers: Array.from(new Set([...current.resolutionTiers, ...item.resolutionTiers])),
-            durations: normalizeDurations([...current.durations, ...item.durations]),
-            maxReferenceImages: Math.max(current.maxReferenceImages, item.maxReferenceImages),
-            referenceMode: useIncomingReference ? item.referenceMode : current.referenceMode,
-        } : item);
+        models.set(
+            item.model,
+            current
+                ? {
+                      ...current,
+                      modality: current.modality || item.modality,
+                      operations: Array.from(new Set([...current.operations, ...item.operations])),
+                      aspectRatios: Array.from(new Set([...current.aspectRatios, ...item.aspectRatios])),
+                      resolutionTiers: Array.from(new Set([...current.resolutionTiers, ...item.resolutionTiers])),
+                      durations: normalizeDurations([...current.durations, ...item.durations]),
+                      maxReferenceImages: Math.max(current.maxReferenceImages, item.maxReferenceImages),
+                      referenceMode: useIncomingReference ? item.referenceMode : current.referenceMode,
+                  }
+                : item,
+        );
     }
     return [...models.values()];
 }
@@ -776,7 +781,11 @@ async function collectSettings(form: any, editorMode: Record<SettingsTabKey, Edi
         }
         values.private = privateSetting;
     }
-    values.public.modelChannel.models = normalizeManagedModels(values.public.modelChannel.models || [], collectChannelModels(values.private.channels).map((item) => item.model), values.public.modelChannel.modelAspectRatios);
+    values.public.modelChannel.models = normalizeManagedModels(
+        values.public.modelChannel.models || [],
+        collectChannelModels(values.private.channels).map((item) => item.model),
+        values.public.modelChannel.modelAspectRatios,
+    );
     values.public.modelChannel.availableModels = enabledManagedModelIds(values.public.modelChannel.models);
     values.public.modelChannel.modelAspectRatios = modelAspectRatiosFromManagedModels(values.public.modelChannel.models, values.public.modelChannel.modelAspectRatios);
     return normalizeSettings(values);

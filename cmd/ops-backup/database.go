@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
+	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/yypyyd/infinite-canvas/config"
 	"github.com/yypyyd/infinite-canvas/repository"
-	mysqldriver "github.com/go-sql-driver/mysql"
 )
 
 type commandSpec struct {

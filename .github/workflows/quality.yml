@@ -20,7 +20,12 @@ jobs:
           cache: true
       - name: Check Go formatting
         shell: bash
-        run: test -z "$(gofmt -l .)"
+        run: |
+          files="$(gofmt -l .)"
+          if [ -n "$files" ]; then
+            echo "$files"
+            exit 1
+          fi
       - run: go vet ./...
       - run: go test ./...
 

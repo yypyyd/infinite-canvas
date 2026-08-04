@@ -8,36 +8,36 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/netip"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"sync"
 	"time"
 	"unicode"
 
+	"github.com/qiniu/go-sdk/v7/client"
+	"github.com/qiniu/go-sdk/v7/storage"
 	"github.com/yypyyd/infinite-canvas/config"
 	"github.com/yypyyd/infinite-canvas/model"
 	"github.com/yypyyd/infinite-canvas/repository"
-	"github.com/qiniu/go-sdk/v7/client"
-	"github.com/qiniu/go-sdk/v7/storage"
 )
 
 type BatchProductionExecution struct {
-	Job     model.BatchProductionJob  `json:"job"`
-	Item    model.BatchProductionItem `json:"item"`
+	Job       model.BatchProductionJob                `json:"job"`
+	Item      model.BatchProductionItem               `json:"item"`
 	Selection *model.BatchProductionTemplateSelection `json:"selection,omitempty"`
-	Brand   *model.Brand               `json:"brand,omitempty"`
-	Product model.Product             `json:"product"`
-	SKU     *model.ProductSKU          `json:"sku,omitempty"`
-	MediaURLs map[string]string        `json:"mediaUrls,omitempty"`
+	Brand     *model.Brand                            `json:"brand,omitempty"`
+	Product   model.Product                           `json:"product"`
+	SKU       *model.ProductSKU                       `json:"sku,omitempty"`
+	MediaURLs map[string]string                       `json:"mediaUrls,omitempty"`
 }
 
 type BatchProductionResult struct {
-	ResultURL     string                `json:"resultUrl"`
-	MimeType      string                `json:"mimeType"`
-	Size          int64                 `json:"size"`
-	Data          []byte                `json:"-"`
+	ResultURL      string                `json:"resultUrl"`
+	MimeType       string                `json:"mimeType"`
+	Size           int64                 `json:"size"`
+	Data           []byte                `json:"-"`
 	GenerationTask *model.GenerationTask `json:"-"`
 }
 
@@ -72,7 +72,9 @@ const maxBatchProductionAttempts = 5
 
 func classifyBatchProductionFailure(err error, fallback model.BatchProductionErrorCategory, message string) batchProductionFailure {
 	failure := batchProductionFailure{Category: fallback, Retryable: fallback == model.BatchProductionErrorStorageArchive || fallback == model.BatchProductionErrorInternal, Message: message}
-	if err == nil { return failure }
+	if err == nil {
+		return failure
+	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		failure.Category, failure.Retryable = model.BatchProductionErrorCancelledLeaseLost, false
 		return failure
@@ -127,42 +129,74 @@ type HTTPBatchProductionExecutor struct {
 }
 
 func (executor HTTPBatchProductionExecutor) Execute(ctx context.Context, input BatchProductionExecution) (BatchProductionResult, error) {
-	if !validHTTPSURL(executor.URL) { return BatchProductionResult{}, permanentBatchProductionError(model.BatchProductionErrorValidationInput, errors.New("batch production executor URL must use HTTPS")) }
+	if !validHTTPSURL(executor.URL) {
+		return BatchProductionResult{}, permanentBatchProductionError(model.BatchProductionErrorValidationInput, errors.New("batch production executor URL must use HTTPS"))
+	}
 	body, err := json.Marshal(input)
-	if err != nil { return BatchProductionResult{}, transientBatchProductionError(model.BatchProductionErrorInternal, err) }
+	if err != nil {
+		return BatchProductionResult{}, transientBatchProductionError(model.BatchProductionErrorInternal, err)
+	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, executor.URL, bytes.NewReader(body))
-	if err != nil { return BatchProductionResult{}, permanentBatchProductionError(model.BatchProductionErrorUpstreamPermanent, err) }
+	if err != nil {
+		return BatchProductionResult{}, permanentBatchProductionError(model.BatchProductionErrorUpstreamPermanent, err)
+	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Idempotency-Key", fmt.Sprintf("%s:%d", input.Item.ID, input.Item.RunNumber))
-	if strings.TrimSpace(executor.Token) != "" { request.Header.Set("Authorization", "Bearer "+strings.TrimSpace(executor.Token)) }
+	if strings.TrimSpace(executor.Token) != "" {
+		request.Header.Set("Authorization", "Bearer "+strings.TrimSpace(executor.Token))
+	}
 	client := http.Client{}
-	if executor.Client != nil { client = *executor.Client }
-	if client.Timeout <= 0 || client.Timeout > 15*time.Minute { client.Timeout = 15 * time.Minute }
+	if executor.Client != nil {
+		client = *executor.Client
+	}
+	if client.Timeout <= 0 || client.Timeout > 15*time.Minute {
+		client.Timeout = 15 * time.Minute
+	}
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	response, err := client.Do(request)
-	if err != nil { return BatchProductionResult{}, transientBatchProductionError(model.BatchProductionErrorUpstreamTransient, err) }
+	if err != nil {
+		return BatchProductionResult{}, transientBatchProductionError(model.BatchProductionErrorUpstreamTransient, err)
+	}
 	defer response.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(response.Body, 64<<10))
-	if err != nil { return BatchProductionResult{}, transientBatchProductionError(model.BatchProductionErrorUpstreamTransient, err) }
+	if err != nil {
+		return BatchProductionResult{}, transientBatchProductionError(model.BatchProductionErrorUpstreamTransient, err)
+	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		statusErr := fmt.Errorf("executor returned HTTP %d", response.StatusCode)
-		if response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= 500 { return BatchProductionResult{}, transientBatchProductionError(model.BatchProductionErrorUpstreamTransient, statusErr) }
+		if response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= 500 {
+			return BatchProductionResult{}, transientBatchProductionError(model.BatchProductionErrorUpstreamTransient, statusErr)
+		}
 		return BatchProductionResult{}, permanentBatchProductionError(model.BatchProductionErrorUpstreamPermanent, statusErr)
 	}
 	var result BatchProductionResult
-	if err := json.Unmarshal(data, &result); err != nil { return result, permanentBatchProductionError(model.BatchProductionErrorUpstreamPermanent, err) }
+	if err := json.Unmarshal(data, &result); err != nil {
+		return result, permanentBatchProductionError(model.BatchProductionErrorUpstreamPermanent, err)
+	}
 	result.ResultURL = strings.TrimSpace(result.ResultURL)
-	if !validHTTPSURL(result.ResultURL) { return result, permanentBatchProductionError(model.BatchProductionErrorUpstreamPermanent, errors.New("executor returned invalid result URL")) }
+	if !validHTTPSURL(result.ResultURL) {
+		return result, permanentBatchProductionError(model.BatchProductionErrorUpstreamPermanent, errors.New("executor returned invalid result URL"))
+	}
 	result.MimeType = strings.TrimSpace(strings.Split(result.MimeType, ";")[0])
-	if result.Size <= 0 || result.Size > maxUserFileSize || assetTypeFromMime(result.MimeType) == "" { return result, permanentBatchProductionError(model.BatchProductionErrorUpstreamPermanent, errors.New("executor returned invalid result metadata")) }
+	if result.Size <= 0 || result.Size > maxUserFileSize || assetTypeFromMime(result.MimeType) == "" {
+		return result, permanentBatchProductionError(model.BatchProductionErrorUpstreamPermanent, errors.New("executor returned invalid result metadata"))
+	}
 	return result, nil
 }
 
 func RunBatchProductionWorker(ctx context.Context, concurrency int, tenantConcurrency int, executor BatchProductionExecutor) error {
-	if executor == nil { return errors.New("batch production executor is required") }
-	if concurrency < 1 { concurrency = 1 }
-	if tenantConcurrency < 1 { tenantConcurrency = 1 }
-	if tenantConcurrency > concurrency { tenantConcurrency = concurrency }
+	if executor == nil {
+		return errors.New("batch production executor is required")
+	}
+	if concurrency < 1 {
+		concurrency = 1
+	}
+	if tenantConcurrency < 1 {
+		tenantConcurrency = 1
+	}
+	if tenantConcurrency > concurrency {
+		tenantConcurrency = concurrency
+	}
 	logWorkerInfo("batch_production", "worker_started", "concurrency", concurrency, "tenant_concurrency", tenantConcurrency)
 	var workers sync.WaitGroup
 	workers.Add(concurrency)
@@ -233,7 +267,11 @@ func executeBatchProductionItem(parent context.Context, executor BatchProduction
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if err := RenewBatchProductionItemLease(item); err != nil { logWorkerError("batch_production", "lease_renew_failed", err, logAttrs...); cancel(); return }
+				if err := RenewBatchProductionItemLease(item); err != nil {
+					logWorkerError("batch_production", "lease_renew_failed", err, logAttrs...)
+					cancel()
+					return
+				}
 			}
 		}
 	}()
@@ -256,7 +294,9 @@ func executeBatchProductionItem(parent context.Context, executor BatchProduction
 	settlementAllowed := true
 	settlementTarget := false
 	settleGeneration := func(succeeded bool) error {
-		if generationSettled { return nil }
+		if generationSettled {
+			return nil
+		}
 		settlementTarget = succeeded
 		if err := settleBatchProductionGeneration(result, item, job, succeeded); err != nil {
 			return err
@@ -265,12 +305,17 @@ func executeBatchProductionItem(parent context.Context, executor BatchProduction
 		return nil
 	}
 	defer func() {
-		if generationSettled || !settlementAllowed { return }
+		if generationSettled || !settlementAllowed {
+			return
+		}
 		if err := settleGeneration(settlementTarget); err != nil {
 			logWorkerError("batch_production", "generation_settlement_retry_failed", err, logAttrs...)
 		}
 	}()
-	if parent.Err() != nil || ctx.Err() != nil { settlementAllowed = false; return }
+	if parent.Err() != nil || ctx.Err() != nil {
+		settlementAllowed = false
+		return
+	}
 	if executeErr != nil {
 		if err := fenceBatchProductionFailure(parent, ctx, item); err != nil {
 			settlementAllowed = false
@@ -291,9 +336,14 @@ func executeBatchProductionItem(parent context.Context, executor BatchProduction
 		logWorkerError("batch_production", "lease_verify_failed", err, logAttrs...)
 		return
 	}
-	if parent.Err() != nil || ctx.Err() != nil { settlementAllowed = false; return }
+	if parent.Err() != nil || ctx.Err() != nil {
+		settlementAllowed = false
+		return
+	}
 	deliverySpec := job.DeliverySpec
-	if execution.Selection != nil { deliverySpec = execution.Selection.DeliverySpec }
+	if execution.Selection != nil {
+		deliverySpec = execution.Selection.DeliverySpec
+	}
 	result, deliveryErr := prepareProductionDeliveryResult(ctx, result, deliverySpec)
 	if deliveryErr != nil {
 		if err := fenceBatchProductionFailure(parent, ctx, item); err != nil {
@@ -310,9 +360,15 @@ func executeBatchProductionItem(parent context.Context, executor BatchProduction
 		finishFailure(failure, result.GenerationTask != nil)
 		return
 	}
-	if parent.Err() != nil || ctx.Err() != nil { settlementAllowed = false; return }
+	if parent.Err() != nil || ctx.Err() != nil {
+		settlementAllowed = false
+		return
+	}
 	storageKey, archiveErr := archiveBatchProductionResult(ctx, item, job, result)
-	if parent.Err() != nil || ctx.Err() != nil { settlementAllowed = false; return }
+	if parent.Err() != nil || ctx.Err() != nil {
+		settlementAllowed = false
+		return
+	}
 	if archiveErr != nil {
 		if err := fenceBatchProductionFailure(parent, ctx, item); err != nil {
 			settlementAllowed = false
@@ -341,10 +397,18 @@ func executeBatchProductionItem(parent context.Context, executor BatchProduction
 }
 
 func fenceBatchProductionFailure(parent context.Context, ctx context.Context, item model.BatchProductionItem) error {
-	if err := parent.Err(); err != nil { return err }
-	if err := ctx.Err(); err != nil { return err }
-	if err := RenewBatchProductionItemLease(item); err != nil { return err }
-	if err := parent.Err(); err != nil { return err }
+	if err := parent.Err(); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := RenewBatchProductionItemLease(item); err != nil {
+		return err
+	}
+	if err := parent.Err(); err != nil {
+		return err
+	}
 	return ctx.Err()
 }
 
@@ -377,64 +441,105 @@ func batchProductionLogAttrs(item model.BatchProductionItem, job model.BatchProd
 }
 
 func archiveBatchProductionResult(ctx context.Context, item model.BatchProductionItem, job model.BatchProductionJob, result BatchProductionResult) (string, error) {
-	if err := ensureQiniuStorageConfigured(); err != nil { return "", permanentBatchProductionError(model.BatchProductionErrorStorageArchive, err) }
+	if err := ensureQiniuStorageConfigured(); err != nil {
+		return "", permanentBatchProductionError(model.BatchProductionErrorStorageArchive, err)
+	}
 	assetType := assetTypeFromMime(result.MimeType)
-	if assetType == "" || result.Size <= 0 { return "", permanentBatchProductionError(model.BatchProductionErrorStorageArchive, errors.New("batch result metadata is invalid")) }
+	if assetType == "" || result.Size <= 0 {
+		return "", permanentBatchProductionError(model.BatchProductionErrorStorageArchive, errors.New("batch result metadata is invalid"))
+	}
 	storageKey := fmt.Sprintf("%s:batch-result-%s-%s-%d", assetType, job.ArchiveToken, item.ID, item.RunNumber)
 	replaceExisting := false
 	replaceObjectKey := ""
-	if existing, exists, err := repository.GetUserFile(job.OrganizationID, storageKey); err != nil { return "", transientBatchProductionError(model.BatchProductionErrorStorageArchive, err) } else if exists {
+	if existing, exists, err := repository.GetUserFile(job.OrganizationID, storageKey); err != nil {
+		return "", transientBatchProductionError(model.BatchProductionErrorStorageArchive, err)
+	} else if exists {
 		info, statErr := qiniuBucketManager().Stat(config.Cfg.QiniuBucket, existing.ObjectKey)
 		if statErr == nil {
-			if info.Fsize != result.Size || assetTypeFromMime(info.MimeType) != assetType { return "", permanentBatchProductionError(model.BatchProductionErrorStorageArchive, errors.New("archived batch result conflicts with executor response")) }
-			if existing.Hash != "" && existing.Hash != info.Hash { return "", permanentBatchProductionError(model.BatchProductionErrorStorageArchive, errors.New("archived batch result hash conflicts with stored metadata")) }
-			if existing.Hash == info.Hash && existing.Hash != "" { return storageKey, nil }
+			if info.Fsize != result.Size || assetTypeFromMime(info.MimeType) != assetType {
+				return "", permanentBatchProductionError(model.BatchProductionErrorStorageArchive, errors.New("archived batch result conflicts with executor response"))
+			}
+			if existing.Hash != "" && existing.Hash != info.Hash {
+				return "", permanentBatchProductionError(model.BatchProductionErrorStorageArchive, errors.New("archived batch result hash conflicts with stored metadata"))
+			}
+			if existing.Hash == info.Hash && existing.Hash != "" {
+				return storageKey, nil
+			}
 			replaceExisting = true
 		} else {
 			var qiniuError *client.ErrorInfo
-			if !errors.As(statErr, &qiniuError) || qiniuError.Code != 612 { return "", transientBatchProductionError(model.BatchProductionErrorStorageArchive, statErr) }
+			if !errors.As(statErr, &qiniuError) || qiniuError.Code != 612 {
+				return "", transientBatchProductionError(model.BatchProductionErrorStorageArchive, statErr)
+			}
 			replaceExisting = true
 		}
-		if replaceExisting { replaceObjectKey = existing.ObjectKey }
+		if replaceExisting {
+			replaceObjectKey = existing.ObjectKey
+		}
 	}
 	uploadID := newID("batch-result-upload")
 	timestamp := now()
 	expiresAt := time.Now().UTC().Add(30 * time.Minute)
 	reservation := model.UserFileUploadReservation{ID: uploadID, OrganizationID: job.OrganizationID, UserID: job.CreatedBy, StorageKey: storageKey, ObjectKey: batchProductionResultObjectKey(job.OrganizationID, uploadID, result.MimeType), MimeType: result.MimeType, Size: result.Size, ReplaceExisting: replaceExisting, ReplaceObjectKey: replaceObjectKey, ExpiresAt: expiresAt.Format(timestampLayout), CleanupAfter: expiresAt.Add(userFileUploadCleanupGrace).Format(timestampLayout), CreatedAt: timestamp}
-	if _, err := repository.ReserveUserFileUpload(reservation, userStorageQuotaBytes(), timestamp); err != nil { return "", transientBatchProductionError(model.BatchProductionErrorStorageArchive, err) }
+	if _, err := repository.ReserveUserFileUpload(reservation, userStorageQuotaBytes(), timestamp); err != nil {
+		return "", transientBatchProductionError(model.BatchProductionErrorStorageArchive, err)
+	}
 	confirmed := false
-	defer func() { if !confirmed { _ = repository.CancelUserFileUploadReservation(job.OrganizationID, job.CreatedBy, uploadID, now()) } }()
+	defer func() {
+		if !confirmed {
+			_ = repository.CancelUserFileUploadReservation(job.OrganizationID, job.CreatedBy, uploadID, now())
+		}
+	}()
 	var body io.Reader
 	var responseBody io.ReadCloser
 	if len(result.Data) > 0 {
-		if int64(len(result.Data)) != result.Size { return "", permanentBatchProductionError(model.BatchProductionErrorStorageArchive, errors.New("batch result size does not match executor response")) }
+		if int64(len(result.Data)) != result.Size {
+			return "", permanentBatchProductionError(model.BatchProductionErrorStorageArchive, errors.New("batch result size does not match executor response"))
+		}
 		body = bytes.NewReader(result.Data)
 	} else {
-		if !validHTTPSURL(result.ResultURL) { return "", permanentBatchProductionError(model.BatchProductionErrorStorageArchive, errors.New("batch result URL is invalid")) }
+		if !validHTTPSURL(result.ResultURL) {
+			return "", permanentBatchProductionError(model.BatchProductionErrorStorageArchive, errors.New("batch result URL is invalid"))
+		}
 		request, err := http.NewRequestWithContext(ctx, http.MethodGet, result.ResultURL, nil)
 		if err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) { return "", err }
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return "", err
+			}
 			return "", permanentBatchProductionError(model.BatchProductionErrorStorageArchive, err)
 		}
 		transport := batchResultTransport()
 		defer transport.CloseIdleConnections()
-		client := &http.Client{Transport: transport, Timeout: 15 * time.Minute, CheckRedirect: func(request *http.Request, via []*http.Request) error { if len(via) >= 5 || !validHTTPSURL(request.URL.String()) { return permanentBatchProductionError(model.BatchProductionErrorStorageArchive, errors.New("batch result redirect is not allowed")) }; return nil }}
+		client := &http.Client{Transport: transport, Timeout: 15 * time.Minute, CheckRedirect: func(request *http.Request, via []*http.Request) error {
+			if len(via) >= 5 || !validHTTPSURL(request.URL.String()) {
+				return permanentBatchProductionError(model.BatchProductionErrorStorageArchive, errors.New("batch result redirect is not allowed"))
+			}
+			return nil
+		}}
 		response, err := client.Do(request)
 		if err != nil {
 			var typedError *batchProductionTypedError
-			if errors.As(err, &typedError) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) { return "", err }
+			if errors.As(err, &typedError) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return "", err
+			}
 			return "", transientBatchProductionError(model.BatchProductionErrorStorageArchive, err)
 		}
 		responseBody = response.Body
 		defer responseBody.Close()
 		if response.StatusCode < 200 || response.StatusCode >= 300 {
 			statusErr := fmt.Errorf("batch result returned HTTP %d", response.StatusCode)
-			if response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= 500 { return "", transientBatchProductionError(model.BatchProductionErrorStorageArchive, statusErr) }
+			if response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= 500 {
+				return "", transientBatchProductionError(model.BatchProductionErrorStorageArchive, statusErr)
+			}
 			return "", permanentBatchProductionError(model.BatchProductionErrorStorageArchive, statusErr)
 		}
-		if response.ContentLength >= 0 && response.ContentLength != result.Size { return "", permanentBatchProductionError(model.BatchProductionErrorStorageArchive, errors.New("batch result size does not match executor response")) }
+		if response.ContentLength >= 0 && response.ContentLength != result.Size {
+			return "", permanentBatchProductionError(model.BatchProductionErrorStorageArchive, errors.New("batch result size does not match executor response"))
+		}
 		responseMime := strings.TrimSpace(strings.Split(response.Header.Get("Content-Type"), ";")[0])
-		if responseMime != "" && assetTypeFromMime(responseMime) != assetType { return "", permanentBatchProductionError(model.BatchProductionErrorStorageArchive, errors.New("batch result MIME does not match executor response")) }
+		if responseMime != "" && assetTypeFromMime(responseMime) != assetType {
+			return "", permanentBatchProductionError(model.BatchProductionErrorStorageArchive, errors.New("batch result MIME does not match executor response"))
+		}
 		body = responseBody
 	}
 	limited := &io.LimitedReader{R: body, N: result.Size + 1}
@@ -442,17 +547,31 @@ func archiveBatchProductionResult(ctx context.Context, item model.BatchProductio
 	var uploaded storage.PutRet
 	uploader := storage.NewFormUploader(&storage.Config{UseHTTPS: true})
 	if err := uploader.Put(ctx, &uploaded, policy.UploadToken(qiniuMac()), reservation.ObjectKey, limited, result.Size, &storage.PutExtra{MimeType: result.MimeType}); err != nil {
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) { return "", err }
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return "", err
+		}
 		return "", transientBatchProductionError(model.BatchProductionErrorStorageArchive, err)
 	}
-	if result.Size+1-limited.N != result.Size { return "", permanentBatchProductionError(model.BatchProductionErrorStorageArchive, errors.New("batch result size does not match executor response")) }
+	if result.Size+1-limited.N != result.Size {
+		return "", permanentBatchProductionError(model.BatchProductionErrorStorageArchive, errors.New("batch result size does not match executor response"))
+	}
 	var extra [1]byte
-	if total, readErr := body.Read(extra[:]); readErr != nil && !errors.Is(readErr, io.EOF) { return "", transientBatchProductionError(model.BatchProductionErrorStorageArchive, readErr) } else if total > 0 { return "", permanentBatchProductionError(model.BatchProductionErrorStorageArchive, errors.New("batch result exceeds declared size")) }
+	if total, readErr := body.Read(extra[:]); readErr != nil && !errors.Is(readErr, io.EOF) {
+		return "", transientBatchProductionError(model.BatchProductionErrorStorageArchive, readErr)
+	} else if total > 0 {
+		return "", permanentBatchProductionError(model.BatchProductionErrorStorageArchive, errors.New("batch result exceeds declared size"))
+	}
 	info, err := qiniuBucketManager().Stat(config.Cfg.QiniuBucket, reservation.ObjectKey)
-	if err != nil { return "", transientBatchProductionError(model.BatchProductionErrorStorageArchive, err) }
-	if info.Fsize != result.Size || assetTypeFromMime(info.MimeType) != assetType { return "", permanentBatchProductionError(model.BatchProductionErrorStorageArchive, errors.New("archived batch result metadata does not match executor response")) }
+	if err != nil {
+		return "", transientBatchProductionError(model.BatchProductionErrorStorageArchive, err)
+	}
+	if info.Fsize != result.Size || assetTypeFromMime(info.MimeType) != assetType {
+		return "", permanentBatchProductionError(model.BatchProductionErrorStorageArchive, errors.New("archived batch result metadata does not match executor response"))
+	}
 	file, err := repository.ConfirmUserFileUpload(job.OrganizationID, job.CreatedBy, uploadID, newID("file"), info.Hash, info.MimeType, info.Fsize, userStorageQuotaBytes(), now())
-	if err != nil { return "", transientBatchProductionError(model.BatchProductionErrorStorageArchive, err) }
+	if err != nil {
+		return "", transientBatchProductionError(model.BatchProductionErrorStorageArchive, err)
+	}
 	confirmed = true
 	return file.StorageKey, nil
 }
@@ -461,66 +580,108 @@ func batchResultTransport() *http.Transport {
 	dialer := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
 	return &http.Transport{TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: 30 * time.Second, IdleConnTimeout: 30 * time.Second, DisableCompression: true, DialContext: func(ctx context.Context, network string, address string) (net.Conn, error) {
 		host, port, err := net.SplitHostPort(address)
-		if err != nil { return nil, err }
+		if err != nil {
+			return nil, err
+		}
 		addresses, err := net.DefaultResolver.LookupIPAddr(ctx, host)
-		if err != nil { return nil, err }
+		if err != nil {
+			return nil, err
+		}
 		var lastErr error
 		for _, resolved := range addresses {
-			if !publicBatchResultIP(resolved.IP) { continue }
+			if !publicBatchResultIP(resolved.IP) {
+				continue
+			}
 			connection, dialErr := dialer.DialContext(ctx, network, net.JoinHostPort(resolved.IP.String(), port))
-			if dialErr == nil { return connection, nil }
+			if dialErr == nil {
+				return connection, nil
+			}
 			lastErr = dialErr
 		}
-		if lastErr != nil { return nil, lastErr }
+		if lastErr != nil {
+			return nil, lastErr
+		}
 		return nil, errors.New("batch result host resolves to a private address")
 	}}
 }
 
 func publicBatchResultIP(ip net.IP) bool {
 	address, ok := netip.AddrFromSlice(ip)
-	if !ok { return false }
+	if !ok {
+		return false
+	}
 	address = address.Unmap()
 	return address.IsGlobalUnicast() && !address.IsPrivate() && !netip.MustParsePrefix("100.64.0.0/10").Contains(address)
 }
 
 func batchProductionExecution(item model.BatchProductionItem, job model.BatchProductionJob) (BatchProductionExecution, error) {
 	ids := []string{item.ProductSnapshotID}
-	if item.BrandSnapshotID != "" { ids = append(ids, item.BrandSnapshotID) }
-	if item.SKUSnapshotID != "" { ids = append(ids, item.SKUSnapshotID) }
+	if item.BrandSnapshotID != "" {
+		ids = append(ids, item.BrandSnapshotID)
+	}
+	if item.SKUSnapshotID != "" {
+		ids = append(ids, item.SKUSnapshotID)
+	}
 	snapshots, err := repository.GetBatchProductionSnapshots(item.OrganizationID, ids)
-	if err != nil { return BatchProductionExecution{}, transientBatchProductionError(model.BatchProductionErrorInternal, err) }
+	if err != nil {
+		return BatchProductionExecution{}, transientBatchProductionError(model.BatchProductionErrorInternal, err)
+	}
 	var product model.Product
-	if snapshot, ok := snapshots[item.ProductSnapshotID]; !ok || json.Unmarshal([]byte(snapshot.Data), &product) != nil || product.ID != item.ProductID { return BatchProductionExecution{}, permanentBatchProductionError(model.BatchProductionErrorValidationInput, errors.New("batch product snapshot is invalid")) }
+	if snapshot, ok := snapshots[item.ProductSnapshotID]; !ok || json.Unmarshal([]byte(snapshot.Data), &product) != nil || product.ID != item.ProductID {
+		return BatchProductionExecution{}, permanentBatchProductionError(model.BatchProductionErrorValidationInput, errors.New("batch product snapshot is invalid"))
+	}
 	execution := BatchProductionExecution{Job: job, Item: item, Product: product}
 	if item.TemplateSelectionID != "" {
 		selection, ok, err := repository.GetBatchProductionTemplateSelection(item.OrganizationID, item.JobID, item.TemplateSelectionID)
-		if err != nil { return execution, transientBatchProductionError(model.BatchProductionErrorInternal, err) }
-		if !ok || selection.TemplateID != item.TemplateID || selection.TemplateVersion != item.TemplateVersion { return execution, permanentBatchProductionError(model.BatchProductionErrorValidationInput, errors.New("batch template selection is invalid")) }
+		if err != nil {
+			return execution, transientBatchProductionError(model.BatchProductionErrorInternal, err)
+		}
+		if !ok || selection.TemplateID != item.TemplateID || selection.TemplateVersion != item.TemplateVersion {
+			return execution, permanentBatchProductionError(model.BatchProductionErrorValidationInput, errors.New("batch template selection is invalid"))
+		}
 		execution.Selection = &selection
 		execution.Job.PresetID, execution.Job.PresetVersion, execution.Job.PresetPrompt, execution.Job.DeliverySpec = selection.TemplateID, selection.TemplateVersion, selection.Prompt, selection.DeliverySpec
 	}
 	if item.BrandSnapshotID != "" {
 		var brand model.Brand
-		if snapshot, ok := snapshots[item.BrandSnapshotID]; !ok || json.Unmarshal([]byte(snapshot.Data), &brand) != nil || brand.ID != job.BrandID { return execution, permanentBatchProductionError(model.BatchProductionErrorValidationInput, errors.New("batch brand snapshot is invalid")) }
+		if snapshot, ok := snapshots[item.BrandSnapshotID]; !ok || json.Unmarshal([]byte(snapshot.Data), &brand) != nil || brand.ID != job.BrandID {
+			return execution, permanentBatchProductionError(model.BatchProductionErrorValidationInput, errors.New("batch brand snapshot is invalid"))
+		}
 		execution.Brand = &brand
 	}
 	if item.SKUSnapshotID != "" {
 		var sku model.ProductSKU
-		if snapshot, ok := snapshots[item.SKUSnapshotID]; !ok || json.Unmarshal([]byte(snapshot.Data), &sku) != nil || sku.ID != item.SKUID || sku.ProductID != item.ProductID { return execution, permanentBatchProductionError(model.BatchProductionErrorValidationInput, errors.New("batch SKU snapshot is invalid")) }
+		if snapshot, ok := snapshots[item.SKUSnapshotID]; !ok || json.Unmarshal([]byte(snapshot.Data), &sku) != nil || sku.ID != item.SKUID || sku.ProductID != item.ProductID {
+			return execution, permanentBatchProductionError(model.BatchProductionErrorValidationInput, errors.New("batch SKU snapshot is invalid"))
+		}
 		execution.SKU = &sku
 	}
 	storageKeys := []string{}
-	if execution.Brand != nil && execution.Brand.LogoStorageKey != "" { storageKeys = append(storageKeys, execution.Brand.LogoStorageKey) }
-	if execution.SKU != nil { storageKeys = append(storageKeys, execution.SKU.ImageStorageKeys...) }
+	if execution.Brand != nil && execution.Brand.LogoStorageKey != "" {
+		storageKeys = append(storageKeys, execution.Brand.LogoStorageKey)
+	}
+	if execution.SKU != nil {
+		storageKeys = append(storageKeys, execution.SKU.ImageStorageKeys...)
+	}
 	if len(storageKeys) > 0 {
-		if err := ensureQiniuStorageConfigured(); err != nil { return execution, permanentBatchProductionError(model.BatchProductionErrorValidationInput, err) }
+		if err := ensureQiniuStorageConfigured(); err != nil {
+			return execution, permanentBatchProductionError(model.BatchProductionErrorValidationInput, err)
+		}
 		execution.MediaURLs = make(map[string]string, len(storageKeys))
 		for _, storageKey := range storageKeys {
-			if strings.TrimSpace(storageKey) == "" { return execution, permanentBatchProductionError(model.BatchProductionErrorValidationInput, errors.New("batch input media storage key is invalid")) }
-			if _, exists := execution.MediaURLs[storageKey]; exists { continue }
+			if strings.TrimSpace(storageKey) == "" {
+				return execution, permanentBatchProductionError(model.BatchProductionErrorValidationInput, errors.New("batch input media storage key is invalid"))
+			}
+			if _, exists := execution.MediaURLs[storageKey]; exists {
+				continue
+			}
 			file, ok, err := repository.GetUserFile(item.OrganizationID, storageKey)
-			if err != nil { return execution, transientBatchProductionError(model.BatchProductionErrorInternal, err) }
-			if !ok || strings.TrimSpace(file.ObjectKey) == "" { return execution, permanentBatchProductionError(model.BatchProductionErrorValidationInput, errors.New("batch input media is unavailable")) }
+			if err != nil {
+				return execution, transientBatchProductionError(model.BatchProductionErrorInternal, err)
+			}
+			if !ok || strings.TrimSpace(file.ObjectKey) == "" {
+				return execution, permanentBatchProductionError(model.BatchProductionErrorValidationInput, errors.New("batch input media is unavailable"))
+			}
 			deadline := time.Now().Add(30 * time.Minute).Unix()
 			execution.MediaURLs[storageKey] = storage.MakePrivateURL(qiniuMac(), strings.TrimRight(config.Cfg.QiniuDownloadDomain, "/"), file.ObjectKey, deadline)
 		}
@@ -529,14 +690,23 @@ func batchProductionExecution(item model.BatchProductionItem, job model.BatchPro
 }
 
 func batchProductionErrorMessage(message string) string {
-	message = strings.TrimSpace(strings.Map(func(value rune) rune { if unicode.IsControl(value) { return ' ' }; return value }, message))
+	message = strings.TrimSpace(strings.Map(func(value rune) rune {
+		if unicode.IsControl(value) {
+			return ' '
+		}
+		return value
+	}, message))
 	characters := []rune(message)
-	if len(characters) > 1000 { message = string(characters[:1000]) }
+	if len(characters) > 1000 {
+		message = string(characters[:1000])
+	}
 	return message
 }
 
 func validHTTPSURL(value string) bool {
-	if len(strings.TrimSpace(value)) > 4096 { return false }
+	if len(strings.TrimSpace(value)) > 4096 {
+		return false
+	}
 	parsed, err := url.Parse(strings.TrimSpace(value))
 	return err == nil && parsed.Scheme == "https" && parsed.Host != "" && parsed.User == nil
 }
@@ -544,5 +714,8 @@ func validHTTPSURL(value string) bool {
 func waitBatchWorker(ctx context.Context, duration time.Duration) {
 	timer := time.NewTimer(duration)
 	defer timer.Stop()
-	select { case <-ctx.Done(): case <-timer.C: }
+	select {
+	case <-ctx.Done():
+	case <-timer.C:
+	}
 }

@@ -114,14 +114,12 @@ export default function ImageProductionPage() {
                         value={templates.map((item) => item.templateId)}
                         onChange={(ids) =>
                             setTemplates(
-                                ids
-                                    .map(String)
-                                    .map((id) => ({
-                                        templateId: id,
-                                        templateVersion: templateQuery.data?.items.find((item) => item.id === id)?.currentVersion || 1,
-                                        quantity: templates.find((item) => item.templateId === id)?.quantity || 1,
-                                        deliverySpecId: templates.find((item) => item.templateId === id)?.deliverySpecId || "original",
-                                    })),
+                                ids.map(String).map((id) => ({
+                                    templateId: id,
+                                    templateVersion: templateQuery.data?.items.find((item) => item.id === id)?.currentVersion || 1,
+                                    quantity: templates.find((item) => item.templateId === id)?.quantity || 1,
+                                    deliverySpecId: templates.find((item) => item.templateId === id)?.deliverySpecId || "original",
+                                })),
                             )
                         }
                     >

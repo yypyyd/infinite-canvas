@@ -374,10 +374,7 @@ export function CanvasAssistantPanel({
                             void claimAgentToolExecution(runId, callId, toolExecutorToken.current).catch(() => toolAbortController.abort());
                         }, 30_000);
                         let result: AgentToolResult;
-                        let generationRecord:
-                            | { kind: "image"; id: string; prompt: string; config: AiConfig; count: number; startedAt: number }
-                            | { kind: "video"; id: string; prompt: string; config: AiConfig; startedAt: number }
-                            | undefined;
+                        let generationRecord: { kind: "image"; id: string; prompt: string; config: AiConfig; count: number; startedAt: number } | { kind: "video"; id: string; prompt: string; config: AiConfig; startedAt: number } | undefined;
                         try {
                             if (toolName === "canvas.plan" && "summary" in toolArguments && "steps" in toolArguments) {
                                 const plan = { summary: toolArguments.summary, steps: toolArguments.steps };
@@ -411,7 +408,9 @@ export function CanvasAssistantPanel({
                                     ? await requestEdit(toolConfig, toolArguments.prompt, referenceImages, undefined, { signal: toolAbortController.signal, idempotencyKey })
                                     : await requestGeneration(toolConfig, toolArguments.prompt, { signal: toolAbortController.signal, idempotencyKey });
                                 const storedResults = await Promise.allSettled(generated.map(async (image) => ({ generated: image, stored: await uploadImage(image.dataUrl) })));
-                                const stored = storedResults.filter((item): item is PromiseFulfilledResult<{ generated: (typeof generated)[number]; stored: Awaited<ReturnType<typeof uploadImage>> }> => item.status === "fulfilled").map((item) => item.value);
+                                const stored = storedResults
+                                    .filter((item): item is PromiseFulfilledResult<{ generated: (typeof generated)[number]; stored: Awaited<ReturnType<typeof uploadImage>> }> => item.status === "fulfilled")
+                                    .map((item) => item.value);
                                 if (!stored.length) throw storedResults.find((item): item is PromiseRejectedResult => item.status === "rejected")?.reason || new Error("生成图片保存失败");
                                 await saveCanvasImageGenerationRecord(historyOwnerId, {
                                     id: generationRecordId,
@@ -427,11 +426,23 @@ export function CanvasAssistantPanel({
                                 });
                                 await flushActiveWorkspaceChanges().catch(() => {});
                                 generationRecord = undefined;
-                                const canvasImages = stored.map(({ generated: image, stored }) => ({ id: image.id, dataUrl: stored.url, storageKey: stored.storageKey, prompt: toolArguments.prompt, agentRunId: runId, agentToolCallId: callId, sourceNodeIds: refs.map((item) => item.id) }));
+                                const canvasImages = stored.map(({ generated: image, stored }) => ({
+                                    id: image.id,
+                                    dataUrl: stored.url,
+                                    storageKey: stored.storageKey,
+                                    prompt: toolArguments.prompt,
+                                    agentRunId: runId,
+                                    agentToolCallId: callId,
+                                    sourceNodeIds: refs.map((item) => item.id),
+                                }));
                                 await claimAgentToolExecution(runId, callId, toolExecutorToken.current);
                                 const inserted = await onInsertImages(canvasImages);
                                 const storageFailCount = generated.length - stored.length;
-                                updateMessage(sessionId, assistantMessageId, { text: storageFailCount ? `已插入 ${inserted.length} 张图片，另有 ${storageFailCount} 张保存失败，正在整理结果` : `已生成并插入 ${inserted.length} 张图片，正在整理结果`, images: canvasImages, isLoading: true });
+                                updateMessage(sessionId, assistantMessageId, {
+                                    text: storageFailCount ? `已插入 ${inserted.length} 张图片，另有 ${storageFailCount} 张保存失败，正在整理结果` : `已生成并插入 ${inserted.length} 张图片，正在整理结果`,
+                                    images: canvasImages,
+                                    isLoading: true,
+                                });
                                 result = { callId, status: "success", images: inserted };
                             } else if (toolName === "video.generate" && "duration" in toolArguments) {
                                 updateMessage(sessionId, assistantMessageId, { text: "正在生成视频", isLoading: true });
@@ -470,7 +481,13 @@ export function CanvasAssistantPanel({
                                 await flushActiveWorkspaceChanges().catch(() => {});
                                 generationRecord = undefined;
                                 await claimAgentToolExecution(runId, callId, toolExecutorToken.current);
-                                const video = await onInsertVideo({ ...stored, prompt: toolArguments.prompt, agentRunId: runId, agentToolCallId: callId, sourceNodeIds: toolArguments.imageNodeId ? [toolArguments.imageNodeId] : refs.map((item) => item.id) });
+                                const video = await onInsertVideo({
+                                    ...stored,
+                                    prompt: toolArguments.prompt,
+                                    agentRunId: runId,
+                                    agentToolCallId: callId,
+                                    sourceNodeIds: toolArguments.imageNodeId ? [toolArguments.imageNodeId] : refs.map((item) => item.id),
+                                });
                                 updateMessage(sessionId, assistantMessageId, { text: "已生成并插入视频，正在整理结果", isLoading: true });
                                 result = { callId, status: "success", video };
                             } else if (toolName === "canvas.arrange" && "nodeIds" in toolArguments && "mode" in toolArguments) {
@@ -692,7 +709,13 @@ export function CanvasAssistantPanel({
                 selectedNodeIds: authorizedNodes.map((node) => node.id),
                 nodes: authorizedNodes.map((node) => ({ id: node.id, type: node.type, title: node.title, x: node.position.x, y: node.position.y, width: node.width, height: node.height })),
             });
-            await followAgentRun(submission.run.id, session.id, assistantId, refs, authorizedNodes.map((node) => node.id));
+            await followAgentRun(
+                submission.run.id,
+                session.id,
+                assistantId,
+                refs,
+                authorizedNodes.map((node) => node.id),
+            );
         } catch (error) {
             if (generationRecordId) {
                 await saveCanvasImageGenerationRecord(historyOwnerId, {

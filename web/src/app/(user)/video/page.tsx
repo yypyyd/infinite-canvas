@@ -11,6 +11,7 @@ import { flushActiveWorkspaceChanges } from "@/components/layout/workspace-provi
 import { ModelPicker } from "@/components/model-picker";
 import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
 import { VideoSettingsPanel, normalizeVideoResolutionValue, normalizeVideoSizeValue, videoResolutionLabel, videoSizeLabel } from "@/components/video-settings-panel";
+import { CreditSymbol, requestCreditQuote } from "@/constant/credits";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { videoReferenceCapabilities, videoReferenceLabel, VIDEO_REFERENCE_LIMITS } from "@/lib/video-reference";
@@ -78,7 +79,10 @@ export default function VideoPage() {
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
+    const pricingRules = useConfigStore((state) => state.publicSettings?.modelChannel.pricingRules);
+    const groupRatios = useConfigStore((state) => state.publicSettings?.modelChannel.groupRatios);
     const addAsset = useAssetStore((state) => state.addAsset);
+    const userGroup = useUserStore((state) => state.user?.group || "default");
     const historyOwnerId = useUserStore((state) => (state.user ? workspaceOwnerId(state.user.id, state.user.organizationId) : "guest"));
     const [prompt, setPrompt] = useState("");
     const [references, setReferences] = useState<ReferenceImage[]>([]);
@@ -102,6 +106,18 @@ export default function VideoPage() {
     const imageReferenceLimit = referenceCapabilities.maxImages;
     const referenceAccept = [referenceCapabilities.image ? "image/*" : "", referenceCapabilities.video ? "video/mp4,video/quicktime" : "", referenceCapabilities.audio ? "audio/mpeg,audio/wav,audio/x-wav,.mp3,.wav" : ""].filter(Boolean).join(",");
     const canGenerate = Boolean(prompt.trim());
+    const creditQuote = requestCreditQuote({
+        pricingRules,
+        groupRatios,
+        userGroup,
+        model,
+        modality: "video",
+        operation: "generation",
+        unit: "second",
+        count: effectiveConfig.videoSeconds,
+        size: effectiveConfig.size,
+        resolution: effectiveConfig.vquality,
+    });
 
     useEffect(() => {
         if (!running || !startedAt) return;
@@ -498,7 +514,16 @@ export default function VideoPage() {
 
                         <div className="mt-auto pt-6">
                             <Button type="primary" size="large" block icon={<Sparkles className="size-4" />} loading={running} disabled={!canGenerate || running} onClick={() => void generate()}>
-                                开始生成
+                                <span className="inline-flex items-center justify-center gap-2">
+                                    <span>开始生成</span>
+                                    {creditQuote.matched ? (
+                                        <span className="inline-flex items-center gap-1 text-sm font-medium tabular-nums opacity-90">
+                                            <span>消耗</span>
+                                            <CreditSymbol />
+                                            {creditQuote.credits.toLocaleString()}
+                                        </span>
+                                    ) : null}
+                                </span>
                             </Button>
                         </div>
                     </div>

@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/basketikun/infinite-canvas/config"
-	"github.com/basketikun/infinite-canvas/model"
-	"github.com/basketikun/infinite-canvas/service"
+	"github.com/yypyyd/infinite-canvas/config"
+	"github.com/yypyyd/infinite-canvas/model"
+	"github.com/yypyyd/infinite-canvas/service"
 )
 
 type loginRequest struct {

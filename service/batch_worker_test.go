@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/basketikun/infinite-canvas/model"
+	"github.com/yypyyd/infinite-canvas/model"
 )
 
 type batchWorkerRoundTripFunc func(*http.Request) (*http.Response, error)

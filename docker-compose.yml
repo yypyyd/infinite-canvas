@@ -1,6 +1,6 @@
 services:
   app:
-    image: ghcr.io/basketikun/infinite-canvas:latest
+    image: ${INFINITE_CANVAS_IMAGE:-ghcr.io/yypyyd/infinite-canvas:latest}
     container_name: infinite-canvas
     env_file:
       - .env
@@ -10,7 +10,7 @@ services:
       - "3000:3000"
     restart: unless-stopped
   batch-worker:
-    image: ghcr.io/basketikun/infinite-canvas:latest
+    image: ${INFINITE_CANVAS_IMAGE:-ghcr.io/yypyyd/infinite-canvas:latest}
     profiles: ["worker"]
     env_file:
       - .env

@@ -10,9 +10,10 @@ description: 使用 Docker Compose 部署道生画境
 ## 使用发布镜像
 
 ```bash
-git clone git@github.com:basketikun/infinite-canvas.git
+git clone https://github.com/yypyyd/infinite-canvas.git
 cd infinite-canvas
 cp .env.example .env
+# 编辑 .env，填写至少 12 位的 ADMIN_PASSWORD 和至少 32 位的 JWT_SECRET
 docker compose up -d
 ```
 
@@ -22,7 +23,7 @@ docker compose up -d
 http://localhost:3000
 ```
 
-默认管理员账号：
+首次启动管理员账号：
 
 ```text
 用户名：admin
@@ -37,6 +38,8 @@ http://localhost:3000
 cp .env.example .env
 docker compose -f docker-compose.local.yml up -d --build
 ```
+
+`NEXT_PUBLIC_DOC_URL`、`NEXT_PUBLIC_REPOSITORY_URL`、`NEXT_PUBLIC_VERSION_URL` 和 `NEXT_PUBLIC_CREDIT_PURCHASE_URL` 会在构建前端镜像时写入。自托管如需隐藏原项目作者维护的算力购买入口，可在构建前把 `NEXT_PUBLIC_CREDIT_PURCHASE_URL` 设为 `off`。
 
 ## 文档站镜像
 

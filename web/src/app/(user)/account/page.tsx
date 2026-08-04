@@ -151,9 +151,11 @@ function AccountContent() {
                                 ) : null}
                             </div>
                         </div>
-                        <Button type="primary" href={CREDIT_PURCHASE_URL} target="_blank" rel="noreferrer" icon={<WalletCards className="size-4" />}>
-                            购买算力
-                        </Button>
+                        {CREDIT_PURCHASE_URL ? (
+                            <Button type="primary" href={CREDIT_PURCHASE_URL} target="_blank" rel="noreferrer" icon={<WalletCards className="size-4" />}>
+                                购买算力
+                            </Button>
+                        ) : null}
                     </div>
                     <div className="relative grid grid-cols-1 border-t border-border sm:grid-cols-3 sm:divide-x sm:divide-border">
                         <AccountMetric icon={<Coins />} label={user.creditMode === "shared" ? "企业共享算力" : "个人算力"} value={(user.effectiveCredits ?? user.credits).toLocaleString()} suffix="点" />

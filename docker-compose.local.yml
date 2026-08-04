@@ -4,6 +4,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_DOC_URL: ${NEXT_PUBLIC_DOC_URL:-https://docs.canvas.best}
+        NEXT_PUBLIC_REPOSITORY_URL: ${NEXT_PUBLIC_REPOSITORY_URL:-https://github.com/yypyyd/infinite-canvas}
+        NEXT_PUBLIC_VERSION_URL: ${NEXT_PUBLIC_VERSION_URL:-https://raw.githubusercontent.com/yypyyd/infinite-canvas/main/VERSION}
+        NEXT_PUBLIC_CREDIT_PURCHASE_URL: ${NEXT_PUBLIC_CREDIT_PURCHASE_URL:-https://pay.ldxp.cn/shop/ODLR2IW6}
     env_file:
       - .env
     volumes:

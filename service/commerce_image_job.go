@@ -7,8 +7,8 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/basketikun/infinite-canvas/model"
-	"github.com/basketikun/infinite-canvas/repository"
+	"github.com/yypyyd/infinite-canvas/model"
+	"github.com/yypyyd/infinite-canvas/repository"
 )
 
 func CreateBatchProductionJob(user model.AuthUser, input model.CreateBatchProductionJobInput) (model.BatchProductionJob, error) {

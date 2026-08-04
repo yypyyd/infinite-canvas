@@ -1,8 +1,8 @@
 package router
 
 import (
-	"github.com/basketikun/infinite-canvas/handler"
-	"github.com/basketikun/infinite-canvas/middleware"
+	"github.com/yypyyd/infinite-canvas/handler"
+	"github.com/yypyyd/infinite-canvas/middleware"
 	"github.com/gin-gonic/gin"
 )
 

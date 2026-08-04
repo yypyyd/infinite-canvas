@@ -8,7 +8,7 @@
   <a href="https://linux.do/"><img src="https://img.shields.io/badge/Linux.do-Community-2b6de8?style=flat-square" alt="Linux.do"></a>
   <a href="https://render.com/deploy?repo=https://github.com/yypyyd/infinite-canvas"><img src="https://img.shields.io/badge/Render-Deploy-46e3b7?style=flat-square&logo=render&logoColor=111111" alt="Deploy to Render"></a>
   <a href="https://github.com/yypyyd/infinite-canvas"><img src="https://img.shields.io/github/stars/yypyyd/infinite-canvas?style=flat-square&logo=github" alt="GitHub stars"></a>
-  <a href="VERSION"><img src="https://img.shields.io/badge/version-v0.2.10-2563eb?style=flat-square" alt="Version"></a>
+  <a href="VERSION"><img src="https://img.shields.io/badge/version-v0.2.13-2563eb?style=flat-square" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-f97316?style=flat-square" alt="License"></a>
   <a href="https://www.docker.com/"><img src="https://img.shields.io/badge/Docker-ready-2496ed?style=flat-square&logo=docker&logoColor=white" alt="Docker ready"></a>
   <a href="https://nextjs.org/"><img src="https://img.shields.io/badge/Next.js-16.2-000000?style=flat-square&logo=nextdotjs" alt="Next.js"></a>
@@ -21,6 +21,10 @@
 > 项目目前处于开发阶段，不保证历史数据兼容。各种数据库结构和存储格式都可能直接调整，欢迎关注后续更新，当前更适合个人/本地部署，不建议直接公网多人共用。
 >
 > 如果你需要稳定维护自己的分支，建议自行 fork 后独立开发。二次开发与 PR 请保留原作者信息和前端页面标识。
+
+## 上游来源与署名
+
+本仓库基于 [basketikun/infinite-canvas](https://github.com/basketikun/infinite-canvas) 持续开发。原项目作者与历次贡献者仍保有各自代码的著作权；当前仓库的新增修改由对应贡献者享有著作权。请保留原项目作者、许可证和来源说明，完整信息见 [NOTICE](NOTICE.md)。
 
 ## 核心功能
 
@@ -45,12 +49,14 @@
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/yypyyd/infinite-canvas)
 
+> Render 免费实例只适合体验，重启或重新部署可能丢失 SQLite 数据；长期使用请配置 PostgreSQL 或持久磁盘。
+
 ```bash
-git clone git@github.com:yypyyd/infinite-canvas.git
+git clone https://github.com/yypyyd/infinite-canvas.git
 cd infinite-canvas
 cp .env.example .env
-# 修改默认账号密码等信息
-docker-compose up -d
+# 编辑 .env，填写至少 12 位的 ADMIN_PASSWORD 和至少 32 位的 JWT_SECRET
+docker compose up -d
 ```
 
 本地源码构建运行：
@@ -95,12 +101,15 @@ docker compose -f docker-compose.local.yml up -d --build
 - [后端数据库说明](docs/content/docs/backend/backend-database.mdx)
 - [系统配置数据结构](docs/content/docs/backend/system-settings.mdx)
 - [接口响应约定](docs/content/docs/backend/api-response.mdx)
+- [参与贡献](CONTRIBUTING.md)
+- [安全政策](SECURITY.md)
+- [第三方声明](THIRD_PARTY_NOTICES.md)
 
 ## 赞助支持
 
 <div align="center">
 
-如果这个项目对你有帮助，欢迎通过爱发电赞助支持，你的每一份鼓励都是持续更新的动力！
+如果这个项目对你有帮助，欢迎通过爱发电支持原项目作者，你的每一份鼓励都是持续更新的动力！
 
 <br>
 
@@ -121,7 +130,11 @@ docker compose -f docker-compose.local.yml up -d --build
 
 ## 开源协议
 
-本项目使用 GNU Affero General Public License v3.0，见 [LICENSE](LICENSE)。
+本项目使用 GNU Affero General Public License v3.0，见 [LICENSE](LICENSE)。你可以在遵守 AGPL-3.0 的前提下自由使用、复制、修改和分发本项目。
+
+如果你分发修改后的版本，或将修改后的版本作为网站、SaaS 等网络服务提供给他人使用，需要按照 AGPL-3.0 向对应用户提供完整对应源代码，并保留原项目作者、版权、许可证和来源说明。
+
+本项目不允许未经授权以违反 AGPL-3.0 的方式闭源使用。确需其他授权方式时，请联系相关版权所有者确认授权范围；当前维护者不能代表上游作者或其他贡献者授权其分别享有著作权的代码。
 
 ## Star History
 

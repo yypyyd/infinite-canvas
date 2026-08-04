@@ -122,7 +122,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
         { key: "history", icon: <History className="size-4" />, label: <Link href="/account?tab=history">生成记录</Link> },
         { key: "credits", icon: <ReceiptText className="size-4" />, label: <Link href="/account?tab=credits">算力明细</Link> },
         ...(user?.role === "admin" ? [{ key: "admin", icon: <Shield className="size-4" />, label: <Link href="/admin">管理后台</Link> }] : []),
-        {
+        ...(CREDIT_PURCHASE_URL ? [{
             key: "purchase",
             icon: <ShoppingCart className="size-4" />,
             label: (
@@ -130,7 +130,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
                     购买算力
                 </a>
             ),
-        },
+        }] : []),
         { key: "redeem", icon: <Gift className="size-4" />, label: "兑换码", onClick: () => setRedeemOpen(true) },
         ...(onOpenShortcuts ? [{ key: "shortcuts", icon: <Keyboard className="size-4" />, label: "快捷键", onClick: onOpenShortcuts }] : []),
         { type: "divider" },
@@ -148,7 +148,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
                         </div>
                     </Tooltip>
                 ) : null}
-                {user ? (
+                {user && CREDIT_PURCHASE_URL ? (
                     <Tooltip title="购买算力" placement="bottom">
                         <a href={CREDIT_PURCHASE_URL} target="_blank" rel="noreferrer" className={purchaseClass} style={creditStyle}>
                             <ShoppingCart className="size-3.5" />

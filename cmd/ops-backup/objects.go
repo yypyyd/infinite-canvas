@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/basketikun/infinite-canvas/config"
+	"github.com/yypyyd/infinite-canvas/config"
 	"github.com/qiniu/go-sdk/v7/auth/qbox"
 	"github.com/qiniu/go-sdk/v7/client"
 	"github.com/qiniu/go-sdk/v7/storage"

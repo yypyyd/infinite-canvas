@@ -6,8 +6,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/basketikun/infinite-canvas/config"
-	"github.com/basketikun/infinite-canvas/model"
+	"github.com/yypyyd/infinite-canvas/config"
+	"github.com/yypyyd/infinite-canvas/model"
 	"gorm.io/gorm"
 )
 

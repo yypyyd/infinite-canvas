@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/basketikun/infinite-canvas/config"
+	"github.com/yypyyd/infinite-canvas/config"
 )
 
 func TestNormalizeReferenceMediaTypeSupportsAudio(t *testing.T) {

@@ -6,8 +6,8 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/basketikun/infinite-canvas/model"
-	"github.com/basketikun/infinite-canvas/repository"
+	"github.com/yypyyd/infinite-canvas/model"
+	"github.com/yypyyd/infinite-canvas/repository"
 )
 
 const redemptionAlphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"

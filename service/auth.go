@@ -2,15 +2,14 @@ package service
 
 import (
 	"errors"
-	"log"
 	"net/url"
 	"strings"
 	"time"
 	"unicode/utf8"
 
-	"github.com/basketikun/infinite-canvas/config"
-	"github.com/basketikun/infinite-canvas/model"
-	"github.com/basketikun/infinite-canvas/repository"
+	"github.com/yypyyd/infinite-canvas/config"
+	"github.com/yypyyd/infinite-canvas/model"
+	"github.com/yypyyd/infinite-canvas/repository"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
@@ -24,21 +23,21 @@ type TokenClaims struct {
 }
 
 func EnsureDefaultAdmin() error {
-	if strings.TrimSpace(config.Cfg.AdminUsername) == "" || strings.TrimSpace(config.Cfg.AdminPassword) == "" {
-		return nil
-	}
-	WarnDefaultSecurityConfig()
 	hasAdmin, err := repository.HasAdmin()
 	if err != nil || hasAdmin {
 		return err
 	}
-	hash, err := hashPassword(config.Cfg.AdminPassword)
+	username, password := strings.TrimSpace(config.Cfg.AdminUsername), strings.TrimSpace(config.Cfg.AdminPassword)
+	if username == "" || utf8.RuneCountInString(password) < 12 || password == "infinite-canvas" {
+		return errors.New("ADMIN_USERNAME and an ADMIN_PASSWORD of at least 12 characters are required on first startup")
+	}
+	hash, err := hashPassword(password)
 	if err != nil {
 		return err
 	}
 	_, err = repository.SaveUser(model.User{
 		ID:        newID("user"),
-		Username:  strings.TrimSpace(config.Cfg.AdminUsername),
+		Username:  username,
 		Password:  hash,
 		Role:      model.UserRoleAdmin,
 		Group:     "default",
@@ -529,8 +528,3 @@ func normalizeUserGroup(group string) string {
 	return group
 }
 
-func WarnDefaultSecurityConfig() {
-	if config.Cfg.AdminUsername == "admin" && config.Cfg.AdminPassword == "infinite-canvas" {
-		log.Println("WARNING: using default admin credentials, please set ADMIN_USERNAME and ADMIN_PASSWORD to safer values before deployment")
-	}
-}

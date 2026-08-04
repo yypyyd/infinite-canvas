@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/basketikun/infinite-canvas/config"
+	"github.com/yypyyd/infinite-canvas/config"
 )
 
 func main() {

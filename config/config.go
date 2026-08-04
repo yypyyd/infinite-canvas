@@ -1,8 +1,7 @@
 package config
 
 import (
-	"crypto/rand"
-	"encoding/base64"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,8 +13,8 @@ import (
 type Config struct {
 	Port                string `env:"PORT" envDefault:"8080"`
 	AdminUsername       string `env:"ADMIN_USERNAME" envDefault:"admin"`
-	AdminPassword       string `env:"ADMIN_PASSWORD" envDefault:"infinite-canvas"`
-	JWTSecret           string `env:"JWT_SECRET" envDefault:"infinite-canvas"`
+	AdminPassword       string `env:"ADMIN_PASSWORD"`
+	JWTSecret           string `env:"JWT_SECRET"`
 	JWTExpireHours      int    `env:"JWT_EXPIRE_HOURS" envDefault:"168"`
 	StorageDriver       string `env:"STORAGE_DRIVER" envDefault:"sqlite"`
 	DatabaseDSN         string `env:"DATABASE_DSN" envDefault:"data/infinite-canvas.db"`
@@ -41,12 +40,8 @@ func Load() error {
 	}
 	normalizeDockerSQLiteDSN("/app/data")
 	normalizeSQLiteBusyTimeout()
-	if strings.TrimSpace(Cfg.JWTSecret) == "" || Cfg.JWTSecret == "infinite-canvas" {
-		secret, err := randomSecret()
-		if err != nil {
-			return err
-		}
-		Cfg.JWTSecret = secret
+	if len(strings.TrimSpace(Cfg.JWTSecret)) < 32 || Cfg.JWTSecret == "infinite-canvas" {
+		return errors.New("JWT_SECRET must be set to a persistent secret of at least 32 characters")
 	}
 	return nil
 }
@@ -91,10 +86,3 @@ func normalizeDockerSQLiteDSN(appDataDir string) {
 	Cfg.DatabaseDSN = filepath.Join(filepath.Dir(appDataDir), filepath.FromSlash(slashPath)) + suffix
 }
 
-func randomSecret() (string, error) {
-	buf := make([]byte, 32)
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(buf), nil
-}

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/basketikun/infinite-canvas/model"
+	"github.com/yypyyd/infinite-canvas/model"
 )
 
 func TestBatchProductionArchiveNamesAreStableAndPathSafe(t *testing.T) {

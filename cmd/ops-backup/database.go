@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/basketikun/infinite-canvas/config"
-	"github.com/basketikun/infinite-canvas/repository"
+	"github.com/yypyyd/infinite-canvas/config"
+	"github.com/yypyyd/infinite-canvas/repository"
 	mysqldriver "github.com/go-sql-driver/mysql"
 )
 

@@ -3,7 +3,7 @@ import { App } from "antd";
 import { APP_VERSION } from "@/constant/env";
 import type { ReleaseInfo } from "@/lib/release";
 
-const remoteVersionUrl = "https://raw.githubusercontent.com/yypyyd/infinite-canvas/main/VERSION";
+const remoteVersionUrl = process.env.NEXT_PUBLIC_VERSION_URL || "https://raw.githubusercontent.com/yypyyd/infinite-canvas/main/VERSION";
 const releaseUrl = "/api/app/releases";
 
 function readLocalReleases(): ReleaseInfo[] {

@@ -190,19 +190,21 @@ func TestSelectStandardBatchModelChannelKeepsOriginalChannel(t *testing.T) {
 
 func TestStandardBatchExecutorReturnsResumedTaskOnPreflightFailure(t *testing.T) {
 	user, _, organization := seedTenant(t, "batch-resume-preflight")
-	setTestUserCredits(t, user.ID, 10)
 	job := model.BatchProductionJob{ID: "job-batch-resume-preflight", OrganizationID: organization.ID, CreatedBy: user.ID}
 	item := model.BatchProductionItem{ID: "item-batch-resume-preflight", OrganizationID: organization.ID, JobID: job.ID, RunNumber: 1}
-	task, err := BeginGenerationTask(GenerationTaskInput{
-		UserID: user.ID, OrganizationID: organization.ID, RequestID: standardBatchRequestID(item),
-		BatchJobID: job.ID, BatchItemID: item.ID,
-		Model: "image-model", UpstreamModel: "upstream-image", ChannelName: "channel-a",
+	task := model.GenerationTask{
+		ID: "task-batch-resume-preflight", UserID: user.ID, OrganizationID: organization.ID, RequestID: standardBatchRequestID(item),
+		BatchJobID: job.ID, BatchItemID: item.ID, Model: "image-model", UpstreamModel: "upstream-image", ChannelName: "channel-a",
 		Path: "/images/generations", Modality: "image", Operation: "generation", ResolutionTier: "1k", Quantity: 1, Credits: 2,
-	})
+		CreditSource: model.CreditSourcePersonal, Status: model.GenerationTaskStatusRunning, CreatedAt: "1", UpdatedAt: "1",
+	}
+	database, err := repository.DB()
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer FinishGenerationTask(task, model.GenerationTaskStatusFailed, "test cleanup")
+	if err := database.Create(&task).Error; err != nil {
+		t.Fatal(err)
+	}
 	result, err := (StandardBatchProductionExecutor{}).Execute(context.Background(), BatchProductionExecution{
 		Job: job, Item: item, Product: model.Product{Name: "测试商品"},
 	})

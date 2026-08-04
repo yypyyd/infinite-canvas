@@ -327,7 +327,7 @@ func TestBatchItemHTTPReviewRetryAndPrimaryWorkflow(t *testing.T) {
 	if err := database.Where("job_id = ?", job.ID).Order("sku_id asc").Find(&items).Error; err != nil {
 		t.Fatal(err)
 	}
-	if items[0].IsPrimary || !items[1].IsPrimary {
-		t.Fatalf("product primary was not unique: %#v", items)
+	if !items[0].IsPrimary || !items[1].IsPrimary {
+		t.Fatalf("SKU primaries were not independent: %#v", items)
 	}
 }

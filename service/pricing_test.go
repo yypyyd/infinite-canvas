@@ -21,6 +21,21 @@ func TestNormalizePricingRequestImageTier(t *testing.T) {
 	}
 }
 
+func TestNormalizePricingRequestOneKPortraitTier(t *testing.T) {
+	request := normalizePricingRequest(PricingRequest{
+		Model:     "gpt-image-2",
+		Modality:  "image",
+		Operation: "generation",
+		Unit:      "image",
+		Size:      "1024x1824",
+		Quantity:  1,
+	})
+
+	if request.ResolutionTier != "1k" {
+		t.Fatalf("resolution tier = %q, want 1k", request.ResolutionTier)
+	}
+}
+
 func TestNormalizePricingRequestDefaultsImageTierWithoutQuality(t *testing.T) {
 	request := normalizePricingRequest(PricingRequest{
 		Model:     "gpt-image-2",

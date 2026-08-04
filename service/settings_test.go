@@ -149,13 +149,13 @@ func TestNormalizeSettingsMergesEnabledChannelCapabilitiesIntoCatalog(t *testing
 	if got.Name != "Firefly Ray" || got.Modality != "video" || !reflect.DeepEqual(got.Operations, []string{"generation"}) || got.Sort != 7 || got.Remark != "public model" || !got.Enabled {
 		t.Fatalf("model metadata changed: %#v", got)
 	}
-	if want := []string{"16:9", "21:9", "9:16"}; !reflect.DeepEqual(got.AspectRatios, want) {
+	if want := []string{"4:3", "16:9", "21:9", "9:16"}; !reflect.DeepEqual(got.AspectRatios, want) {
 		t.Fatalf("aspect ratios = %#v, want %#v", got.AspectRatios, want)
 	}
-	if want := []string{"720p", "1080p"}; !reflect.DeepEqual(got.ResolutionTiers, want) {
+	if want := []string{"480p", "720p", "1080p"}; !reflect.DeepEqual(got.ResolutionTiers, want) {
 		t.Fatalf("resolution tiers = %#v, want %#v", got.ResolutionTiers, want)
 	}
-	if want := []int{5, 10}; !reflect.DeepEqual(got.Durations, want) {
+	if want := []int{4, 5, 10}; !reflect.DeepEqual(got.Durations, want) {
 		t.Fatalf("durations = %#v, want %#v", got.Durations, want)
 	}
 	if got.MaxReferenceImages != 6 || got.ReferenceMode != "asset" {
@@ -170,6 +170,26 @@ func TestChannelModelSupportsReferenceImageLimit(t *testing.T) {
 	}
 	if channelModelSupportsRequest(item, PricingRequest{Model: "video-model", Modality: "video", Operation: "generation", Quantity: 5, ReferenceImages: 7}) {
 		t.Fatal("expected seven reference images to be rejected")
+	}
+}
+
+func TestNormalizeModelChannelAllowsOneImageForEditByDefault(t *testing.T) {
+	channel := normalizeModelChannel(model.ModelChannel{Models: []model.ChannelModel{
+		{Model: "image-model", Modality: "image", Operations: []string{"edit"}, ResolutionTiers: []string{"4k"}},
+		{Model: "video-model", Modality: "video", Operations: []string{"generation"}},
+	}})
+	imageModel := channel.Models[0]
+	if imageModel.MaxReferenceImages != 1 {
+		t.Fatalf("image edit reference limit = %d, want 1", imageModel.MaxReferenceImages)
+	}
+	if !channelModelSupportsRequest(imageModel, PricingRequest{Model: "image-model", Modality: "image", Operation: "edit", ResolutionTier: "4k", ReferenceImages: 1}) {
+		t.Fatal("expected 4k image edit with one reference image to be supported")
+	}
+	if channelModelSupportsRequest(imageModel, PricingRequest{Model: "image-model", Modality: "image", Operation: "edit", ResolutionTier: "4k", ReferenceImages: 2}) {
+		t.Fatal("expected two reference images to require an explicit limit")
+	}
+	if channelModelSupportsRequest(channel.Models[1], PricingRequest{Model: "video-model", Modality: "video", Operation: "generation", ReferenceImages: 1}) {
+		t.Fatal("expected the video reference image limit to remain unchanged")
 	}
 }
 

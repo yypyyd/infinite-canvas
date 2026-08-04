@@ -15,6 +15,9 @@ type VideoResponse = { id: string; status?: string; error?: { message?: string }
 type ApiVideoResponse = VideoResponse | { code?: number; data?: VideoResponse | null; msg?: string };
 type RequestOptions = { signal?: AbortSignal; idempotencyKey?: string };
 
+const VIDEO_POLL_INTERVAL_MS = 2500;
+const VIDEO_POLL_TIMEOUT_MS = 30 * 60 * 1000;
+
 export type VideoGenerationResult = { blob?: Blob; url?: string; mimeType?: string };
 export type VideoCreativeMode = "analysis" | "viral";
 export type VideoCreativeResult = { analysis: string; script: string; videoPrompt: string; frames: string[] };
@@ -61,13 +64,15 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
     try {
         const created = unwrapVideoResponse((await axios.post<ApiVideoResponse>("/api/v1/videos", body, { headers: aiHeaders(options?.idempotencyKey), signal: options?.signal })).data);
         if (!created.id) throw new Error("视频接口没有返回任务 ID");
-        for (let attempt = 0; attempt < 120; attempt += 1) {
+        const pollDeadline = Date.now() + VIDEO_POLL_TIMEOUT_MS;
+        for (;;) {
             if (options?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
             const video = unwrapVideoResponse((await axios.get<ApiVideoResponse>(`/api/v1/videos/${encodeURIComponent(created.id)}`, { headers: aiHeaders(), params: { model }, signal: options?.signal })).data);
             if (video.status === "completed") break;
             if (video.status === "failed" || video.status === "cancelled") throw new Error(video.error?.message || "视频生成失败");
-            if (attempt === 119) throw new Error("视频生成超时，请稍后重试");
-            await delay(2500, options?.signal);
+            const remainingMs = pollDeadline - Date.now();
+            if (remainingMs <= 0) throw new Error("视频生成超时，请稍后重试");
+            await delay(Math.min(VIDEO_POLL_INTERVAL_MS, remainingMs), options?.signal);
         }
         const content = await axios.get<Blob>(`/api/v1/videos/${encodeURIComponent(created.id)}/content`, { headers: aiHeaders(), params: { model }, responseType: "blob", signal: options?.signal });
         await assertVideoBlob(content.data);

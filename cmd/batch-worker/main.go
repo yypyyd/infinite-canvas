@@ -10,8 +10,8 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/basketikun/infinite-canvas/config"
-	"github.com/basketikun/infinite-canvas/service"
+	"github.com/yypyyd/infinite-canvas/config"
+	"github.com/yypyyd/infinite-canvas/service"
 )
 
 var logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))

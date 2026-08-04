@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/basketikun/infinite-canvas/model"
+	"github.com/yypyyd/infinite-canvas/model"
 )
 
 func deliveryTestImage(t *testing.T, width, height int) []byte {

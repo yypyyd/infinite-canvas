@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/basketikun/infinite-canvas/model"
-	"github.com/basketikun/infinite-canvas/service"
+	"github.com/yypyyd/infinite-canvas/model"
+	"github.com/yypyyd/infinite-canvas/service"
 )
 
 func CreateAgentSession(w http.ResponseWriter, r *http.Request) {

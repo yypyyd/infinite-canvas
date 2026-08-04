@@ -1,8 +1,8 @@
 package router
 
 import (
-	"github.com/basketikun/infinite-canvas/handler"
-	"github.com/basketikun/infinite-canvas/middleware"
+	"github.com/yypyyd/infinite-canvas/handler"
+	"github.com/yypyyd/infinite-canvas/middleware"
 	"github.com/gin-gonic/gin"
 )
 
@@ -40,7 +40,7 @@ func New() *gin.Engine {
 	api.POST("/preferences", middleware.UserAuth, gin.WrapF(handler.SaveUserPreferences))
 	api.GET("/api-keys", middleware.UserAuth, middleware.OrganizationAuth, gin.WrapF(handler.UserAPIKeys))
 	api.POST("/api-keys", middleware.UserAuth, middleware.OrganizationAuth, gin.WrapF(handler.CreateUserAPIKey))
-	api.DELETE("/api-keys/:id", middleware.UserAuth, middleware.OrganizationAuth, func(c *gin.Context) { handler.RevokeUserAPIKey(c.Writer, c.Request, c.Param("id")) })
+	api.DELETE("/api-keys/:id", middleware.UserAuth, middleware.OrganizationAuth, func(c *gin.Context) { handler.DeleteUserAPIKey(c.Writer, c.Request, c.Param("id")) })
 	commerce := api.Group("/commerce", middleware.UserAuth, middleware.OrganizationAuth)
 	commerce.GET("/workspace", gin.WrapF(handler.CommerceWorkspace))
 	commerce.POST("/organizations", gin.WrapF(handler.CreateOrganization))

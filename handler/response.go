@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/basketikun/infinite-canvas/model"
+	"github.com/yypyyd/infinite-canvas/model"
 )
 
 type response struct {

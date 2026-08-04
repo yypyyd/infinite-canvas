@@ -3,7 +3,7 @@ package handler
 import (
 	"net/http"
 
-	"github.com/basketikun/infinite-canvas/service"
+	"github.com/yypyyd/infinite-canvas/service"
 )
 
 func CheckInStatus(w http.ResponseWriter, r *http.Request) {

@@ -3,9 +3,9 @@ package main
 import (
 	"log"
 
-	"github.com/basketikun/infinite-canvas/config"
-	"github.com/basketikun/infinite-canvas/router"
-	"github.com/basketikun/infinite-canvas/service"
+	"github.com/yypyyd/infinite-canvas/config"
+	"github.com/yypyyd/infinite-canvas/router"
+	"github.com/yypyyd/infinite-canvas/service"
 )
 
 func main() {

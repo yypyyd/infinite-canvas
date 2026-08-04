@@ -3,8 +3,8 @@ package service
 import (
 	"time"
 
-	"github.com/basketikun/infinite-canvas/model"
-	"github.com/basketikun/infinite-canvas/repository"
+	"github.com/yypyyd/infinite-canvas/model"
+	"github.com/yypyyd/infinite-canvas/repository"
 )
 
 var checkInLocation = time.FixedZone("Asia/Shanghai", 8*60*60)

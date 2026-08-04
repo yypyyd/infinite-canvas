@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/basketikun/infinite-canvas/model"
-	"github.com/basketikun/infinite-canvas/service"
+	"github.com/yypyyd/infinite-canvas/model"
+	"github.com/yypyyd/infinite-canvas/service"
 )
 
 func Liveness(w http.ResponseWriter, _ *http.Request) {

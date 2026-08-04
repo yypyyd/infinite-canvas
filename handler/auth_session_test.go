@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/basketikun/infinite-canvas/config"
+	"github.com/yypyyd/infinite-canvas/config"
 )
 
 func TestSetUserSessionCookieUsesSecureDefaults(t *testing.T) {

@@ -10,3 +10,6 @@ data/
 .DS_Store
 .idea
 .codex-ssh-askpass.cmd
+.ace-tool/
+.workbuddy/
+.agents/skills/production-server-deployment/

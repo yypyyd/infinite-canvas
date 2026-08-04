@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/basketikun/infinite-canvas/model"
-	"github.com/basketikun/infinite-canvas/service"
+	"github.com/yypyyd/infinite-canvas/model"
+	"github.com/yypyyd/infinite-canvas/service"
 )
 
 func CommerceVideoProjects(w http.ResponseWriter, r *http.Request) {

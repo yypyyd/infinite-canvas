@@ -1,7 +1,8 @@
 import type { ComponentProps } from "react";
 import { Zap } from "lucide-react";
 
-export const CREDIT_PURCHASE_URL = "https://pay.ldxp.cn/shop/ODLR2IW6";
+const configuredPurchaseUrl = process.env.NEXT_PUBLIC_CREDIT_PURCHASE_URL?.trim();
+export const CREDIT_PURCHASE_URL = configuredPurchaseUrl === "off" ? "" : configuredPurchaseUrl || "https://pay.ldxp.cn/shop/ODLR2IW6";
 
 export function CreditSymbol({ className, ...props }: ComponentProps<"span">) {
     return (

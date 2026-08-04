@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/basketikun/infinite-canvas/model"
+	"github.com/yypyyd/infinite-canvas/model"
 )
 
 var productionTemplateVariablePattern = regexp.MustCompile(`\{\{\s*([^{}]+?)\s*\}\}`)

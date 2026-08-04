@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/basketikun/infinite-canvas/model"
-	"github.com/basketikun/infinite-canvas/repository"
+	"github.com/yypyyd/infinite-canvas/model"
+	"github.com/yypyyd/infinite-canvas/repository"
 )
 
 func TestGetOperationsHealthReportsFailedOutboxAsDegraded(t *testing.T) {

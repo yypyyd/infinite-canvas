@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/basketikun/infinite-canvas/model"
-	"github.com/basketikun/infinite-canvas/repository"
-	"github.com/basketikun/infinite-canvas/service"
+	"github.com/yypyyd/infinite-canvas/model"
+	"github.com/yypyyd/infinite-canvas/repository"
+	"github.com/yypyyd/infinite-canvas/service"
 )
 
 func TestImageGenerationHTTPBillingAndIdempotency(t *testing.T) {

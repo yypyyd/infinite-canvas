@@ -31,7 +31,7 @@ description: 业务接口统一响应结构与前端处理约定
 
 - `GET /api/api-keys`：返回当前用户在当前企业创建的 Key，完整密钥不会返回。
 - `POST /api/api-keys`：接受 `{ "name": "生产服务器" }`，完整 `secret` 仅在本次成功响应中返回。
-- `DELETE /api/api-keys/:id`：撤销当前用户在当前企业内的有效 Key，撤销后不可恢复。
+- `DELETE /api/api-keys/:id`：永久删除当前用户在当前企业内的 Key，删除后立即失效且记录不可恢复。
 
 每个用户在每个企业最多有 10 个有效 Key。调用 AI 接口时使用：
 

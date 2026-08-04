@@ -10,9 +10,10 @@ description: 用最少步骤把道生画境跑起来
 ## Docker 启动
 
 ```bash
-git clone git@github.com:basketikun/infinite-canvas.git
+git clone https://github.com/yypyyd/infinite-canvas.git
 cd infinite-canvas
 cp .env.example .env
+# 编辑 .env，填写至少 12 位的 ADMIN_PASSWORD 和至少 32 位的 JWT_SECRET
 docker compose up -d
 ```
 
@@ -22,7 +23,7 @@ docker compose up -d
 http://localhost:3000
 ```
 
-默认管理员账号：
+首次启动管理员账号：
 
 ```text
 用户名：admin

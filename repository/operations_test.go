@@ -5,7 +5,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/basketikun/infinite-canvas/model"
+	"github.com/yypyyd/infinite-canvas/model"
 )
 
 func TestOperationsHealthChecksDatabaseAndQueueBacklogs(t *testing.T) {

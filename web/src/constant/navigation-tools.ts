@@ -1,4 +1,4 @@
-import { Building2, FileText, ImagePlus, Images, Maximize2, Video } from "lucide-react";
+import { Building2, FileText, ImagePlus, Images, LayoutGrid, Maximize2, Video } from "lucide-react";
 
 export const navigationTools = [
     {
@@ -30,6 +30,11 @@ export const navigationTools = [
         slug: "assets",
         label: "商品素材",
         icon: Images,
+    },
+    {
+        slug: "api-docs",
+        label: "模型广场",
+        icon: LayoutGrid,
     },
 ] as const;
 

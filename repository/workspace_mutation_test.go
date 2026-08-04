@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/basketikun/infinite-canvas/model"
+	"github.com/yypyyd/infinite-canvas/model"
 )
 
 func workspaceProjectMutation(recordID, data string, expectedVersion int64, storageKeys ...string) model.UserWorkspaceMutation {

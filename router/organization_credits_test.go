@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/basketikun/infinite-canvas/model"
-	"github.com/basketikun/infinite-canvas/repository"
+	"github.com/yypyyd/infinite-canvas/model"
+	"github.com/yypyyd/infinite-canvas/repository"
 )
 
 func TestOrganizationCreditsHTTPSettingsAndTransfer(t *testing.T) {

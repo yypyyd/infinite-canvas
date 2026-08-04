@@ -4,10 +4,10 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/basketikun/infinite-canvas/config"
-	"github.com/basketikun/infinite-canvas/handler"
-	"github.com/basketikun/infinite-canvas/model"
-	"github.com/basketikun/infinite-canvas/service"
+	"github.com/yypyyd/infinite-canvas/config"
+	"github.com/yypyyd/infinite-canvas/handler"
+	"github.com/yypyyd/infinite-canvas/model"
+	"github.com/yypyyd/infinite-canvas/service"
 	"github.com/gin-gonic/gin"
 )
 

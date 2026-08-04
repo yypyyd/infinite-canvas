@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/basketikun/infinite-canvas/service"
+	"github.com/yypyyd/infinite-canvas/service"
 )
 
 func UserPreferences(w http.ResponseWriter, r *http.Request) {

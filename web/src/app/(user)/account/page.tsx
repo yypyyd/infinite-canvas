@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { App, Avatar, Button, Card, Descriptions, Empty, Form, Image as AntImage, Input, Modal, Pagination, Progress, Segmented, Select, Skeleton, Table, Tabs, Tag, Typography, type TableColumnsType } from "antd";
 import dayjs from "dayjs";
 import { saveAs } from "file-saver";
-import { BookOpen, CircleUserRound, Clock3, Cloud, Code2, Coins, Copy, ExternalLink, Film, History, ImageIcon, KeyRound, ListChecks, LoaderCircle, PencilLine, Plus, ReceiptText, RefreshCw, Search, ShieldCheck, Trash2, WalletCards } from "lucide-react";
+import { CircleUserRound, Clock3, Cloud, Code2, Coins, Copy, ExternalLink, Film, History, ImageIcon, KeyRound, ListChecks, LoaderCircle, PencilLine, Plus, ReceiptText, RefreshCw, Search, ShieldCheck, Trash2, WalletCards } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
@@ -12,7 +12,7 @@ import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
 import { CREDIT_PURCHASE_URL, CreditSymbol } from "@/constant/credits";
 import { useCopyText } from "@/hooks/use-copy-text";
 import { formatDuration } from "@/lib/image-utils";
-import { changePassword, createUserAPIKey, fetchCreditLogs, fetchGenerationTasks, fetchUserAPIKeys, revokeUserAPIKey, updateProfile as updateUserProfile, type CreditLog, type CreatedUserAPIKey, type GenerationTask, type UserAPIKey } from "@/services/api/auth";
+import { changePassword, createUserAPIKey, deleteUserAPIKey, fetchCreditLogs, fetchGenerationTasks, fetchUserAPIKeys, updateProfile as updateUserProfile, type CreditLog, type CreatedUserAPIKey, type GenerationTask, type UserAPIKey } from "@/services/api/auth";
 import { countGenerationHistory, deleteGenerationHistory, GENERATION_HISTORY_CHANGED_EVENT, readGenerationHistory, resolveGenerationHistoryMedia, resolveGenerationHistoryPreview, type GenerationHistoryItem } from "@/services/generation-history";
 import { workspaceOwnerId } from "@/services/workspace-changes";
 import { useUserStore } from "@/stores/use-user-store";
@@ -151,9 +151,11 @@ function AccountContent() {
                                 ) : null}
                             </div>
                         </div>
-                        <Button type="primary" href={CREDIT_PURCHASE_URL} target="_blank" rel="noreferrer" icon={<WalletCards className="size-4" />}>
-                            购买算力
-                        </Button>
+                        {CREDIT_PURCHASE_URL ? (
+                            <Button type="primary" href={CREDIT_PURCHASE_URL} target="_blank" rel="noreferrer" icon={<WalletCards className="size-4" />}>
+                                购买算力
+                            </Button>
+                        ) : null}
                     </div>
                     <div className="relative grid grid-cols-1 border-t border-border sm:grid-cols-3 sm:divide-x sm:divide-border">
                         <AccountMetric icon={<Coins />} label={user.creditMode === "shared" ? "企业共享算力" : "个人算力"} value={(user.effectiveCredits ?? user.credits).toLocaleString()} suffix="点" />
@@ -988,13 +990,13 @@ function APIKeySection() {
         },
         onError: (error) => message.error(error instanceof Error ? error.message : "创建失败"),
     });
-    const revokeMutation = useMutation({
-        mutationFn: (id: string) => revokeUserAPIKey(token, id),
+    const deleteMutation = useMutation({
+        mutationFn: (id: string) => deleteUserAPIKey(token, id),
         onSuccess: () => {
-            message.success("API Key 已撤销");
+            message.success("API Key 已删除");
             void queryClient.invalidateQueries({ queryKey });
         },
-        onError: (error) => message.error(error instanceof Error ? error.message : "撤销失败"),
+        onError: (error) => message.error(error instanceof Error ? error.message : "删除失败"),
     });
     const activeCount = keysQuery.data?.filter((item) => item.status === "active").length || 0;
     const modelCurlExample = `curl "${endpoint}/models" \\
@@ -1012,14 +1014,14 @@ function APIKeySection() {
         createMutation.reset();
     };
 
-    const confirmRevoke = (item: UserAPIKey) => {
+    const confirmDelete = (item: UserAPIKey) => {
         modal.confirm({
-            title: `撤销「${item.name}」？`,
-            content: "撤销后使用该 Key 的请求会立即失败，此操作不可恢复。",
-            okText: "撤销",
+            title: `删除「${item.name}」？`,
+            content: "删除后使用该 Key 的请求会立即失败，记录也会从列表移除，此操作不可恢复。",
+            okText: "删除",
             okButtonProps: { danger: true },
             cancelText: "取消",
-            onOk: () => revokeMutation.mutateAsync(item.id),
+            onOk: () => deleteMutation.mutateAsync(item.id),
         });
     };
 
@@ -1035,7 +1037,6 @@ function APIKeySection() {
                         <p className="mt-1 text-sm text-muted-foreground">让你的应用通过现有模型渠道调用 AI 能力，费用计入当前企业算力。</p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                        <Button href="/api-docs" icon={<BookOpen className="size-4" />}>接入文档</Button>
                         <Button type="primary" icon={<Plus className="size-4" />} disabled={activeCount >= 10} onClick={() => setCreateOpen(true)}>
                             创建 Key
                         </Button>
@@ -1070,11 +1071,9 @@ function APIKeySection() {
                                                 <span>{item.lastUsedAt ? `最后使用 ${dayjs(item.lastUsedAt).format("YYYY-MM-DD HH:mm")}` : "尚未使用"}</span>
                                             </div>
                                         </div>
-                                        {item.status === "active" ? (
-                                            <Button danger type="text" icon={<Trash2 className="size-4" />} loading={revokeMutation.isPending && revokeMutation.variables === item.id} onClick={() => confirmRevoke(item)}>
-                                                撤销
-                                            </Button>
-                                        ) : null}
+                                        <Button danger type="text" icon={<Trash2 className="size-4" />} loading={deleteMutation.isPending && deleteMutation.variables === item.id} onClick={() => confirmDelete(item)}>
+                                            删除
+                                        </Button>
                                     </div>
                                 ))}
                             </div>

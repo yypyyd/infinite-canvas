@@ -3,7 +3,7 @@ package service
 import (
 	"time"
 
-	"github.com/basketikun/infinite-canvas/repository"
+	"github.com/yypyyd/infinite-canvas/repository"
 )
 
 func StartOrganizationEmailOutboxWorker() {

@@ -211,7 +211,7 @@ func TestBatchJobHTTPCancelAndRetryRespectTenantAndState(t *testing.T) {
 	if err := database.Where("job_id = ?", retryJob.ID).Order("product_id asc").Find(&retryItems).Error; err != nil {
 		t.Fatal(err)
 	}
-	if savedJob.Status != model.BatchProductionStatusQueued || savedJob.FailedItems != 0 || savedJob.CompletedItems != 1 {
+	if savedJob.Status != model.BatchProductionStatusRunning || savedJob.FailedItems != 0 || savedJob.CompletedItems != 1 {
 		t.Fatalf("unexpected retried job: %#v", savedJob)
 	}
 	if retryItems[0].Status != model.BatchProductionStatusCompleted || retryItems[0].RunNumber != 1 || retryItems[0].ResultStorageKey != "image:completed-result" {

@@ -1238,7 +1238,7 @@ func RetryBatchProductionItem(user model.AuthUser, jobID string, itemID string, 
 	if err != nil {
 		return err
 	}
-	if !canWriteCommerce(membership.Role) {
+	if !canWriteCommerce(membership.Role) && !canReviewCommerce(membership.Role) {
 		return safeMessageError{message: "没有重新生成权限"}
 	}
 	if input.RunNumber < 1 {

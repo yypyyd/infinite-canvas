@@ -102,7 +102,7 @@ function supportedNumber(items: number[] | undefined, value: number, fallback: n
 
 function unwrapVideoResponse(payload: ApiVideoResponse): VideoResponse {
     if (!payload) throw new Error("接口没有返回视频任务");
-    if ("code" in payload && typeof payload.code === "number") {
+    if ("data" in payload) {
         if (payload.code !== 0) throw new Error(payload.msg || "请求失败");
         if (!payload.data) throw new Error("接口没有返回视频任务");
         return payload.data;

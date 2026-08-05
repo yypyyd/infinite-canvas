@@ -124,6 +124,10 @@ function parseImagePayload(payload: ImageApiResponse) {
     return images;
 }
 
+export function parseRecoveredImageGeneration(payload: unknown) {
+    return parseImagePayload(payload as ImageApiResponse);
+}
+
 function readAxiosError(error: unknown, fallback: string) {
     if (axios.isCancel(error)) return "请求已取消";
     if (axios.isAxiosError<{ error?: { message?: string }; msg?: string; code?: number }>(error)) {

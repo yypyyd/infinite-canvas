@@ -1,17 +1,20 @@
 "use client";
 
 import type { ReactNode } from "react";
+import dynamic from "next/dynamic";
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 
 import { useConfigStore } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
-import { WorkspaceProvider } from "@/components/layout/workspace-provider";
 import { UserPreferencesProvider } from "@/components/layout/user-preferences-provider";
+
+const WorkspaceProvider = dynamic(() => import("@/components/layout/workspace-provider").then((module) => module.WorkspaceProvider), { ssr: false });
 
 export function ClientRootInit({ children }: { children: ReactNode }) {
     const pathname = usePathname();
     const hydrateUser = useUserStore((state) => state.hydrateUser);
+    const userId = useUserStore((state) => state.user?.id || "");
     const loadPublicSettings = useConfigStore((state) => state.loadPublicSettings);
     const isLoginPage = pathname === "/login" || pathname === "/admin/login";
 
@@ -25,7 +28,7 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
 
     return (
         <>
-            <WorkspaceProvider />
+            {userId ? <WorkspaceProvider /> : null}
             <UserPreferencesProvider />
             {children}
         </>

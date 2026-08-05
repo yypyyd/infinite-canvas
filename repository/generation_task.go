@@ -170,6 +170,48 @@ func GetGenerationTaskByRequest(organizationID, userID, requestID string) (model
 	return task, err == nil, err
 }
 
+func GetGenerationTaskByUpstreamID(organizationID, userID, upstreamTaskID string) (model.GenerationTask, bool, error) {
+	db, err := DB()
+	if err != nil {
+		return model.GenerationTask{}, false, err
+	}
+	var task model.GenerationTask
+	err = db.Where("organization_id = ? AND user_id = ? AND upstream_task_id = ?", organizationID, userID, upstreamTaskID).Order("created_at desc").First(&task).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.GenerationTask{}, false, nil
+	}
+	return task, err == nil, err
+}
+
+func UpdateRunningGenerationTaskRecovery(taskID, upstreamTaskID, resultJSON, updatedAt string) error {
+	db, err := DB()
+	if err != nil {
+		return err
+	}
+	result := db.Model(&model.GenerationTask{}).Where("id = ? AND status = ?", taskID, model.GenerationTaskStatusRunning).Updates(map[string]any{
+		"upstream_task_id": upstreamTaskID,
+		"result_json":       resultJSON,
+		"updated_at":        updatedAt,
+	})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return errors.New("generation task is not running")
+	}
+	return nil
+}
+
+func ClearGenerationTaskRecoveryResults(organizationID, userID string, requestIDs []string) error {
+	db, err := DB()
+	if err != nil {
+		return err
+	}
+	return db.Model(&model.GenerationTask{}).
+		Where("organization_id = ? AND user_id = ? AND request_id IN ? AND status = ?", organizationID, userID, requestIDs, model.GenerationTaskStatusSuccess).
+		Update("result_json", "").Error
+}
+
 func CompleteGenerationTask(task model.GenerationTask) error {
 	db, err := DB()
 	if err != nil {

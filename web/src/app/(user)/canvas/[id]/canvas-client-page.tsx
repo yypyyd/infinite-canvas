@@ -359,7 +359,9 @@ function InfiniteCanvasPage() {
 
     const startImageGenerationRecord = useCallback(
         async (prompt: string, generationConfig: AiConfig, imageCount: number) => {
-            const id = await saveCanvasImageGenerationRecord(historyOwnerId, {
+            const id = nanoid();
+            await saveCanvasImageGenerationRecord(historyOwnerId, {
+                id,
                 prompt,
                 model: generationConfig.model,
                 size: generationConfig.size,
@@ -368,6 +370,7 @@ function InfiniteCanvasPage() {
                 imageCount,
                 status: "生成中",
                 canvasId: projectId,
+                requestIds: Array.from({ length: imageCount }, (_, index) => (imageCount === 1 ? id : `${id}:${index}`)),
             });
             await flushActiveWorkspaceChanges();
             return id;
@@ -394,7 +397,9 @@ function InfiniteCanvasPage() {
     );
     const startVideoGenerationRecord = useCallback(
         async (prompt: string, generationConfig: AiConfig) => {
-            const id = await saveCanvasVideoGenerationRecord(historyOwnerId, {
+            const id = nanoid();
+            await saveCanvasVideoGenerationRecord(historyOwnerId, {
+                id,
                 prompt,
                 model: generationConfig.model,
                 size: generationConfig.size,
@@ -402,6 +407,7 @@ function InfiniteCanvasPage() {
                 seconds: generationConfig.videoSeconds,
                 status: "生成中",
                 canvasId: projectId,
+                requestId: id,
             });
             await flushActiveWorkspaceChanges();
             return id;
@@ -1944,7 +1950,7 @@ function InfiniteCanvasPage() {
             let generationRecordId = "";
             try {
                 generationRecordId = await startImageGenerationRecord(prompt, generationConfig, 1);
-                const image = await requestEdit(generationConfig, prompt, [source], { id: `${node.id}-mask`, name: "mask.png", type: "image/png", dataUrl: payload.maskDataUrl }, { signal: controller.signal }).then((items) => items[0]);
+                const image = await requestEdit(generationConfig, prompt, [source], { id: `${node.id}-mask`, name: "mask.png", type: "image/png", dataUrl: payload.maskDataUrl }, { signal: controller.signal, idempotencyKey: generationRecordId }).then((items) => items[0]);
                 const uploaded = await uploadImage(image.dataUrl);
                 throwIfGenerationCanceled(controller.signal);
                 const size = fitNodeSize(uploaded.width, uploaded.height, node.width, node.height);
@@ -2036,7 +2042,7 @@ function InfiniteCanvasPage() {
                     prompt,
                     [{ id: node.id, name: `${node.title || node.id}.png`, type: node.metadata.mimeType || "image/png", dataUrl: node.metadata.content, storageKey: node.metadata.storageKey }],
                     undefined,
-                    { signal: controller.signal },
+                    { signal: controller.signal, idempotencyKey: generationRecordId },
                 ).then((items) => items[0]);
                 const uploaded = await uploadImage(image.dataUrl);
                 throwIfGenerationCanceled(controller.signal);
@@ -2364,11 +2370,11 @@ function InfiniteCanvasPage() {
                     const generationStartedAt = performance.now();
                     activeImageRecord = { id: await startImageGenerationRecord(effectivePrompt, generationConfig, count), count, startedAt: generationStartedAt };
                     const generatedImages = await Promise.all(
-                        targetIds.map(async (targetId) => {
+                        targetIds.map(async (targetId, index) => {
                             try {
                                 const image = referenceImages.length
-                                    ? await requestEdit({ ...generationConfig, count: "1" }, effectivePrompt, referenceImages, undefined, { signal: runController.signal }).then((items) => items[0])
-                                    : await requestGeneration({ ...generationConfig, count: "1" }, effectivePrompt, { signal: runController.signal }).then((items) => items[0]);
+                                    ? await requestEdit({ ...generationConfig, count: "1" }, effectivePrompt, referenceImages, undefined, { signal: runController.signal, idempotencyKey: count === 1 ? activeImageRecord!.id : `${activeImageRecord!.id}:${index}` }).then((items) => items[0])
+                                    : await requestGeneration({ ...generationConfig, count: "1" }, effectivePrompt, { signal: runController.signal, idempotencyKey: count === 1 ? activeImageRecord!.id : `${activeImageRecord!.id}:${index}` }).then((items) => items[0]);
                                 const uploaded = await uploadImage(image.dataUrl);
                                 throwIfGenerationCanceled(runController.signal);
                                 const imageSize = fitNodeSize(uploaded.width, uploaded.height, imageConfig.width, imageConfig.height);
@@ -2471,7 +2477,7 @@ function InfiniteCanvasPage() {
                     activeVideoRecord = { id: await startVideoGenerationRecord(effectivePrompt, generationConfig), startedAt: generationStartedAt };
                     try {
                         const video = await storeGeneratedVideo(
-                            await requestVideoGeneration(generationConfig, effectivePrompt, generationContext.referenceImages, generationContext.referenceVideos, generationContext.referenceAudios, { signal: runController.signal }),
+                            await requestVideoGeneration(generationConfig, effectivePrompt, generationContext.referenceImages, generationContext.referenceVideos, generationContext.referenceAudios, { signal: runController.signal, idempotencyKey: activeVideoRecord.id }),
                         );
                         throwIfGenerationCanceled(runController.signal);
                         const videoSize = fitNodeSize(video.width || spec.width, video.height || spec.height, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
@@ -2847,7 +2853,7 @@ function InfiniteCanvasPage() {
                     return;
                 }
                 if (node.type === CanvasNodeType.Video) {
-                    const video = await storeGeneratedVideo(await requestVideoGeneration(generationConfig, prompt, retryImages, context?.referenceVideos || [], context?.referenceAudios || [], { signal: controller.signal }));
+                    const video = await storeGeneratedVideo(await requestVideoGeneration(generationConfig, prompt, retryImages, context?.referenceVideos || [], context?.referenceAudios || [], { signal: controller.signal, idempotencyKey: videoRecordId }));
                     throwIfGenerationCanceled(controller.signal);
                     const videoSize = fitNodeSize(video.width || node.width, video.height || node.height, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
                     setNodes((prev) =>
@@ -2885,8 +2891,8 @@ function InfiniteCanvasPage() {
                 }
 
                 const image = useReferenceImages
-                    ? await requestEdit(generationConfig, prompt, retryImages, undefined, { signal: controller.signal }).then((items) => items[0])
-                    : await requestGeneration(generationConfig, prompt, { signal: controller.signal }).then((items) => items[0]);
+                    ? await requestEdit(generationConfig, prompt, retryImages, undefined, { signal: controller.signal, idempotencyKey: imageRecordId }).then((items) => items[0])
+                    : await requestGeneration(generationConfig, prompt, { signal: controller.signal, idempotencyKey: imageRecordId }).then((items) => items[0]);
                 const uploadedImage = await uploadImage(image.dataUrl);
                 throwIfGenerationCanceled(controller.signal);
                 const imageConfig = NODE_DEFAULT_SIZE[CanvasNodeType.Image];

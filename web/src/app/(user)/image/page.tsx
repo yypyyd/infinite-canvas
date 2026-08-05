@@ -64,6 +64,9 @@ type GenerationLog = {
     status: GenerationRecordStatus;
     images: GeneratedImage[];
     thumbnails: string[];
+    requestIds: string[];
+    completedRequestIds: string[];
+    failedRequestIds: string[];
 };
 
 type GenerationLogConfig = Pick<AiConfig, "model" | "imageModel" | "quality" | "size" | "count">;
@@ -204,6 +207,7 @@ export default function ImagePage() {
         setResults(Array.from({ length: generationCount }, () => ({ id: nanoid(), status: "pending" })));
         const batchStartedAt = performance.now();
         setStartedAt(batchStartedAt);
+        const requestIds = Array.from({ length: generationCount }, () => crypto.randomUUID());
         const pendingLog = buildLog({
             ownerId: historyOwnerId,
             prompt: text,
@@ -215,6 +219,7 @@ export default function ImagePage() {
             failCount: 0,
             status: "生成中",
             images: [],
+            requestIds,
         });
         const logImages: GeneratedImage[] = [];
         let completedCount = 0;
@@ -224,6 +229,8 @@ export default function ImagePage() {
         let firstFailure: unknown;
         let firstStorageFailure: unknown;
         let generationStarted = false;
+        const completedRequestIds: string[] = [];
+        const failedRequestIds: string[] = [];
 
         try {
             await saveLog(pendingLog);
@@ -231,24 +238,27 @@ export default function ImagePage() {
             generationStarted = true;
             await Promise.all(
                 Array.from({ length: generationCount }, (_, index) =>
-                    runGenerationSlot(index, snapshot)
+                    runGenerationSlot(index, snapshot, requestIds[index])
                         .then(async (image) => {
                             generationSuccessCount += 1;
                             try {
                                 const stored = await uploadImage(image.dataUrl);
                                 const logImage = { ...image, dataUrl: stored.url, storageKey: stored.storageKey, width: stored.width, height: stored.height, bytes: stored.bytes, mimeType: stored.mimeType };
                                 logImages.push(logImage);
+                                completedRequestIds.push(requestIds[index]);
                                 setResults((value) => updateResultAt(value, index, { status: "success", image: logImage }));
                             } catch (error) {
                                 storageFailCount += 1;
                                 failCount += 1;
                                 firstStorageFailure ||= error;
                                 firstFailure ||= error;
+                                failedRequestIds.push(requestIds[index]);
                             }
                         })
                         .catch((error) => {
                             failCount += 1;
                             firstFailure ||= error;
+                            failedRequestIds.push(requestIds[index]);
                         })
                         .finally(async () => {
                             completedCount += 1;
@@ -260,6 +270,8 @@ export default function ImagePage() {
                                 status: completedCount < generationCount ? "生成中" : logImages.length ? (failCount ? "部分失败" : "成功") : "失败",
                                 images: [...logImages],
                                 thumbnails: logImages.map((image) => image.dataUrl),
+                                completedRequestIds: [...completedRequestIds],
+                                failedRequestIds: [...failedRequestIds],
                             });
                         }),
                 ),
@@ -276,7 +288,7 @@ export default function ImagePage() {
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : "生成记录保存失败";
             if (!generationStarted) {
-                const failedLog = { ...pendingLog, durationMs: performance.now() - batchStartedAt, failCount: generationCount, status: "失败" as const };
+                const failedLog = { ...pendingLog, durationMs: performance.now() - batchStartedAt, failCount: generationCount, failedRequestIds: [...requestIds], status: "失败" as const };
                 await saveLog(failedLog);
                 setResults((current) => current.map((item) => (item.status === "pending" ? { ...item, status: "failed" as const, error: errorMessage } : item)));
             }
@@ -384,10 +396,12 @@ export default function ImagePage() {
         return { text, config: { ...effectiveConfig, model, count: "1", quality: supportsQuality ? effectiveConfig.quality : "auto" }, references: supportsReferences ? [...references] : [] };
     };
 
-    const runGenerationSlot = async (index: number, snapshot: { text: string; config: AiConfig; references: ReferenceImage[] }) => {
+    const runGenerationSlot = async (index: number, snapshot: { text: string; config: AiConfig; references: ReferenceImage[] }, idempotencyKey?: string) => {
         const itemStartedAt = performance.now();
         try {
-            const result = snapshot.references.length ? await requestEdit(snapshot.config, snapshot.text, snapshot.references) : await requestGeneration(snapshot.config, snapshot.text);
+            const result = snapshot.references.length
+                ? await requestEdit(snapshot.config, snapshot.text, snapshot.references, undefined, { idempotencyKey })
+                : await requestGeneration(snapshot.config, snapshot.text, { idempotencyKey });
             const image = result[0];
             if (!image) throw new Error("接口没有返回图片");
             const meta = await readImageMeta(image.dataUrl);
@@ -944,6 +958,9 @@ async function normalizeLog(log: Partial<GenerationLog>): Promise<GenerationLog>
         status: log.status || "成功",
         images,
         thumbnails: images.map((image) => resolveImageVariantUrl(image.storageKey, image.dataUrl, "thumb")).filter(Boolean),
+        requestIds: log.requestIds || [],
+        completedRequestIds: log.completedRequestIds || [],
+        failedRequestIds: log.failedRequestIds || [],
     };
 }
 
@@ -1000,6 +1017,7 @@ function buildLog({
     failCount,
     status,
     images,
+    requestIds,
 }: {
     ownerId: string;
     prompt: string;
@@ -1011,6 +1029,7 @@ function buildLog({
     failCount: number;
     status: GenerationLog["status"];
     images: GeneratedImage[];
+    requestIds: string[];
 }): GenerationLog {
     const logConfig = {
         model: config.model,
@@ -1038,5 +1057,8 @@ function buildLog({
         status,
         images,
         thumbnails: images.map((image) => image.dataUrl).filter(Boolean),
+        requestIds,
+        completedRequestIds: [],
+        failedRequestIds: [],
     };
 }

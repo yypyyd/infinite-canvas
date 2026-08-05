@@ -64,6 +64,7 @@ type GenerationLog = {
     status: GenerationRecordStatus;
     video?: GeneratedVideo;
     error?: string;
+    requestId: string;
 };
 
 type GenerationLogConfig = Pick<AiConfig, "model" | "videoModel" | "size" | "vquality" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark">;
@@ -223,6 +224,7 @@ export default function VideoPage() {
         setResults([{ id: nanoid(), status: "pending" }]);
         const batchStartedAt = performance.now();
         setStartedAt(batchStartedAt);
+        const requestId = crypto.randomUUID();
         const pendingLog = buildLog({
             ownerId: historyOwnerId,
             prompt: snapshot.text,
@@ -233,11 +235,12 @@ export default function VideoPage() {
             audioReferences: snapshot.audioReferences,
             durationMs: 0,
             status: "生成中",
+            requestId,
         });
         try {
             await saveLog(pendingLog);
             await flushActiveWorkspaceChanges();
-            const stored = await storeGeneratedVideo(await requestVideoGeneration(snapshot.config, snapshot.text, snapshot.references, snapshot.videoReferences, snapshot.audioReferences));
+            const stored = await storeGeneratedVideo(await requestVideoGeneration(snapshot.config, snapshot.text, snapshot.references, snapshot.videoReferences, snapshot.audioReferences, { idempotencyKey: requestId }));
             const nextVideo: GeneratedVideo = {
                 id: nanoid(),
                 url: stored.url,
@@ -814,6 +817,7 @@ async function normalizeLog(log: Partial<GenerationLog>): Promise<GenerationLog>
         status: log.status || "成功",
         video,
         error: log.error,
+        requestId: log.requestId || "",
     };
 }
 
@@ -893,6 +897,7 @@ function buildLog({
     status,
     video,
     error,
+    requestId,
 }: {
     ownerId: string;
     prompt: string;
@@ -905,6 +910,7 @@ function buildLog({
     status: GenerationLog["status"];
     video?: GeneratedVideo;
     error?: string;
+    requestId: string;
 }): GenerationLog {
     const logConfig = {
         model: config.model,
@@ -934,6 +940,7 @@ function buildLog({
         status,
         video,
         error,
+        requestId,
     };
 }
 

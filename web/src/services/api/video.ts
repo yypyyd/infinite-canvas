@@ -68,26 +68,18 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
     videoFiles.forEach((reference) => body.append("reference_videos", reference));
     audioFiles.forEach((reference) => body.append("reference_audios", reference));
 
+    const requestId = options?.idempotencyKey || crypto.randomUUID();
     try {
-        const created = unwrapVideoResponse((await axios.post<ApiVideoResponse>("/api/v1/videos", body, { headers: aiHeaders(options?.idempotencyKey), signal: options?.signal })).data);
+        const created = unwrapVideoResponse((await axios.post<ApiVideoResponse>("/api/v1/videos", body, { headers: aiHeaders(requestId), signal: options?.signal })).data);
         if (!created.id) throw new Error("视频接口没有返回任务 ID");
-        const pollDeadline = Date.now() + VIDEO_POLL_TIMEOUT_MS;
-        for (;;) {
-            if (options?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
-            const video = unwrapVideoResponse((await axios.get<ApiVideoResponse>(`/api/v1/videos/${encodeURIComponent(created.id)}`, { headers: aiHeaders(), params: { model }, signal: options?.signal })).data);
-            if (video.status === "completed") break;
-            if (video.status === "failed" || video.status === "cancelled") throw new Error(video.error?.message || "视频生成失败");
-            const remainingMs = pollDeadline - Date.now();
-            if (remainingMs <= 0) throw new Error("视频生成超时，请稍后重试");
-            await delay(Math.min(VIDEO_POLL_INTERVAL_MS, remainingMs), options?.signal);
-        }
-        const content = await axios.get<Blob>(`/api/v1/videos/${encodeURIComponent(created.id)}/content`, { headers: aiHeaders(), params: { model }, responseType: "blob", signal: options?.signal });
-        await assertVideoBlob(content.data);
-        void useUserStore.getState().hydrateUser();
-        return { blob: content.data };
+        return await completeVideoGeneration(model, created.id, requestId, options?.signal);
     } catch (error) {
         throw new Error(readAxiosError(error, "视频生成失败"));
     }
+}
+
+export function resumeVideoGeneration(model: string, requestId: string, upstreamTaskId: string, signal?: AbortSignal) {
+    return completeVideoGeneration(model, upstreamTaskId, requestId, signal);
 }
 
 export async function storeGeneratedVideo(result: VideoGenerationResult): Promise<UploadedFile> {
@@ -99,6 +91,24 @@ export async function storeGeneratedVideo(result: VideoGenerationResult): Promis
 function aiHeaders(idempotencyKey?: string) {
     const token = useUserStore.getState().token;
     return { ...authorizationHeaders(token), ...organizationHeaders(), "Idempotency-Key": idempotencyKey || crypto.randomUUID() };
+}
+
+async function completeVideoGeneration(model: string, upstreamTaskId: string, requestId: string, signal?: AbortSignal): Promise<VideoGenerationResult> {
+    const pollDeadline = Date.now() + VIDEO_POLL_TIMEOUT_MS;
+    for (;;) {
+        if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+        const params = { model, request_id: requestId };
+        const video = unwrapVideoResponse((await axios.get<ApiVideoResponse>(`/api/v1/videos/${encodeURIComponent(upstreamTaskId)}`, { headers: aiHeaders(requestId), params, signal })).data);
+        if (video.status === "completed") break;
+        if (video.status === "failed" || video.status === "cancelled") throw new Error(video.error?.message || "视频生成失败");
+        const remainingMs = pollDeadline - Date.now();
+        if (remainingMs <= 0) throw new Error("视频生成超时，请稍后重试");
+        await delay(Math.min(VIDEO_POLL_INTERVAL_MS, remainingMs), signal);
+    }
+    const content = await axios.get<Blob>(`/api/v1/videos/${encodeURIComponent(upstreamTaskId)}/content`, { headers: aiHeaders(requestId), params: { model, request_id: requestId }, responseType: "blob", signal });
+    await assertVideoBlob(content.data);
+    void useUserStore.getState().hydrateUser();
+    return { blob: content.data };
 }
 
 function findVideoModel(model: string) {

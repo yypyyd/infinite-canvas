@@ -25,7 +25,7 @@ export function AppTopNav() {
                 <header className="sticky top-0 z-20 h-13 shrink-0 border-b border-black/[.06] bg-background/80 backdrop-blur-2xl dark:border-white/10">
                     <div className="mx-auto flex h-full max-w-[1440px] items-stretch justify-between gap-5 px-5 lg:px-8">
                         <div className="flex min-w-0 items-center">
-                            <Link href="/" className="flex h-full shrink-0 items-center gap-2 text-sm font-semibold leading-none tracking-[-.01em] text-foreground transition hover:opacity-70">
+                            <Link href="/" prefetch={false} className="flex h-full shrink-0 items-center gap-2 text-sm font-semibold leading-none tracking-[-.01em] text-foreground transition hover:opacity-70">
                                 <img src="/logo.png" alt="" className="size-6 shrink-0 rounded-full object-cover" />
                                 <span className="text-[15px] font-semibold">道生画境</span>
                             </Link>
@@ -61,7 +61,7 @@ export function AppTopNav() {
                                     }
 
                                     return (
-                                        <Link key={tool.slug} href={`/${tool.slug}`} className={className}>
+                                        <Link key={tool.slug} href={`/${tool.slug}`} prefetch={false} className={className}>
                                             <Icon className="size-4" />
                                             <span className="truncate">{tool.label}</span>
                                         </Link>

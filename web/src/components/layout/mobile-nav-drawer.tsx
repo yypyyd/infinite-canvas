@@ -34,7 +34,7 @@ export function MobileNavDrawer({ open, activeToolSlug, onClose }: MobileNavDraw
                     }
 
                     return (
-                        <Link key={tool.slug} href={`/${tool.slug}`} onClick={onClose} className={className}>
+                        <Link key={tool.slug} href={`/${tool.slug}`} prefetch={false} onClick={onClose} className={className}>
                             <Icon className="size-5" />
                             <span>{tool.label}</span>
                         </Link>

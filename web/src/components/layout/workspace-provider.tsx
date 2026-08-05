@@ -6,6 +6,7 @@ import type { CanvasProject } from "@/app/(user)/canvas/stores/use-canvas-store"
 import { useCanvasStore } from "@/app/(user)/canvas/stores/use-canvas-store";
 import { getMediaBlob, resolveMediaUrl } from "@/services/file-storage";
 import { applyGenerationRecordSnapshot, clearGenerationRecordMemory } from "@/services/generation-history";
+import { acknowledgeGenerationTaskRecoveries } from "@/services/api/generation-task";
 import { getImageBlob, resolveImageUrl } from "@/services/image-storage";
 import { fetchWorkspace, fetchWorkspaceStorageStatus, saveWorkspaceChanges, uploadWorkspaceFile, workspaceFileExists, type WorkspaceRecord } from "@/services/api/workspace";
 import { commitWorkspaceChanges, hasPendingWorkspaceChanges, readPendingWorkspaceChanges, workspaceOwnerId, WORKSPACE_CHANGES_UPDATED_EVENT, type PendingWorkspaceChange } from "@/services/workspace-changes";
@@ -55,18 +56,20 @@ export function WorkspaceProvider() {
                 useCanvasStore.getState().switchOwner(ownerId);
                 useAssetStore.getState().switchOwner(ownerId);
 
+                let workspace: Awaited<ReturnType<typeof fetchWorkspace>> | undefined;
                 if (bootstrap) {
-                    const workspace = await fetchWorkspace(token);
+                    workspace = await fetchWorkspace(token);
                     const pending = readPendingWorkspaceChanges(ownerId);
                     applyWorkspaceSnapshot(ownerId, workspace.records, pending, true);
                     await Promise.all([hydrateOwnerAssets(ownerId), applyGenerationRecordSnapshot(ownerId, workspace.records, pending)]);
                 }
 
+                const hadPendingChanges = readPendingWorkspaceChanges(ownerId).length > 0;
                 await flushPendingChanges(token, ownerId);
-                const [workspace, usage] = await Promise.all([fetchWorkspace(token), fetchWorkspaceStorageStatus(token)]);
+                const [latestWorkspace, usage] = await Promise.all([workspace && !hadPendingChanges ? workspace : fetchWorkspace(token), fetchWorkspaceStorageStatus(token)]);
                 const pending = readPendingWorkspaceChanges(ownerId);
-                applyWorkspaceSnapshot(ownerId, workspace.records, pending, false);
-                await Promise.all([hydrateOwnerAssets(ownerId), applyGenerationRecordSnapshot(ownerId, workspace.records, pending)]);
+                applyWorkspaceSnapshot(ownerId, latestWorkspace.records, pending, false);
+                await Promise.all([hydrateOwnerAssets(ownerId), applyGenerationRecordSnapshot(ownerId, latestWorkspace.records, pending)]);
                 statusStore.setUsage(usage.usedBytes, usage.quotaBytes, usage.projectCount, usage.assetCount, usage.fileCount);
                 statusStore.markSaved();
                 lastSaveError = null;
@@ -136,6 +139,16 @@ async function flushPendingChanges(token: string, userId: string) {
     );
     commitWorkspaceChanges(pending, result.records);
     applyWorkspaceVersions(userId, result.records);
+    const requestIds = generationRecoveryRequestIds(pending);
+    if (requestIds.length) await acknowledgeGenerationTaskRecoveries(requestIds).catch(() => undefined);
+}
+
+function generationRecoveryRequestIds(changes: PendingWorkspaceChange[]) {
+    return [...new Set(changes.flatMap((change) => {
+        if (change.domain !== "generation_record" || change.deleted || change.data.status === "生成中") return [];
+        const requestIds = Array.isArray(change.data.requestIds) ? change.data.requestIds : [];
+        return [...requestIds.filter((value): value is string => typeof value === "string" && Boolean(value)), ...(typeof change.data.requestId === "string" && change.data.requestId ? [change.data.requestId] : [])];
+    }))];
 }
 
 function applyWorkspaceSnapshot(userId: string, records: WorkspaceRecord[], pending: PendingWorkspaceChange[], force: boolean) {

@@ -52,12 +52,14 @@ export default function IndexPage() {
                         <div className="mt-8 flex flex-wrap justify-center gap-3">
                             <Link
                                 href="/image?preset=product-main"
+                                prefetch={false}
                                 className="inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-6 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
                             >
                                 制作商品主图 <ArrowRight className="size-4" />
                             </Link>
                             <Link
                                 href="/canvas"
+                                prefetch={false}
                                 className="inline-flex min-h-11 items-center gap-2 rounded-full border border-primary px-6 text-sm font-medium text-primary transition hover:bg-primary hover:text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
                             >
                                 打开商品画布 <Layers3 className="size-4" />
@@ -103,6 +105,7 @@ export default function IndexPage() {
                         <Link
                             key={preset.id}
                             href={`/image?preset=${preset.id}`}
+                            prefetch={false}
                             className="group overflow-hidden rounded-[22px] bg-white shadow-[0_2px_14px_rgba(29,29,31,.06)] ring-1 ring-black/[.04] transition hover:-translate-y-[3px] hover:shadow-[0_14px_44px_rgba(29,29,31,.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:bg-card dark:shadow-none dark:ring-border dark:hover:shadow-none dark:hover:ring-border-strong"
                         >
                             <span className="relative block aspect-[4/3] overflow-hidden">
@@ -149,7 +152,7 @@ export default function IndexPage() {
                             <p className="text-sm font-medium text-primary">视觉灵感</p>
                             <h2 className="mt-3 text-4xl font-semibold tracking-[-.04em]">看看还能怎么呈现商品。</h2>
                         </div>
-                        <Link href="/prompts" className="inline-flex items-center gap-1 text-sm text-primary">
+                        <Link href="/prompts" prefetch={false} className="inline-flex items-center gap-1 text-sm text-primary">
                             查看全部 <ArrowRight className="size-4" />
                         </Link>
                     </div>

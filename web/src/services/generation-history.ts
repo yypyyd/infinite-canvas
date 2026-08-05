@@ -2,8 +2,11 @@
 
 import { nanoid } from "nanoid";
 
+import { parseRecoveredImageGeneration } from "@/services/api/image";
+import { waitForGenerationTaskRecovery } from "@/services/api/generation-task";
+import { resumeVideoGeneration, storeGeneratedVideo } from "@/services/api/video";
 import { resolveMediaUrl, type UploadedFile } from "@/services/file-storage";
-import { resolveImageUrl, type UploadedImage } from "@/services/image-storage";
+import { resolveImageUrl, uploadImage, type UploadedImage } from "@/services/image-storage";
 import type { WorkspaceRecord } from "@/services/api/workspace";
 import { stageWorkspaceChange, stageWorkspaceRecord, type PendingWorkspaceChange } from "@/services/workspace-changes";
 
@@ -11,10 +14,10 @@ export const GENERATION_HISTORY_CHANGED_EVENT = "infinite-canvas:generation-hist
 
 type GenerationKind = "image" | "video";
 export type GenerationRecordStatus = "生成中" | "成功" | "部分失败" | "失败";
-type RawGenerationLog = Record<string, unknown> & { id?: string; ownerId?: string; createdAt?: number; kind?: GenerationKind; version?: number };
+type RawGenerationLog = Record<string, unknown> & { id?: string; ownerId?: string; createdAt?: number; kind?: GenerationKind; status?: GenerationRecordStatus; version?: number };
 
-type StoredImage = { dataUrl?: string; storageKey?: string };
-type StoredVideo = { url?: string; storageKey?: string };
+type StoredImage = { id?: string; dataUrl?: string; storageKey?: string; durationMs?: number; width?: number; height?: number; bytes?: number; mimeType?: string };
+type StoredVideo = { id?: string; url?: string; storageKey?: string; durationMs?: number; width?: number; height?: number; bytes?: number; mimeType?: string };
 
 type CanvasHistoryNode = {
     id?: string;
@@ -52,6 +55,9 @@ type StoredImageLog = {
     images?: StoredImage[];
     canvasId?: string;
     source?: "canvas";
+    requestIds?: string[];
+    completedRequestIds?: string[];
+    failedRequestIds?: string[];
 };
 
 type StoredVideoLog = {
@@ -70,6 +76,7 @@ type StoredVideoLog = {
     error?: string;
     canvasId?: string;
     source?: "canvas";
+    requestId?: string;
 };
 
 export type GenerationHistoryItem = {
@@ -94,6 +101,8 @@ export type GenerationHistoryItem = {
 
 const imageLogs = new Map<string, RawGenerationLog>();
 const videoLogs = new Map<string, RawGenerationLog>();
+const activeGenerationRecoveries = new Set<string>();
+const generationRecoverySessionStartedAt = Date.now();
 
 export async function readGenerationHistory(ownerId: string) {
     if (typeof window === "undefined" || !ownerId || ownerId === "guest") return [];
@@ -125,7 +134,7 @@ export async function saveGenerationRecord(ownerId: string, kind: GenerationKind
 
 export function saveCanvasImageGenerationRecord(
     ownerId: string,
-    input: { id?: string; prompt: string; model: string; size?: string; quality?: string; images: UploadedImage[]; imageCount?: number; failCount?: number; status?: GenerationRecordStatus; durationMs?: number; canvasId: string },
+    input: { id?: string; prompt: string; model: string; size?: string; quality?: string; images: UploadedImage[]; imageCount?: number; failCount?: number; status?: GenerationRecordStatus; durationMs?: number; canvasId: string; requestIds?: string[] },
 ) {
     const id = input.id || nanoid();
     const current = imageLogs.get(logKey(ownerId, id));
@@ -147,12 +156,13 @@ export function saveCanvasImageGenerationRecord(
         images: input.images.map((image) => ({ dataUrl: "", storageKey: image.storageKey })),
         canvasId: input.canvasId,
         source: "canvas",
+        requestIds: input.requestIds || (current?.requestIds as string[] | undefined) || (input.status === "生成中" ? [id] : []),
     }).then(() => id);
 }
 
 export function saveCanvasVideoGenerationRecord(
     ownerId: string,
-    input: { id?: string; prompt: string; model: string; size?: string; resolution?: string; seconds?: string; video?: UploadedFile; status?: GenerationRecordStatus; error?: string; durationMs?: number; canvasId: string },
+    input: { id?: string; prompt: string; model: string; size?: string; resolution?: string; seconds?: string; video?: UploadedFile; status?: GenerationRecordStatus; error?: string; durationMs?: number; canvasId: string; requestId?: string },
 ) {
     const id = input.id || nanoid();
     const current = videoLogs.get(logKey(ownerId, id));
@@ -172,6 +182,7 @@ export function saveCanvasVideoGenerationRecord(
         error: input.error,
         canvasId: input.canvasId,
         source: "canvas",
+        requestId: input.requestId || (current?.requestId as string | undefined) || (input.status === "生成中" ? id : ""),
     }).then(() => id);
 }
 
@@ -229,6 +240,7 @@ export async function applyGenerationRecordSnapshot(ownerId: string, records: Wo
     local.filter((item) => item.id && !target.has(item.id)).forEach((item) => generationStore(item.kind || "image").delete(logKey(ownerId, item.id || "")));
     target.forEach((item) => generationStore(item.kind || "image").set(logKey(ownerId, item.id || ""), item));
     dispatchGenerationHistoryChanged();
+    startPendingGenerationRecoveries(ownerId);
 }
 
 export async function resolveGenerationHistoryPreview(item: GenerationHistoryItem) {
@@ -302,6 +314,86 @@ function logKey(ownerId: string, id: string) {
 
 function dispatchGenerationHistoryChanged() {
     if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(GENERATION_HISTORY_CHANGED_EVENT));
+}
+
+function startPendingGenerationRecoveries(ownerId: string) {
+    readRawGenerationLogs(ownerId)
+        .filter((log) => log.status === "生成中" && (log.createdAt || 0) < generationRecoverySessionStartedAt)
+        .forEach((log) => {
+            const key = logKey(ownerId, log.id || "");
+            if (!log.id || activeGenerationRecoveries.has(key)) return;
+            activeGenerationRecoveries.add(key);
+            const recovery = log.kind === "video" ? recoverPendingVideoLog(ownerId, log as StoredVideoLog) : recoverPendingImageLog(ownerId, log as StoredImageLog);
+            void recovery.catch(() => undefined).finally(() => activeGenerationRecoveries.delete(key));
+        });
+}
+
+async function recoverPendingImageLog(ownerId: string, log: StoredImageLog) {
+    const requestIds = (log.requestIds || []).filter(Boolean);
+    if (!log.id || !requestIds.length) return;
+    const settled = new Set([...(log.completedRequestIds || []), ...(log.failedRequestIds || [])]);
+    const pendingRequestIds = requestIds.filter((requestId) => !settled.has(requestId));
+    if (!pendingRequestIds.length) return;
+    const results = await Promise.allSettled(
+        pendingRequestIds.map(async (requestId) => {
+            const task = await waitForGenerationTaskRecovery(requestId, (item) => item.status === "success" && Boolean(item.result));
+            const generated = parseRecoveredImageGeneration(task.result);
+            const images = await Promise.all(
+                generated.map(async (image) => {
+                    const stored = await uploadImage(image.dataUrl);
+                    return { id: image.id, ...stored, dataUrl: "", durationMs: 0 };
+                }),
+            );
+            return { requestId, images };
+        }),
+    );
+    const completedRequestIds = [...(log.completedRequestIds || [])];
+    const failedRequestIds = [...(log.failedRequestIds || [])];
+    const images = [...(log.images || [])];
+    results.forEach((result, index) => {
+        const requestId = pendingRequestIds[index];
+        if (result.status === "fulfilled") {
+            completedRequestIds.push(requestId);
+            images.push(...result.value.images);
+        } else {
+            failedRequestIds.push(requestId);
+        }
+    });
+    const failCount = failedRequestIds.length;
+    const completedCount = completedRequestIds.length + failCount;
+    await saveGenerationRecord(ownerId, "image", {
+        ...log,
+        images,
+        successCount: images.length,
+        failCount,
+        completedRequestIds,
+        failedRequestIds,
+        durationMs: Math.max(log.durationMs || 0, Date.now() - (log.createdAt || Date.now())),
+        status: completedCount < requestIds.length ? "生成中" : images.length ? (failCount ? "部分失败" : "成功") : "失败",
+    });
+}
+
+async function recoverPendingVideoLog(ownerId: string, log: StoredVideoLog) {
+    if (!log.id || !log.requestId) return;
+    try {
+        const task = await waitForGenerationTaskRecovery(log.requestId, (item) => Boolean(item.upstreamTaskId));
+        const video = await storeGeneratedVideo(await resumeVideoGeneration(log.model || task.model, log.requestId, task.upstreamTaskId || ""));
+        const durationMs = Math.max(log.durationMs || 0, Date.now() - (log.createdAt || Date.now()));
+        await saveGenerationRecord(ownerId, "video", {
+            ...log,
+            video: { id: nanoid(), ...video, url: "", durationMs, width: video.width || 1280, height: video.height || 720 },
+            status: "成功",
+            error: "",
+            durationMs,
+        });
+    } catch (error) {
+        await saveGenerationRecord(ownerId, "video", {
+            ...log,
+            status: "失败",
+            error: error instanceof Error ? error.message : "视频生成失败",
+            durationMs: Math.max(log.durationMs || 0, Date.now() - (log.createdAt || Date.now())),
+        });
+    }
 }
 
 function normalizeImageLog(log: StoredImageLog): GenerationHistoryItem {

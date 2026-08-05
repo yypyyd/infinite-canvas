@@ -1,5 +1,7 @@
 package model
 
+import "encoding/json"
+
 type GenerationTaskStatus string
 type CreditSource string
 
@@ -33,9 +35,24 @@ type GenerationTask struct {
 	Credits        int                  `json:"credits"`
 	CreditSource   CreditSource         `json:"creditSource" gorm:"size:16;not null;default:personal;index"`
 	Status         GenerationTaskStatus `json:"status" gorm:"index"`
+	UpstreamTaskID string               `json:"-" gorm:"index"`
+	ResultJSON     string               `json:"-" gorm:"type:longtext"`
 	ErrorMessage   string               `json:"errorMessage" gorm:"type:text"`
 	DurationMs     int64                `json:"durationMs"`
 	CreatedAt      string               `json:"createdAt" gorm:"index"`
+	UpdatedAt      string               `json:"updatedAt"`
+}
+
+type GenerationTaskRecovery struct {
+	RequestID      string               `json:"requestId"`
+	Model          string               `json:"model"`
+	Modality       string               `json:"modality"`
+	Path           string               `json:"path"`
+	Status         GenerationTaskStatus `json:"status"`
+	UpstreamTaskID string               `json:"upstreamTaskId,omitempty"`
+	Result         json.RawMessage      `json:"result,omitempty"`
+	ErrorMessage   string               `json:"errorMessage,omitempty"`
+	CreatedAt      string               `json:"createdAt"`
 	UpdatedAt      string               `json:"updatedAt"`
 }
 

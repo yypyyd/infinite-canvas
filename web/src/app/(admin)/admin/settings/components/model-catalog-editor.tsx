@@ -220,7 +220,7 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
                             width: 220,
                             render: (_: unknown, model: AdminManagedModel) => (
                                 <Typography.Text type="secondary" className="text-xs">
-                                    {[capabilityLabel(model.operations), model.aspectRatios.join(" / "), model.resolutionTiers.join(" / "), model.durations.length ? `${model.durations.join(" / ")} 秒` : "", model.maxReferenceImages ? `最多 ${model.maxReferenceImages} 张参考图` : ""].filter(Boolean).join(" · ")}
+                                    {[capabilityLabel(model.operations), model.aspectRatios.join(" / "), model.resolutionTiers.join(" / "), model.durations.length ? `${model.durations.join(" / ")} 秒` : "", model.maxReferenceImages ? `参考图 ${model.maxReferenceImages}` : "", model.maxReferenceVideos ? `参考视频 ${model.maxReferenceVideos}` : "", model.maxReferenceAudios ? `参考音频 ${model.maxReferenceAudios}` : "", model.maxReferenceMedia ? `合计 ${model.maxReferenceMedia}` : "", model.supportsAudioOutput ? "音频输出" : ""].filter(Boolean).join(" · ")}
                                 </Typography.Text>
                             ),
                         },
@@ -279,7 +279,7 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
                                         onChange={(modelID) => {
                                             const next = inferModelModality(modelID);
                                             const model = createModel(modelID, next, models.length, channelModelMap.get(modelID));
-                                            form.setFieldsValue({ name: modelID, modality: model.modality, operations: model.operations, aspectRatios: model.aspectRatios, resolutionTiers: model.resolutionTiers, durations: model.durations });
+                                            form.setFieldsValue({ name: modelID, modality: model.modality, operations: model.operations, aspectRatios: model.aspectRatios, resolutionTiers: model.resolutionTiers, durations: model.durations, maxReferenceImages: model.maxReferenceImages, maxReferenceVideos: model.maxReferenceVideos, maxReferenceAudios: model.maxReferenceAudios, maxReferenceMedia: model.maxReferenceMedia, supportsAudioOutput: model.supportsAudioOutput });
                                             setDraftRules([]);
                                         }}
                                         placeholder="例如 gpt-image-1"
@@ -318,6 +318,37 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
                                     <Select mode="tags" allowClear options={aspectRatioOptions.map((item) => ({ label: item, value: item }))} />
                                 </Form.Item>
                             </Col>
+                        ) : null}
+                        {selectedModality === "image" || selectedModality === "video" ? (
+                            <Col span={12}>
+                                <Form.Item name="maxReferenceImages" label="最多参考图">
+                                    <InputNumber min={0} precision={0} className="!w-full" addonAfter="张" />
+                                </Form.Item>
+                            </Col>
+                        ) : null}
+                        {selectedModality === "video" ? (
+                            <>
+                                <Col span={8}>
+                                    <Form.Item name="maxReferenceVideos" label="最多参考视频">
+                                        <InputNumber min={0} precision={0} className="!w-full" addonAfter="个" />
+                                    </Form.Item>
+                                </Col>
+                                <Col span={8}>
+                                    <Form.Item name="maxReferenceAudios" label="最多参考音频">
+                                        <InputNumber min={0} precision={0} className="!w-full" addonAfter="个" />
+                                    </Form.Item>
+                                </Col>
+                                <Col span={8}>
+                                    <Form.Item name="maxReferenceMedia" label="参考素材合计" extra="0 表示不额外限制">
+                                        <InputNumber min={0} precision={0} className="!w-full" addonAfter="个" />
+                                    </Form.Item>
+                                </Col>
+                                <Col span={12}>
+                                    <Form.Item name="supportsAudioOutput" label="支持生成音频" valuePropName="checked">
+                                        <Switch />
+                                    </Form.Item>
+                                </Col>
+                            </>
                         ) : null}
                         {selectedModality === "video" ? (
                             <Col span={12}>
@@ -458,6 +489,10 @@ function createModel(id: string, modality: string, sort: number, channelModel?: 
         resolutionTiers: channelModel?.resolutionTiers?.length ? channelModel.resolutionTiers : defaultResolutionTiers(resolvedModality),
         durations: resolvedModality === "video" ? uniqueNumbers(channelModel?.durations?.length ? channelModel.durations : [6, 10]) : [],
         maxReferenceImages: channelModel?.maxReferenceImages || 0,
+        maxReferenceVideos: channelModel?.maxReferenceVideos || 0,
+        maxReferenceAudios: channelModel?.maxReferenceAudios || 0,
+        maxReferenceMedia: channelModel?.maxReferenceMedia || 0,
+        supportsAudioOutput: channelModel?.supportsAudioOutput === true,
         referenceMode: channelModel?.referenceMode || "none",
         remark: "",
     };
@@ -474,6 +509,10 @@ function syncModelCapabilities(model: AdminManagedModel, channelModel?: AdminCha
         resolutionTiers: channelModel.resolutionTiers.length ? channelModel.resolutionTiers : model.resolutionTiers,
         durations: modality === "video" && channelModel.durations.length ? channelModel.durations : model.durations,
         maxReferenceImages: channelModel.maxReferenceImages,
+        maxReferenceVideos: channelModel.maxReferenceVideos,
+        maxReferenceAudios: channelModel.maxReferenceAudios,
+        maxReferenceMedia: channelModel.maxReferenceMedia,
+        supportsAudioOutput: channelModel.supportsAudioOutput,
         referenceMode: channelModel.referenceMode,
     };
 }
@@ -502,6 +541,10 @@ function normalizeModels(models: AdminManagedModel[]) {
                 resolutionTiers: supportsResolution ? unique(model.resolutionTiers) : [],
                 durations: modality === "video" ? uniqueNumbers(model.durations) : [],
                 maxReferenceImages: supportsResolution ? Math.max(0, Math.floor(Number(model.maxReferenceImages) || 0)) : 0,
+                maxReferenceVideos: modality === "video" ? Math.max(0, Math.floor(Number(model.maxReferenceVideos) || 0)) : 0,
+                maxReferenceAudios: modality === "video" ? Math.max(0, Math.floor(Number(model.maxReferenceAudios) || 0)) : 0,
+                maxReferenceMedia: modality === "video" ? Math.max(0, Math.floor(Number(model.maxReferenceMedia) || 0)) : 0,
+                supportsAudioOutput: modality === "video" && model.supportsAudioOutput === true,
                 referenceMode: supportsResolution && (model.referenceMode === "frame" || model.referenceMode === "asset") ? model.referenceMode : "none",
                 remark: model.remark || "",
             };

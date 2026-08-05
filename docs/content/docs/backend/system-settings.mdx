@@ -72,7 +72,7 @@ description: settings 表中 public 和 private 配置结构说明
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `availableModels` | string[] | 系统可用模型，由模型中心中已启用的模型生成 |
-| `models` | object[] | 模型中心配置，包含模型名称、类型、支持操作、启用状态、排序、宽高比、分辨率档、视频时长、参考图上限和参考模式；保存设置时按对外模型名汇总所有同类型启用渠道的能力，`/api/v1/models` 额外返回 `max_reference_images` 与 `reference_mode` |
+| `models` | object[] | 模型中心配置，包含模型名称、类型、支持操作、启用状态、排序、宽高比、分辨率档、视频时长、三类参考素材上限、参考素材合计上限、音频输出能力和参考模式；保存设置时按对外模型名汇总所有同类型启用渠道的能力，`/api/v1/models` 额外返回对应的 snake_case 能力字段 |
 | `pricingRules` | object[] | 管理员显式维护的模型算力点配置，后端模型接口调用前按模型预扣，上游失败时返还；新增或同步模型不会自动生成价格 |
 | `groupRatios` | object | 用户分组倍率，例如 `default`、`vip`、`svip` |
 | `defaultModel` | string | 默认模型，从 `availableModels` 中选择；为空或失效时优先选择文本模型 |
@@ -207,9 +207,13 @@ description: settings 表中 public 和 private 配置结构说明
 | `resolutionTiers` | string[] | 当前渠道支持的分辨率档，例如图片的 `1k`、`2k`、`4k` 或视频的 `480p`、`720p`、`1080p`；文本、音频等无分辨率模型为空 |
 | `durations` | number[] | 视频支持的时长秒数；非视频模型为空 |
 | `maxReferenceImages` | number | 当前渠道最多接受的参考图数量；`0` 表示不支持，可在上游未公布时由管理员手工设置 |
+| `maxReferenceVideos` | number | 当前视频渠道最多接受的参考视频数量；`0` 表示不支持 |
+| `maxReferenceAudios` | number | 当前视频渠道最多接受的参考音频数量；`0` 表示不支持 |
+| `maxReferenceMedia` | number | 参考图、参考视频和参考音频的合计上限；`0` 表示不额外限制合计数量 |
+| `supportsAudioOutput` | boolean | 是否接受 `generate_audio=true` 的视频生成请求 |
 | `referenceMode` | string | 参考模式：`frame`、`asset` 或 `none` |
 
-后端调用模型时，会先按对外模型名、类型、操作、请求规格和实际参考图数量筛选已启用且密钥完整的渠道，再在能力相符的渠道中按 `weight` 加权随机选择。用户价格始终读取公开模型的 `pricingRules`，不会因随机命中不同上游渠道而变化；请求发送前会把 `model` 替换为所选渠道的 `upstreamModel`。
+后端调用模型时，会先按对外模型名、类型、操作、请求规格、三类参考素材数量、参考素材合计数量和音频输出要求筛选已启用且密钥完整的渠道，再在能力相符的渠道中按 `weight` 加权随机选择。用户价格始终读取公开模型的 `pricingRules`，不会因随机命中不同上游渠道而变化；请求发送前会把 `model` 替换为所选渠道的 `upstreamModel`。视频 multipart 请求使用 `input_reference`、`reference_videos`、`reference_audios` 和 `generate_audio` 字段，图片、视频、音频单文件分别限制为 20MiB、200MiB、50MiB，整体请求限制为 320MiB。
 
 `promptSync` 字段：
 

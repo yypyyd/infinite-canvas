@@ -66,6 +66,7 @@ func AIAudioSpeech(w http.ResponseWriter, r *http.Request) {
 }
 
 func AIVideos(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 320<<20)
 	proxyAIRequest(w, r, "/videos")
 }
 
@@ -809,6 +810,9 @@ type aiRequestMeta struct {
 	ResolutionTier  string
 	Duration        int
 	ReferenceImages int
+	ReferenceVideos int
+	ReferenceAudios int
+	GenerateAudio   bool
 }
 
 func readAIRequest(r *http.Request) ([]byte, string, aiRequestMeta, error) {
@@ -912,6 +916,7 @@ func readMultipartAIRequest(body []byte, contentType string) aiRequestMeta {
 		return aiRequestMeta{Count: 1, Duration: 1}
 	}
 	defer form.RemoveAll()
+	referenceImages := len(form.File["image"]) + len(form.File["image[]"]) + len(form.File["input_reference"]) + len(form.File["input_reference[]"]) + len(form.File["reference_images"]) + len(form.File["reference_images[]"])
 	return aiRequestMeta{
 		ModelName:       firstFormValue(form, "model"),
 		Count:           readIntValue(firstFormValue(form, "n"), 1),
@@ -920,7 +925,10 @@ func readMultipartAIRequest(body []byte, contentType string) aiRequestMeta {
 		Resolution:      firstFormValue(form, "resolution_name", "resolution", "vquality"),
 		ResolutionTier:  firstFormValue(form, "resolutionTier"),
 		Duration:        readIntValue(firstFormValue(form, "seconds", "duration", "videoSeconds"), 1),
-		ReferenceImages: len(form.File["image"]) + len(form.File["image[]"]) + len(form.File["input_reference"]) + len(form.File["input_reference[]"]),
+		ReferenceImages: referenceImages,
+		ReferenceVideos: len(form.File["reference_videos"]) + len(form.File["reference_videos[]"]),
+		ReferenceAudios: len(form.File["reference_audios"]) + len(form.File["reference_audios[]"]),
+		GenerateAudio:   readBoolValue(firstFormValue(form, "generate_audio", "generateAudio")),
 	}
 }
 
@@ -936,6 +944,9 @@ func readJSONAIRequest(body []byte) aiRequestMeta {
 		ResolutionTier:  readStringField(payload, "resolutionTier"),
 		Duration:        readIntField(payload, 1, "duration", "seconds", "videoSeconds"),
 		ReferenceImages: referenceImageCount(firstAnyValue(payload, "reference_images", "input_reference", "input_reference[]")),
+		ReferenceVideos: referenceImageCount(firstAnyValue(payload, "reference_videos", "reference_videos[]")),
+		ReferenceAudios: referenceImageCount(firstAnyValue(payload, "reference_audios", "reference_audios[]")),
+		GenerateAudio:   readBoolField(payload, "generate_audio", "generateAudio"),
 	}
 }
 
@@ -1001,6 +1012,23 @@ func readIntValue(value string, defaultValue int) int {
 	return result
 }
 
+func readBoolField(payload map[string]any, keys ...string) bool {
+	for _, key := range keys {
+		if value, ok := payload[key]; ok {
+			if typed, ok := value.(bool); ok {
+				return typed
+			}
+			return readBoolValue(fmt.Sprint(value))
+		}
+	}
+	return false
+}
+
+func readBoolValue(value string) bool {
+	result, _ := strconv.ParseBool(strings.TrimSpace(value))
+	return result
+}
+
 func pricingRequestForAIPath(path string, request aiRequestMeta) service.PricingRequest {
 	pricing := service.PricingRequest{
 		Model:           request.ModelName,
@@ -1009,6 +1037,10 @@ func pricingRequestForAIPath(path string, request aiRequestMeta) service.Pricing
 		Resolution:      request.Resolution,
 		Quantity:        1,
 		ReferenceImages: request.ReferenceImages,
+		ReferenceVideos: request.ReferenceVideos,
+		ReferenceAudios: request.ReferenceAudios,
+		ReferenceMedia:  request.ReferenceImages + request.ReferenceVideos + request.ReferenceAudios,
+		GenerateAudio:   request.GenerateAudio,
 	}
 	switch path {
 	case "/images/generations":
@@ -1164,6 +1196,11 @@ func adaptVividAIVideoRequestBody(body []byte, contentType string) ([]byte, stri
 		return body, contentType
 	}
 	result := vividAIVideoPayload(payloadString(payload, "model"), payloadString(payload, "prompt"), payloadString(payload, "seconds", "duration", "videoSeconds"), payloadString(payload, "size", "ratio", "aspect_ratio"), payloadString(payload, "resolution", "resolution_name", "vquality"), false)
+	for _, key := range []string{"input_reference", "reference_images", "reference_videos", "reference_audios", "generate_audio"} {
+		if value, ok := payload[key]; ok {
+			result[key] = value
+		}
+	}
 	encoded, err := json.Marshal(result)
 	if err != nil {
 		return body, contentType
@@ -1177,12 +1214,16 @@ func adaptVividAIVideoMultipartBody(body []byte, contentType string) ([]byte, st
 		return nil, "", err
 	}
 	defer form.RemoveAll()
-	files := form.File["input_reference"]
-	if len(files) == 0 {
-		files = form.File["input_reference[]"]
-	}
-	fields := vividAIVideoPayload(firstFormValue(form, "model"), firstFormValue(form, "prompt"), firstFormValue(form, "seconds", "duration", "videoSeconds"), firstFormValue(form, "size", "ratio", "aspect_ratio"), firstFormValue(form, "resolution", "resolution_name", "vquality"), len(files) > 0)
-	if len(files) == 0 {
+	imageFiles := append(append([]*multipart.FileHeader{}, form.File["input_reference"]...), form.File["input_reference[]"]...)
+	imageFiles = append(imageFiles, form.File["reference_images"]...)
+	videoFiles := append(append([]*multipart.FileHeader{}, form.File["reference_videos"]...), form.File["reference_videos[]"]...)
+	audioFiles := append(append([]*multipart.FileHeader{}, form.File["reference_audios"]...), form.File["reference_audios[]"]...)
+	fields := vividAIVideoPayload(firstFormValue(form, "model"), firstFormValue(form, "prompt"), firstFormValue(form, "seconds", "duration", "videoSeconds"), firstFormValue(form, "size", "ratio", "aspect_ratio"), firstFormValue(form, "resolution", "resolution_name", "vquality"), len(imageFiles)+len(videoFiles)+len(audioFiles) > 0)
+	generateAudio := firstFormValue(form, "generate_audio", "generateAudio")
+	if len(imageFiles)+len(videoFiles)+len(audioFiles) == 0 {
+		if generateAudio != "" {
+			fields["generate_audio"] = readBoolValue(generateAudio)
+		}
 		encoded, err := json.Marshal(fields)
 		return encoded, "application/json", err
 	}
@@ -1193,8 +1234,21 @@ func adaptVividAIVideoMultipartBody(body []byte, contentType string) ([]byte, st
 			_ = writer.WriteField(key, value)
 		}
 	}
-	for _, file := range files {
+	if generateAudio != "" {
+		_ = writer.WriteField("generate_audio", generateAudio)
+	}
+	for _, file := range imageFiles {
 		if err := copyMultipartFile(writer, "input_reference", file); err != nil {
+			return nil, "", err
+		}
+	}
+	for _, file := range videoFiles {
+		if err := copyMultipartFile(writer, "reference_videos", file); err != nil {
+			return nil, "", err
+		}
+	}
+	for _, file := range audioFiles {
+		if err := copyMultipartFile(writer, "reference_audios", file); err != nil {
 			return nil, "", err
 		}
 	}

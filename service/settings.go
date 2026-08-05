@@ -30,6 +30,10 @@ type PricingRequest struct {
 	Resolution      string
 	Quantity        int
 	ReferenceImages int
+	ReferenceVideos int
+	ReferenceAudios int
+	ReferenceMedia  int
+	GenerateAudio   bool
 }
 
 type ModelChannelSelection struct {
@@ -70,6 +74,10 @@ func publicAPIModels(setting model.PublicModelChannelSetting) []model.PublicAPIM
 			ResolutionTiers:    item.ResolutionTiers,
 			Durations:          item.Durations,
 			MaxReferenceImages: item.MaxReferenceImages,
+			MaxReferenceVideos: item.MaxReferenceVideos,
+			MaxReferenceAudios: item.MaxReferenceAudios,
+			MaxReferenceMedia:  item.MaxReferenceMedia,
+			SupportsAudioOutput: item.SupportsAudioOutput,
 			ReferenceMode:      item.ReferenceMode,
 		})
 	}
@@ -341,15 +349,26 @@ func normalizeModelDefinitions(items []model.ModelDefinition, availableModels []
 		item.ResolutionTiers = normalizeStringList(item.ResolutionTiers, normalizeResolutionTier)
 		item.Durations = normalizeDurations(item.Durations)
 		item.MaxReferenceImages = max(0, item.MaxReferenceImages)
+		item.MaxReferenceVideos = max(0, item.MaxReferenceVideos)
+		item.MaxReferenceAudios = max(0, item.MaxReferenceAudios)
+		item.MaxReferenceMedia = max(0, item.MaxReferenceMedia)
 		item.ReferenceMode = normalizeReferenceMode(item.ReferenceMode)
 		if item.Modality != "image" && item.Modality != "video" {
 			item.AspectRatios = []string{}
 			item.ResolutionTiers = []string{}
 			item.Durations = []int{}
 			item.MaxReferenceImages = 0
+			item.MaxReferenceVideos = 0
+			item.MaxReferenceAudios = 0
+			item.MaxReferenceMedia = 0
+			item.SupportsAudioOutput = false
 			item.ReferenceMode = "none"
 		} else if item.Modality != "video" {
 			item.Durations = []int{}
+			item.MaxReferenceVideos = 0
+			item.MaxReferenceAudios = 0
+			item.MaxReferenceMedia = 0
+			item.SupportsAudioOutput = false
 		}
 		item.Remark = strings.TrimSpace(item.Remark)
 		result = append(result, item)
@@ -388,6 +407,10 @@ func mergeEnabledChannelCapabilities(items []model.ModelDefinition, channels []m
 		resolutionTiers    []string
 		durations          []int
 		maxReferenceImages int
+		maxReferenceVideos int
+		maxReferenceAudios int
+		maxReferenceMedia  int
+		supportsAudioOutput bool
 		referenceMode      string
 	}
 
@@ -418,6 +441,10 @@ func mergeEnabledChannelCapabilities(items []model.ModelDefinition, channels []m
 				current.maxReferenceImages = channelModel.MaxReferenceImages
 				current.referenceMode = channelModel.ReferenceMode
 			}
+			current.maxReferenceVideos = max(current.maxReferenceVideos, channelModel.MaxReferenceVideos)
+			current.maxReferenceAudios = max(current.maxReferenceAudios, channelModel.MaxReferenceAudios)
+			current.maxReferenceMedia = max(current.maxReferenceMedia, channelModel.MaxReferenceMedia)
+			current.supportsAudioOutput = current.supportsAudioOutput || channelModel.SupportsAudioOutput
 			merged[modelID] = current
 		}
 	}
@@ -433,15 +460,27 @@ func mergeEnabledChannelCapabilities(items []model.ModelDefinition, channels []m
 		items[index].ResolutionTiers = normalizeStringList(append(items[index].ResolutionTiers, capability.resolutionTiers...), normalizeResolutionTier)
 		items[index].Durations = normalizeDurations(append(items[index].Durations, capability.durations...))
 		items[index].MaxReferenceImages = capability.maxReferenceImages
+		items[index].MaxReferenceVideos = capability.maxReferenceVideos
+		items[index].MaxReferenceAudios = capability.maxReferenceAudios
+		items[index].MaxReferenceMedia = capability.maxReferenceMedia
+		items[index].SupportsAudioOutput = capability.supportsAudioOutput
 		items[index].ReferenceMode = normalizeReferenceMode(capability.referenceMode)
 		if capability.modality != "image" && capability.modality != "video" {
 			items[index].AspectRatios = []string{}
 			items[index].ResolutionTiers = []string{}
 			items[index].Durations = []int{}
 			items[index].MaxReferenceImages = 0
+			items[index].MaxReferenceVideos = 0
+			items[index].MaxReferenceAudios = 0
+			items[index].MaxReferenceMedia = 0
+			items[index].SupportsAudioOutput = false
 			items[index].ReferenceMode = "none"
 		} else if capability.modality != "video" {
 			items[index].Durations = []int{}
+			items[index].MaxReferenceVideos = 0
+			items[index].MaxReferenceAudios = 0
+			items[index].MaxReferenceMedia = 0
+			items[index].SupportsAudioOutput = false
 		}
 	}
 	return items
@@ -594,6 +633,9 @@ func normalizePricingRequest(request PricingRequest) PricingRequest {
 		request.Quantity = 1
 	}
 	request.ReferenceImages = max(0, request.ReferenceImages)
+	request.ReferenceVideos = max(0, request.ReferenceVideos)
+	request.ReferenceAudios = max(0, request.ReferenceAudios)
+	request.ReferenceMedia = request.ReferenceImages + request.ReferenceVideos + request.ReferenceAudios
 	return request
 }
 
@@ -1073,13 +1115,25 @@ func normalizeModelChannel(channel model.ModelChannel) model.ModelChannel {
 		item.ResolutionTiers = normalizeStringList(item.ResolutionTiers, normalizeResolutionTier)
 		item.Durations = normalizeDurations(item.Durations)
 		item.MaxReferenceImages = max(0, item.MaxReferenceImages)
+		item.MaxReferenceVideos = max(0, item.MaxReferenceVideos)
+		item.MaxReferenceAudios = max(0, item.MaxReferenceAudios)
+		item.MaxReferenceMedia = max(0, item.MaxReferenceMedia)
 		item.ReferenceMode = normalizeReferenceMode(item.ReferenceMode)
 		if item.Modality == "image" && item.MaxReferenceImages == 0 && containsPricingValue(item.Operations, "edit") {
 			item.MaxReferenceImages = 1
 		}
 		if item.Modality != "image" && item.Modality != "video" {
 			item.MaxReferenceImages = 0
+			item.MaxReferenceVideos = 0
+			item.MaxReferenceAudios = 0
+			item.MaxReferenceMedia = 0
+			item.SupportsAudioOutput = false
 			item.ReferenceMode = "none"
+		} else if item.Modality != "video" {
+			item.MaxReferenceVideos = 0
+			item.MaxReferenceAudios = 0
+			item.MaxReferenceMedia = 0
+			item.SupportsAudioOutput = false
 		}
 		models = append(models, item)
 	}
@@ -1148,6 +1202,10 @@ func fetchAdminChannelModels(channel model.ModelChannel) ([]model.DiscoveredMode
 			SupportedResolutions []string          `json:"supported_resolutions"`
 			SupportedDurations   []json.RawMessage `json:"supported_durations"`
 			MaxReferenceImages   *int              `json:"max_reference_images"`
+			MaxReferenceVideos   *int              `json:"max_reference_videos"`
+			MaxReferenceAudios   *int              `json:"max_reference_audios"`
+			MaxReferenceMedia    *int              `json:"max_reference_media"`
+			SupportsAudioOutput  *bool             `json:"supports_audio_output"`
 			ReferenceMode        *string           `json:"reference_mode"`
 		} `json:"data"`
 	}
@@ -1176,11 +1234,24 @@ func fetchAdminChannelModels(channel model.ModelChannel) ([]model.DiscoveredMode
 		if item.MaxReferenceImages != nil {
 			maxReferenceImages = max(0, *item.MaxReferenceImages)
 		}
+		maxReferenceVideos := 0
+		if item.MaxReferenceVideos != nil {
+			maxReferenceVideos = max(0, *item.MaxReferenceVideos)
+		}
+		maxReferenceAudios := 0
+		if item.MaxReferenceAudios != nil {
+			maxReferenceAudios = max(0, *item.MaxReferenceAudios)
+		}
+		maxReferenceMedia := 0
+		if item.MaxReferenceMedia != nil {
+			maxReferenceMedia = max(0, *item.MaxReferenceMedia)
+		}
+		supportsAudioOutput := item.SupportsAudioOutput != nil && *item.SupportsAudioOutput
 		referenceMode := "none"
 		if item.ReferenceMode != nil {
 			referenceMode = normalizeReferenceMode(*item.ReferenceMode)
 		}
-		result = append(result, model.DiscoveredModel{ID: item.ID, Kind: strings.TrimSpace(item.Kind), Modality: modality, SupportedRatios: ratios, SupportedResolutions: resolutions, SupportedDurations: parseSupportedDurations(item.SupportedDurations), MaxReferenceImages: maxReferenceImages, ReferenceMode: referenceMode, ReferenceCapabilityProvided: item.MaxReferenceImages != nil || item.ReferenceMode != nil})
+		result = append(result, model.DiscoveredModel{ID: item.ID, Kind: strings.TrimSpace(item.Kind), Modality: modality, SupportedRatios: ratios, SupportedResolutions: resolutions, SupportedDurations: parseSupportedDurations(item.SupportedDurations), MaxReferenceImages: maxReferenceImages, MaxReferenceVideos: maxReferenceVideos, MaxReferenceAudios: maxReferenceAudios, MaxReferenceMedia: maxReferenceMedia, SupportsAudioOutput: supportsAudioOutput, ReferenceMode: referenceMode, ReferenceCapabilityProvided: item.MaxReferenceImages != nil || item.ReferenceMode != nil, ReferenceVideosProvided: item.MaxReferenceVideos != nil, ReferenceAudiosProvided: item.MaxReferenceAudios != nil, ReferenceMediaProvided: item.MaxReferenceMedia != nil, AudioOutputProvided: item.SupportsAudioOutput != nil})
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
 	return result, nil
@@ -1321,6 +1392,15 @@ func channelModelSupportsRequest(item model.ChannelModel, request PricingRequest
 		return false
 	}
 	if request.ReferenceImages > item.MaxReferenceImages {
+		return false
+	}
+	if request.ReferenceVideos > item.MaxReferenceVideos || request.ReferenceAudios > item.MaxReferenceAudios {
+		return false
+	}
+	if item.MaxReferenceMedia > 0 && request.ReferenceMedia > item.MaxReferenceMedia {
+		return false
+	}
+	if request.GenerateAudio && !item.SupportsAudioOutput {
 		return false
 	}
 	return request.Modality != "video" || request.Quantity < 1 || len(item.Durations) == 0 || containsInt(item.Durations, request.Quantity)

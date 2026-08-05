@@ -31,6 +31,10 @@ type ChannelModel struct {
 	ResolutionTiers    []string `json:"resolutionTiers"`
 	Durations          []int    `json:"durations"`
 	MaxReferenceImages int      `json:"maxReferenceImages"`
+	MaxReferenceVideos int      `json:"maxReferenceVideos"`
+	MaxReferenceAudios int      `json:"maxReferenceAudios"`
+	MaxReferenceMedia  int      `json:"maxReferenceMedia"`
+	SupportsAudioOutput bool    `json:"supportsAudioOutput"`
 	ReferenceMode      string   `json:"referenceMode"`
 }
 
@@ -42,8 +46,16 @@ type DiscoveredModel struct {
 	SupportedResolutions        []string `json:"supportedResolutions"`
 	SupportedDurations          []int    `json:"supportedDurations"`
 	MaxReferenceImages          int      `json:"maxReferenceImages"`
+	MaxReferenceVideos          int      `json:"maxReferenceVideos"`
+	MaxReferenceAudios          int      `json:"maxReferenceAudios"`
+	MaxReferenceMedia           int      `json:"maxReferenceMedia"`
+	SupportsAudioOutput         bool     `json:"supportsAudioOutput"`
 	ReferenceMode               string   `json:"referenceMode"`
 	ReferenceCapabilityProvided bool     `json:"referenceCapabilityProvided"`
+	ReferenceVideosProvided     bool     `json:"referenceVideosProvided"`
+	ReferenceAudiosProvided     bool     `json:"referenceAudiosProvided"`
+	ReferenceMediaProvided      bool     `json:"referenceMediaProvided"`
+	AudioOutputProvided         bool     `json:"audioOutputProvided"`
 }
 
 // ModelDefinition stores public model management metadata.
@@ -58,6 +70,10 @@ type ModelDefinition struct {
 	ResolutionTiers    []string `json:"resolutionTiers"`
 	Durations          []int    `json:"durations"`
 	MaxReferenceImages int      `json:"maxReferenceImages"`
+	MaxReferenceVideos int      `json:"maxReferenceVideos"`
+	MaxReferenceAudios int      `json:"maxReferenceAudios"`
+	MaxReferenceMedia  int      `json:"maxReferenceMedia"`
+	SupportsAudioOutput bool    `json:"supportsAudioOutput"`
 	ReferenceMode      string   `json:"referenceMode"`
 	Remark             string   `json:"remark"`
 }
@@ -75,6 +91,10 @@ type PublicAPIModel struct {
 	ResolutionTiers    []string `json:"resolutionTiers"`
 	Durations          []int    `json:"durations"`
 	MaxReferenceImages int      `json:"max_reference_images"`
+	MaxReferenceVideos int      `json:"max_reference_videos"`
+	MaxReferenceAudios int      `json:"max_reference_audios"`
+	MaxReferenceMedia  int      `json:"max_reference_media"`
+	SupportsAudioOutput bool    `json:"supports_audio_output"`
 	ReferenceMode      string   `json:"reference_mode"`
 }
 

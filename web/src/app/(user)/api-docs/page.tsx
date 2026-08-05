@@ -72,7 +72,7 @@ export default function ModelSquarePage() {
             if (modality !== "all" && model.modality !== modality) return false;
             if (operation !== "all" && !modelOperations(model).includes(operation)) return false;
             if (!query) return true;
-            const searchable = [model.id, model.name, modalityMeta[model.modality].label, ...modelOperations(model).map((item) => operationMeta[item])].join(" ").toLowerCase();
+            const searchable = [model.id, model.name, modalityMeta[model.modality].label, ...modelOperations(model).map((item) => operationMeta[item]), ...capabilityTags(model)].join(" ").toLowerCase();
             return searchable.includes(query);
         });
     }, [keyword, modality, models, operation]);
@@ -278,6 +278,10 @@ function ModelDetails({ model, rules, endpoint, operation, operations, onOperati
                     <Capability label="分辨率" values={model.resolutionTiers.map((item) => item.toUpperCase())} fallback="未公布限制" />
                     <Capability label="视频时长" values={model.durations.map((item) => `${item} 秒`)} fallback={model.modality === "video" ? "未公布限制" : "不适用"} />
                     <Capability label="参考图" values={referenceCapabilityValues(model)} fallback="不支持" />
+                    {model.modality === "video" ? <Capability label="参考视频" values={model.maxReferenceVideos ? [`最多 ${model.maxReferenceVideos} 个`] : []} fallback="不支持" /> : null}
+                    {model.modality === "video" ? <Capability label="参考音频" values={model.maxReferenceAudios ? [`最多 ${model.maxReferenceAudios} 个`] : []} fallback="不支持" /> : null}
+                    {model.modality === "video" ? <Capability label="参考素材合计" values={model.maxReferenceMedia ? [`最多 ${model.maxReferenceMedia} 个`] : []} fallback="不额外限制" /> : null}
+                    {model.modality === "video" ? <Capability label="视频音频输出" values={model.supportsAudioOutput ? ["支持 generate_audio"] : []} fallback="不支持" /> : null}
                 </div>
             </section>
 
@@ -332,6 +336,10 @@ function capabilityTags(model: MarketplaceModel) {
         ...model.resolutionTiers.map((item) => item.toUpperCase()),
         ...model.durations.map((item) => `${item} 秒`),
         ...(model.maxReferenceImages ? [`${model.maxReferenceImages} 张参考图`] : []),
+        ...(model.maxReferenceVideos ? [`${model.maxReferenceVideos} 个参考视频`] : []),
+        ...(model.maxReferenceAudios ? [`${model.maxReferenceAudios} 个参考音频`] : []),
+        ...(model.maxReferenceMedia ? [`参考素材合计 ${model.maxReferenceMedia} 个`] : []),
+        ...(model.supportsAudioOutput ? ["支持音频输出"] : []),
     ];
 }
 
@@ -354,7 +362,14 @@ function buildSnippet(endpoint: string, model: MarketplaceModel, operation: Mode
         return `curl -X POST "${endpoint}/images/generations" \\\n  -H "Authorization: Bearer YOUR_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -H "Idempotency-Key: YOUR_UNIQUE_REQUEST_ID" \\\n  -d '${JSON.stringify(payload, null, 2)}'`;
     }
     if (model.modality === "video") {
-        const fields = [...(model.durations[0] ? [`seconds=${model.durations[0]}`] : []), ...(ratio && resolution ? [`size=${videoOutputSize(resolution, ratio)}`] : []), ...(model.maxReferenceImages ? ["input_reference=@./reference.png"] : [])];
+        const fields = [
+            ...(model.durations[0] ? [`seconds=${model.durations[0]}`] : []),
+            ...(ratio && resolution ? [`size=${videoOutputSize(resolution, ratio)}`] : []),
+            ...(model.maxReferenceImages ? ["input_reference=@./reference.png"] : []),
+            ...(model.maxReferenceVideos ? ["reference_videos=@./reference.mp4"] : []),
+            ...(model.maxReferenceAudios ? ["reference_audios=@./reference.mp3"] : []),
+            ...(model.supportsAudioOutput ? ["generate_audio=true"] : []),
+        ];
         return `curl -X POST "${endpoint}/videos" \\\n  -H "Authorization: Bearer YOUR_API_KEY" \\\n  -H "Idempotency-Key: YOUR_UNIQUE_REQUEST_ID" \\\n  -F "model=${model.id}" \\\n  -F "prompt=商品在柔和光影中缓慢旋转"${fields.length ? ` \\\n${fields.map((field) => `  -F "${field}"`).join(" \\\n")}` : ""}`;
     }
     return `curl -X POST "${endpoint}/audio/speech" \\\n  -H "Authorization: Bearer YOUR_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -H "Idempotency-Key: YOUR_UNIQUE_REQUEST_ID" \\\n  -d '${JSON.stringify({ model: model.id, input: "欢迎使用道生画境开放接口。", voice: "alloy", response_format: "mp3" }, null, 2)}' \\\n  --output speech.mp3`;

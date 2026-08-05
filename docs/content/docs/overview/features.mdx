@@ -70,6 +70,8 @@ OpenAI 兼容图像和文本能力继续复用现有接口：
 - OpenAI 风格视频：`POST /api/v1/videos`、`GET /api/v1/videos/{id}`、`GET /api/v1/videos/{id}/content`。
 - Seedance 等特殊上游协议由后端渠道适配，前端仍只请求同源接口。
 
+`POST /api/v1/videos` 使用 multipart 请求，可按 `/api/v1/models` 返回的 `max_reference_images`、`max_reference_videos`、`max_reference_audios`、`max_reference_media` 和 `supports_audio_output` 能力发送 `input_reference`、`reference_videos`、`reference_audios` 与 `generate_audio`。单张参考图、单个参考视频、单个参考音频分别限制为 20MiB、200MiB、50MiB，整体请求限制为 320MiB。
+
 可配置项：
 
 - 默认模型。

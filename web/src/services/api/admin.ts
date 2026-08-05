@@ -315,6 +315,10 @@ export type AdminChannelModel = {
     resolutionTiers: string[];
     durations: number[];
     maxReferenceImages: number;
+    maxReferenceVideos: number;
+    maxReferenceAudios: number;
+    maxReferenceMedia: number;
+    supportsAudioOutput: boolean;
     referenceMode: "frame" | "asset" | "none";
 };
 
@@ -326,8 +330,16 @@ export type AdminDiscoveredModel = {
     supportedResolutions: string[];
     supportedDurations: number[];
     maxReferenceImages: number;
+    maxReferenceVideos: number;
+    maxReferenceAudios: number;
+    maxReferenceMedia: number;
+    supportsAudioOutput: boolean;
     referenceMode: "frame" | "asset" | "none";
     referenceCapabilityProvided: boolean;
+    referenceVideosProvided: boolean;
+    referenceAudiosProvided: boolean;
+    referenceMediaProvided: boolean;
+    audioOutputProvided: boolean;
 };
 
 export type AdminPublicModelChannelSettings = {
@@ -354,6 +366,10 @@ export type AdminManagedModel = {
     resolutionTiers: string[];
     durations: number[];
     maxReferenceImages: number;
+    maxReferenceVideos: number;
+    maxReferenceAudios: number;
+    maxReferenceMedia: number;
+    supportsAudioOutput: boolean;
     referenceMode: "frame" | "asset" | "none";
     remark: string;
 };

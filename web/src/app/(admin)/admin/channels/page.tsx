@@ -187,6 +187,10 @@ export default function AdminChannelsPage() {
                     resolutionTiers: discovered.supportedResolutions || [],
                     durations: discovered.supportedDurations || [],
                     maxReferenceImages: discovered.referenceCapabilityProvided ? discovered.maxReferenceImages : current.maxReferenceImages,
+                    maxReferenceVideos: discovered.referenceVideosProvided ? discovered.maxReferenceVideos : current.maxReferenceVideos,
+                    maxReferenceAudios: discovered.referenceAudiosProvided ? discovered.maxReferenceAudios : current.maxReferenceAudios,
+                    maxReferenceMedia: discovered.referenceMediaProvided ? discovered.maxReferenceMedia : current.maxReferenceMedia,
+                    supportsAudioOutput: discovered.audioOutputProvided ? discovered.supportsAudioOutput : current.supportsAudioOutput,
                     referenceMode: discovered.referenceCapabilityProvided ? discovered.referenceMode : current.referenceMode,
                 },
             ])[0];
@@ -454,6 +458,10 @@ export default function AdminChannelsPage() {
                                             {discoveredModels[model]?.modality ? <Tag bordered={false}>{discoveredModels[model].modality}</Tag> : null}
                                             {discoveredModels[model]?.supportedDurations?.length ? <Tag bordered={false}>{discoveredModels[model].supportedDurations.join("/")} 秒</Tag> : null}
                                             {discoveredModels[model]?.referenceCapabilityProvided ? <Tag bordered={false}>{discoveredModels[model].maxReferenceImages ? `参考图 ${discoveredModels[model].maxReferenceImages} 张` : "无参考图"}</Tag> : null}
+                                            {discoveredModels[model]?.referenceVideosProvided ? <Tag bordered={false}>参考视频 {discoveredModels[model].maxReferenceVideos} 个</Tag> : null}
+                                            {discoveredModels[model]?.referenceAudiosProvided ? <Tag bordered={false}>参考音频 {discoveredModels[model].maxReferenceAudios} 个</Tag> : null}
+                                            {discoveredModels[model]?.referenceMediaProvided ? <Tag bordered={false}>参考素材合计 {discoveredModels[model].maxReferenceMedia} 个</Tag> : null}
+                                            {discoveredModels[model]?.audioOutputProvided ? <Tag bordered={false}>{discoveredModels[model].supportsAudioOutput ? "支持生成音频" : "无音频输出"}</Tag> : null}
                                         </Space>
                                     </Checkbox>
                                 ))}
@@ -564,6 +572,10 @@ function normalizeChannelModels(items: Partial<AdminChannelModel>[] = []): Admin
                 resolutionTiers: Array.from(new Set((item.resolutionTiers || []).map(normalizeResolutionTier).filter(Boolean))),
                 durations: normalizeDurations(item.durations),
                 maxReferenceImages: Math.max(0, Math.floor(Number(item.maxReferenceImages) || 0)),
+                maxReferenceVideos: Math.max(0, Math.floor(Number(item.maxReferenceVideos) || 0)),
+                maxReferenceAudios: Math.max(0, Math.floor(Number(item.maxReferenceAudios) || 0)),
+                maxReferenceMedia: Math.max(0, Math.floor(Number(item.maxReferenceMedia) || 0)),
+                supportsAudioOutput: item.supportsAudioOutput === true,
                 referenceMode: normalizeReferenceMode(item.referenceMode),
             },
         ];
@@ -583,6 +595,10 @@ function createChannelModel(model: string, managedModels: AdminManagedModel[], d
             resolutionTiers: discovered ? discovered.supportedResolutions || [] : managedModel?.resolutionTiers?.length ? managedModel.resolutionTiers : modality === "image" ? ["1k"] : modality === "video" ? ["720p"] : [],
             durations: discovered ? discovered.supportedDurations || [] : managedModel?.durations || [],
             maxReferenceImages: discovered?.referenceCapabilityProvided ? discovered.maxReferenceImages : managedModel?.maxReferenceImages || 0,
+            maxReferenceVideos: discovered?.referenceVideosProvided ? discovered.maxReferenceVideos : managedModel?.maxReferenceVideos || 0,
+            maxReferenceAudios: discovered?.referenceAudiosProvided ? discovered.maxReferenceAudios : managedModel?.maxReferenceAudios || 0,
+            maxReferenceMedia: discovered?.referenceMediaProvided ? discovered.maxReferenceMedia : managedModel?.maxReferenceMedia || 0,
+            supportsAudioOutput: discovered?.audioOutputProvided ? discovered.supportsAudioOutput : managedModel?.supportsAudioOutput === true,
             referenceMode: discovered?.referenceCapabilityProvided ? discovered.referenceMode : managedModel?.referenceMode || "none",
         },
     ])[0];

@@ -1,7 +1,7 @@
 "use client";
 
 import { DeleteOutlined } from "@ant-design/icons";
-import { Alert, Button, Card, Col, Empty, Flex, Form, Input, InputNumber, Row, Select, Tag, Typography } from "antd";
+import { Alert, Button, Card, Col, Empty, Flex, Form, Input, InputNumber, Row, Select, Switch, Tag, Typography } from "antd";
 import { useMemo } from "react";
 
 import type { AdminChannelModel, AdminManagedModel } from "@/services/api/admin";
@@ -118,6 +118,30 @@ export function ChannelModelCapabilitiesEditor({ managedModels }: { managedModel
                                                     <Col xs={24} md={12}>
                                                         <Form.Item name={[field.name, "referenceMode"]} label="参考模式" extra="frame 表示帧参考，asset 表示素材参考；不支持参考图时选择 none。">
                                                             <Select options={referenceModeOptions} />
+                                                        </Form.Item>
+                                                    </Col>
+                                                </>
+                                            ) : null}
+                                            {modality === "video" ? (
+                                                <>
+                                                    <Col xs={24} md={8}>
+                                                        <Form.Item name={[field.name, "maxReferenceVideos"]} label="最多参考视频" extra="填写 0 表示不接受参考视频。">
+                                                            <InputNumber min={0} precision={0} className="w-full" addonAfter="个" />
+                                                        </Form.Item>
+                                                    </Col>
+                                                    <Col xs={24} md={8}>
+                                                        <Form.Item name={[field.name, "maxReferenceAudios"]} label="最多参考音频" extra="填写 0 表示不接受参考音频。">
+                                                            <InputNumber min={0} precision={0} className="w-full" addonAfter="个" />
+                                                        </Form.Item>
+                                                    </Col>
+                                                    <Col xs={24} md={8}>
+                                                        <Form.Item name={[field.name, "maxReferenceMedia"]} label="参考素材合计" extra="图片、视频、音频的合计上限；0 表示不额外限制。">
+                                                            <InputNumber min={0} precision={0} className="w-full" addonAfter="个" />
+                                                        </Form.Item>
+                                                    </Col>
+                                                    <Col span={24}>
+                                                        <Form.Item name={[field.name, "supportsAudioOutput"]} label="支持生成音频" valuePropName="checked" extra="开启后，该渠道才会接收 generate_audio=true 的视频请求。">
+                                                            <Switch />
                                                         </Form.Item>
                                                     </Col>
                                                 </>

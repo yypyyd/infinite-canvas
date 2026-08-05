@@ -146,16 +146,23 @@ export default function VideoPage() {
 
     useEffect(() => {
         setReferences((current) => current.slice(0, imageReferenceLimit));
-    }, [imageReferenceLimit]);
+        setVideoReferences((current) => current.slice(0, referenceCapabilities.maxVideos));
+        setAudioReferences((current) => current.slice(0, referenceCapabilities.maxAudios));
+    }, [imageReferenceLimit, referenceCapabilities.maxAudios, referenceCapabilities.maxVideos]);
 
     const addReferences = async (files?: FileList | null) => {
         const selectedFiles = Array.from(files || []);
         const unsupported = selectedFiles.filter((file) => (file.type.startsWith("image/") ? !referenceCapabilities.image : file.type.startsWith("video/") ? !referenceCapabilities.video : isSupportedAudioFile(file) ? !referenceCapabilities.audio : true));
         if (unsupported.length) message.warning("已忽略当前模型不支持的参考素材");
-        const imageFiles = referenceCapabilities.image ? selectedFiles.filter((file) => file.type.startsWith("image/") && file.size <= VIDEO_REFERENCE_LIMITS.imageMaxBytes).slice(0, Math.max(0, imageReferenceLimit - references.length)) : [];
-        const videoFiles = referenceCapabilities.video ? selectedFiles.filter((file) => file.type.startsWith("video/") && file.size <= VIDEO_REFERENCE_LIMITS.videoMaxBytes).slice(0, VIDEO_REFERENCE_LIMITS.videos - videoReferences.length) : [];
-        const audioFiles = referenceCapabilities.audio ? selectedFiles.filter((file) => isSupportedAudioFile(file) && file.size <= VIDEO_REFERENCE_LIMITS.audioMaxBytes).slice(0, VIDEO_REFERENCE_LIMITS.audios - audioReferences.length) : [];
-        if (referenceCapabilities.image && selectedFiles.some((file) => file.type.startsWith("image/") && file.size > VIDEO_REFERENCE_LIMITS.imageMaxBytes)) message.warning("已忽略超过 30MB 的参考图");
+        let remainingMedia = referenceCapabilities.maxMedia > 0 ? Math.max(0, referenceCapabilities.maxMedia - references.length - videoReferences.length - audioReferences.length) : Number.POSITIVE_INFINITY;
+        const imageFiles = referenceCapabilities.image ? selectedFiles.filter((file) => file.type.startsWith("image/") && file.size <= VIDEO_REFERENCE_LIMITS.imageMaxBytes).slice(0, Math.min(Math.max(0, imageReferenceLimit - references.length), remainingMedia)) : [];
+        remainingMedia -= imageFiles.length;
+        const videoFiles = referenceCapabilities.video ? selectedFiles.filter((file) => file.type.startsWith("video/") && file.size <= VIDEO_REFERENCE_LIMITS.videoMaxBytes).slice(0, Math.min(Math.max(0, referenceCapabilities.maxVideos - videoReferences.length), remainingMedia)) : [];
+        remainingMedia -= videoFiles.length;
+        const audioFiles = referenceCapabilities.audio ? selectedFiles.filter((file) => isSupportedAudioFile(file) && file.size <= VIDEO_REFERENCE_LIMITS.audioMaxBytes).slice(0, Math.min(Math.max(0, referenceCapabilities.maxAudios - audioReferences.length), remainingMedia)) : [];
+        if (referenceCapabilities.image && selectedFiles.some((file) => file.type.startsWith("image/") && file.size > VIDEO_REFERENCE_LIMITS.imageMaxBytes)) message.warning("已忽略超过 20MB 的参考图");
+        if (referenceCapabilities.video && selectedFiles.some((file) => file.type.startsWith("video/") && file.size > VIDEO_REFERENCE_LIMITS.videoMaxBytes)) message.warning("已忽略超过 200MB 的参考视频");
+        if (referenceCapabilities.audio && selectedFiles.some((file) => isSupportedAudioFile(file) && file.size > VIDEO_REFERENCE_LIMITS.audioMaxBytes)) message.warning("已忽略超过 50MB 的参考音频");
         const nextReferences = await Promise.all(
             imageFiles.map(async (file) => {
                 const image = await uploadImage(file);
@@ -179,8 +186,8 @@ export default function VideoPage() {
             message.warning,
         );
         setReferences((value) => [...value, ...nextReferences].slice(0, imageReferenceLimit));
-        setVideoReferences((value) => [...value, ...nextVideoReferences].slice(0, VIDEO_REFERENCE_LIMITS.videos));
-        setAudioReferences((value) => [...value, ...nextAudioReferences].slice(0, VIDEO_REFERENCE_LIMITS.audios));
+        setVideoReferences((value) => [...value, ...nextVideoReferences].slice(0, referenceCapabilities.maxVideos));
+        setAudioReferences((value) => [...value, ...nextAudioReferences].slice(0, referenceCapabilities.maxAudios));
     };
 
     const addReferencesFromClipboard = async () => {
@@ -267,9 +274,12 @@ export default function VideoPage() {
             openConfigDialog(true);
             return null;
         }
-        const effectiveReferences = referenceCapabilities.image ? [...references] : [];
-        const effectiveVideoReferences = referenceCapabilities.video ? [...videoReferences] : [];
-        const effectiveAudioReferences = referenceCapabilities.audio ? [...audioReferences] : [];
+        let remainingMedia = referenceCapabilities.maxMedia > 0 ? referenceCapabilities.maxMedia : Number.POSITIVE_INFINITY;
+        const effectiveReferences = referenceCapabilities.image ? references.slice(0, Math.min(referenceCapabilities.maxImages, remainingMedia)) : [];
+        remainingMedia -= effectiveReferences.length;
+        const effectiveVideoReferences = referenceCapabilities.video ? videoReferences.slice(0, Math.min(referenceCapabilities.maxVideos, remainingMedia)) : [];
+        remainingMedia -= effectiveVideoReferences.length;
+        const effectiveAudioReferences = referenceCapabilities.audio ? audioReferences.slice(0, Math.min(referenceCapabilities.maxAudios, remainingMedia)) : [];
         return { text, config: buildVideoConfig(effectiveConfig, model), references: effectiveReferences, videoReferences: effectiveVideoReferences, audioReferences: effectiveAudioReferences };
     };
 
@@ -301,7 +311,12 @@ export default function VideoPage() {
             const stored = await uploadImage(payload.dataUrl);
             setReferences((value) => [...value, { id: nanoid(), name: payload.title, type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey }].slice(0, imageReferenceLimit));
         } else if (payload.kind === "video" && referenceCapabilities.video) {
-            setVideoReferences((value) => [...value, { id: nanoid(), name: payload.title, type: "video/mp4", url: payload.url, storageKey: payload.storageKey, width: payload.width, height: payload.height }].slice(0, VIDEO_REFERENCE_LIMITS.videos));
+            const hasRoom = referenceCapabilities.maxMedia === 0 || references.length + videoReferences.length + audioReferences.length < referenceCapabilities.maxMedia;
+            if (!hasRoom) {
+                message.warning(`当前模型最多支持 ${referenceCapabilities.maxMedia} 个参考素材`);
+                return;
+            }
+            setVideoReferences((value) => [...value, { id: nanoid(), name: payload.title, type: "video/mp4", url: payload.url, storageKey: payload.storageKey, width: payload.width, height: payload.height }].slice(0, referenceCapabilities.maxVideos));
         } else {
             message.warning("当前模型不支持该类型的参考素材");
         }

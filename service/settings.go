@@ -928,6 +928,20 @@ func SelectModelChannel(request PricingRequest) (ModelChannelSelection, error) {
 	return SelectModelChannelExcluding(request, nil)
 }
 
+func SelectModelChannelByName(request PricingRequest, channelName string) (ModelChannelSelection, error) {
+	settings, err := repository.GetSettings()
+	if err != nil {
+		return ModelChannelSelection{}, err
+	}
+	request = normalizePricingRequest(request)
+	for _, selection := range modelChannelSelectionsForRequest(normalizePrivateSetting(settings.Private).Channels, request) {
+		if selection.Channel.Name == channelName {
+			return selection, nil
+		}
+	}
+	return ModelChannelSelection{}, safeMessageError{message: "原生成渠道已不可用"}
+}
+
 // SelectModelChannelExcluding selects a compatible channel that has not already failed this request.
 func SelectModelChannelExcluding(request PricingRequest, excludedChannels []string) (ModelChannelSelection, error) {
 	settings, err := repository.GetSettings()

@@ -177,7 +177,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
                     </button>
                 ) : null}
                 {!user ? (
-                    <Link href="/login" className="px-1.5 text-sm font-medium text-stone-600 underline-offset-4 transition hover:text-stone-950 hover:underline dark:text-stone-300 dark:hover:text-stone-100" style={iconStyle}>
+                    <Link href="/login" prefetch={false} className="px-1.5 text-sm font-medium text-stone-600 underline-offset-4 transition hover:text-stone-950 hover:underline dark:text-stone-300 dark:hover:text-stone-100" style={iconStyle}>
                         登录
                     </Link>
                 ) : null}

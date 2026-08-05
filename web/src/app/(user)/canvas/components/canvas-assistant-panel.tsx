@@ -20,7 +20,7 @@ import { saveCanvasImageGenerationRecord, saveCanvasVideoGenerationRecord } from
 import { workspaceOwnerId } from "@/services/workspace-changes";
 import { cancelAgentRun, claimAgentToolExecution, confirmAgentTool, createAgentSession, getAgentRun, getAgentToolResultReceipt, streamAgentRun, submitAgentMessage, submitAgentToolResult, type AgentEvent, type AgentToolResult } from "@/services/api/agent";
 import type { UploadedFile } from "@/services/file-storage";
-import { imageToDataUrl, uploadImage } from "@/services/image-storage";
+import { imageToDataUrl, storeGeneratedImage } from "@/services/image-storage";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { imageReferenceLabel } from "@/lib/image-reference-prompt";
 import { supportsImageQuality, supportsImageReferences } from "@/lib/image-model-capabilities";
@@ -404,14 +404,15 @@ export function CanvasAssistantPanel({
                                     imageCount,
                                     status: "生成中",
                                     canvasId: projectId,
+                                    requestIds: [idempotencyKey],
                                 });
                                 await flushActiveWorkspaceChanges();
                                 generationRecord = { kind: "image", id: generationRecordId, prompt: toolArguments.prompt, config: toolConfig, count: imageCount, startedAt: generationStartedAt };
                                 const generated = referenceImages.length
                                     ? await requestEdit(toolConfig, toolArguments.prompt, referenceImages, undefined, { signal: toolAbortController.signal, idempotencyKey })
                                     : await requestGeneration(toolConfig, toolArguments.prompt, { signal: toolAbortController.signal, idempotencyKey });
-                                const storedResults = await Promise.allSettled(generated.map(async (image) => ({ generated: image, stored: await uploadImage(image.dataUrl) })));
-                                const stored = storedResults.filter((item): item is PromiseFulfilledResult<{ generated: (typeof generated)[number]; stored: Awaited<ReturnType<typeof uploadImage>> }> => item.status === "fulfilled").map((item) => item.value);
+                                const storedResults = await Promise.allSettled(generated.map(async (image) => ({ generated: image, stored: await storeGeneratedImage(image) })));
+                                const stored = storedResults.filter((item): item is PromiseFulfilledResult<{ generated: (typeof generated)[number]; stored: Awaited<ReturnType<typeof storeGeneratedImage>> }> => item.status === "fulfilled").map((item) => item.value);
                                 if (!stored.length) throw storedResults.find((item): item is PromiseRejectedResult => item.status === "rejected")?.reason || new Error("生成图片保存失败");
                                 await saveCanvasImageGenerationRecord(historyOwnerId, {
                                     id: generationRecordId,
@@ -443,6 +444,7 @@ export function CanvasAssistantPanel({
                                 if (toolArguments.imageNodeId && !reference) throw new Error("未找到指定的本轮参考图片节点");
                                 const referenceImages: ReferenceImage[] = reference ? [{ id: reference.id, name: `${reference.title}.png`, type: "image/png", dataUrl: await imageToDataUrl(reference), storageKey: reference.storageKey }] : [];
                                 const generationStartedAt = performance.now();
+                                const idempotencyKey = `agent:${runId}:${callId}`;
                                 const generationRecordId = await saveCanvasVideoGenerationRecord(historyOwnerId, {
                                     prompt: toolArguments.prompt,
                                     model: toolConfig.model,
@@ -451,10 +453,11 @@ export function CanvasAssistantPanel({
                                     seconds: toolConfig.videoSeconds,
                                     status: "生成中",
                                     canvasId: projectId,
+                                    requestId: idempotencyKey,
                                 });
                                 await flushActiveWorkspaceChanges();
                                 generationRecord = { kind: "video", id: generationRecordId, prompt: toolArguments.prompt, config: toolConfig, startedAt: generationStartedAt };
-                                const stored = await storeGeneratedVideo(await requestVideoGeneration(toolConfig, toolArguments.prompt, referenceImages, [], [], { signal: toolAbortController.signal, idempotencyKey: `agent:${runId}:${callId}` }));
+                                const stored = await storeGeneratedVideo(await requestVideoGeneration(toolConfig, toolArguments.prompt, referenceImages, [], [], { signal: toolAbortController.signal, idempotencyKey }));
                                 if (!stored.storageKey) throw new Error("生成的视频未保存到工作区");
                                 await saveCanvasVideoGenerationRecord(historyOwnerId, {
                                     id: generationRecordId,
@@ -645,12 +648,12 @@ export function CanvasAssistantPanel({
                 const referenceImages: ReferenceImage[] = await Promise.all(
                     refs.filter((item) => item.dataUrl).map(async (item) => ({ id: item.id, name: `${item.title}.png`, type: "image/png", dataUrl: await imageToDataUrl(item), storageKey: item.storageKey })),
                 );
-                const requestOptions = { signal: imageRequestController!.signal };
+                const requestOptions = { signal: imageRequestController!.signal, idempotencyKey: generationRecordId };
                 const images = referenceImages.length ? await requestEdit(requestConfig, text, referenceImages, undefined, requestOptions) : await requestGeneration(requestConfig, text, requestOptions);
                 if (imageRequestController!.signal.aborted) throw new DOMException("Aborted", "AbortError");
-                const storedResults = await Promise.allSettled(images.map(async (image) => ({ generated: image, stored: await uploadImage(image.dataUrl) })));
+                const storedResults = await Promise.allSettled(images.map(async (image) => ({ generated: image, stored: await storeGeneratedImage(image) })));
                 if (imageRequestController!.signal.aborted) throw new DOMException("Aborted", "AbortError");
-                const storedImages = storedResults.filter((item): item is PromiseFulfilledResult<{ generated: (typeof images)[number]; stored: Awaited<ReturnType<typeof uploadImage>> }> => item.status === "fulfilled").map((item) => item.value);
+                const storedImages = storedResults.filter((item): item is PromiseFulfilledResult<{ generated: (typeof images)[number]; stored: Awaited<ReturnType<typeof storeGeneratedImage>> }> => item.status === "fulfilled").map((item) => item.value);
                 if (!storedImages.length) throw storedResults.find((item): item is PromiseRejectedResult => item.status === "rejected")?.reason || new Error("生成图片保存失败");
                 await saveCanvasImageGenerationRecord(historyOwnerId, {
                     id: generationRecordId,

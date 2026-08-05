@@ -2,7 +2,7 @@ import axios from "axios";
 
 import { dataUrlToFile } from "@/lib/image-utils";
 import { defaultVideoDurations, defaultVideoRatios, defaultVideoResolutions, normalizeVideoRatio, normalizeVideoResolution, videoOutputSize } from "@/lib/video-format";
-import { resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
+import { resolveMediaUrl, storedMediaFile, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
 import { requestImageQuestion, type ChatCompletionMessage } from "@/services/api/image";
 import { authorizationHeaders, organizationHeaders } from "@/services/api/request";
@@ -12,14 +12,14 @@ import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 import { videoReferenceCapabilities, VIDEO_REFERENCE_LIMITS } from "@/lib/video-reference";
 
-type VideoResponse = { id: string; status?: string; error?: { message?: string } };
+type VideoResponse = { id: string; status?: string; storage_key?: string; bytes?: number; mime_type?: string; error?: { message?: string } };
 type ApiVideoResponse = VideoResponse | { code?: number; data?: VideoResponse | null; msg?: string };
 type RequestOptions = { signal?: AbortSignal; idempotencyKey?: string };
 
 const VIDEO_POLL_INTERVAL_MS = 2500;
 const VIDEO_POLL_TIMEOUT_MS = 30 * 60 * 1000;
 
-export type VideoGenerationResult = { blob?: Blob; url?: string; mimeType?: string };
+export type VideoGenerationResult = { blob?: Blob; url?: string; storageKey?: string; bytes?: number; mimeType?: string };
 export type VideoCreativeMode = "analysis" | "viral";
 export type VideoCreativeResult = { analysis: string; script: string; videoPrompt: string; frames: string[] };
 
@@ -68,29 +68,22 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
     videoFiles.forEach((reference) => body.append("reference_videos", reference));
     audioFiles.forEach((reference) => body.append("reference_audios", reference));
 
+    const requestId = options?.idempotencyKey || crypto.randomUUID();
     try {
-        const created = unwrapVideoResponse((await axios.post<ApiVideoResponse>("/api/v1/videos", body, { headers: aiHeaders(options?.idempotencyKey), signal: options?.signal })).data);
+        const created = unwrapVideoResponse((await axios.post<ApiVideoResponse>("/api/v1/videos", body, { headers: aiHeaders(requestId), signal: options?.signal })).data);
         if (!created.id) throw new Error("视频接口没有返回任务 ID");
-        const pollDeadline = Date.now() + VIDEO_POLL_TIMEOUT_MS;
-        for (;;) {
-            if (options?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
-            const video = unwrapVideoResponse((await axios.get<ApiVideoResponse>(`/api/v1/videos/${encodeURIComponent(created.id)}`, { headers: aiHeaders(), params: { model }, signal: options?.signal })).data);
-            if (video.status === "completed") break;
-            if (video.status === "failed" || video.status === "cancelled") throw new Error(video.error?.message || "视频生成失败");
-            const remainingMs = pollDeadline - Date.now();
-            if (remainingMs <= 0) throw new Error("视频生成超时，请稍后重试");
-            await delay(Math.min(VIDEO_POLL_INTERVAL_MS, remainingMs), options?.signal);
-        }
-        const content = await axios.get<Blob>(`/api/v1/videos/${encodeURIComponent(created.id)}/content`, { headers: aiHeaders(), params: { model }, responseType: "blob", signal: options?.signal });
-        await assertVideoBlob(content.data);
-        void useUserStore.getState().hydrateUser();
-        return { blob: content.data };
+        return await completeVideoGeneration(model, created.id, requestId, options?.signal);
     } catch (error) {
         throw new Error(readAxiosError(error, "视频生成失败"));
     }
 }
 
+export function resumeVideoGeneration(model: string, requestId: string, upstreamTaskId: string, signal?: AbortSignal) {
+    return completeVideoGeneration(model, upstreamTaskId, requestId, signal);
+}
+
 export async function storeGeneratedVideo(result: VideoGenerationResult): Promise<UploadedFile> {
+    if (result.storageKey) return storedMediaFile(result.storageKey, result.url, result.bytes, result.mimeType);
     if (result.blob) return uploadMediaFile(result.blob, "video");
     if (result.url) return { url: result.url, storageKey: "", bytes: 0, mimeType: result.mimeType || "video/mp4" };
     throw new Error("视频接口没有返回可播放的视频");
@@ -99,6 +92,33 @@ export async function storeGeneratedVideo(result: VideoGenerationResult): Promis
 function aiHeaders(idempotencyKey?: string) {
     const token = useUserStore.getState().token;
     return { ...authorizationHeaders(token), ...organizationHeaders(), "Idempotency-Key": idempotencyKey || crypto.randomUUID() };
+}
+
+async function completeVideoGeneration(model: string, upstreamTaskId: string, requestId: string, signal?: AbortSignal): Promise<VideoGenerationResult> {
+    const pollDeadline = Date.now() + VIDEO_POLL_TIMEOUT_MS;
+    for (;;) {
+        if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+        const params = { model, request_id: requestId };
+        const video = unwrapVideoResponse((await axios.get<ApiVideoResponse>(`/api/v1/videos/${encodeURIComponent(upstreamTaskId)}`, { headers: aiHeaders(requestId), params, signal })).data);
+        if (video.status === "completed") {
+            if (video.storage_key) return { storageKey: video.storage_key, bytes: video.bytes || 0, mimeType: video.mime_type || "video/mp4" };
+            break;
+        }
+        if (video.status === "failed" || video.status === "cancelled") throw new Error(video.error?.message || "视频生成失败");
+        const remainingMs = pollDeadline - Date.now();
+        if (remainingMs <= 0) throw new Error("视频生成超时，请稍后重试");
+        await delay(Math.min(VIDEO_POLL_INTERVAL_MS, remainingMs), signal);
+    }
+    const content = await axios.get<Blob>(`/api/v1/videos/${encodeURIComponent(upstreamTaskId)}/content`, { headers: aiHeaders(requestId), params: { model, request_id: requestId }, responseType: "blob", signal });
+    await assertVideoBlob(content.data);
+    void useUserStore.getState().hydrateUser();
+    const storageKey = typeof content.headers["x-storage-key"] === "string" ? content.headers["x-storage-key"] : "";
+    if (storageKey) {
+        const bytes = Number(content.headers["x-storage-bytes"]) || content.data.size;
+        const mimeType = typeof content.headers["x-storage-mime-type"] === "string" ? content.headers["x-storage-mime-type"] : content.data.type || "video/mp4";
+        return { storageKey, bytes, mimeType };
+    }
+    return { blob: content.data };
 }
 
 function findVideoModel(model: string) {

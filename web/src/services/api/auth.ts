@@ -78,6 +78,7 @@ export type GenerationTask = {
     credits: number;
     creditSource: "personal" | "organization";
     status: "running" | "success" | "failed";
+    storageKeys?: string[];
     errorMessage: string;
     durationMs: number;
     createdAt: string;

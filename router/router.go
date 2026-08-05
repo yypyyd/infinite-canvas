@@ -24,6 +24,8 @@ func New() *gin.Engine {
 	api.POST("/auth/password", middleware.UserAuth, gin.WrapF(handler.ChangePassword))
 	api.GET("/credit-logs", middleware.UserAuth, gin.WrapF(handler.UserCreditLogs))
 	api.GET("/generation-tasks", middleware.UserAuth, middleware.OrganizationAuth, gin.WrapF(handler.UserGenerationTasks))
+	api.GET("/generation-tasks/recovery", middleware.UserAuth, middleware.OrganizationAuth, gin.WrapF(handler.RecoverUserGenerationTask))
+	api.POST("/generation-tasks/recovery/acknowledge", middleware.UserAuth, middleware.OrganizationAuth, gin.WrapF(handler.AcknowledgeUserGenerationTaskRecoveries))
 	api.GET("/workspace", middleware.UserAuth, middleware.OrganizationAuth, gin.WrapF(handler.UserWorkspace))
 	api.POST("/workspace/changes", middleware.UserAuth, middleware.OrganizationAuth, gin.WrapF(handler.SaveUserWorkspace))
 	api.POST("/workspace/files/upload-ticket", middleware.UserAuth, middleware.OrganizationAuth, gin.WrapF(handler.PrepareUserWorkspaceFileUpload))

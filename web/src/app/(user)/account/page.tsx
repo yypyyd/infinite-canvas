@@ -3,7 +3,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { App, Avatar, Button, Card, Descriptions, Empty, Form, Image as AntImage, Input, Modal, Pagination, Progress, Segmented, Select, Skeleton, Table, Tabs, Tag, Typography, type TableColumnsType } from "antd";
 import dayjs from "dayjs";
-import { saveAs } from "file-saver";
 import { CircleUserRound, Clock3, Cloud, Code2, Coins, Copy, ExternalLink, Film, History, ImageIcon, KeyRound, ListChecks, LoaderCircle, PencilLine, Plus, ReceiptText, RefreshCw, Search, ShieldCheck, Trash2, WalletCards } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -11,6 +10,7 @@ import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { CREDIT_PURCHASE_URL, CreditSymbol } from "@/constant/credits";
 import { useCopyText } from "@/hooks/use-copy-text";
+import { useOpenMedia } from "@/hooks/use-open-media";
 import { formatDuration } from "@/lib/image-utils";
 import { changePassword, createUserAPIKey, deleteUserAPIKey, fetchCreditLogs, fetchGenerationTasks, fetchUserAPIKeys, updateProfile as updateUserProfile, type CreditLog, type CreatedUserAPIKey, type GenerationTask, type UserAPIKey } from "@/services/api/auth";
 import { countGenerationHistory, deleteGenerationHistory, GENERATION_HISTORY_CHANGED_EVENT, readGenerationHistory, resolveGenerationHistoryMedia, resolveGenerationHistoryPreview, type GenerationHistoryItem } from "@/services/generation-history";
@@ -708,6 +708,7 @@ function HistoryCard({ item, onOpen, onDelete }: { item: GenerationHistoryItem; 
 }
 
 function HistoryDetailModal({ item, onClose, onDelete }: { item: GenerationHistoryItem | null; onClose: () => void; onDelete?: () => void }) {
+    const openMedia = useOpenMedia();
     const mediaQuery = useQuery({
         queryKey: ["generation-history-media", item?.ownerId, item?.kind, item?.id],
         queryFn: () => resolveGenerationHistoryMedia(item!),
@@ -753,7 +754,7 @@ function HistoryDetailModal({ item, onClose, onDelete }: { item: GenerationHisto
                                                 className="!absolute bottom-2 right-2"
                                                 onClick={(event) => {
                                                     event.stopPropagation();
-                                                    saveAs(url, `${item.title || "image"}-${index + 1}.png`);
+                                                    openMedia(url);
                                                 }}
                                             >
                                                 下载
@@ -799,7 +800,7 @@ function HistoryDetailModal({ item, onClose, onDelete }: { item: GenerationHisto
                         </Typography.Paragraph>
                     </div>
                     {item.error ? <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">{item.error}</div> : null}
-                    {item.kind === "video" && videoUrl ? <Button onClick={() => saveAs(videoUrl, `${item.title || "video"}.mp4`)}>下载视频</Button> : null}
+                    {item.kind === "video" && videoUrl ? <Button onClick={() => openMedia(videoUrl)}>下载视频</Button> : null}
                 </div>
             ) : null}
         </Modal>

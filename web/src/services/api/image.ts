@@ -3,6 +3,7 @@ import axios from "axios";
 import type { AiConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { authorizationHeaders, organizationHeaders } from "@/services/api/request";
+import { workspaceFileUrl } from "@/services/api/workspace";
 import { nanoid } from "nanoid";
 import { dataUrlToFile } from "@/lib/image-utils";
 import { buildImageReferencePromptText } from "@/lib/image-reference-prompt";
@@ -107,21 +108,37 @@ function resolveImageDataUrl(item: Record<string, unknown>) {
     return null;
 }
 
+function parseStoredImage(item: Record<string, unknown>) {
+    const storageKey = typeof item.storage_key === "string" ? item.storage_key : "";
+    const dataUrl = storageKey ? workspaceFileUrl(storageKey) : resolveImageDataUrl(item);
+    if (!dataUrl) return null;
+    return {
+        id: nanoid(),
+        dataUrl,
+        storageKey: storageKey || undefined,
+        bytes: typeof item.bytes === "number" ? item.bytes : 0,
+        mimeType: typeof item.mime_type === "string" ? item.mime_type : undefined,
+    };
+}
+
 function parseImagePayload(payload: ImageApiResponse) {
     if (typeof payload.code === "number" && payload.code !== 0) {
         throw new Error(payload.msg || "请求失败");
     }
     const images =
         payload.data
-            ?.map(resolveImageDataUrl)
-            .filter((value): value is string => Boolean(value))
-            .map((dataUrl) => ({ id: nanoid(), dataUrl })) || [];
+            ?.map(parseStoredImage)
+            .filter((value): value is NonNullable<ReturnType<typeof parseStoredImage>> => Boolean(value)) || [];
 
     if (images.length === 0) {
         throw new Error("接口没有返回图片");
     }
 
     return images;
+}
+
+export function parseRecoveredImageGeneration(payload: unknown) {
+    return parseImagePayload(payload as ImageApiResponse);
 }
 
 function readAxiosError(error: unknown, fallback: string) {

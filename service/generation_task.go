@@ -43,6 +43,65 @@ func ListUserGenerationTasks(organizationID string, userID string, q model.Query
 	return model.GenerationTaskList{Items: items, Total: int(total)}, nil
 }
 
+func RecoverGenerationTask(organizationID, userID, requestID string) (model.GenerationTaskRecovery, error) {
+	requestID = strings.TrimSpace(requestID)
+	if requestID == "" {
+		return model.GenerationTaskRecovery{}, safeMessageError{message: "请求编号不能为空"}
+	}
+	task, exists, err := repository.GetGenerationTaskByRequest(organizationID, userID, requestID)
+	if err != nil {
+		return model.GenerationTaskRecovery{}, err
+	}
+	if !exists {
+		return model.GenerationTaskRecovery{}, safeMessageError{message: "生成任务不存在"}
+	}
+	result := model.GenerationTaskRecovery{
+		RequestID: task.RequestID, Model: task.Model, Modality: task.Modality, Path: task.Path,
+		Status: task.Status, UpstreamTaskID: task.UpstreamTaskID, ErrorMessage: task.ErrorMessage,
+		StorageKeys: task.StorageKeys,
+		CreatedAt: task.CreatedAt, UpdatedAt: task.UpdatedAt,
+	}
+	if json.Valid([]byte(task.ResultJSON)) {
+		result.Result = json.RawMessage(task.ResultJSON)
+	}
+	return result, nil
+}
+
+func UserGenerationTaskByRequest(organizationID, userID, requestID string) (model.GenerationTask, error) {
+	task, exists, err := repository.GetGenerationTaskByRequest(organizationID, userID, strings.TrimSpace(requestID))
+	if err != nil {
+		return model.GenerationTask{}, err
+	}
+	if !exists {
+		return model.GenerationTask{}, safeMessageError{message: "生成任务不存在"}
+	}
+	return task, nil
+}
+
+func UserGenerationTaskByUpstreamID(organizationID, userID, upstreamTaskID string) (model.GenerationTask, bool, error) {
+	return repository.GetGenerationTaskByUpstreamID(organizationID, userID, strings.TrimSpace(upstreamTaskID))
+}
+
+func AcknowledgeGenerationTaskRecoveries(organizationID, userID string, requestIDs []string) error {
+	unique := make([]string, 0, len(requestIDs))
+	seen := map[string]bool{}
+	for _, requestID := range requestIDs {
+		requestID = strings.TrimSpace(requestID)
+		if requestID == "" || seen[requestID] {
+			continue
+		}
+		if len(requestID) > 191 || len(unique) >= 50 {
+			return safeMessageError{message: "恢复确认参数无效"}
+		}
+		seen[requestID] = true
+		unique = append(unique, requestID)
+	}
+	if len(unique) == 0 {
+		return nil
+	}
+	return repository.ClearGenerationTaskRecoveryResults(organizationID, userID, unique, now())
+}
+
 func BeginGenerationTask(input GenerationTaskInput) (model.GenerationTask, error) {
 	nowText := now()
 	creditSource := model.CreditSourcePersonal
@@ -134,6 +193,23 @@ func UpdateGenerationTaskChannel(task *model.GenerationTask, channelName string,
 	if err == nil {
 		task.ChannelName = channelName
 		task.UpstreamModel = upstreamModel
+		task.UpdatedAt = updatedAt
+	}
+	return err
+}
+
+func UpdateGenerationTaskRecovery(task *model.GenerationTask, upstreamTaskID string, result []byte, storageKeys []string) error {
+	if task == nil || task.ID == "" {
+		return nil
+	}
+	updatedAt := now()
+	err := retryGenerationTaskWrite(func() error {
+		return repository.UpdateGenerationTaskRecovery(task.ID, strings.TrimSpace(upstreamTaskID), string(result), storageKeys, updatedAt)
+	})
+	if err == nil {
+		task.UpstreamTaskID = strings.TrimSpace(upstreamTaskID)
+		task.ResultJSON = string(result)
+		task.StorageKeys = storageKeys
 		task.UpdatedAt = updatedAt
 	}
 	return err

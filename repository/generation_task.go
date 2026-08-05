@@ -170,6 +170,49 @@ func GetGenerationTaskByRequest(organizationID, userID, requestID string) (model
 	return task, err == nil, err
 }
 
+func GetGenerationTaskByUpstreamID(organizationID, userID, upstreamTaskID string) (model.GenerationTask, bool, error) {
+	db, err := DB()
+	if err != nil {
+		return model.GenerationTask{}, false, err
+	}
+	var task model.GenerationTask
+	err = db.Where("organization_id = ? AND user_id = ? AND upstream_task_id = ?", organizationID, userID, upstreamTaskID).Order("created_at desc").First(&task).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.GenerationTask{}, false, nil
+	}
+	return task, err == nil, err
+}
+
+func UpdateGenerationTaskRecovery(taskID, upstreamTaskID, resultJSON string, storageKeys []string, updatedAt string) error {
+	db, err := DB()
+	if err != nil {
+		return err
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		var task model.GenerationTask
+		if err := tx.Where("id = ? AND status IN ?", taskID, []model.GenerationTaskStatus{model.GenerationTaskStatusRunning, model.GenerationTaskStatusSuccess}).First(&task).Error; err != nil { return err }
+		result := tx.Model(&task).Select("UpstreamTaskID", "ResultJSON", "StorageKeys", "UpdatedAt").Updates(model.GenerationTask{UpstreamTaskID: upstreamTaskID, ResultJSON: resultJSON, StorageKeys: storageKeys, UpdatedAt: updatedAt})
+		if result.Error != nil { return result.Error }
+		if result.RowsAffected != 1 { return errors.New("generation task recovery is unavailable") }
+		return replaceUserFileReferences(tx, task.OrganizationID, "generation_task", task.ID, task.ID+"-file", storageKeys, false, updatedAt)
+	})
+}
+
+func ClearGenerationTaskRecoveryResults(organizationID, userID string, requestIDs []string, updatedAt string) error {
+	db, err := DB()
+	if err != nil {
+		return err
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		var tasks []model.GenerationTask
+		if err := tx.Where("organization_id = ? AND user_id = ? AND request_id IN ? AND status = ?", organizationID, userID, requestIDs, model.GenerationTaskStatusSuccess).Find(&tasks).Error; err != nil { return err }
+		for _, task := range tasks {
+			if err := replaceUserFileReferences(tx, organizationID, "generation_task", task.ID, task.ID+"-file", nil, true, updatedAt); err != nil { return err }
+		}
+		return tx.Model(&model.GenerationTask{}).Where("organization_id = ? AND user_id = ? AND request_id IN ? AND status = ?", organizationID, userID, requestIDs, model.GenerationTaskStatusSuccess).Updates(map[string]any{"result_json": "", "storage_keys": nil}).Error
+	})
+}
+
 func CompleteGenerationTask(task model.GenerationTask) error {
 	db, err := DB()
 	if err != nil {

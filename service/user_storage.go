@@ -1,8 +1,13 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
 	"path"
 	"regexp"
 	"strings"
@@ -55,6 +60,81 @@ type UserFileConfirmRequest struct {
 	ObjectKey  string `json:"objectKey"`
 	MimeType   string `json:"mimeType"`
 	Size       int64  `json:"size"`
+}
+
+// ArchiveGeneratedFile streams one generated result into the account workspace.
+func ArchiveGeneratedFile(ctx context.Context, user model.AuthUser, taskID, mediaType string, index int, mimeType string, size int64, body io.Reader) (model.UserFile, error) {
+	if err := RequireOrganizationWrite(user); err != nil { return model.UserFile{}, err }
+	if err := ensureQiniuStorageConfigured(); err != nil { return model.UserFile{}, err }
+	mediaType = strings.TrimSpace(mediaType)
+	storageKey := fmt.Sprintf("%s:generated-%s-%d", mediaType, taskID, index)
+	storageKey, mimeType, err := normalizeUserFileInput(storageKey, mimeType, size)
+	if err != nil { return model.UserFile{}, err }
+	replaceExisting, replaceObjectKey := false, ""
+	if existing, exists, lookupErr := repository.GetUserFile(user.OrganizationID, storageKey); lookupErr != nil {
+		return model.UserFile{}, lookupErr
+	} else if exists {
+		info, statErr := qiniuBucketManager().Stat(config.Cfg.QiniuBucket, existing.ObjectKey)
+		if statErr == nil && info.Fsize == existing.Size && existing.Size == size && info.Hash == existing.Hash && assetTypeFromMime(info.MimeType) == mediaType { return existing, nil }
+		replaceExisting, replaceObjectKey = true, existing.ObjectKey
+	}
+	uploadID := newID("generated-upload")
+	timestamp := now()
+	expiresAt := time.Now().UTC().Add(30 * time.Minute)
+	reservation := model.UserFileUploadReservation{ID: uploadID, OrganizationID: user.OrganizationID, UserID: user.ID, StorageKey: storageKey, ObjectKey: path.Join("organizations", user.OrganizationID, "generated", uploadID+assetFileExt(mimeType)), MimeType: mimeType, Size: size, ReplaceExisting: replaceExisting, ReplaceObjectKey: replaceObjectKey, ExpiresAt: expiresAt.Format(timestampLayout), CleanupAfter: expiresAt.Add(userFileUploadCleanupGrace).Format(timestampLayout), CreatedAt: timestamp}
+	if _, err := repository.ReserveUserFileUpload(reservation, userStorageQuotaBytes(), timestamp); err != nil { return model.UserFile{}, err }
+	confirmed := false
+	defer func() { if !confirmed { _ = repository.CancelUserFileUploadReservation(user.OrganizationID, user.ID, uploadID, now()) } }()
+	limited := &io.LimitedReader{R: body, N: size + 1}
+	policy := storage.PutPolicy{Scope: config.Cfg.QiniuBucket + ":" + reservation.ObjectKey, Expires: 1800, FsizeMin: size, FsizeLimit: size, DetectMime: 1, MimeLimit: mediaType + "/*", EndUser: user.ID}
+	var uploaded storage.PutRet
+	if err := storage.NewFormUploader(&storage.Config{UseHTTPS: true}).Put(ctx, &uploaded, policy.UploadToken(qiniuMac()), reservation.ObjectKey, limited, size, &storage.PutExtra{MimeType: mimeType}); err != nil { return model.UserFile{}, err }
+	if size+1-limited.N != size { return model.UserFile{}, errors.New("generated file size mismatch") }
+	var extra [1]byte
+	if total, readErr := body.Read(extra[:]); readErr != nil && !errors.Is(readErr, io.EOF) { return model.UserFile{}, readErr } else if total > 0 { return model.UserFile{}, errors.New("generated file exceeds declared size") }
+	info, err := qiniuBucketManager().Stat(config.Cfg.QiniuBucket, reservation.ObjectKey)
+	if err != nil { return model.UserFile{}, err }
+	if info.Fsize != size || assetTypeFromMime(info.MimeType) != mediaType { return model.UserFile{}, errors.New("generated file metadata mismatch") }
+	file, err := repository.ConfirmUserFileUpload(user.OrganizationID, user.ID, uploadID, newID("file"), info.Hash, info.MimeType, info.Fsize, userStorageQuotaBytes(), now())
+	if err != nil { return model.UserFile{}, err }
+	confirmed = true
+	return file, nil
+}
+
+// ArchiveGeneratedStream also supports upstream chunked responses without Content-Length.
+func ArchiveGeneratedStream(ctx context.Context, user model.AuthUser, taskID, mediaType string, index int, mimeType string, size int64, body io.Reader) (model.UserFile, error) {
+	if size > 0 { return ArchiveGeneratedFile(ctx, user, taskID, mediaType, index, mimeType, size, body) }
+	temporary, err := os.CreateTemp("", "generated-media-*")
+	if err != nil { return model.UserFile{}, err }
+	defer func() { _ = temporary.Close(); _ = os.Remove(temporary.Name()) }()
+	written, err := io.Copy(temporary, io.LimitReader(body, maxUserFileSize+1))
+	if err != nil { return model.UserFile{}, err }
+	if written <= 0 || written > maxUserFileSize { return model.UserFile{}, errors.New("generated file size is invalid") }
+	if _, err := temporary.Seek(0, io.SeekStart); err != nil { return model.UserFile{}, err }
+	return ArchiveGeneratedFile(ctx, user, taskID, mediaType, index, mimeType, written, temporary)
+}
+
+func ReadGeneratedURL(ctx context.Context, rawURL, mediaType string) ([]byte, string, error) {
+	if !validHTTPSURL(rawURL) { return nil, "", errors.New("generated file URL is invalid") }
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil { return nil, "", err }
+	transport := batchResultTransport()
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Transport: transport, Timeout: 15 * time.Minute, CheckRedirect: func(request *http.Request, via []*http.Request) error {
+		if len(via) >= 5 || !validHTTPSURL(request.URL.String()) { return errors.New("generated file redirect is not allowed") }
+		return nil
+	}}
+	response, err := client.Do(request)
+	if err != nil { return nil, "", err }
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 { return nil, "", fmt.Errorf("generated file returned HTTP %d", response.StatusCode) }
+	data, err := io.ReadAll(io.LimitReader(response.Body, maxUserFileSize+1))
+	if err != nil { return nil, "", err }
+	if len(data) == 0 || len(data) > maxUserFileSize { return nil, "", errors.New("generated file size is invalid") }
+	mimeType := strings.TrimSpace(strings.Split(response.Header.Get("Content-Type"), ";")[0])
+	if assetTypeFromMime(mimeType) != mediaType { mimeType = http.DetectContentType(data) }
+	if assetTypeFromMime(mimeType) != mediaType { return nil, "", errors.New("generated file MIME is invalid") }
+	return data, mimeType, nil
 }
 
 func PrepareUserWorkspaceFileUpload(user model.AuthUser, request UserFileUploadRequest) (UserFileUploadTicket, error) {

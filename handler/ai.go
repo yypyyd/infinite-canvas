@@ -84,7 +84,50 @@ func proxyAIGetRequest(w http.ResponseWriter, r *http.Request, path string) {
 		FailError(w, errMissingModel)
 		return
 	}
-	selection, err := service.SelectModelChannel(service.PricingRequest{Model: modelName})
+	pricingRequest := service.PricingRequest{Model: modelName}
+	var generationTask *model.GenerationTask
+	selection, err := service.SelectModelChannel(pricingRequest)
+	if requestID := strings.TrimSpace(r.URL.Query().Get("request_id")); requestID != "" {
+		user, ok := service.UserFromContext(r.Context())
+		if !ok {
+			Fail(w, "未登录或权限不足")
+			return
+		}
+		task, taskErr := service.UserGenerationTaskByRequest(user.OrganizationID, user.ID, requestID)
+		if taskErr != nil {
+			FailError(w, taskErr)
+			return
+		}
+		id := strings.TrimSuffix(strings.TrimPrefix(path, "/videos/"), "/content")
+		if task.Model != modelName || task.UpstreamTaskID == "" || task.UpstreamTaskID != id {
+			Fail(w, "生成任务与视频不匹配")
+			return
+		}
+		selection, err = service.SelectModelChannelByName(pricingRequest, task.ChannelName)
+		generationTask = &task
+	} else if user, ok := service.UserFromContext(r.Context()); ok {
+		id := strings.TrimSuffix(strings.TrimPrefix(path, "/videos/"), "/content")
+		if task, exists, taskErr := service.UserGenerationTaskByUpstreamID(user.OrganizationID, user.ID, id); taskErr != nil {
+			FailError(w, taskErr)
+			return
+		} else if exists {
+			selection, err = service.SelectModelChannelByName(pricingRequest, task.ChannelName)
+			generationTask = &task
+		}
+	}
+	if generationTask != nil && len(generationTask.StorageKeys) > 0 {
+		if strings.HasSuffix(path, "/content") {
+			if user, ok := service.UserFromContext(r.Context()); ok && proxyArchivedGenerationContent(w, r, user, generationTask.StorageKeys[0]) {
+				if finishErr := service.FinishGenerationTask(*generationTask, model.GenerationTaskStatusSuccess, ""); finishErr != nil { log.Printf("AI video task finish failed: task=%s err=%v", generationTask.ID, finishErr) }
+				return
+			}
+		} else if archivedBody := attachVideoStorage([]byte(generationTask.ResultJSON), generationTask.StorageKeys[0], "", 0); videoGenerationsStatusPayload(archivedBody) == "completed" {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			_, _ = w.Write(archivedBody)
+			if finishErr := service.FinishGenerationTask(*generationTask, model.GenerationTaskStatusSuccess, ""); finishErr != nil { log.Printf("AI video task finish failed: task=%s err=%v", generationTask.ID, finishErr) }
+			return
+		}
+	}
 	if err != nil {
 		log.Printf("AI proxy select channel failed: model=%s err=%v", modelName, err)
 		FailError(w, err)
@@ -97,7 +140,55 @@ func proxyAIGetRequest(w http.ResponseWriter, r *http.Request, path string) {
 		return
 	}
 	request.Header.Set("Authorization", "Bearer "+channel.APIKey)
-	copyAIResponse(w, request, nil, nil, nil)
+	response, body, requestErr := doAIRequestWithRetry(request, nil)
+	if generationTask != nil && requestErr == nil && response != nil {
+		if response.StatusCode < http.StatusBadRequest {
+			if strings.HasSuffix(path, "/content") {
+				if user, ok := service.UserFromContext(r.Context()); ok {
+					archiveCtx, cancelArchive := generatedArchiveContext(r.Context())
+					file, archiveErr := archiveVideoContentResponse(archiveCtx, user, *generationTask, response, body)
+					cancelArchive()
+					if archiveErr != nil {
+						log.Printf("AI video content archive failed: task=%s err=%v", generationTask.ID, archiveErr)
+					} else {
+						setArchivedGenerationHeaders(w, file)
+						if updateErr := service.UpdateGenerationTaskRecovery(generationTask, generationTask.UpstreamTaskID, []byte(generationTask.ResultJSON), []string{file.StorageKey}); updateErr != nil {
+							log.Printf("AI video content archive persist failed: task=%s err=%v", generationTask.ID, updateErr)
+						}
+					}
+				}
+				if finishErr := service.FinishGenerationTask(*generationTask, model.GenerationTaskStatusSuccess, ""); finishErr != nil {
+					log.Printf("AI video task finish failed: task=%s err=%v", generationTask.ID, finishErr)
+				}
+			} else if status := videoGenerationsStatusPayload(body); status == "failed" || status == "cancelled" || status == "canceled" {
+				message := videoGenerationsError(body)
+				if message == "" {
+					message = "视频生成失败"
+				}
+				if finishErr := service.FinishGenerationTask(*generationTask, model.GenerationTaskStatusFailed, message); finishErr != nil {
+					log.Printf("AI video task finish failed: task=%s err=%v", generationTask.ID, finishErr)
+				}
+			}
+			if !strings.HasSuffix(path, "/content") && videoGenerationsStatusPayload(body) == "completed" {
+				if user, ok := service.UserFromContext(r.Context()); ok {
+					archiveCtx, cancelArchive := generatedArchiveContext(r.Context())
+					archivedBody, file, archiveErr := archiveCompletedVideo(archiveCtx, user, *generationTask, request, body)
+					cancelArchive()
+					if archiveErr != nil {
+						log.Printf("AI video archive failed: task=%s err=%v", generationTask.ID, archiveErr)
+					} else {
+						body = archivedBody
+						if updateErr := service.UpdateGenerationTaskRecovery(generationTask, generationTask.UpstreamTaskID, body, []string{file.StorageKey}); updateErr != nil {
+							log.Printf("AI video archive persist failed: task=%s err=%v", generationTask.ID, updateErr)
+						} else if finishErr := service.FinishGenerationTask(*generationTask, model.GenerationTaskStatusSuccess, ""); finishErr != nil {
+							log.Printf("AI video task finish failed: task=%s err=%v", generationTask.ID, finishErr)
+						}
+					}
+				}
+			}
+		}
+	}
+	writeAIResponse(w, request, response, body, requestErr, nil, nil)
 }
 
 func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
@@ -155,6 +246,7 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		return
 	}
 	request.Header.Set("Idempotency-Key", task.RequestID)
+	w.Header().Set("X-Generation-Request-ID", task.RequestID)
 	finishTask := func(status model.GenerationTaskStatus, message string) {
 		if err := service.FinishGenerationTask(task, status, message); err != nil {
 			log.Printf("AI proxy finish generation task failed: task=%s status=%s err=%v", task.ID, status, err)
@@ -173,6 +265,12 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 					finishTask(model.GenerationTaskStatusFailed, message)
 					Fail(w, message)
 					return
+				}
+				archiveCtx, cancelArchive := generatedArchiveContext(r.Context())
+				recoveredBody, storageKeys := archiveImageGenerationResponse(archiveCtx, user, task, recoveredBody)
+				cancelArchive()
+				if updateErr := service.UpdateGenerationTaskRecovery(&task, "", recoveredBody, storageKeys); updateErr != nil {
+					log.Printf("AI proxy persist recovered image result failed: task=%s err=%v", task.ID, updateErr)
 				}
 				w.Header().Set("Content-Type", "application/json; charset=utf-8")
 				_, _ = w.Write(recoveredBody)
@@ -210,9 +308,25 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 			failed = true
 			finishTask(model.GenerationTaskStatusFailed, message)
 		}
+		upstreamTaskID := ""
+		storageKeys := []string(nil)
+		if requestErr == nil && response != nil && response.StatusCode < http.StatusBadRequest && (path == "/images/generations" || path == "/images/edits" || path == "/videos") {
+			if path == "/videos" {
+				upstreamTaskID = generationUpstreamTaskID(responseBody)
+			} else {
+				archiveCtx, cancelArchive := generatedArchiveContext(r.Context())
+				responseBody, storageKeys = archiveImageGenerationResponse(archiveCtx, user, task, responseBody)
+				cancelArchive()
+			}
+			if updateErr := service.UpdateGenerationTaskRecovery(&task, upstreamTaskID, responseBody, storageKeys); updateErr != nil {
+				log.Printf("AI proxy persist recovery result failed: task=%s err=%v", task.ID, updateErr)
+			}
+		}
 		writeAIResponse(w, request, response, responseBody, requestErr, onFailure, nil)
 		if !failed {
-			finishTask(model.GenerationTaskStatusSuccess, "")
+			if path != "/videos" || upstreamTaskID == "" {
+				finishTask(model.GenerationTaskStatusSuccess, "")
+			}
 		}
 		return
 	}
@@ -1814,6 +1928,35 @@ func videoGenerationsStatus(payload map[string]any) string {
 	default:
 		return status
 	}
+}
+
+func generationUpstreamTaskID(body []byte) string {
+	payload := videoGenerationsResponsePayload(body)
+	return firstStringValue(payload, "id", "request_id", "task_id")
+}
+
+func videoGenerationsStatusPayload(body []byte) string {
+	payload := videoGenerationsResponsePayload(body)
+	return videoGenerationsStatus(payload)
+}
+
+func videoGenerationsError(body []byte) string {
+	payload := videoGenerationsResponsePayload(body)
+	if message := nestedStringValue(payload, "error", "message"); message != "" {
+		return safeUpstreamText(message)
+	}
+	return safeUpstreamText(firstStringValue(payload, "message", "error"))
+}
+
+func videoGenerationsResponsePayload(body []byte) map[string]any {
+	var payload map[string]any
+	if json.Unmarshal(body, &payload) != nil {
+		return nil
+	}
+	if data, ok := payload["data"].(map[string]any); ok {
+		return data
+	}
+	return payload
 }
 
 func videoGenerationsContentURL(body []byte) string {

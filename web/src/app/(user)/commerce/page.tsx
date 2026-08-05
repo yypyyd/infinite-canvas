@@ -535,7 +535,7 @@ export default function CommercePage() {
     if (!workspace && workspaceQuery.isLoading) return <main className="grid h-full place-items-center bg-background text-sm text-muted-foreground">正在建立企业工作区...</main>;
 
     const organizationPanel = (
-        <div className="space-y-5">
+        <div className="flex flex-col gap-5">
             {(invitationsQuery.data || []).length ? (
                 <Card className="border-orange-200 bg-orange-50/60 dark:border-orange-900 dark:bg-orange-950/20">
                     <div className="mb-3 text-sm font-medium">待接受的企业邀请</div>
@@ -1120,7 +1120,7 @@ export default function CommercePage() {
     );
 
     return (
-        <main className="h-full overflow-y-auto bg-background">
+        <div className="bg-background">
             <div className="mx-auto max-w-[1440px] px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
                 <header className="hero-atmosphere mb-9 flex min-h-64 flex-wrap items-end justify-between gap-6 rounded-[30px] bg-[#f5f5f7] p-7 sm:p-10 dark:rounded-none dark:border-b dark:border-border dark:bg-transparent dark:p-0 dark:py-12 dark:sm:py-14">
                     <div>
@@ -1867,6 +1867,6 @@ export default function CommercePage() {
                     </Form.Item>
                 </Form>
             </Modal>
-        </main>
+        </div>
     );
 }

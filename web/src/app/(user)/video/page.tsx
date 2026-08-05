@@ -348,6 +348,7 @@ export default function VideoPage() {
     const saveLog = async (log: GenerationLog) => {
         await saveGenerationRecord(historyOwnerId, "video", serializeLog(log) as unknown as Record<string, unknown>);
         setLogs((current) => [log, ...current.filter((item) => item.id !== log.id)].sort((a, b) => b.createdAt - a.createdAt));
+        setPreviewLog((current) => (current?.id === log.id ? log : current));
     };
 
     const refreshLogs = async () => setLogs(await readStoredLogs(historyOwnerId));
@@ -737,9 +738,7 @@ function LogCard({ log, selected, active, onSelectedChange, onClick }: { log: Ge
         <button
             type="button"
             className={`block w-full rounded-lg border p-2 text-left transition ${active ? "border-stone-900 bg-blue-50 dark:border-stone-100 dark:bg-blue-950/20" : "border-stone-200 bg-background hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-stone-900"}`}
-            onClick={() => {
-                if (log.status !== "生成中") onClick();
-            }}
+            onClick={onClick}
         >
             <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2">
                 <Checkbox className="mt-0.5" checked={selected} onClick={(event) => event.stopPropagation()} onChange={(event) => onSelectedChange(event.target.checked)} />

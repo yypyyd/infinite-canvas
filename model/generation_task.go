@@ -37,6 +37,7 @@ type GenerationTask struct {
 	Status         GenerationTaskStatus `json:"status" gorm:"index"`
 	UpstreamTaskID string               `json:"-" gorm:"index"`
 	ResultJSON     string               `json:"-" gorm:"type:longtext"`
+	StorageKeys    []string             `json:"storageKeys,omitempty" gorm:"serializer:json;type:text"`
 	ErrorMessage   string               `json:"errorMessage" gorm:"type:text"`
 	DurationMs     int64                `json:"durationMs"`
 	CreatedAt      string               `json:"createdAt" gorm:"index"`
@@ -51,6 +52,7 @@ type GenerationTaskRecovery struct {
 	Status         GenerationTaskStatus `json:"status"`
 	UpstreamTaskID string               `json:"upstreamTaskId,omitempty"`
 	Result         json.RawMessage      `json:"result,omitempty"`
+	StorageKeys    []string             `json:"storageKeys,omitempty"`
 	ErrorMessage   string               `json:"errorMessage,omitempty"`
 	CreatedAt      string               `json:"createdAt"`
 	UpdatedAt      string               `json:"updatedAt"`

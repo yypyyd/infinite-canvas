@@ -123,12 +123,17 @@ curl -X POST "https://huantu.xyz/api/v1/images/generations" \
 {
   "created": 1760000000,
   "data": [
-    { "b64_json": "iVBORw0KGgoAAA..." }
+    {
+      "b64_json": "iVBORw0KGgoAAA...",
+      "storage_key": "image:generated-generation_xxx-1",
+      "mime_type": "image/png",
+      "bytes": 123456
+    }
   ]
 }
 ```
 
-调用方应同时兼容 `data[].b64_json` 和 `data[].url`。
+调用方应同时兼容 `data[].b64_json` 和 `data[].url`。平台成功归档时会保留上游原字段并增加 `storage_key`、`mime_type`、`bytes`；归档暂时失败时仍按原兼容格式返回，不会把已成功的模型生成误判为失败。
 
 ## 图片编辑
 
@@ -193,7 +198,7 @@ curl "https://huantu.xyz/api/v1/videos/video_task_id?model=VIDEO_MODEL_ID" \
   -H "Authorization: Bearer YOUR_API_KEY"
 ```
 
-建议每 2–3 秒查询一次。常见状态为 `queued`、`running`、`completed`、`failed` 或 `cancelled`；只有 `completed` 才能下载。
+建议每 2–3 秒查询一次。常见状态为 `queued`、`running`、`completed`、`failed` 或 `cancelled`；只有 `completed` 才能下载。平台已归档视频时，完成响应会额外包含 `storage_key`、`mime_type`、`bytes`，重复查询复用同一文件。
 
 ### 3. 下载视频
 
@@ -203,7 +208,9 @@ curl "https://huantu.xyz/api/v1/videos/video_task_id/content?model=VIDEO_MODEL_I
   --output result.mp4
 ```
 
-下载接口成功时直接返回视频二进制，不是 JSON。
+下载接口支持标准 `Range` 请求；需要网页播放或断点续传时可按字节范围读取并获得 `206 Partial Content`。
+
+下载接口成功时直接返回视频二进制，不是 JSON。视频已归档时会从七牛私有空间代理返回，并在响应头中附带 `X-Storage-Key`；上游使用分块传输、没有 `Content-Length` 时也会先由服务端受限落盘再归档。
 
 ## 语音合成
 

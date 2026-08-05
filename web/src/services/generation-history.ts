@@ -2,11 +2,12 @@
 
 import { nanoid } from "nanoid";
 
+import { videoOutputSize } from "@/lib/video-format";
 import { parseRecoveredImageGeneration } from "@/services/api/image";
 import { waitForGenerationTaskRecovery } from "@/services/api/generation-task";
 import { resumeVideoGeneration, storeGeneratedVideo } from "@/services/api/video";
 import { resolveMediaUrl, type UploadedFile } from "@/services/file-storage";
-import { resolveImageUrl, uploadImage, type UploadedImage } from "@/services/image-storage";
+import { resolveImageUrl, storeGeneratedImage, type UploadedImage } from "@/services/image-storage";
 import type { WorkspaceRecord } from "@/services/api/workspace";
 import { stageWorkspaceChange, stageWorkspaceRecord, type PendingWorkspaceChange } from "@/services/workspace-changes";
 
@@ -340,7 +341,7 @@ async function recoverPendingImageLog(ownerId: string, log: StoredImageLog) {
             const generated = parseRecoveredImageGeneration(task.result);
             const images = await Promise.all(
                 generated.map(async (image) => {
-                    const stored = await uploadImage(image.dataUrl);
+                    const stored = await storeGeneratedImage(image);
                     return { id: image.id, ...stored, dataUrl: "", durationMs: 0 };
                 }),
             );
@@ -376,12 +377,14 @@ async function recoverPendingImageLog(ownerId: string, log: StoredImageLog) {
 async function recoverPendingVideoLog(ownerId: string, log: StoredVideoLog) {
     if (!log.id || !log.requestId) return;
     try {
-        const task = await waitForGenerationTaskRecovery(log.requestId, (item) => Boolean(item.upstreamTaskId));
-        const video = await storeGeneratedVideo(await resumeVideoGeneration(log.model || task.model, log.requestId, task.upstreamTaskId || ""));
+        const task = await waitForGenerationTaskRecovery(log.requestId, (item) => Boolean(item.storageKeys?.length || item.upstreamTaskId));
+        const recovered = task.storageKeys?.[0] ? { storageKey: task.storageKeys[0], mimeType: "video/mp4" } : await resumeVideoGeneration(log.model || task.model, log.requestId, task.upstreamTaskId || "");
+        const video = await storeGeneratedVideo(recovered);
+        const [width, height] = videoOutputSize(log.resolution || "720p", log.size || "16:9").split("x").map(Number);
         const durationMs = Math.max(log.durationMs || 0, Date.now() - (log.createdAt || Date.now()));
         await saveGenerationRecord(ownerId, "video", {
             ...log,
-            video: { id: nanoid(), ...video, url: "", durationMs, width: video.width || 1280, height: video.height || 720 },
+            video: { id: nanoid(), ...video, url: "", durationMs, width: video.width || width, height: video.height || height },
             status: "成功",
             error: "",
             durationMs,

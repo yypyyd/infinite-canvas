@@ -183,33 +183,34 @@ func GetGenerationTaskByUpstreamID(organizationID, userID, upstreamTaskID string
 	return task, err == nil, err
 }
 
-func UpdateRunningGenerationTaskRecovery(taskID, upstreamTaskID, resultJSON, updatedAt string) error {
+func UpdateGenerationTaskRecovery(taskID, upstreamTaskID, resultJSON string, storageKeys []string, updatedAt string) error {
 	db, err := DB()
 	if err != nil {
 		return err
 	}
-	result := db.Model(&model.GenerationTask{}).Where("id = ? AND status = ?", taskID, model.GenerationTaskStatusRunning).Updates(map[string]any{
-		"upstream_task_id": upstreamTaskID,
-		"result_json":       resultJSON,
-		"updated_at":        updatedAt,
+	return db.Transaction(func(tx *gorm.DB) error {
+		var task model.GenerationTask
+		if err := tx.Where("id = ? AND status IN ?", taskID, []model.GenerationTaskStatus{model.GenerationTaskStatusRunning, model.GenerationTaskStatusSuccess}).First(&task).Error; err != nil { return err }
+		result := tx.Model(&task).Select("UpstreamTaskID", "ResultJSON", "StorageKeys", "UpdatedAt").Updates(model.GenerationTask{UpstreamTaskID: upstreamTaskID, ResultJSON: resultJSON, StorageKeys: storageKeys, UpdatedAt: updatedAt})
+		if result.Error != nil { return result.Error }
+		if result.RowsAffected != 1 { return errors.New("generation task recovery is unavailable") }
+		return replaceUserFileReferences(tx, task.OrganizationID, "generation_task", task.ID, task.ID+"-file", storageKeys, false, updatedAt)
 	})
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected != 1 {
-		return errors.New("generation task is not running")
-	}
-	return nil
 }
 
-func ClearGenerationTaskRecoveryResults(organizationID, userID string, requestIDs []string) error {
+func ClearGenerationTaskRecoveryResults(organizationID, userID string, requestIDs []string, updatedAt string) error {
 	db, err := DB()
 	if err != nil {
 		return err
 	}
-	return db.Model(&model.GenerationTask{}).
-		Where("organization_id = ? AND user_id = ? AND request_id IN ? AND status = ?", organizationID, userID, requestIDs, model.GenerationTaskStatusSuccess).
-		Update("result_json", "").Error
+	return db.Transaction(func(tx *gorm.DB) error {
+		var tasks []model.GenerationTask
+		if err := tx.Where("organization_id = ? AND user_id = ? AND request_id IN ? AND status = ?", organizationID, userID, requestIDs, model.GenerationTaskStatusSuccess).Find(&tasks).Error; err != nil { return err }
+		for _, task := range tasks {
+			if err := replaceUserFileReferences(tx, organizationID, "generation_task", task.ID, task.ID+"-file", nil, true, updatedAt); err != nil { return err }
+		}
+		return tx.Model(&model.GenerationTask{}).Where("organization_id = ? AND user_id = ? AND request_id IN ? AND status = ?", organizationID, userID, requestIDs, model.GenerationTaskStatusSuccess).Updates(map[string]any{"result_json": "", "storage_keys": nil}).Error
+	})
 }
 
 func CompleteGenerationTask(task model.GenerationTask) error {

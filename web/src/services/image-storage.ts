@@ -30,6 +30,13 @@ export async function uploadImage(input: string | Blob): Promise<UploadedImage> 
     }
 }
 
+export async function storeGeneratedImage(image: { dataUrl: string; storageKey?: string; width?: number; height?: number; bytes?: number; mimeType?: string }): Promise<UploadedImage> {
+    if (!image.storageKey) return uploadImage(image.dataUrl);
+    const url = await resolveImageUrl(image.storageKey, image.dataUrl);
+    const meta = image.width && image.height ? image : await readImageMeta(url);
+    return { url, storageKey: image.storageKey, width: meta.width || 1, height: meta.height || 1, bytes: image.bytes || 0, mimeType: image.mimeType || meta.mimeType || "image/png" };
+}
+
 export async function resolveImageUrl(storageKey?: string, fallback = "") {
     if (!storageKey) return fallback;
     const userId = useUserStore.getState().user?.id;

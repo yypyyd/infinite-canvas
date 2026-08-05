@@ -9,6 +9,7 @@ export type GenerationTaskRecovery = {
     status: "running" | "success" | "failed";
     upstreamTaskId?: string;
     result?: unknown;
+    storageKeys?: string[];
     errorMessage?: string;
     createdAt: string;
     updatedAt: string;

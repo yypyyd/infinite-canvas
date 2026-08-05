@@ -13,7 +13,7 @@ import { saveCanvasImageGenerationRecord, saveCanvasVideoGenerationRecord } from
 import { workspaceFileUrl } from "@/services/api/workspace";
 import { workspaceOwnerId } from "@/services/workspace-changes";
 import { defaultConfig, type AiConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
-import { resolveImageUrl, uploadImage, type UploadedImage } from "@/services/image-storage";
+import { resolveImageUrl, storeGeneratedImage, uploadImage, type UploadedImage } from "@/services/image-storage";
 import { resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { nanoid } from "nanoid";
 import { getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
@@ -26,6 +26,7 @@ import type { AgentToolName, AgentToolResult } from "@/services/api/agent";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { useThemeStore } from "@/stores/use-theme-store";
+import { useOpenMedia } from "@/hooks/use-open-media";
 import { cropDataUrl, splitDataUrl, upscaleDataUrl } from "../utils/canvas-image-data";
 import { fitNodeSize, nodeSizeFromRatio } from "../utils/canvas-node-size";
 import { App, Button, Dropdown, Modal, Switch } from "antd";
@@ -248,6 +249,7 @@ function ConnectionCreateOption({ theme, icon, title, description, onClick }: { 
 
 function InfiniteCanvasPage() {
     const { message, modal } = App.useApp();
+    const openMedia = useOpenMedia();
     const params = useParams<{ id: string }>();
     const router = useRouter();
     const projectId = params.id;
@@ -1747,8 +1749,12 @@ function InfiniteCanvasPage() {
 
     const downloadNodeImage = useCallback((node: CanvasNodeData) => {
         if ((node.type !== CanvasNodeType.Image && node.type !== CanvasNodeType.Video && node.type !== CanvasNodeType.Audio) || !node.metadata?.content) return;
-        saveAs(node.metadata.content, `canvas-${node.type}-${node.id}.${node.type === CanvasNodeType.Video ? "mp4" : node.type === CanvasNodeType.Audio ? audioExtension(node.metadata.mimeType) : imageExtension(node.metadata.content)}`);
-    }, []);
+        if (node.type === CanvasNodeType.Audio) {
+            saveAs(node.metadata.content, `canvas-${node.type}-${node.id}.${audioExtension(node.metadata.mimeType)}`);
+            return;
+        }
+        openMedia(node.metadata.content);
+    }, [openMedia]);
 
     const saveNodeAsset = useCallback(
         async (node: CanvasNodeData) => {
@@ -1951,7 +1957,7 @@ function InfiniteCanvasPage() {
             try {
                 generationRecordId = await startImageGenerationRecord(prompt, generationConfig, 1);
                 const image = await requestEdit(generationConfig, prompt, [source], { id: `${node.id}-mask`, name: "mask.png", type: "image/png", dataUrl: payload.maskDataUrl }, { signal: controller.signal, idempotencyKey: generationRecordId }).then((items) => items[0]);
-                const uploaded = await uploadImage(image.dataUrl);
+                const uploaded = await storeGeneratedImage(image);
                 throwIfGenerationCanceled(controller.signal);
                 const size = fitNodeSize(uploaded.width, uploaded.height, node.width, node.height);
                 setNodes((prev) => prev.map((item) => (item.id === childId ? { ...item, width: size.width, height: size.height, metadata: { ...item.metadata, ...imageMetadata(uploaded), prompt, ...generationMetadata } } : item)));
@@ -2044,7 +2050,7 @@ function InfiniteCanvasPage() {
                     undefined,
                     { signal: controller.signal, idempotencyKey: generationRecordId },
                 ).then((items) => items[0]);
-                const uploaded = await uploadImage(image.dataUrl);
+                const uploaded = await storeGeneratedImage(image);
                 throwIfGenerationCanceled(controller.signal);
                 const size = fitNodeSize(uploaded.width, uploaded.height, imageConfig.width, imageConfig.height);
                 setNodes((prev) => prev.map((item) => (item.id === childId ? { ...item, width: size.width, height: size.height, metadata: { ...item.metadata, ...imageMetadata(uploaded), prompt, ...generationMetadata } } : item)));
@@ -2375,7 +2381,7 @@ function InfiniteCanvasPage() {
                                 const image = referenceImages.length
                                     ? await requestEdit({ ...generationConfig, count: "1" }, effectivePrompt, referenceImages, undefined, { signal: runController.signal, idempotencyKey: count === 1 ? activeImageRecord!.id : `${activeImageRecord!.id}:${index}` }).then((items) => items[0])
                                     : await requestGeneration({ ...generationConfig, count: "1" }, effectivePrompt, { signal: runController.signal, idempotencyKey: count === 1 ? activeImageRecord!.id : `${activeImageRecord!.id}:${index}` }).then((items) => items[0]);
-                                const uploaded = await uploadImage(image.dataUrl);
+                                const uploaded = await storeGeneratedImage(image);
                                 throwIfGenerationCanceled(runController.signal);
                                 const imageSize = fitNodeSize(uploaded.width, uploaded.height, imageConfig.width, imageConfig.height);
                                 setNodes((prev) => {
@@ -2893,7 +2899,7 @@ function InfiniteCanvasPage() {
                 const image = useReferenceImages
                     ? await requestEdit(generationConfig, prompt, retryImages, undefined, { signal: controller.signal, idempotencyKey: imageRecordId }).then((items) => items[0])
                     : await requestGeneration(generationConfig, prompt, { signal: controller.signal, idempotencyKey: imageRecordId }).then((items) => items[0]);
-                const uploadedImage = await uploadImage(image.dataUrl);
+                const uploadedImage = await storeGeneratedImage(image);
                 throwIfGenerationCanceled(controller.signal);
                 const imageConfig = NODE_DEFAULT_SIZE[CanvasNodeType.Image];
                 const imageSize = fitNodeSize(uploadedImage.width, uploadedImage.height, imageConfig.width, imageConfig.height);
@@ -2975,8 +2981,8 @@ function InfiniteCanvasPage() {
 
     const insertAssistantImage = useCallback(
         async (image: CanvasAssistantImage) => {
-            const storedImage = image.storageKey ? { url: image.dataUrl, storageKey: image.storageKey, width: 1, height: 1, bytes: 0, mimeType: "image/png" } : await uploadImage(image.dataUrl);
-            const meta = storedImage.width === 1 && storedImage.height === 1 ? await readImageMeta(storedImage.url) : storedImage;
+            const storedImage = await storeGeneratedImage(image);
+            const meta = storedImage;
             const config = fitNodeSize(meta.width, meta.height);
             const center = screenToCanvas((containerRef.current?.getBoundingClientRect().left || 0) + size.width / 2, (containerRef.current?.getBoundingClientRect().top || 0) + size.height / 2);
             const id = `image-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -3002,8 +3008,8 @@ function InfiniteCanvasPage() {
         async (images: CanvasAssistantImage[]) => {
             const stored = await Promise.all(
                 images.map(async (image) => {
-                    const storedImage = image.storageKey ? { url: image.dataUrl, storageKey: image.storageKey, width: 1, height: 1, bytes: 0, mimeType: "image/png" } : await uploadImage(image.dataUrl);
-                    const meta = storedImage.width === 1 && storedImage.height === 1 ? await readImageMeta(storedImage.url) : storedImage;
+                    const storedImage = await storeGeneratedImage(image);
+                    const meta = storedImage;
                     return { image, storedImage, meta, size: fitNodeSize(meta.width, meta.height) };
                 }),
             );

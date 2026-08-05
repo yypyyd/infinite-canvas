@@ -4,7 +4,6 @@ import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download,
 import { useEffect, useRef, useState } from "react";
 import { App, Button, Checkbox, Drawer, Empty, Input, Modal, Tag, Typography } from "antd";
 import { nanoid } from "nanoid";
-import { saveAs } from "file-saver";
 
 import { AssetPickerModal, type InsertAssetPayload } from "@/app/(user)/canvas/components/asset-picker-modal";
 import { flushActiveWorkspaceChanges } from "@/components/layout/workspace-provider";
@@ -14,6 +13,8 @@ import { VideoSettingsPanel, normalizeVideoResolutionValue, normalizeVideoSizeVa
 import { CreditSymbol, requestCreditQuote } from "@/constant/credits";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
+import { videoOutputSize } from "@/lib/video-format";
+import { useOpenMedia } from "@/hooks/use-open-media";
 import { videoReferenceCapabilities, videoReferenceLabel, VIDEO_REFERENCE_LIMITS } from "@/lib/video-reference";
 import { resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
 import { deleteStoredGenerationRecord, GENERATION_HISTORY_CHANGED_EVENT, readWorkbenchGenerationRecords, saveGenerationRecord, type GenerationRecordStatus } from "@/services/generation-history";
@@ -71,8 +72,15 @@ type GenerationLogConfig = Pick<AiConfig, "model" | "videoModel" | "size" | "vqu
 
 type UpdateAiConfig = <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void;
 
+function resultsFromLog(log: GenerationLog): GenerationResult[] {
+    if (log.video) return [{ id: log.video.id, status: "success", video: log.video }];
+    if (log.status === "生成中") return [{ id: log.id, status: "pending" }];
+    return [{ id: log.id, status: "failed", error: log.error || "生成失败" }];
+}
+
 export default function VideoPage() {
     const { message } = App.useApp();
+    const openMedia = useOpenMedia();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const config = useConfigStore((state) => state.config);
     const managedModels = useConfigStore((state) => state.publicSettings?.modelChannel.models);
@@ -144,6 +152,15 @@ export default function VideoPage() {
         window.addEventListener(GENERATION_HISTORY_CHANGED_EVENT, refresh);
         return () => window.removeEventListener(GENERATION_HISTORY_CHANGED_EVENT, refresh);
     }, [historyOwnerId]);
+
+    useEffect(() => {
+        const activeLogId = previewLog?.id;
+        if (!activeLogId) return;
+        const nextLog = logs.find((log) => log.id === activeLogId);
+        if (!nextLog) return;
+        setPreviewLog(nextLog);
+        setResults(resultsFromLog(nextLog));
+    }, [logs, previewLog?.id]);
 
     useEffect(() => {
         setReferences((current) => current.slice(0, imageReferenceLimit));
@@ -241,13 +258,14 @@ export default function VideoPage() {
             await saveLog(pendingLog);
             await flushActiveWorkspaceChanges();
             const stored = await storeGeneratedVideo(await requestVideoGeneration(snapshot.config, snapshot.text, snapshot.references, snapshot.videoReferences, snapshot.audioReferences, { idempotencyKey: requestId }));
+            const [outputWidth, outputHeight] = videoOutputSize(snapshot.config.vquality, snapshot.config.size).split("x").map(Number);
             const nextVideo: GeneratedVideo = {
                 id: nanoid(),
                 url: stored.url,
                 storageKey: stored.storageKey,
                 durationMs: performance.now() - batchStartedAt,
-                width: stored.width || 1280,
-                height: stored.height || 720,
+                width: stored.width || outputWidth,
+                height: stored.height || outputHeight,
                 bytes: stored.bytes,
                 mimeType: stored.mimeType,
             };
@@ -291,7 +309,7 @@ export default function VideoPage() {
     };
 
     const downloadVideo = (video: GeneratedVideo) => {
-        saveAs(video.url, "video.mp4");
+        openMedia(video.url);
     };
 
     const saveResultToAssets = (video: GeneratedVideo) => {
@@ -368,7 +386,7 @@ export default function VideoPage() {
         if (log.config.videoSeconds) updateConfig("videoSeconds", log.config.videoSeconds);
         if (log.config.videoGenerateAudio) updateConfig("videoGenerateAudio", log.config.videoGenerateAudio);
         if (log.config.videoWatermark) updateConfig("videoWatermark", log.config.videoWatermark);
-        setResults(log.video ? [{ id: log.video.id, status: "success", video: log.video }] : [{ id: log.id, status: log.status === "生成中" ? "pending" : "failed", error: log.status === "生成中" ? undefined : log.error || "生成失败" }]);
+        setResults(resultsFromLog(log));
     };
 
     return (
@@ -628,9 +646,29 @@ function GenerationSettings({ config, model, updateConfig, openConfigDialog }: {
 }
 
 function ResultVideoCard({ video, onDownload, onSaveAsset }: { video: GeneratedVideo; onDownload: (video: GeneratedVideo) => void; onSaveAsset: (video: GeneratedVideo) => void }) {
+    const [buffering, setBuffering] = useState(false);
+
     return (
         <div className="overflow-hidden rounded-lg border border-stone-200 bg-background dark:border-stone-800">
-            <video src={video.url} controls className="aspect-video w-full bg-black object-contain" />
+            <div className="relative bg-black">
+                <video
+                    src={video.url}
+                    controls
+                    playsInline
+                    preload="metadata"
+                    className="aspect-video w-full object-contain"
+                    onWaiting={() => setBuffering(true)}
+                    onCanPlay={() => setBuffering(false)}
+                    onPlaying={() => setBuffering(false)}
+                    onError={() => setBuffering(false)}
+                />
+                {buffering ? (
+                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/45 text-sm text-white">
+                        <LoaderCircle className="mr-2 size-4 animate-spin" />
+                        视频加载中
+                    </div>
+                ) : null}
+            </div>
             <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-stone-200 px-3 py-2.5 dark:border-stone-800">
                 <div className="flex min-w-0 flex-wrap gap-x-2 gap-y-1 text-xs text-stone-500 dark:text-stone-400">
                     <span>
@@ -740,9 +778,7 @@ function LogCard({ log, selected, active, onSelectedChange, onClick }: { log: Ge
         <button
             type="button"
             className={`block w-full rounded-lg border p-2 text-left transition ${active ? "border-stone-900 bg-blue-50 dark:border-stone-100 dark:bg-blue-950/20" : "border-stone-200 bg-background hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-stone-900"}`}
-            onClick={() => {
-                if (log.status !== "生成中") onClick();
-            }}
+            onClick={onClick}
         >
             <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2">
                 <Checkbox className="mt-0.5" checked={selected} onClick={(event) => event.stopPropagation()} onChange={(event) => onSelectedChange(event.target.checked)} />

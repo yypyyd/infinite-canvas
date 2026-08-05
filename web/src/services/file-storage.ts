@@ -29,6 +29,10 @@ export async function resolveMediaUrl(storageKey?: string, fallback = "") {
     return userId ? workspaceFileUrl(storageKey, userId) : fallback;
 }
 
+export async function storedMediaFile(storageKey: string, fallback = "", bytes = 0, mimeType = "video/mp4"): Promise<UploadedFile> {
+    return { url: await resolveMediaUrl(storageKey, fallback), storageKey, bytes, mimeType };
+}
+
 export async function getMediaBlob(storageKey: string) {
     const userId = useUserStore.getState().user?.id;
     if (!userId) return null;
@@ -48,7 +52,13 @@ export async function setMediaBlob(storageKey: string, blob: Blob) {
 function readVideoMeta(url: string) {
     return new Promise<{ width: number; height: number; durationMs?: number }>((resolve) => {
         const video = document.createElement("video");
+        video.preload = "metadata";
+        let settled = false;
+        let timer = 0;
         const done = () => {
+            if (settled) return;
+            settled = true;
+            window.clearTimeout(timer);
             const result = { width: video.videoWidth || 1280, height: video.videoHeight || 720, durationMs: Number.isFinite(video.duration) ? Math.round(video.duration * 1000) : undefined };
             video.onloadedmetadata = null;
             video.onerror = null;
@@ -56,6 +66,7 @@ function readVideoMeta(url: string) {
             video.load();
             resolve(result);
         };
+        timer = window.setTimeout(done, 5000);
         video.onloadedmetadata = done;
         video.onerror = done;
         video.src = url;

@@ -58,6 +58,7 @@ func RecoverGenerationTask(organizationID, userID, requestID string) (model.Gene
 	result := model.GenerationTaskRecovery{
 		RequestID: task.RequestID, Model: task.Model, Modality: task.Modality, Path: task.Path,
 		Status: task.Status, UpstreamTaskID: task.UpstreamTaskID, ErrorMessage: task.ErrorMessage,
+		StorageKeys: task.StorageKeys,
 		CreatedAt: task.CreatedAt, UpdatedAt: task.UpdatedAt,
 	}
 	if json.Valid([]byte(task.ResultJSON)) {
@@ -98,7 +99,7 @@ func AcknowledgeGenerationTaskRecoveries(organizationID, userID string, requestI
 	if len(unique) == 0 {
 		return nil
 	}
-	return repository.ClearGenerationTaskRecoveryResults(organizationID, userID, unique)
+	return repository.ClearGenerationTaskRecoveryResults(organizationID, userID, unique, now())
 }
 
 func BeginGenerationTask(input GenerationTaskInput) (model.GenerationTask, error) {
@@ -197,17 +198,18 @@ func UpdateGenerationTaskChannel(task *model.GenerationTask, channelName string,
 	return err
 }
 
-func UpdateGenerationTaskRecovery(task *model.GenerationTask, upstreamTaskID string, result []byte) error {
+func UpdateGenerationTaskRecovery(task *model.GenerationTask, upstreamTaskID string, result []byte, storageKeys []string) error {
 	if task == nil || task.ID == "" {
 		return nil
 	}
 	updatedAt := now()
 	err := retryGenerationTaskWrite(func() error {
-		return repository.UpdateRunningGenerationTaskRecovery(task.ID, strings.TrimSpace(upstreamTaskID), string(result), updatedAt)
+		return repository.UpdateGenerationTaskRecovery(task.ID, strings.TrimSpace(upstreamTaskID), string(result), storageKeys, updatedAt)
 	})
 	if err == nil {
 		task.UpstreamTaskID = strings.TrimSpace(upstreamTaskID)
 		task.ResultJSON = string(result)
+		task.StorageKeys = storageKeys
 		task.UpdatedAt = updatedAt
 	}
 	return err

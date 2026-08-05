@@ -3,7 +3,6 @@
 import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, ImagePlus, LoaderCircle, PenLine, Plus, SlidersHorizontal, Sparkles, Trash2, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { App, Button, Checkbox, Drawer, Empty, Image, Input, Modal, Tag, Tooltip, Typography } from "antd";
-import { saveAs } from "file-saver";
 
 import { ImageSettingsPanel } from "@/components/image-settings-panel";
 import { flushActiveWorkspaceChanges } from "@/components/layout/workspace-provider";
@@ -14,6 +13,7 @@ import { CreditSymbol, requestCreditQuote, type PricingRule } from "@/constant/c
 import { commercePresets, findCommercePreset } from "@/constant/commerce-presets";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { imageReferenceLabel } from "@/lib/image-reference-prompt";
+import { useOpenMedia } from "@/hooks/use-open-media";
 import { supportsImageQuality, supportsImageReferences } from "@/lib/image-model-capabilities";
 import { useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -21,7 +21,7 @@ import { nanoid } from "nanoid";
 import { formatBytes, formatDuration, getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
 import { requestEdit, requestGeneration } from "@/services/api/image";
 import { deleteStoredGenerationRecord, GENERATION_HISTORY_CHANGED_EVENT, readWorkbenchGenerationRecords, saveGenerationRecord, type GenerationRecordStatus } from "@/services/generation-history";
-import { resolveImageUrl, resolveImageVariantUrl, uploadImage } from "@/services/image-storage";
+import { resolveImageUrl, resolveImageVariantUrl, storeGeneratedImage, uploadImage } from "@/services/image-storage";
 import { workspaceOwnerId } from "@/services/workspace-changes";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useUserStore } from "@/stores/use-user-store";
@@ -77,6 +77,7 @@ const RESULT_ACTION_BUTTON_CLASS = "min-w-0 px-1.5 [&_.ant-btn-icon]:shrink-0 [&
 
 export default function ImagePage() {
     const { message } = App.useApp();
+    const openMedia = useOpenMedia();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const config = useConfigStore((state) => state.config);
     const effectiveConfig = useEffectiveConfig();
@@ -242,7 +243,7 @@ export default function ImagePage() {
                         .then(async (image) => {
                             generationSuccessCount += 1;
                             try {
-                                const stored = await uploadImage(image.dataUrl);
+                                const stored = await storeGeneratedImage(image);
                                 const logImage = { ...image, dataUrl: stored.url, storageKey: stored.storageKey, width: stored.width, height: stored.height, bytes: stored.bytes, mimeType: stored.mimeType };
                                 logImages.push(logImage);
                                 completedRequestIds.push(requestIds[index]);
@@ -298,8 +299,8 @@ export default function ImagePage() {
         }
     };
 
-    const downloadImage = (image: GeneratedImage, index: number) => {
-        saveAs(image.dataUrl, `image-${index + 1}.png`);
+    const downloadImage = (image: GeneratedImage, _index: number) => {
+        openMedia(image.dataUrl);
     };
 
     const addResultToReferences = async (image: GeneratedImage, index: number) => {
@@ -405,7 +406,7 @@ export default function ImagePage() {
             const image = result[0];
             if (!image) throw new Error("接口没有返回图片");
             const meta = await readImageMeta(image.dataUrl);
-            const nextImage = { id: image.id, dataUrl: image.dataUrl, durationMs: performance.now() - itemStartedAt, width: meta.width, height: meta.height, bytes: getDataUrlByteSize(image.dataUrl) };
+            const nextImage = { ...image, durationMs: performance.now() - itemStartedAt, width: meta.width, height: meta.height, bytes: image.bytes || getDataUrlByteSize(image.dataUrl) };
             setResults((value) => updateResultAt(value, index, { status: "success", image: nextImage }));
             return nextImage;
         } catch (error) {
@@ -973,10 +974,6 @@ function serializeLog(log: GenerationLog): GenerationLog {
     };
 }
 
-async function storeGeneratedImage(image: GeneratedImage) {
-    if (!image.storageKey) return uploadImage(image.dataUrl);
-    return { url: image.dataUrl, storageKey: image.storageKey, width: image.width, height: image.height, bytes: image.bytes, mimeType: image.mimeType || "image/png" };
-}
 
 function normalizeLogConfig(log: Partial<GenerationLog>): GenerationLogConfig {
     return {

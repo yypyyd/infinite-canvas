@@ -56,6 +56,7 @@ export type CanvasNodeMetadata = {
     mimeType?: string;
     bytes?: number;
     durationMs?: number;
+    generationRecordId?: string;
     agentRunId?: string;
     agentToolCallId?: string;
     sourceNodeIds?: string[];

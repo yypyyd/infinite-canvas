@@ -8,6 +8,7 @@ import { nanoid } from "nanoid";
 import { dataUrlToFile } from "@/lib/image-utils";
 import { buildImageReferencePromptText } from "@/lib/image-reference-prompt";
 import { imageToDataUrl } from "@/services/image-storage";
+import { waitForGenerationTaskRecovery } from "@/services/api/generation-task";
 import type { ReferenceImage } from "@/types/image";
 
 export type ChatCompletionMessage = {
@@ -42,6 +43,7 @@ const IMAGE_MAX_PIXELS = 8294400;
 const IMAGE_MAX_EDGE = 3840;
 const IMAGE_MAX_RATIO = 3;
 const IMAGE_OUTPUT_FORMAT = "png";
+const RECOVERABLE_GATEWAY_STATUSES = new Set([504, 520, 521, 522, 523, 524, 525]);
 
 function normalizeQuality(quality: string) {
     const value = quality.trim().toLowerCase();
@@ -189,6 +191,17 @@ function refreshRemoteUser(_config: AiConfig) {
     void useUserStore.getState().hydrateUser();
 }
 
+async function recoverGatewayTimedOutImages(error: unknown, config: AiConfig, options?: RequestOptions) {
+    const requestId = options?.idempotencyKey;
+    const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+    if (!requestId || !status || !RECOVERABLE_GATEWAY_STATUSES.has(status)) return null;
+
+    const task = await waitForGenerationTaskRecovery(requestId, (current) => current.status === "success" && current.result !== undefined, options.signal);
+    const images = parseRecoveredImageGeneration(task.result);
+    refreshRemoteUser(config);
+    return images;
+}
+
 function withSystemMessage(config: AiConfig, messages: ChatCompletionMessage[]) {
     const systemPrompt = config.systemPrompt.trim();
     return systemPrompt ? [{ role: "system" as const, content: systemPrompt }, ...messages] : messages;
@@ -219,6 +232,12 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
         refreshRemoteUser(config);
         return images;
     } catch (error) {
+        try {
+            const recovered = await recoverGatewayTimedOutImages(error, config, options);
+            if (recovered) return recovered;
+        } catch (recoveryError) {
+            throw new Error(readAxiosError(recoveryError, "请求失败"));
+        }
         throw new Error(readAxiosError(error, "请求失败"));
     }
 }
@@ -250,6 +269,12 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
         refreshRemoteUser(config);
         return images;
     } catch (error) {
+        try {
+            const recovered = await recoverGatewayTimedOutImages(error, config, options);
+            if (recovered) return recovered;
+        } catch (recoveryError) {
+            throw new Error(readAxiosError(recoveryError, "请求失败"));
+        }
         throw new Error(readAxiosError(error, "请求失败"));
     }
 }

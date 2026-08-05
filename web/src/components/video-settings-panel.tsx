@@ -3,6 +3,7 @@
 import { type ReactNode } from "react";
 
 import { ImageSettingsTheme } from "@/components/image-settings-panel";
+import type { PricingRule } from "@/constant/credits";
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import { normalizeVideoRatio, normalizeVideoResolution, resolveVideoSettings, videoOutputSize, videoRatioLabel } from "@/lib/video-format";
 import { useConfigStore, type AiConfig } from "@/stores/use-config-store";
@@ -18,7 +19,11 @@ type VideoSettingsPanelProps = {
 export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5" }: VideoSettingsPanelProps) {
     const model = config.videoModels.includes(config.model) ? config.model : config.videoModel || config.model;
     const definition = useConfigStore((state) => state.publicSettings?.modelChannel.models?.find((item) => item.id === model));
-    const { ratios, resolutions, durations, ratio, resolution, seconds } = resolveVideoSettings(config, definition);
+    const pricingRules = useConfigStore((state) => state.publicSettings?.modelChannel.pricingRules);
+    const settings = resolveVideoSettings(config, definition);
+    const resolutions = definition && pricingRules ? settings.resolutions.filter((item) => hasVideoPricingTier(pricingRules, model, item)) : settings.resolutions;
+    const resolution = resolutions.includes(settings.resolution) ? settings.resolution : resolutions[0] || settings.resolution;
+    const { ratios, durations, ratio, seconds } = settings;
 
     return (
         <ImageSettingsTheme theme={theme}>
@@ -62,6 +67,19 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                 </SettingGroup>
             </div>
         </ImageSettingsTheme>
+    );
+}
+
+function hasVideoPricingTier(rules: PricingRule[], model: string, resolution: string) {
+    return rules.some(
+        (rule) =>
+            rule.enabled !== false &&
+            rule.model === model &&
+            rule.modality === "video" &&
+            rule.operation === "generation" &&
+            rule.unit === "second" &&
+            rule.resolutionTier &&
+            normalizeVideoResolution(rule.resolutionTier) === normalizeVideoResolution(resolution),
     );
 }
 

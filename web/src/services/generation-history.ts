@@ -17,7 +17,7 @@ type GenerationKind = "image" | "video";
 export type GenerationRecordStatus = "生成中" | "成功" | "部分失败" | "失败";
 type RawGenerationLog = Record<string, unknown> & { id?: string; ownerId?: string; createdAt?: number; kind?: GenerationKind; status?: GenerationRecordStatus; version?: number };
 
-type StoredImage = { id?: string; dataUrl?: string; storageKey?: string; durationMs?: number; width?: number; height?: number; bytes?: number; mimeType?: string };
+type StoredImage = { id?: string; dataUrl?: string; storageKey?: string; requestId?: string; durationMs?: number; width?: number; height?: number; bytes?: number; mimeType?: string };
 type StoredVideo = { id?: string; url?: string; storageKey?: string; durationMs?: number; width?: number; height?: number; bytes?: number; mimeType?: string };
 
 type CanvasHistoryNode = {
@@ -59,6 +59,7 @@ type StoredImageLog = {
     requestIds?: string[];
     completedRequestIds?: string[];
     failedRequestIds?: string[];
+    failedRequestErrors?: Record<string, string>;
 };
 
 type StoredVideoLog = {
@@ -100,6 +101,26 @@ export type GenerationHistoryItem = {
     source: "workbench" | "canvas";
 };
 
+export type CanvasImageGenerationResult = {
+    id: string;
+    prompt: string;
+    createdAt: number;
+    status: GenerationRecordStatus;
+    requestIds: string[];
+    failedRequestIds: string[];
+    failedRequestErrors: Record<string, string>;
+    images: Array<{ storageKey: string; requestId?: string; width?: number; height?: number; bytes?: number; mimeType?: string }>;
+};
+
+export type CanvasVideoGenerationResult = {
+    id: string;
+    prompt: string;
+    createdAt: number;
+    status: GenerationRecordStatus;
+    video?: { storageKey: string; width?: number; height?: number; bytes?: number; mimeType?: string; durationMs?: number };
+    error: string;
+};
+
 const imageLogs = new Map<string, RawGenerationLog>();
 const videoLogs = new Map<string, RawGenerationLog>();
 const activeGenerationRecoveries = new Set<string>();
@@ -115,6 +136,36 @@ export async function readGenerationHistory(ownerId: string) {
 export async function countGenerationHistory(ownerId: string) {
     if (typeof window === "undefined" || !ownerId || ownerId === "guest") return 0;
     return readOwnedLogs(imageLogs, ownerId).length + readOwnedLogs(videoLogs, ownerId).length;
+}
+
+export function readCanvasImageGenerationResults(ownerId: string, canvasId: string): CanvasImageGenerationResult[] {
+    return readOwnedLogs<StoredImageLog>(imageLogs, ownerId)
+        .filter((log) => log.source === "canvas" && log.canvasId === canvasId && (log.requestIds?.length || log.images?.some((image) => image.storageKey)))
+        .map((log) => ({
+            id: log.id || "",
+            prompt: log.prompt || "",
+            createdAt: log.createdAt || 0,
+            status: log.status || "成功",
+            requestIds: log.requestIds || [],
+            failedRequestIds: log.failedRequestIds || [],
+            failedRequestErrors: log.failedRequestErrors || {},
+            images: (log.images || []).flatMap((image) => (image.storageKey ? [{ storageKey: image.storageKey, requestId: image.requestId, width: image.width, height: image.height, bytes: image.bytes, mimeType: image.mimeType }] : [])),
+        }))
+        .sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export function readCanvasVideoGenerationResults(ownerId: string, canvasId: string): CanvasVideoGenerationResult[] {
+    return readOwnedLogs<StoredVideoLog>(videoLogs, ownerId)
+        .filter((log) => log.source === "canvas" && log.canvasId === canvasId && Boolean(log.requestId))
+        .map((log) => ({
+            id: log.id || "",
+            prompt: log.prompt || "",
+            createdAt: log.createdAt || 0,
+            status: log.status || "成功",
+            video: log.video?.storageKey ? { storageKey: log.video.storageKey, width: log.video.width, height: log.video.height, bytes: log.video.bytes, mimeType: log.video.mimeType, durationMs: log.video.durationMs } : undefined,
+            error: log.error || "",
+        }))
+        .sort((a, b) => b.createdAt - a.createdAt);
 }
 
 export async function deleteGenerationHistory(item: GenerationHistoryItem) {
@@ -135,11 +186,15 @@ export async function saveGenerationRecord(ownerId: string, kind: GenerationKind
 
 export function saveCanvasImageGenerationRecord(
     ownerId: string,
-    input: { id?: string; prompt: string; model: string; size?: string; quality?: string; images: UploadedImage[]; imageCount?: number; failCount?: number; status?: GenerationRecordStatus; durationMs?: number; canvasId: string; requestIds?: string[] },
+    input: { id?: string; prompt: string; model: string; size?: string; quality?: string; images: UploadedImage[]; imageCount?: number; failCount?: number; status?: GenerationRecordStatus; durationMs?: number; canvasId: string; requestIds?: string[]; imageRequestIds?: string[]; failedRequestErrors?: Record<string, string> },
 ) {
     const id = input.id || nanoid();
     const current = imageLogs.get(logKey(ownerId, id));
     const failCount = input.failCount || 0;
+    const requestIds = input.requestIds || (current?.requestIds as string[] | undefined) || (input.status === "生成中" ? [id] : []);
+    const imageRequestIds = input.imageRequestIds || input.images.map((_, index) => requestIds[index]).filter(Boolean);
+    const completedRequestIds = input.status === "生成中" ? [] : imageRequestIds;
+    const failedRequestIds = input.status === "生成中" ? [] : requestIds.filter((requestId) => !completedRequestIds.includes(requestId));
     return saveGenerationRecord(ownerId, "image", {
         ...current,
         id,
@@ -154,10 +209,13 @@ export function saveCanvasImageGenerationRecord(
         size: input.size || "",
         quality: input.quality || "",
         status: input.status || (input.images.length ? (failCount ? "部分失败" : "成功") : "失败"),
-        images: input.images.map((image) => ({ dataUrl: "", storageKey: image.storageKey })),
+        images: input.images.map((image, index) => ({ dataUrl: "", storageKey: image.storageKey, requestId: imageRequestIds[index] })),
         canvasId: input.canvasId,
         source: "canvas",
-        requestIds: input.requestIds || (current?.requestIds as string[] | undefined) || (input.status === "生成中" ? [id] : []),
+        requestIds,
+        completedRequestIds,
+        failedRequestIds,
+        failedRequestErrors: input.failedRequestErrors || {},
     }).then(() => id);
 }
 
@@ -342,7 +400,7 @@ async function recoverPendingImageLog(ownerId: string, log: StoredImageLog) {
             const images = await Promise.all(
                 generated.map(async (image) => {
                     const stored = await storeGeneratedImage(image);
-                    return { id: image.id, ...stored, dataUrl: "", durationMs: 0 };
+                    return { id: image.id, ...stored, requestId, dataUrl: "", durationMs: 0 };
                 }),
             );
             return { requestId, images };
@@ -350,6 +408,7 @@ async function recoverPendingImageLog(ownerId: string, log: StoredImageLog) {
     );
     const completedRequestIds = [...(log.completedRequestIds || [])];
     const failedRequestIds = [...(log.failedRequestIds || [])];
+    const failedRequestErrors = { ...(log.failedRequestErrors || {}) };
     const images = [...(log.images || [])];
     results.forEach((result, index) => {
         const requestId = pendingRequestIds[index];
@@ -358,6 +417,7 @@ async function recoverPendingImageLog(ownerId: string, log: StoredImageLog) {
             images.push(...result.value.images);
         } else {
             failedRequestIds.push(requestId);
+            failedRequestErrors[requestId] = result.reason instanceof Error ? result.reason.message : "图片生成失败";
         }
     });
     const failCount = failedRequestIds.length;
@@ -369,6 +429,7 @@ async function recoverPendingImageLog(ownerId: string, log: StoredImageLog) {
         failCount,
         completedRequestIds,
         failedRequestIds,
+        failedRequestErrors,
         durationMs: Math.max(log.durationMs || 0, Date.now() - (log.createdAt || Date.now())),
         status: completedCount < requestIds.length ? "生成中" : images.length ? (failCount ? "部分失败" : "成功") : "失败",
     });

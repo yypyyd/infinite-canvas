@@ -7,9 +7,10 @@ import { Home, ImageIcon, Images, List, Menu, MessageSquare, Music2, Plus, Redo2
 import { saveAs } from "file-saver";
 
 import { requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
+import { fetchGenerationTaskRecovery } from "@/services/api/generation-task";
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
 import { requestVideoCreativeAnalysis, requestVideoGeneration, storeGeneratedVideo, type VideoCreativeMode } from "@/services/api/video";
-import { saveCanvasImageGenerationRecord, saveCanvasVideoGenerationRecord } from "@/services/generation-history";
+import { GENERATION_HISTORY_CHANGED_EVENT, readCanvasImageGenerationResults, readCanvasVideoGenerationResults, saveCanvasImageGenerationRecord, saveCanvasVideoGenerationRecord, type CanvasImageGenerationResult, type CanvasVideoGenerationResult } from "@/services/generation-history";
 import { workspaceFileUrl } from "@/services/api/workspace";
 import { workspaceOwnerId } from "@/services/workspace-changes";
 import { defaultConfig, type AiConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
@@ -112,6 +113,7 @@ const NODE_STATUS_IDLE = "idle" as const;
 const NODE_STATUS_LOADING = "loading" as const;
 const NODE_STATUS_SUCCESS = "success" as const;
 const NODE_STATUS_ERROR = "error" as const;
+const USER_GENERATION_ABORT_REASON = "canvas-user-stop";
 const EMPTY_MENTION_REFERENCES: CanvasResourceReference[] = [];
 const IMAGE_PROMPT_REVERSE_PRESET = `请根据参考图片反推一段适合用于 AI 生图的提示词。
 
@@ -372,15 +374,31 @@ function InfiniteCanvasPage() {
                 imageCount,
                 status: "生成中",
                 canvasId: projectId,
-                requestIds: Array.from({ length: imageCount }, (_, index) => (imageCount === 1 ? id : `${id}:${index}`)),
+                requestIds: Array.from({ length: imageCount }, (_, index) => imageGenerationRequestId(id, imageCount, index)),
             });
-            await flushActiveWorkspaceChanges();
+            try {
+                await flushActiveWorkspaceChanges();
+            } catch (error) {
+                await saveCanvasImageGenerationRecord(historyOwnerId, {
+                    id,
+                    prompt,
+                    model: generationConfig.model,
+                    size: generationConfig.size,
+                    quality: generationConfig.quality,
+                    images: [],
+                    imageCount,
+                    failCount: imageCount,
+                    status: "失败",
+                    canvasId: projectId,
+                });
+                throw error;
+            }
             return id;
         },
         [historyOwnerId, projectId],
     );
     const finishImageGenerationRecord = useCallback(
-        async (id: string, prompt: string, generationConfig: AiConfig, images: UploadedImage[], imageCount: number, failCount: number, startedAt: number) => {
+        async (id: string, prompt: string, generationConfig: AiConfig, images: UploadedImage[], imageCount: number, failCount: number, startedAt: number, result?: { imageRequestIds?: string[]; failedRequestErrors?: Record<string, string> }) => {
             await saveCanvasImageGenerationRecord(historyOwnerId, {
                 id,
                 prompt,
@@ -392,6 +410,7 @@ function InfiniteCanvasPage() {
                 failCount,
                 durationMs: performance.now() - startedAt,
                 canvasId: projectId,
+                ...result,
             });
             await flushActiveWorkspaceChanges().catch(() => {});
         },
@@ -411,7 +430,22 @@ function InfiniteCanvasPage() {
                 canvasId: projectId,
                 requestId: id,
             });
-            await flushActiveWorkspaceChanges();
+            try {
+                await flushActiveWorkspaceChanges();
+            } catch (error) {
+                await saveCanvasVideoGenerationRecord(historyOwnerId, {
+                    id,
+                    prompt,
+                    model: generationConfig.model,
+                    size: generationConfig.size,
+                    resolution: generationConfig.vquality,
+                    seconds: generationConfig.videoSeconds,
+                    status: "失败",
+                    error: error instanceof Error ? error.message : "账号数据保存失败",
+                    canvasId: projectId,
+                });
+                throw error;
+            }
             return id;
         },
         [historyOwnerId, projectId],
@@ -515,7 +549,7 @@ function InfiniteCanvasPage() {
         const affectedNodeIds = new Set<string>();
         generationRequestsRef.current.forEach((request) => {
             if (request.runningNodeId !== runningId) return;
-            request.controller.abort();
+            request.controller.abort(USER_GENERATION_ABORT_REASON);
             generationRequestsRef.current.delete(request.targetNodeId);
             affectedNodeIds.add(request.targetNodeId);
             affectedNodeIds.add(request.originNodeId);
@@ -555,7 +589,7 @@ function InfiniteCanvasPage() {
         const savedProject = lastSavedProjectRef.current;
         const hadInterruptedGeneration = project.nodes.some((node) => node.metadata?.status === NODE_STATUS_LOADING);
         const [restoredNodes, restoredSessions] = await Promise.all([
-            hydrateCanvasImages(resetInterruptedGeneration(project.nodes)),
+            restoreInterruptedCanvasMedia(project.nodes, readCanvasImageGenerationResults(historyOwnerId, projectId), readCanvasVideoGenerationResults(historyOwnerId, projectId)).then(hydrateCanvasImages),
             hydrateAssistantImages(project.chatSessions || []),
         ]);
         if (restoreRequest !== restoreRequestRef.current) return;
@@ -598,7 +632,18 @@ function InfiniteCanvasPage() {
         };
         setHistoryState({ canUndo: false, canRedo: false });
         setProjectLoaded(true);
-    }, []);
+    }, [historyOwnerId, projectId]);
+
+    useEffect(() => {
+        const restoreCompletedGenerations = () => {
+            const current = nodesRef.current;
+            void restoreInterruptedCanvasMedia(current, readCanvasImageGenerationResults(historyOwnerId, projectId), readCanvasVideoGenerationResults(historyOwnerId, projectId)).then((next) => {
+                if (nodesRef.current === current && next !== current) setNodes(next);
+            });
+        };
+        window.addEventListener(GENERATION_HISTORY_CHANGED_EVENT, restoreCompletedGenerations);
+        return () => window.removeEventListener(GENERATION_HISTORY_CHANGED_EVENT, restoreCompletedGenerations);
+    }, [historyOwnerId, projectId]);
 
     useEffect(() => {
         if (!hydrated) return;
@@ -1956,6 +2001,7 @@ function InfiniteCanvasPage() {
             let generationRecordId = "";
             try {
                 generationRecordId = await startImageGenerationRecord(prompt, generationConfig, 1);
+                setNodes((prev) => prev.map((item) => (item.id === childId ? { ...item, metadata: { ...item.metadata, generationRecordId } } : item)));
                 const image = await requestEdit(generationConfig, prompt, [source], { id: `${node.id}-mask`, name: "mask.png", type: "image/png", dataUrl: payload.maskDataUrl }, { signal: controller.signal, idempotencyKey: generationRecordId }).then((items) => items[0]);
                 const uploaded = await storeGeneratedImage(image);
                 throwIfGenerationCanceled(controller.signal);
@@ -1963,9 +2009,10 @@ function InfiniteCanvasPage() {
                 setNodes((prev) => prev.map((item) => (item.id === childId ? { ...item, width: size.width, height: size.height, metadata: { ...item.metadata, ...imageMetadata(uploaded), prompt, ...generationMetadata } } : item)));
                 await finishImageGenerationRecord(generationRecordId, prompt, generationConfig, [uploaded], 1, 0, generationStartedAt);
             } catch (error) {
-                if (generationRecordId) await finishImageGenerationRecord(generationRecordId, prompt, generationConfig, [], 1, 1, generationStartedAt);
-                if (isGenerationCanceled(error)) return;
                 const errorDetails = error instanceof Error ? error.message : "局部修改失败";
+                const canceled = isGenerationCanceled(error, controller.signal);
+                if (generationRecordId && (!canceled || isUserGenerationAbort(controller.signal))) await finishImageGenerationRecord(generationRecordId, prompt, generationConfig, [], 1, 1, generationStartedAt, { failedRequestErrors: imageGenerationFailureErrors(generationRecordId, 1, errorDetails) });
+                if (canceled) return;
                 message.error(errorDetails);
                 setNodes((prev) => prev.map((item) => (item.id === childId ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails } } : item)));
             } finally {
@@ -2043,6 +2090,7 @@ function InfiniteCanvasPage() {
             let generationRecordId = "";
             try {
                 generationRecordId = await startImageGenerationRecord(prompt, generationConfig, 1);
+                setNodes((prev) => prev.map((item) => (item.id === childId ? { ...item, metadata: { ...item.metadata, generationRecordId } } : item)));
                 const image = await requestEdit(
                     generationConfig,
                     prompt,
@@ -2056,9 +2104,10 @@ function InfiniteCanvasPage() {
                 setNodes((prev) => prev.map((item) => (item.id === childId ? { ...item, width: size.width, height: size.height, metadata: { ...item.metadata, ...imageMetadata(uploaded), prompt, ...generationMetadata } } : item)));
                 await finishImageGenerationRecord(generationRecordId, prompt, generationConfig, [uploaded], 1, 0, generationStartedAt);
             } catch (error) {
-                if (generationRecordId) await finishImageGenerationRecord(generationRecordId, prompt, generationConfig, [], 1, 1, generationStartedAt);
-                if (isGenerationCanceled(error)) return;
                 const errorDetails = error instanceof Error ? error.message : "生成失败";
+                const canceled = isGenerationCanceled(error, controller.signal);
+                if (generationRecordId && (!canceled || isUserGenerationAbort(controller.signal))) await finishImageGenerationRecord(generationRecordId, prompt, generationConfig, [], 1, 1, generationStartedAt, { failedRequestErrors: imageGenerationFailureErrors(generationRecordId, 1, errorDetails) });
+                if (canceled) return;
                 setNodes((prev) => prev.map((item) => (item.id === childId ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails } } : item)));
             } finally {
                 finishGenerationRequest(childId, controller);
@@ -2294,6 +2343,8 @@ function InfiniteCanvasPage() {
                     const rootId = isEmptyImageNode ? nodeId : nanoid();
                     const childIds = count > 1 ? Array.from({ length: count }, () => nanoid()) : [];
                     const targetIds = count > 1 ? childIds : [rootId];
+                    const generationStartedAt = performance.now();
+                    activeImageRecord = { id: await startImageGenerationRecord(effectivePrompt, generationConfig, count), count, startedAt: generationStartedAt };
                     pendingChildIds = isEmptyImageNode ? childIds : [rootId, ...childIds];
                     const rootNode: CanvasNodeData = {
                         id: rootId,
@@ -2312,6 +2363,7 @@ function InfiniteCanvasPage() {
                             batchChildIds: count > 1 ? childIds : undefined,
                             batchUsesReferenceImages: referenceImages.length > 0,
                             ...generationMetadata,
+                            generationRecordId: activeImageRecord.id,
                             imageBatchExpanded: count > 1 ? true : undefined,
                         },
                     };
@@ -2325,7 +2377,7 @@ function InfiniteCanvasPage() {
                         },
                         width: imageConfig.width,
                         height: imageConfig.height,
-                        metadata: { prompt: effectivePrompt, status: NODE_STATUS_LOADING, batchRootId: count > 1 ? rootId : undefined, ...generationMetadata },
+                        metadata: { prompt: effectivePrompt, status: NODE_STATUS_LOADING, batchRootId: count > 1 ? rootId : undefined, ...generationMetadata, generationRecordId: activeImageRecord.id },
                     }));
                     const batchConnections = [...(isEmptyImageNode ? [] : [{ id: nanoid(), fromNodeId: nodeId, toNodeId: rootId }]), ...childIds.map((childId) => ({ id: nanoid(), fromNodeId: rootId, toNodeId: childId }))];
 
@@ -2373,14 +2425,13 @@ function InfiniteCanvasPage() {
                     if (count > 1) startGenerationRequest(rootId, nodeId, nodeId, runController);
                     let hasSuccess = false;
                     let hasFailure = false;
-                    const generationStartedAt = performance.now();
-                    activeImageRecord = { id: await startImageGenerationRecord(effectivePrompt, generationConfig, count), count, startedAt: generationStartedAt };
                     const generatedImages = await Promise.all(
                         targetIds.map(async (targetId, index) => {
+                            const requestId = imageGenerationRequestId(activeImageRecord!.id, count, index);
                             try {
                                 const image = referenceImages.length
-                                    ? await requestEdit({ ...generationConfig, count: "1" }, effectivePrompt, referenceImages, undefined, { signal: runController.signal, idempotencyKey: count === 1 ? activeImageRecord!.id : `${activeImageRecord!.id}:${index}` }).then((items) => items[0])
-                                    : await requestGeneration({ ...generationConfig, count: "1" }, effectivePrompt, { signal: runController.signal, idempotencyKey: count === 1 ? activeImageRecord!.id : `${activeImageRecord!.id}:${index}` }).then((items) => items[0]);
+                                    ? await requestEdit({ ...generationConfig, count: "1" }, effectivePrompt, referenceImages, undefined, { signal: runController.signal, idempotencyKey: requestId }).then((items) => items[0])
+                                    : await requestGeneration({ ...generationConfig, count: "1" }, effectivePrompt, { signal: runController.signal, idempotencyKey: requestId }).then((items) => items[0]);
                                 const uploaded = await storeGeneratedImage(image);
                                 throwIfGenerationCanceled(runController.signal);
                                 const imageSize = fitNodeSize(uploaded.width, uploaded.height, imageConfig.width, imageConfig.height);
@@ -2410,27 +2461,29 @@ function InfiniteCanvasPage() {
                                 });
                                 hasSuccess = true;
                                 if (isConfigNode) setNodes((prev) => prev.map((node) => (node.id === nodeId ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_SUCCESS, errorDetails: undefined } } : node)));
-                                return uploaded;
+                                return { image: uploaded, requestId, error: "" };
                             } catch (error) {
-                                if (isGenerationCanceled(error)) return null;
+                                if (isGenerationCanceled(error, runController.signal)) return { image: null, requestId, error: isUserGenerationAbort(runController.signal) ? "已停止生成" : "" };
                                 const errorDetails = error instanceof Error ? error.message : "生成失败";
                                 hasFailure = true;
                                 setNodes((prev) => prev.map((node) => (node.id === targetId ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_ERROR, errorDetails } } : node)));
-                                return null;
+                                return { image: null, requestId, error: errorDetails };
                             } finally {
                                 finishGenerationRequest(targetId, runController);
                             }
                         }),
                     );
-                    const successfulImages = generatedImages.filter((image): image is UploadedImage => Boolean(image));
+                    const successfulResults = generatedImages.filter((result): result is { image: UploadedImage; requestId: string; error: string } => Boolean(result.image));
+                    const successfulImages = successfulResults.map((result) => result.image);
+                    const recordResult = { imageRequestIds: successfulResults.map((result) => result.requestId), failedRequestErrors: Object.fromEntries(generatedImages.filter((result) => result.error).map((result) => [result.requestId, result.error])) };
                     if (count > 1) finishGenerationRequest(rootId, runController);
                     if (runController.signal.aborted) {
-                        await finishImageGenerationRecord(activeImageRecord.id, effectivePrompt, generationConfig, successfulImages, count, count - successfulImages.length, generationStartedAt);
+                        if (isUserGenerationAbort(runController.signal)) await finishImageGenerationRecord(activeImageRecord.id, effectivePrompt, generationConfig, successfulImages, count, count - successfulImages.length, generationStartedAt, recordResult);
                         activeImageRecord = undefined;
                         setNodes((prev) => prev.map((node) => (node.id === nodeId && isConfigNode && node.metadata?.status === NODE_STATUS_LOADING ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_IDLE, errorDetails: undefined } } : node)));
                         return;
                     }
-                    await finishImageGenerationRecord(activeImageRecord.id, effectivePrompt, generationConfig, successfulImages, count, count - successfulImages.length, generationStartedAt);
+                    await finishImageGenerationRecord(activeImageRecord.id, effectivePrompt, generationConfig, successfulImages, count, count - successfulImages.length, generationStartedAt, recordResult);
                     activeImageRecord = undefined;
                     if (hasFailure) message.error(hasSuccess ? "部分图片生成失败" : "全部图片生成失败");
                     setNodes((prev) =>
@@ -2481,6 +2534,7 @@ function InfiniteCanvasPage() {
                     startGenerationRequest(videoId, nodeId, nodeId, runController);
                     const generationStartedAt = performance.now();
                     activeVideoRecord = { id: await startVideoGenerationRecord(effectivePrompt, generationConfig), startedAt: generationStartedAt };
+                    setNodes((prev) => prev.map((node) => (node.id === videoId ? { ...node, metadata: { ...node.metadata, generationRecordId: activeVideoRecord!.id } } : node)));
                     try {
                         const video = await storeGeneratedVideo(
                             await requestVideoGeneration(generationConfig, effectivePrompt, generationContext.referenceImages, generationContext.referenceVideos, generationContext.referenceAudios, { signal: runController.signal, idempotencyKey: activeVideoRecord.id }),
@@ -2611,9 +2665,10 @@ function InfiniteCanvasPage() {
                 );
             } catch (error) {
                 const errorDetails = error instanceof Error ? error.message : "生成失败";
-                if (activeImageRecord) await finishImageGenerationRecord(activeImageRecord.id, effectivePrompt, generationConfig, [], activeImageRecord.count, activeImageRecord.count, activeImageRecord.startedAt);
-                if (activeVideoRecord) await finishVideoGenerationRecord(activeVideoRecord.id, effectivePrompt, generationConfig, undefined, activeVideoRecord.startedAt, errorDetails);
-                if (isGenerationCanceled(error)) return;
+                const canceled = isGenerationCanceled(error, runController.signal);
+                if (activeImageRecord && (!canceled || isUserGenerationAbort(runController.signal))) await finishImageGenerationRecord(activeImageRecord.id, effectivePrompt, generationConfig, [], activeImageRecord.count, activeImageRecord.count, activeImageRecord.startedAt, { failedRequestErrors: imageGenerationFailureErrors(activeImageRecord.id, activeImageRecord.count, errorDetails) });
+                if (activeVideoRecord && (!canceled || isUserGenerationAbort(runController.signal))) await finishVideoGenerationRecord(activeVideoRecord.id, effectivePrompt, generationConfig, undefined, activeVideoRecord.startedAt, errorDetails);
+                if (canceled) return;
                 message.error(errorDetails);
                 setNodes((prev) =>
                     prev.map((node) => (node.id === nodeId || pendingChildIds.includes(node.id) ? (node.id === nodeId && !markSourceStatus ? node : { ...node, metadata: { ...node.metadata, status: NODE_STATUS_ERROR, errorDetails } }) : node)),
@@ -2843,6 +2898,8 @@ function InfiniteCanvasPage() {
             try {
                 imageRecordId = node.type !== CanvasNodeType.Text && node.type !== CanvasNodeType.Video && node.type !== CanvasNodeType.Audio ? await startImageGenerationRecord(prompt, generationConfig, 1) : undefined;
                 videoRecordId = node.type === CanvasNodeType.Video ? await startVideoGenerationRecord(prompt, generationConfig) : undefined;
+                if (imageRecordId) setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, generationRecordId: imageRecordId } } : item)));
+                if (videoRecordId) setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, generationRecordId: videoRecordId } } : item)));
                 if (node.type === CanvasNodeType.Text) {
                     if (!context) return;
                     let streamed = "";
@@ -2929,9 +2986,10 @@ function InfiniteCanvasPage() {
                 await finishImageGenerationRecord(imageRecordId!, prompt, generationConfig, [uploadedImage], 1, 0, generationStartedAt);
             } catch (error) {
                 const errorDetails = error instanceof Error ? error.message : "生成失败";
-                if (imageRecordId) await finishImageGenerationRecord(imageRecordId, prompt, generationConfig, [], 1, 1, generationStartedAt);
-                if (videoRecordId) await finishVideoGenerationRecord(videoRecordId, prompt, generationConfig, undefined, generationStartedAt, errorDetails);
-                if (isGenerationCanceled(error)) return;
+                const canceled = isGenerationCanceled(error, controller.signal);
+                if (imageRecordId && (!canceled || isUserGenerationAbort(controller.signal))) await finishImageGenerationRecord(imageRecordId, prompt, generationConfig, [], 1, 1, generationStartedAt, { failedRequestErrors: imageGenerationFailureErrors(imageRecordId, 1, errorDetails) });
+                if (videoRecordId && (!canceled || isUserGenerationAbort(controller.signal))) await finishVideoGenerationRecord(videoRecordId, prompt, generationConfig, undefined, generationStartedAt, errorDetails);
+                if (canceled) return;
                 message.error(errorDetails);
                 setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails } } : item)));
             } finally {
@@ -3992,8 +4050,12 @@ function isSameSaveSnapshot(first: CanvasSaveSnapshot, second: CanvasSaveSnapsho
     );
 }
 
-function isGenerationCanceled(error: unknown) {
-    return error instanceof Error && (error.name === "AbortError" || error.message === "请求已取消");
+function isGenerationCanceled(error: unknown, signal?: AbortSignal) {
+    return Boolean(signal?.aborted) || (error instanceof Error && (error.name === "AbortError" || error.message === "请求已取消"));
+}
+
+function isUserGenerationAbort(signal: AbortSignal) {
+    return signal.aborted && signal.reason === USER_GENERATION_ABORT_REASON;
 }
 
 function throwIfGenerationCanceled(signal: AbortSignal) {
@@ -4065,8 +4127,121 @@ function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | undefine
     };
 }
 
-function resetInterruptedGeneration(nodes: CanvasNodeData[]) {
-    return nodes.map((node) => (node.metadata?.status === "loading" ? { ...node, metadata: { ...node.metadata, status: "error" as const, errorDetails: "页面刷新后生成已中断，请重新生成。" } } : node));
+const interruptedGenerationError = "页面刷新后生成已中断，请重新生成。";
+
+async function restoreInterruptedCanvasMedia(nodes: CanvasNodeData[], imageResults: CanvasImageGenerationResult[], videoResults: CanvasVideoGenerationResult[]) {
+    const interrupted = nodes.filter((node) => (node.type === CanvasNodeType.Image || node.type === CanvasNodeType.Video) && !node.metadata?.content && (node.metadata?.status === NODE_STATUS_LOADING || node.metadata?.errorDetails === interruptedGenerationError));
+    if (!interrupted.length) return nodes;
+
+    const interruptedIds = new Set(interrupted.map((node) => node.id));
+    const imageRootIds = [...new Set(interrupted.filter((node) => node.type === CanvasNodeType.Image).map((node) => node.metadata?.batchRootId || node.id))];
+    const usedResults = new Set<string>();
+    const recoveredImages = new Map<string, UploadedImage>();
+    const recoveredVideos = new Map<string, UploadedFile>();
+    const errors = new Map<string, string>();
+    const pending = new Set<string>();
+    const primaryImageIds = new Map<string, string>();
+
+    for (const rootId of imageRootIds) {
+        const root = nodes.find((node) => node.id === rootId);
+        const allTargets = root?.metadata?.isBatchRoot ? nodes.filter((node) => node.metadata?.batchRootId === rootId) : nodes.filter((node) => node.id === rootId);
+        const targets = allTargets.filter((node) => interruptedIds.has(node.id));
+        if (!targets.length && !interruptedIds.has(rootId)) continue;
+        const generationRecordId = root?.metadata?.generationRecordId || targets[0].metadata?.generationRecordId;
+        const prompt = root?.metadata?.prompt || targets[0].metadata?.prompt || "";
+        const result = imageResults.find((item) => !usedResults.has(item.id) && (generationRecordId ? item.id === generationRecordId : item.prompt === prompt));
+        if (!result) continue;
+        usedResults.add(result.id);
+        if (result.status === "生成中") {
+            targets.forEach((node) => pending.add(node.id));
+            if (root?.metadata?.isBatchRoot) pending.add(root.id);
+            continue;
+        }
+        const failureErrors = await resolveCanvasImageFailureErrors(result);
+        const storedImages = await Promise.all(result.images.map(async (image) => ({ ...(await storeGeneratedImage({ dataUrl: "", ...image })), requestId: image.requestId })));
+        const imagesByRequest = new Map(storedImages.flatMap((image) => (image.requestId ? [[image.requestId, image] as const] : [])));
+        const unassignedImages = storedImages.filter((image) => !image.requestId);
+        let primaryImage: { nodeId: string; image: UploadedImage } | undefined;
+        allTargets.forEach((node, index) => {
+            const requestId = result.requestIds[index] || imageGenerationRequestId(result.id, allTargets.length, index);
+            const error = failureErrors.get(requestId);
+            if (error) {
+                if (interruptedIds.has(node.id)) errors.set(node.id, error);
+                return;
+            }
+            const image = imagesByRequest.get(requestId) || unassignedImages.shift();
+            if (image && !primaryImage) primaryImage = { nodeId: node.id, image };
+            if (image && interruptedIds.has(node.id)) recoveredImages.set(node.id, image);
+        });
+        if (root?.metadata?.isBatchRoot) {
+            if (primaryImage && interruptedIds.has(root.id)) recoveredImages.set(root.id, primaryImage.image);
+            if (primaryImage) primaryImageIds.set(root.id, primaryImage.nodeId);
+            else if (interruptedIds.has(root.id)) errors.set(root.id, failureErrors.values().next().value || "图片生成失败");
+        }
+    }
+
+    const usedVideoResults = new Set<string>();
+    for (const node of interrupted.filter((item) => item.type === CanvasNodeType.Video)) {
+        const generationRecordId = node.metadata?.generationRecordId;
+        const result = videoResults.find((item) => !usedVideoResults.has(item.id) && (generationRecordId ? item.id === generationRecordId : item.prompt === (node.metadata?.prompt || "")));
+        if (!result) continue;
+        usedVideoResults.add(result.id);
+        if (result.status === "生成中") pending.add(node.id);
+        else if (result.video) recoveredVideos.set(node.id, { url: "", storageKey: result.video.storageKey, bytes: result.video.bytes || 0, mimeType: result.video.mimeType || "video/mp4", width: result.video.width, height: result.video.height, durationMs: result.video.durationMs });
+        else errors.set(node.id, result.error || "视频生成失败");
+    }
+
+    let changed = false;
+    const next = nodes.map((node) => {
+        if (!interruptedIds.has(node.id)) return node;
+        const image = recoveredImages.get(node.id);
+        if (image) {
+            changed = true;
+            const size = fitNodeSize(image.width, image.height, NODE_DEFAULT_SIZE[CanvasNodeType.Image].width, NODE_DEFAULT_SIZE[CanvasNodeType.Image].height);
+            return {
+                ...node,
+                position: { x: node.position.x + node.width / 2 - size.width / 2, y: node.position.y + node.height / 2 - size.height / 2 },
+                width: size.width,
+                height: size.height,
+                metadata: { ...node.metadata, ...imageMetadata(image), errorDetails: undefined, ...(node.metadata?.isBatchRoot ? { primaryImageId: primaryImageIds.get(node.id) } : {}) },
+            };
+        }
+        const video = recoveredVideos.get(node.id);
+        if (video) {
+            changed = true;
+            const size = fitNodeSize(video.width || node.width, video.height || node.height, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
+            return { ...node, position: { x: node.position.x + node.width / 2 - size.width / 2, y: node.position.y + node.height / 2 - size.height / 2 }, width: size.width, height: size.height, metadata: { ...node.metadata, ...videoMetadata(video), errorDetails: undefined } };
+        }
+        changed = true;
+        const error = errors.get(node.id);
+        if (error) return { ...node, metadata: { ...node.metadata, status: NODE_STATUS_ERROR, errorDetails: error } };
+        if (pending.has(node.id)) return { ...node, metadata: { ...node.metadata, status: NODE_STATUS_LOADING, errorDetails: undefined } };
+        return { ...node, metadata: { ...node.metadata, status: NODE_STATUS_ERROR, errorDetails: interruptedGenerationError } };
+    });
+    return changed ? next : nodes;
+}
+
+async function resolveCanvasImageFailureErrors(result: CanvasImageGenerationResult) {
+    const entries = await Promise.all(
+        result.failedRequestIds.map(async (requestId) => {
+            if (result.failedRequestErrors[requestId]) return [requestId, result.failedRequestErrors[requestId]] as const;
+            try {
+                const task = await fetchGenerationTaskRecovery(requestId);
+                return [requestId, task.errorMessage || "图片生成失败"] as const;
+            } catch {
+                return [requestId, "图片生成失败"] as const;
+            }
+        }),
+    );
+    return new Map(entries);
+}
+
+function imageGenerationRequestId(recordId: string, count: number, index: number) {
+    return count === 1 ? recordId : `${recordId}:${index}`;
+}
+
+function imageGenerationFailureErrors(recordId: string, count: number, error: string) {
+    return Object.fromEntries(Array.from({ length: count }, (_, index) => [imageGenerationRequestId(recordId, count, index), error]));
 }
 
 function findRetrySourceNode(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {

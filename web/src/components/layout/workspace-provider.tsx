@@ -17,6 +17,7 @@ import { useUserStore } from "@/stores/use-user-store";
 
 const storageKeyPattern = /^(image|video|audio|file|video-reference|audio-reference):/;
 const fileConcurrency = 3;
+const flushTimeoutMs = 15_000;
 let activeWorkspaceFlush: (() => Promise<void>) | null = null;
 
 export async function flushActiveWorkspaceChanges() {
@@ -87,11 +88,17 @@ export function WorkspaceProvider() {
         const flush = async () => {
             if (!readPendingWorkspaceChanges(ownerId).length) return;
             if (!navigator.onLine) throw new Error("当前离线，无法保存账号数据");
-            for (let attempt = 0; attempt < 3; attempt++) {
+            const deadline = Date.now() + flushTimeoutMs;
+            let failedAttempts = 0;
+            while (Date.now() < deadline) {
+                if (cancelled) throw new Error("账号数据同步已切换，请稍后重试");
                 await save(false);
                 if (!readPendingWorkspaceChanges(ownerId).length) return;
+                failedAttempts = lastSaveError ? failedAttempts + 1 : 0;
+                if (failedAttempts >= 3) throw lastSaveError;
+                await new Promise((resolve) => window.setTimeout(resolve, 50));
             }
-            throw lastSaveError || new Error("当前账号仍有数据未保存，请稍后重试");
+            throw lastSaveError || new Error("账号数据持续同步中，请稍后重试");
         };
         activeWorkspaceFlush = flush;
 

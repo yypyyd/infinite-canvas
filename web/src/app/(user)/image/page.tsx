@@ -75,6 +75,12 @@ type UpdateAiConfig = <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => 
 
 const RESULT_ACTION_BUTTON_CLASS = "min-w-0 px-1.5 [&_.ant-btn-icon]:shrink-0 [&>span:last-child]:min-w-0 [&>span:last-child]:truncate";
 
+function resultsFromLog(log: GenerationLog): GenerationResult[] {
+    const images = log.images.map((image) => ({ id: image.id, status: "success" as const, image }));
+    if (log.status !== "生成中") return images;
+    return [...images, ...Array.from({ length: Math.max(0, log.imageCount - log.successCount - log.failCount) }, () => ({ id: nanoid(), status: "pending" as const }))];
+}
+
 export default function ImagePage() {
     const { message } = App.useApp();
     const openMedia = useOpenMedia();
@@ -154,6 +160,15 @@ export default function ImagePage() {
         window.addEventListener(GENERATION_HISTORY_CHANGED_EVENT, refresh);
         return () => window.removeEventListener(GENERATION_HISTORY_CHANGED_EVENT, refresh);
     }, [historyOwnerId]);
+
+    useEffect(() => {
+        const activeLogId = previewLog?.id;
+        if (!activeLogId) return;
+        const nextLog = logs.find((log) => log.id === activeLogId);
+        if (!nextLog) return;
+        setPreviewLog(nextLog);
+        setResults(resultsFromLog(nextLog));
+    }, [logs, previewLog?.id]);
 
     const addReferences = async (files?: FileList | null) => {
         const imageFiles = Array.from(files || []).filter((file) => file.type.startsWith("image/"));
@@ -376,11 +391,7 @@ export default function ImagePage() {
         if (log.config.quality) updateConfig("quality", log.config.quality);
         if (log.config.size) updateConfig("size", log.config.size);
         if (log.config.count) updateConfig("count", log.config.count);
-        setResults(
-            log.status === "生成中"
-                ? [...log.images.map((image) => ({ id: image.id, status: "success" as const, image })), ...Array.from({ length: Math.max(0, log.imageCount - log.successCount - log.failCount) }, () => ({ id: nanoid(), status: "pending" as const }))]
-                : log.images.map((image) => ({ id: image.id, status: "success", image })),
-        );
+        setResults(resultsFromLog(log));
     };
 
     const buildRequestSnapshot = () => {
@@ -865,9 +876,7 @@ function LogCard({ log, selected, active, onSelectedChange, onClick }: { log: Ge
         <button
             type="button"
             className={`block w-full rounded-lg border p-2 text-left transition ${active ? "border-stone-900 bg-blue-50 dark:border-stone-100 dark:bg-blue-950/20" : "border-stone-200 bg-background hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-stone-900"}`}
-            onClick={() => {
-                if (log.status !== "生成中") onClick();
-            }}
+            onClick={onClick}
         >
             <div className="grid grid-cols-[minmax(128px,1fr)_auto] gap-2">
                 <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-2">

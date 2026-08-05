@@ -35,6 +35,7 @@ export async function waitForGenerationTaskRecovery(requestId: string, ready: (t
         try {
             task = await fetchGenerationTaskRecovery(requestId);
         } catch (error) {
+            if (error instanceof Error && error.message === "生成任务不存在") throw error;
             if (Date.now() >= deadline) throw error;
         }
         if (task?.status === "failed") throw new Error(task.errorMessage || "生成失败");

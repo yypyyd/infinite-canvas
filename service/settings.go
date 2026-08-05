@@ -412,6 +412,7 @@ func mergeEnabledChannelCapabilities(items []model.ModelDefinition, channels []m
 		maxReferenceMedia  int
 		supportsAudioOutput bool
 		referenceMode      string
+		unrestrictedResolution bool
 	}
 
 	merged := map[string]capabilities{}
@@ -435,7 +436,11 @@ func mergeEnabledChannelCapabilities(items []model.ModelDefinition, channels []m
 			current.modality = modality
 			current.operations = append(current.operations, channelModel.Operations...)
 			current.aspectRatios = append(current.aspectRatios, channelModel.AspectRatios...)
-			current.resolutionTiers = append(current.resolutionTiers, channelModel.ResolutionTiers...)
+			if len(channelModel.ResolutionTiers) == 0 {
+				current.unrestrictedResolution = true
+			} else {
+				current.resolutionTiers = append(current.resolutionTiers, channelModel.ResolutionTiers...)
+			}
 			current.durations = append(current.durations, channelModel.Durations...)
 			if channelModel.MaxReferenceImages > current.maxReferenceImages || (channelModel.MaxReferenceImages == current.maxReferenceImages && current.referenceMode == "none" && channelModel.ReferenceMode != "none") {
 				current.maxReferenceImages = channelModel.MaxReferenceImages
@@ -457,7 +462,7 @@ func mergeEnabledChannelCapabilities(items []model.ModelDefinition, channels []m
 		items[index].Modality = capability.modality
 		items[index].Operations = normalizeModelOperations(append(items[index].Operations, capability.operations...), items[index].ID, capability.modality)
 		items[index].AspectRatios = normalizeStringList(append(items[index].AspectRatios, capability.aspectRatios...), normalizePricingToken)
-		items[index].ResolutionTiers = normalizeStringList(append(items[index].ResolutionTiers, capability.resolutionTiers...), normalizeResolutionTier)
+		items[index].ResolutionTiers = intersectResolutionTiers(items[index].ResolutionTiers, capability.resolutionTiers, capability.unrestrictedResolution)
 		items[index].Durations = normalizeDurations(append(items[index].Durations, capability.durations...))
 		items[index].MaxReferenceImages = capability.maxReferenceImages
 		items[index].MaxReferenceVideos = capability.maxReferenceVideos
@@ -484,6 +489,24 @@ func mergeEnabledChannelCapabilities(items []model.ModelDefinition, channels []m
 		}
 	}
 	return items
+}
+
+func intersectResolutionTiers(public []string, channels []string, unrestricted bool) []string {
+	public = normalizeStringList(public, normalizeResolutionTier)
+	if unrestricted {
+		return public
+	}
+	available := map[string]bool{}
+	for _, tier := range normalizeStringList(channels, normalizeResolutionTier) {
+		available[tier] = true
+	}
+	result := make([]string, 0, len(public))
+	for _, tier := range public {
+		if available[tier] {
+			result = append(result, tier)
+		}
+	}
+	return result
 }
 
 func defaultModelResolutionTiers(modality string) []string {

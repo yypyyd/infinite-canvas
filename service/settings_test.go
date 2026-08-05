@@ -135,7 +135,7 @@ func TestNormalizeSettingsMergesEnabledChannelCapabilitiesIntoCatalog(t *testing
 	settings := normalizeSettings(model.Settings{
 		Public: model.PublicSetting{ModelChannel: model.PublicModelChannelSetting{Models: []model.ModelDefinition{{
 			ID: "firefly-ray", Name: "Firefly Ray", Modality: "video", Enabled: true, Sort: 7,
-			AspectRatios: []string{"4:3"}, ResolutionTiers: []string{"480p"}, Durations: []int{4}, Remark: "public model",
+			AspectRatios: []string{"4:3"}, ResolutionTiers: []string{"480p", "720p"}, Durations: []int{4}, Remark: "public model",
 		}}}},
 		Private: model.PrivateSetting{Channels: []model.ModelChannel{
 			{Enabled: true, Models: []model.ChannelModel{{Model: "firefly-ray", Modality: "video", AspectRatios: []string{"16:9", "21:9"}, ResolutionTiers: []string{"720p"}, Durations: []int{5}, MaxReferenceImages: 2, ReferenceMode: "frame"}}},
@@ -152,7 +152,7 @@ func TestNormalizeSettingsMergesEnabledChannelCapabilitiesIntoCatalog(t *testing
 	if want := []string{"4:3", "16:9", "21:9", "9:16"}; !reflect.DeepEqual(got.AspectRatios, want) {
 		t.Fatalf("aspect ratios = %#v, want %#v", got.AspectRatios, want)
 	}
-	if want := []string{"480p", "720p", "1080p"}; !reflect.DeepEqual(got.ResolutionTiers, want) {
+	if want := []string{"720p"}; !reflect.DeepEqual(got.ResolutionTiers, want) {
 		t.Fatalf("resolution tiers = %#v, want %#v", got.ResolutionTiers, want)
 	}
 	if want := []int{4, 5, 10}; !reflect.DeepEqual(got.Durations, want) {

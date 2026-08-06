@@ -4214,10 +4214,19 @@ async function restoreInterruptedCanvasMedia(nodes: CanvasNodeData[], imageResul
             const size = fitNodeSize(video.width || node.width, video.height || node.height, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
             return { ...node, position: { x: node.position.x + node.width / 2 - size.width / 2, y: node.position.y + node.height / 2 - size.height / 2 }, width: size.width, height: size.height, metadata: { ...node.metadata, ...videoMetadata(video), errorDetails: undefined } };
         }
-        changed = true;
         const error = errors.get(node.id);
-        if (error) return { ...node, metadata: { ...node.metadata, status: NODE_STATUS_ERROR, errorDetails: error } };
-        if (pending.has(node.id)) return { ...node, metadata: { ...node.metadata, status: NODE_STATUS_LOADING, errorDetails: undefined } };
+        if (error) {
+            if (node.metadata?.status === NODE_STATUS_ERROR && node.metadata.errorDetails === error) return node;
+            changed = true;
+            return { ...node, metadata: { ...node.metadata, status: NODE_STATUS_ERROR, errorDetails: error } };
+        }
+        if (pending.has(node.id)) {
+            if (node.metadata?.status === NODE_STATUS_LOADING && !node.metadata.errorDetails) return node;
+            changed = true;
+            return { ...node, metadata: { ...node.metadata, status: NODE_STATUS_LOADING, errorDetails: undefined } };
+        }
+        if (node.metadata?.status === NODE_STATUS_ERROR && node.metadata.errorDetails === interruptedGenerationError) return node;
+        changed = true;
         return { ...node, metadata: { ...node.metadata, status: NODE_STATUS_ERROR, errorDetails: interruptedGenerationError } };
     });
     return changed ? next : nodes;

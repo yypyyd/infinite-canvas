@@ -3,7 +3,7 @@
 import { useRef } from "react";
 import { useRouter } from "next/navigation";
 import { App, Button } from "antd";
-import { ArrowRight, Download, FileUp, Plus } from "lucide-react";
+import { Download, FileUp, Plus } from "lucide-react";
 
 import { readZip } from "@/lib/zip";
 import { setMediaBlob } from "@/services/file-storage";
@@ -101,37 +101,6 @@ export default function CanvasPage() {
                         </Button>
                     </div>
                 </header>
-
-                <section>
-                    <h2 className="mb-[18px] text-[22px] font-semibold tracking-[-.02em]">从模板开始</h2>
-                    <div className="grid gap-4 sm:grid-cols-3">
-                        {[
-                            { title: "商品主图套系", detail: "白底图、角度图与 SKU 系列", tag: "主图套系", cover: "/tpl-main.jpg" },
-                            { title: "详情页视觉", detail: "卖点拆解、材质特写与场景图", tag: "详情页视觉", cover: "/tpl-detail.jpg" },
-                            { title: "大促活动视觉", detail: "活动主视觉、横幅与社媒素材", tag: "大促活动视觉", cover: "/tpl-promo.jpg" },
-                        ].map((item) => (
-                            <button
-                                key={item.title}
-                                type="button"
-                                disabled={!hydrated}
-                                onClick={() => createAndEnter(item.title)}
-                                className="group overflow-hidden rounded-[22px] bg-white text-left shadow-[0_2px_14px_rgba(29,29,31,.06)] ring-1 ring-black/[.04] transition hover:-translate-y-[3px] hover:shadow-[0_14px_44px_rgba(29,29,31,.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50 dark:bg-card dark:shadow-none dark:ring-border dark:hover:shadow-none dark:hover:ring-border-strong"
-                            >
-                                <span className="relative block aspect-[4/3] overflow-hidden">
-                                    <img src={item.cover} alt="" className="size-full object-cover transition duration-500 group-hover:scale-[1.03]" />
-                                    <span className="absolute left-3 top-3 rounded-full bg-white/75 px-2.5 py-1 text-[11px] font-semibold backdrop-blur-md dark:bg-black/55">{item.tag}</span>
-                                </span>
-                                <span className="block px-[18px] pb-[18px] pt-4">
-                                    <span className="block text-[15.5px] font-semibold tracking-[-.01em]">{item.title}</span>
-                                    <span className="mt-1 block text-xs leading-5 text-muted-foreground">{item.detail}</span>
-                                    <span className="mt-2.5 inline-flex items-center gap-1 text-[13px] font-medium text-primary">
-                                        开始创作 <ArrowRight className="size-3.5 transition group-hover:translate-x-0.5" />
-                                    </span>
-                                </span>
-                            </button>
-                        ))}
-                    </div>
-                </section>
 
                 {!hydrated ? (
                     <section className="flex min-h-[360px] items-center justify-center border-y border-border text-sm text-muted-foreground">正在加载画布...</section>

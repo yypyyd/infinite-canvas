@@ -92,7 +92,7 @@ function LibraryTab({ onInsert }: { onInsert: (payload: InsertAssetPayload) => v
                 <Input
                     className="w-56"
                     size="small"
-                    prefix={<Search className="size-3.5 text-stone-400" />}
+                    prefix={<Search className="size-3.5 text-neutral-400" />}
                     placeholder="搜索素材"
                     value={keyword}
                     allowClear
@@ -149,27 +149,27 @@ function PickerCard({ title, kind, cover, loading, onClick }: { title: string; k
     return (
         <button
             type="button"
-            className="group relative cursor-pointer overflow-hidden rounded-lg border border-stone-200 bg-white text-left transition hover:border-stone-400 hover:shadow-md dark:border-stone-700 dark:bg-stone-900 dark:hover:border-stone-500"
+            className="group relative cursor-pointer overflow-hidden rounded-lg border border-neutral-200 bg-white text-left transition hover:border-neutral-400 hover:shadow-md dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-neutral-500"
             onClick={onClick}
             disabled={loading}
         >
             {cover ? (
                 <img src={cover} alt={title} className="aspect-[4/3] w-full object-cover" />
             ) : (
-                <div className="flex aspect-[4/3] items-center justify-center bg-stone-100 p-3 text-center text-xs leading-5 text-stone-500 dark:bg-stone-800 dark:text-stone-400">{title}</div>
+                <div className="flex aspect-[4/3] items-center justify-center bg-neutral-100 p-3 text-center text-xs leading-5 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">{title}</div>
             )}
             <div className="p-2.5">
                 <div className="flex items-center justify-between gap-2">
-                    <span className="line-clamp-1 text-xs font-medium text-stone-800 dark:text-stone-200">{title}</span>
+                    <span className="line-clamp-1 text-xs font-medium text-neutral-800 dark:text-neutral-200">{title}</span>
                     <Tag className="m-0 shrink-0 text-[10px]">{kind === "image" ? "图片" : kind === "video" ? "视频" : "文本"}</Tag>
                 </div>
             </div>
             {loading && (
-                <div className="absolute inset-0 flex items-center justify-center bg-white/60 dark:bg-stone-900/60">
+                <div className="absolute inset-0 flex items-center justify-center bg-white/60 dark:bg-neutral-900/60">
                     <Spin size="small" />
                 </div>
             )}
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-stone-950/0 text-sm font-medium text-white opacity-0 transition group-hover:bg-stone-950/55 group-hover:opacity-100">插入</div>
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-neutral-950/0 text-sm font-medium text-white opacity-0 transition group-hover:bg-neutral-950/55 group-hover:opacity-100">插入</div>
         </button>
     );
 }
@@ -224,7 +224,7 @@ function MyAssetsTab({ onInsert }: { onInsert: (payload: InsertAssetPayload) => 
                 <Input
                     className="w-56"
                     size="small"
-                    prefix={<Search className="size-3.5 text-stone-400" />}
+                    prefix={<Search className="size-3.5 text-neutral-400" />}
                     placeholder="搜索素材"
                     value={keyword}
                     allowClear

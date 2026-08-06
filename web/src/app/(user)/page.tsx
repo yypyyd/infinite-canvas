@@ -1,34 +1,38 @@
 "use client";
 
-import { ArrowRight, Check, Layers3, Play, ShoppingBag } from "lucide-react";
+import { ArrowUpRight, Layers3, Play, Sparkles } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import Link from "next/link";
+import NextImage from "next/image";
 import { useEffect, useState } from "react";
 import { App, Image } from "antd";
 
 import { commercePresets } from "@/constant/commerce-presets";
-import { TemplateScene, type TemplateSceneVariant } from "@/components/template-scene";
 import { fetchPrompts, type Prompt } from "@/services/api/prompts";
 
+const media = Array.from({ length: 27 }, (_, index) => `/home-gallery/home-v3-${String(index + 1).padStart(2, "0")}.webp`);
+const heroCount = Math.min(6, Math.max(3, Math.ceil(media.length * 0.35)));
+const heroMedia = media.slice(0, heroCount);
+const galleryMedia = media.slice(heroCount);
+const heroColumns = Array.from({ length: 3 }, (_, column) => heroMedia.filter((_, index) => index % 3 === column));
+const galleryColumns = Array.from({ length: 5 }, (_, column) => galleryMedia.filter((_, index) => index % 5 === column));
+const galleryRatios = ["aspect-[3/4]", "aspect-square", "aspect-[4/5]", "aspect-[5/4]", "aspect-[2/3]"];
+const galleryOffsets = ["pt-0", "pt-8", "pt-16", "pt-5", "pt-11"];
+const capabilityNames = ["图片生成", "营销视频", "无限画布", "灵感模板", "商品素材", "模型广场"];
 const workflow = [
-    { step: "01", title: "导入商品", detail: "上传实拍、包装、Logo 与品牌参考，建立可靠的商品上下文。" },
-    { step: "02", title: "选择用途", detail: "从主图、场景图、详情页到活动视觉，直接从任务开始。" },
-    { step: "03", title: "生成并交付", detail: "在画布中对比、审核与迭代，沉淀可复用的整套商品素材。" },
+    { step: "01", title: "上传参考", detail: "商品图、包装、Logo 或品牌素材。" },
+    { step: "02", title: "描述画面", detail: "告诉画布你想要的场景和风格。" },
+    { step: "03", title: "继续创作", detail: "挑选结果，组合成完整的上新素材。" },
 ];
-
-const presetScenes: Record<string, TemplateSceneVariant> = {
-    "product-main": "main",
-    lifestyle: "lifestyle",
-    "selling-points": "detail",
-    promotion: "promo",
-    "apparel-model": "apparel",
-    "sku-series": "sku",
-};
 
 export default function IndexPage() {
     const { message } = App.useApp();
+    const reducedMotion = useReducedMotion();
     const [promptShowcase, setPromptShowcase] = useState<Prompt[]>([]);
     const [previewIndex, setPreviewIndex] = useState(0);
     const [previewOpen, setPreviewOpen] = useState(false);
+    const [activePreset, setActivePreset] = useState(0);
+    const [tickerPaused, setTickerPaused] = useState(false);
 
     useEffect(() => {
         void fetchPrompts({ pageSize: 6 })
@@ -38,152 +42,73 @@ export default function IndexPage() {
 
     return (
         <main className="h-full overflow-y-auto bg-background text-foreground">
-            <section className="px-4 pb-4 pt-3 sm:px-6 lg:px-8">
-                <div className="hero-atmosphere relative mx-auto min-h-[680px] max-w-[1440px] overflow-hidden rounded-[32px] bg-[#f5f5f7] px-6 py-16 text-center sm:px-10 lg:py-20 dark:rounded-none dark:border-b dark:border-border dark:bg-transparent">
-                    <div className="relative z-10 mx-auto max-w-4xl">
-                        <div className="mb-6 inline-flex items-center gap-2 text-sm font-medium text-[#6e6e73] dark:text-[#a1a1a6]">
-                            <ShoppingBag className="size-4" /> AI 电商视觉工作台
-                        </div>
-                        <h1 className="text-balance text-5xl font-semibold leading-[.98] tracking-[-.055em] sm:text-7xl lg:text-[88px]">
-                            商品上新，
-                            <span className="block text-[#6e6e73] dark:text-[#a1a1a6]">从一张好图开始。</span>
-                        </h1>
-                        <p className="mx-auto mt-7 max-w-2xl text-balance text-lg leading-8 text-[#6e6e73] dark:text-[#a1a1a6] sm:text-xl">从商品主图、场景图到详情页与营销视频，在一处完成整套销售素材。</p>
-                        <div className="mt-8 flex flex-wrap justify-center gap-3">
-                            <Link
-                                href="/image?preset=product-main"
-                                prefetch={false}
-                                className="inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-6 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
-                            >
-                                制作商品主图 <ArrowRight className="size-4" />
-                            </Link>
-                            <Link
-                                href="/canvas"
-                                prefetch={false}
-                                className="inline-flex min-h-11 items-center gap-2 rounded-full border border-primary px-6 text-sm font-medium text-primary transition hover:bg-primary hover:text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
-                            >
-                                打开商品画布 <Layers3 className="size-4" />
-                            </Link>
-                        </div>
-                        <div className="mt-7 flex flex-wrap justify-center gap-x-6 gap-y-2 text-xs text-[#6e6e73] dark:text-[#a1a1a6]">
-                            {["保持商品一致性", "支持批量生成", "素材云端沉淀"].map((item) => (
-                                <span key={item} className="inline-flex items-center gap-1.5">
-                                    <Check className="size-3.5" />
-                                    {item}
-                                </span>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div className="relative mx-auto mt-12 aspect-[16/7] w-full max-w-5xl overflow-hidden rounded-[28px] bg-[linear-gradient(145deg,#e9e4dc,#fbfbfd_54%,#f5e0d5)] shadow-[0_34px_90px_rgba(29,29,31,.13)] dark:bg-[linear-gradient(145deg,#303033,#1d1d1f_54%,#3b2417)]">
-                        <div className="absolute left-[7%] top-[11%] text-left text-[10px] font-semibold tracking-[.18em] text-[#6e6e73]">NEW SEASON / PRODUCT 01</div>
-                        <div className="absolute bottom-[5%] left-[14%] h-[72%] w-[31%] rounded-[44%_44%_26%_26%] bg-[#d97143] shadow-[0_32px_65px_rgba(113,55,31,.3)]" />
-                        <div className="absolute left-[23%] top-[15%] h-[12%] w-[13%] rounded-t-2xl bg-[#242426]" />
-                        <div className="absolute right-[8%] top-[12%] w-[39%] rounded-[24px] bg-white/65 p-6 text-left backdrop-blur-xl dark:bg-black/25">
-                            <div className="text-sm font-medium">一套商品，完整交付</div>
-                            <div className="mt-5 grid grid-cols-2 gap-3">
-                                {["主图", "场景", "详情", "活动"].map((item, index) => (
-                                    <div key={item} className="aspect-[4/3] rounded-2xl bg-white/80 p-3 text-xs text-[#6e6e73] shadow-sm dark:bg-white/10 dark:text-[#a1a1a6]">
-                                        <span className="tabular-nums">0{index + 1}</span>
-                                        <div className="mt-5 font-medium text-foreground">{item}视觉</div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <section className="mx-auto max-w-[1440px] px-4 py-20 sm:px-6 lg:px-8">
-                <div className="mb-10 max-w-3xl">
-                    <p className="text-sm font-medium text-primary">从任务开始</p>
-                    <h2 className="mt-3 text-4xl font-semibold tracking-[-.04em] sm:text-5xl">每一种上新需求，都有清晰入口。</h2>
-                    <p className="mt-4 text-lg leading-8 text-muted-foreground">选择用途，带入专业提示词，再上传商品参考图即可开始。</p>
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    {commercePresets.map((preset, index) => (
-                        <Link
-                            key={preset.id}
-                            href={`/image?preset=${preset.id}`}
-                            prefetch={false}
-                            className="group overflow-hidden rounded-[22px] bg-white shadow-[0_2px_14px_rgba(29,29,31,.06)] ring-1 ring-black/[.04] transition hover:-translate-y-[3px] hover:shadow-[0_14px_44px_rgba(29,29,31,.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:bg-card dark:shadow-none dark:ring-border dark:hover:shadow-none dark:hover:ring-border-strong"
-                        >
-                            <span className="relative block aspect-[4/3] overflow-hidden">
-                                <TemplateScene variant={presetScenes[preset.id] ?? "main"} />
-                                <span className="absolute left-3 top-3 rounded-full bg-white/75 px-2.5 py-1 text-[11px] font-semibold tabular-nums backdrop-blur-md dark:bg-black/55">0{index + 1}</span>
-                            </span>
-                            <span className="block px-[18px] pb-[18px] pt-4">
-                                <span className="block text-[15.5px] font-semibold tracking-[-.01em]">{preset.title}</span>
-                                <span className="mt-1 block text-xs leading-5 text-muted-foreground">{preset.description}</span>
-                                <span className="mt-2.5 inline-flex items-center gap-1 text-[13px] font-medium text-primary">
-                                    立即制作 <ArrowRight className="size-3.5 transition group-hover:translate-x-0.5" />
-                                </span>
-                            </span>
-                        </Link>
-                    ))}
-                </div>
-            </section>
-
-            <section className="px-4 pb-4 sm:px-6 lg:px-8">
-                <div className="mx-auto max-w-[1440px] overflow-hidden rounded-[32px] bg-[#1d1d1f] px-6 py-16 text-white sm:px-10 lg:px-14">
-                    <div className="grid gap-12 lg:grid-cols-[.8fr_2fr]">
-                        <div>
-                            <Play className="size-6 text-[#ff8f66]" />
-                            <h2 className="mt-6 text-4xl font-semibold tracking-[-.04em]">更短的上新流程。</h2>
-                            <p className="mt-4 text-base leading-7 text-white/55">减少工具切换，把时间留给选片和创意判断。</p>
-                        </div>
-                        <div className="grid gap-8 md:grid-cols-3">
-                            {workflow.map((item) => (
-                                <div key={item.step} className="border-t border-white/20 pt-5">
-                                    <span className="text-sm text-[#ff8f66]">{item.step}</span>
-                                    <h3 className="mt-8 text-xl font-medium">{item.title}</h3>
-                                    <p className="mt-3 text-sm leading-6 text-white/55">{item.detail}</p>
-                                </div>
+            <section className="overflow-hidden border-b border-border px-4 pb-8 pt-8 sm:px-8 lg:px-12">
+                <div className="mx-auto max-w-[1320px]">
+                    <motion.div initial={reducedMotion ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .5 }} className="grid items-end gap-7 lg:grid-cols-[.8fr_1.2fr]">
+                        <div><p className="text-xs font-medium uppercase tracking-[.2em] text-[#e26d3d]">AI 视觉创作空间</p><h1 className="mt-3 text-4xl font-semibold tracking-[-.07em] sm:text-5xl">今天想创造什么？</h1><p className="mt-3 text-sm leading-6 text-muted-foreground">从一张商品图开始，继续生成、编辑和交付。</p></div>
+                        <div className="flex flex-wrap items-center gap-4 lg:justify-end"><Link href="/image?preset=product-main" prefetch={false} className="flex min-h-14 min-w-0 flex-1 items-center gap-3 rounded-[16px] border border-border bg-card/90 px-4 text-sm text-muted-foreground shadow-[0_12px_34px_rgba(26,30,35,.08)] transition hover:border-border-strong hover:bg-card dark:shadow-none sm:min-w-[360px] sm:flex-none"><Sparkles className="size-4 shrink-0 text-[#e26d3d]" /><span className="flex-1">描述你想创造的商品画面...</span><span className="grid size-8 shrink-0 place-items-center rounded-full bg-foreground text-background"><ArrowUpRight className="size-4" /></span></Link><Link href="/canvas" prefetch={false} className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground transition hover:text-foreground"><Layers3 className="size-4" />打开画布</Link></div>
+                    </motion.div>
+                    <div className="relative mt-8 h-[430px] overflow-hidden rounded-[26px] bg-muted sm:h-[500px]">
+                        <div className="absolute inset-x-0 top-0 z-10 h-12 bg-gradient-to-b from-muted to-transparent" />
+                        <div className="absolute inset-x-0 bottom-0 z-10 h-16 bg-gradient-to-t from-muted to-transparent" />
+                        <div className="absolute inset-0 grid grid-cols-2 gap-2 p-2 sm:grid-cols-3 sm:gap-3 sm:p-3">
+                            {heroColumns.map((column, columnIndex) => (
+                                <motion.div
+                                    key={columnIndex}
+                                    className="flex min-w-0 flex-col gap-2 sm:gap-3"
+                                    animate={reducedMotion ? undefined : { y: columnIndex % 2 ? [-24, 18, -24] : [18, -24, 18] }}
+                                    transition={{ duration: 13 + columnIndex * 1.4, repeat: Infinity, ease: "easeInOut" }}
+                                >
+                                    {column.map((src, index) => (
+                                        <Link key={`${src}-${index}`} href="/image?preset=product-main" prefetch={false} className="group relative block aspect-[4/5] overflow-hidden rounded-[18px] bg-card shadow-[0_14px_40px_rgba(31,35,40,.12)] dark:shadow-none">
+                                            <NextImage src={src} alt="AI 商品视觉作品" fill sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 33vw" className="object-cover transition duration-700 group-hover:scale-[1.05]" />
+                                        </Link>
+                                    ))}
+                                </motion.div>
                             ))}
                         </div>
                     </div>
                 </div>
             </section>
 
-            {promptShowcase.length ? (
-                <section className="mx-auto max-w-[1440px] px-4 py-20 sm:px-6 lg:px-8">
-                    <div className="mb-9 flex flex-wrap items-end justify-between gap-4">
-                        <div>
-                            <p className="text-sm font-medium text-primary">视觉灵感</p>
-                            <h2 className="mt-3 text-4xl font-semibold tracking-[-.04em]">看看还能怎么呈现商品。</h2>
-                        </div>
-                        <Link href="/prompts" prefetch={false} className="inline-flex items-center gap-1 text-sm text-primary">
-                            查看全部 <ArrowRight className="size-4" />
-                        </Link>
-                    </div>
-                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                        {promptShowcase.map((item, index) => (
-                            <button
-                                key={item.id}
-                                type="button"
-                                onClick={() => {
-                                    setPreviewIndex(index);
-                                    setPreviewOpen(true);
-                                }}
-                                className="group relative aspect-[4/3] overflow-hidden rounded-[22px] bg-muted text-left transition hover:-translate-y-[3px] hover:shadow-[0_14px_44px_rgba(29,29,31,.14)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
-                            >
-                                <img src={item.coverUrl} alt={item.title} className="size-full object-cover transition duration-700 group-hover:scale-[1.035]" />
-                                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent p-6 pt-20 text-white">
-                                    <h3 className="font-medium">{item.title}</h3>
-                                </div>
-                            </button>
-                        ))}
-                    </div>
-                </section>
-            ) : null}
+            <section className="group relative overflow-hidden border-y border-border bg-card/70" onMouseEnter={() => setTickerPaused(true)} onMouseLeave={() => setTickerPaused(false)}>
+                <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-20 bg-gradient-to-r from-background to-transparent" />
+                <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-20 bg-gradient-to-l from-background to-transparent" />
+                <motion.div className="flex w-max items-center gap-9 whitespace-nowrap px-4 py-3.5" animate={tickerPaused || reducedMotion ? undefined : { x: [0, -760] }} transition={{ duration: 24, repeat: Infinity, ease: "linear" }}>
+                    {[...capabilityNames, ...capabilityNames, ...capabilityNames].map((item, index) => <span key={`${item}-${index}`} className="group/item inline-flex items-center gap-3 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"><span className="size-1.5 rounded-full bg-[#e26d3d] transition-transform duration-300 group-hover/item:scale-125" />{item}<span className="text-[10px] tabular-nums text-muted-foreground/60">0{index % capabilityNames.length + 1}</span></span>)}
+                </motion.div>
+            </section>
 
-            <Image.PreviewGroup preview={{ open: previewOpen, current: previewIndex, onOpenChange: setPreviewOpen, onChange: setPreviewIndex }}>
-                <div className="hidden">
-                    {promptShowcase.map((item) => (
-                        <Image key={item.id} src={item.coverUrl} alt={item.title} />
-                    ))}
-                </div>
-            </Image.PreviewGroup>
+            <section className="mx-auto max-w-[1360px] px-5 py-20 sm:px-8 lg:px-12"><div className="mb-10 flex flex-wrap items-end justify-between gap-5"><div><p className="text-xs font-medium uppercase tracking-[.18em] text-[#e26d3d]">精选作品</p><h2 className="mt-4 text-4xl font-semibold tracking-[-.06em] sm:text-5xl">灵感不应该只有几张。</h2></div><p className="max-w-sm text-sm leading-6 text-muted-foreground">浏览不同商品、材质和风格，点击任意作品开始自己的创作。</p></div><div className="grid grid-cols-2 items-start gap-3 overflow-hidden sm:grid-cols-3 lg:grid-cols-5">{galleryColumns.map((column, columnIndex) => <motion.div key={columnIndex} animate={reducedMotion ? undefined : { y: columnIndex % 2 ? [10, -8, 10] : [-8, 10, -8] }} transition={{ duration: 16 + columnIndex * 1.2, repeat: Infinity, ease: "easeInOut" }} className={`flex min-w-0 flex-col gap-3 ${galleryOffsets[columnIndex]}`}>{column.map((src, index) => <motion.div key={src} initial={reducedMotion ? false : { opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: "80px" }} transition={{ delay: (index + columnIndex) * .04, duration: .45 }}><Link href="/image?preset=product-main" prefetch={false} className="group relative block overflow-hidden rounded-[16px] bg-muted ring-1 ring-border transition hover:-translate-y-1 hover:shadow-[0_16px_38px_rgba(25,29,34,.14)] dark:hover:shadow-none"><div className={`relative ${galleryRatios[(index + columnIndex) % galleryRatios.length]}`}><NextImage src={src} alt={`AI 商品视觉作品 ${index + heroCount + 1}`} fill sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw" className="object-cover transition duration-700 group-hover:scale-[1.045]" /></div><div className="absolute inset-x-0 bottom-0 flex translate-y-2 items-center justify-between bg-gradient-to-t from-black/70 to-transparent p-3 pt-12 text-white opacity-0 transition duration-300 group-hover:translate-y-0 group-hover:opacity-100"><span className="text-xs font-medium">使用同款创作</span><ArrowUpRight className="size-4" /></div></Link></motion.div>)}</motion.div>)}</div></section>
+
+            <motion.section initial={reducedMotion ? false : { opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: .18 }} transition={{ duration: .7 }} className="mx-auto max-w-[1360px] px-5 py-24 sm:px-8 lg:px-12"><div className="grid gap-12 lg:grid-cols-[.82fr_1.18fr]"><div><p className="text-xs font-medium uppercase tracking-[.18em] text-[#e26d3d]">使用场景</p><h2 className="mt-5 text-4xl font-semibold leading-[1.03] tracking-[-.06em] sm:text-6xl">选择任务，<br />马上开始。</h2><p className="mt-5 max-w-sm text-sm leading-6 text-muted-foreground">每一个入口都带入对应的专业配置，不需要面对空白页面。</p></div><div className="grid gap-5 lg:grid-cols-[.8fr_1.2fr]"><div className="divide-y divide-border border-y border-border">{commercePresets.map((preset, index) => <button key={preset.id} type="button" onMouseEnter={() => setActivePreset(index)} onFocus={() => setActivePreset(index)} onClick={() => setActivePreset(index)} className={`flex w-full items-center justify-between gap-3 py-4 text-left transition ${activePreset === index ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}><span className="flex items-center gap-3"><span className={`text-[10px] tabular-nums ${activePreset === index ? "text-[#e26d3d]" : "text-muted-foreground/60"}`}>0{index + 1}</span><span className="text-sm font-medium">{preset.title}</span></span><ArrowUpRight className={`size-4 transition ${activePreset === index ? "translate-x-0 text-[#e26d3d]" : "-translate-x-1 opacity-0"}`} /></button>)}</div><div className="relative min-h-[360px] overflow-hidden rounded-[22px] bg-muted"><AnimatePresence mode="wait"><motion.div key={activePreset} initial={reducedMotion ? false : { opacity: 0, scale: 1.04 }} animate={{ opacity: 1, scale: 1 }} exit={reducedMotion ? undefined : { opacity: 0, scale: .98 }} transition={{ duration: .38 }} className="absolute inset-0"><NextImage src={media[activePreset]} alt={commercePresets[activePreset]?.title ?? "商品视觉"} fill sizes="(max-width: 1024px) 100vw, 460px" className="object-cover" /><div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-5 pt-20 text-left text-white"><h3 className="text-lg font-medium">{commercePresets[activePreset]?.title}</h3><p className="mt-1 text-sm text-white/65">{commercePresets[activePreset]?.description}</p><Link href={`/image?preset=${commercePresets[activePreset]?.id}`} prefetch={false} className="mt-4 inline-flex items-center gap-1 text-sm font-medium">立即制作 <ArrowUpRight className="size-4" /></Link></div></motion.div></AnimatePresence></div></div></div></motion.section>
+
+            <section className="border-y border-border bg-card/70">
+                <motion.div initial={reducedMotion ? false : { opacity: 0, y: 35 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: .25 }} transition={{ duration: .65 }} className="mx-auto max-w-[1360px] px-5 py-16 sm:px-8 sm:py-20 lg:px-12">
+                    <div className="grid items-center gap-10 lg:grid-cols-[.78fr_1.22fr] lg:gap-14">
+                        <div>
+                            <div className="mb-5 flex size-9 items-center justify-center rounded-full bg-muted text-[#e26d3d]"><Play className="size-4" /></div>
+                            <h2 className="text-3xl font-semibold tracking-[-.05em] sm:text-4xl">三步，完成一次上新。</h2>
+                        </div>
+                        <div className="relative grid gap-8 sm:grid-cols-3 sm:gap-6">
+                            <div className="pointer-events-none absolute left-[8%] right-[8%] top-4 hidden border-t border-border sm:block" />
+                            {workflow.map((item, index) => (
+                                <motion.div key={item.step} initial={reducedMotion ? false : { opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} whileHover={reducedMotion ? undefined : { y: -4 }} transition={{ delay: index * .1, duration: .45 }} className="group relative">
+                                    <span className="relative z-10 grid size-8 place-items-center rounded-full border border-border bg-background text-xs font-medium tabular-nums text-[#e26d3d] transition group-hover:border-[#e26d3d]">{item.step}</span>
+                                    <h3 className="mt-5 text-base font-medium text-foreground">{item.title}</h3>
+                                    <p className="mt-2 max-w-[210px] text-sm leading-6 text-muted-foreground">{item.detail}</p>
+                                </motion.div>
+                            ))}
+                        </div>
+                    </div>
+                </motion.div>
+            </section>
+
+            {promptShowcase.length ? <motion.section initial={reducedMotion ? false : { opacity: 0, y: 35 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: .12 }} transition={{ duration: .65 }} className="mx-auto max-w-[1360px] px-5 py-24 sm:px-8 lg:px-12"><div className="mb-9 flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-medium uppercase tracking-[.18em] text-[#e26d3d]">灵感流</p><h2 className="mt-5 text-4xl font-semibold tracking-[-.06em] sm:text-5xl">看看别人如何开始。</h2></div><Link href="/prompts" prefetch={false} className="inline-flex items-center gap-1 text-sm text-muted-foreground transition hover:text-foreground">查看全部 <ArrowUpRight className="size-4" /></Link></div><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{promptShowcase.map((item, index) => <motion.button key={item.id} type="button" initial={reducedMotion ? false : { opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: index * .06, duration: .45 }} onClick={() => { setPreviewIndex(index); setPreviewOpen(true); }} className="group relative aspect-[4/3] overflow-hidden rounded-[18px] bg-card text-left ring-1 ring-border transition hover:-translate-y-1 hover:ring-foreground/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e26d3d]"><img src={item.coverUrl} alt={item.title} className="size-full object-cover transition duration-700 group-hover:scale-[1.04]" /><div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent p-5 pt-16 text-white"><h3 className="text-sm font-medium">{item.title}</h3></div></motion.button>)}</div></motion.section> : null}
+
+            <motion.section initial={reducedMotion ? false : { opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="border-t border-border px-6 py-24 text-center sm:px-10"><Sparkles className="mx-auto size-5 text-[#e26d3d]" /><h2 className="mx-auto mt-5 max-w-2xl text-4xl font-semibold tracking-[-.06em] sm:text-5xl">准备好开始下一张图了吗？</h2><Link href="/image?preset=product-main" prefetch={false} className="mt-8 inline-flex min-h-11 items-center gap-2 rounded-full bg-foreground px-6 text-sm font-semibold text-background transition hover:-translate-y-0.5 hover:bg-foreground/90">开始创作 <ArrowUpRight className="size-4" /></Link></motion.section>
+
+            <Image.PreviewGroup preview={{ open: previewOpen, current: previewIndex, onOpenChange: setPreviewOpen, onChange: setPreviewIndex }}><div className="hidden">{promptShowcase.map((item) => <Image key={item.id} src={item.coverUrl} alt={item.title} />)}</div></Image.PreviewGroup>
         </main>
     );
 }

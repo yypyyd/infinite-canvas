@@ -157,7 +157,6 @@ func assignLegacyOrganizationData(tx *gorm.DB, userID string, organizationID str
 		&model.UserAsset{},
 		&model.UserGenerationRecord{},
 		&model.UserProjectVersion{},
-		&model.UserWorkspaceState{},
 	} {
 		if err := tx.Model(item).Where("(organization_id = '' OR organization_id IS NULL) AND user_id = ?", userID).Update("organization_id", organizationID).Error; err != nil {
 			return err

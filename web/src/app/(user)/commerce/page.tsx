@@ -851,7 +851,7 @@ export default function CommercePage() {
                                 {item.logoStorageKey ? (
                                     <Avatar shape="square" size={48} src={workspaceFileUrl(item.logoStorageKey)} />
                                 ) : (
-                                    <div className="grid size-12 place-items-center bg-stone-950 text-lg font-semibold text-white">{item.name.slice(0, 1)}</div>
+                                    <div className="grid size-12 place-items-center bg-neutral-950 text-lg font-semibold text-white">{item.name.slice(0, 1)}</div>
                                 )}
                                 <div>
                                     <h3 className="text-lg font-semibold">{item.name}</h3>

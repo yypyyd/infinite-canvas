@@ -1,5 +1,9 @@
 import type { ReferenceImage } from "@/types/image";
 
+export function normalizeImageCount(value: string | number, max = 15, fallback = 1) {
+    return Math.max(1, Math.min(max, Math.floor(Math.abs(Number(value)) || fallback)));
+}
+
 export function formatBytes(bytes: number) {
     if (!Number.isFinite(bytes) || bytes <= 0) {
         return "";

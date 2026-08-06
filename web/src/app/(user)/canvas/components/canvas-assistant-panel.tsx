@@ -23,6 +23,7 @@ import type { UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl, storeGeneratedImage } from "@/services/image-storage";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { imageReferenceLabel } from "@/lib/image-reference-prompt";
+import { normalizeImageCount } from "@/lib/image-utils";
 import { supportsImageQuality, supportsImageReferences } from "@/lib/image-model-capabilities";
 import type { ReferenceImage } from "@/types/image";
 import { DiaTextReveal } from "@/components/ui/dia-text-reveal";
@@ -394,7 +395,7 @@ export function CanvasAssistantPanel({
                                 );
                                 const idempotencyKey = `agent:${runId}:${callId}`;
                                 const generationStartedAt = performance.now();
-                                const imageCount = Math.max(1, Number(toolArguments.count) || 1);
+                                const imageCount = normalizeImageCount(toolArguments.count);
                                 const generationRecordId = await saveCanvasImageGenerationRecord(historyOwnerId, {
                                     prompt: toolArguments.prompt,
                                     model: toolConfig.model,
@@ -633,7 +634,7 @@ export function CanvasAssistantPanel({
         try {
             if (nextMode === "image") {
                 generationStartedAt = performance.now();
-                const imageCount = Math.max(1, Number(requestConfig.count) || 1);
+                const imageCount = normalizeImageCount(requestConfig.count);
                 generationRecordId = await saveCanvasImageGenerationRecord(historyOwnerId, {
                     prompt: text,
                     model: requestConfig.model,
@@ -705,8 +706,8 @@ export function CanvasAssistantPanel({
                     size: requestConfig.size,
                     quality: requestConfig.quality,
                     images: [],
-                    imageCount: Math.max(1, Number(requestConfig.count) || 1),
-                    failCount: Math.max(1, Number(requestConfig.count) || 1),
+                    imageCount: normalizeImageCount(requestConfig.count),
+                    failCount: normalizeImageCount(requestConfig.count),
                     durationMs: performance.now() - generationStartedAt,
                     canvasId: projectId,
                 });
@@ -965,7 +966,7 @@ function AssistantComposer({
         modality: mode === "image" ? "image" : "text",
         operation: mode === "image" ? (imageSupportsReferences && visibleReferences.some((item) => item.dataUrl) ? "edit" : "generation") : "completion",
         unit: mode === "image" ? "image" : "request",
-        count: mode === "image" ? config.count : 1,
+        count: mode === "image" ? normalizeImageCount(config.count) : 1,
         size: config.size,
     });
 
@@ -993,7 +994,7 @@ function AssistantComposer({
                         event.preventDefault();
                         void onSubmit();
                     }}
-                    className="thin-scrollbar h-20 w-full resize-none border-0 bg-transparent px-1 py-1 text-sm leading-5 outline-none placeholder:text-stone-400"
+                    className="thin-scrollbar h-20 w-full resize-none border-0 bg-transparent px-1 py-1 text-sm leading-5 outline-none placeholder:text-neutral-400"
                     style={{ color: theme.node.text }}
                     placeholder={mode === "image" ? "描述你想生成或修改的图片" : "输入你想问的问题"}
                 />
@@ -1191,7 +1192,7 @@ function AssistantHistory({
         <div className="space-y-1">
             {sessions.map((session) => (
                 <div key={session.id} className="group flex items-center gap-2 rounded-lg px-2 py-1.5 transition hover:bg-black/5 dark:hover:bg-white/10" style={session.id === activeSession?.id ? { background: theme.node.fill } : undefined}>
-                    <input type="checkbox" className="size-4 accent-stone-950" checked={checkedIds.includes(session.id)} onChange={(event) => onToggleChecked(session.id, event.target.checked)} />
+                    <input type="checkbox" className="size-4 accent-neutral-950" checked={checkedIds.includes(session.id)} onChange={(event) => onToggleChecked(session.id, event.target.checked)} />
                     <button type="button" className="min-w-0 flex-1 text-left text-sm" onClick={() => onOpen(session.id)}>
                         <span className="block truncate">{session.title}</span>
                         <span className="text-xs opacity-50">{session.messages.length} 条消息</span>

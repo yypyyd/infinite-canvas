@@ -4,6 +4,7 @@ import { App, Button, Form, Input, Modal, Select } from "antd";
 
 import { ModelPicker } from "@/components/model-picker";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
+import { normalizeImageCount } from "@/lib/image-utils";
 import { useConfigStore, useEffectiveConfig, type ModelCapability } from "@/stores/use-config-store";
 
 type ModelGroup = {
@@ -41,7 +42,7 @@ export function AppConfigModal() {
             title={
                 <div>
                     <div className="text-lg font-semibold">配置与用户偏好</div>
-                    <div className="mt-1 text-xs font-normal text-stone-500">模型和创作默认行为</div>
+                    <div className="mt-1 text-xs font-normal text-neutral-500">模型和创作默认行为</div>
                 </div>
             }
             open={isConfigOpen}
@@ -71,8 +72,7 @@ export function AppConfigModal() {
                                 min={1}
                                 max={15}
                                 value={config.canvasImageCount}
-                                onChange={(event) => updateConfig("canvasImageCount", event.target.value)}
-                                onBlur={(event) => updateConfig("canvasImageCount", normalizeImageCount(event.target.value))}
+                                onChange={(event) => updateConfig("canvasImageCount", String(normalizeImageCount(event.target.value, 15, 3)))}
                             />
                         </Form.Item>
                         <Form.Item label="默认音频声音" className="mb-4">
@@ -100,8 +100,4 @@ export function AppConfigModal() {
             </div>
         </Modal>
     );
-}
-
-function normalizeImageCount(value: string) {
-    return String(Math.max(1, Math.min(15, Math.floor(Math.abs(Number(value)) || 3))));
 }

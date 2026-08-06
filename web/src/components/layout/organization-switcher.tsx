@@ -22,8 +22,8 @@ export function OrganizationSwitcher() {
     if (!user || !query.data) return null;
 
     return (
-        <div className="ml-4 hidden min-w-0 items-center gap-1 border-l border-stone-200 pl-4 lg:flex dark:border-stone-800">
-            <Building2 className="size-3.5 shrink-0 text-stone-400" />
+        <div className="ml-4 hidden min-w-0 items-center gap-1 border-l border-neutral-200 pl-4 lg:flex dark:border-neutral-800">
+            <Building2 className="size-3.5 shrink-0 text-neutral-400" />
             <Select
                 variant="borderless"
                 size="small"

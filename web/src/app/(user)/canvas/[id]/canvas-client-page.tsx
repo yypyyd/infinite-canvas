@@ -22,7 +22,7 @@ import { supportsImageQuality, supportsImageReferences, type ImageModelDefinitio
 import { videoReferenceCapabilities } from "@/lib/video-reference";
 import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
-import { flushActiveWorkspaceChanges } from "@/components/layout/workspace-provider";
+import { flushActiveWorkspaceChanges, isWorkspaceVersionConflictError } from "@/components/layout/workspace-provider";
 import type { AgentToolName, AgentToolResult } from "@/services/api/agent";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useUserStore } from "@/stores/use-user-store";
@@ -379,6 +379,7 @@ function InfiniteCanvasPage() {
             try {
                 await flushActiveWorkspaceChanges();
             } catch (error) {
+                if (isWorkspaceVersionConflictError(error)) return id;
                 await saveCanvasImageGenerationRecord(historyOwnerId, {
                     id,
                     prompt,
@@ -433,6 +434,7 @@ function InfiniteCanvasPage() {
             try {
                 await flushActiveWorkspaceChanges();
             } catch (error) {
+                if (isWorkspaceVersionConflictError(error)) return id;
                 await saveCanvasVideoGenerationRecord(historyOwnerId, {
                     id,
                     prompt,

@@ -17,6 +17,13 @@ export type WorkspaceRecord = {
 export type WorkspacePayload = { records: WorkspaceRecord[] };
 export type WorkspaceChange = { domain: WorkspaceDomain; objectId: string; data: Record<string, unknown>; deleted: boolean; version: number };
 
+export class WorkspaceVersionConflictError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = "WorkspaceVersionConflictError";
+    }
+}
+
 export type WorkspaceFile = {
     id: string;
     storageKey: string;
@@ -52,8 +59,14 @@ export function fetchWorkspace(token: string) {
     return apiGet<WorkspacePayload>("/api/workspace", undefined, token);
 }
 
-export function saveWorkspaceChanges(token: string, changes: WorkspaceChange[]) {
-    return apiPost<WorkspacePayload>("/api/workspace/changes", { changes }, token);
+export async function saveWorkspaceChanges(token: string, changes: WorkspaceChange[]) {
+    try {
+        return await apiPost<WorkspacePayload>("/api/workspace/changes", { changes }, token);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : "";
+        if (message.includes("企业数据已被其他成员更新") || message.includes("刷新后重新编辑")) throw new WorkspaceVersionConflictError(message);
+        throw error;
+    }
 }
 
 export function fetchWorkspaceStorageStatus(token: string) {

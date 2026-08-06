@@ -21,6 +21,8 @@ const (
 	youMindGptImage2RawBase      = "https://raw.githubusercontent.com/YouMind-OpenLab/awesome-gpt-image-2/main"
 	youMindNanoBananaProRawBase  = "https://raw.githubusercontent.com/YouMind-OpenLab/awesome-nano-banana-pro-prompts/main"
 	davidWuGptImage2RawBase      = "https://raw.githubusercontent.com/davidwuw0811-boop/awesome-gpt-image2-prompts/main"
+	freestyleGptImage2RawBase    = "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main"
+	seedanceRawBase              = "https://raw.githubusercontent.com/ZeroLu/awesome-seedance/main"
 )
 
 var gptImage2CaseFiles = []string{"README.md", "cases/ad-creative.md", "cases/character.md", "cases/comparison.md", "cases/ecommerce.md", "cases/portrait.md", "cases/poster.md", "cases/ui.md"}
@@ -49,6 +51,19 @@ type davidWuGptImage2Prompt struct {
 	Image      string `json:"image"`
 }
 
+type freestyleGptImage2Data struct {
+	Cases []struct {
+		ID        int      `json:"id"`
+		Title     string   `json:"title"`
+		Image     string   `json:"image"`
+		Prompt    string   `json:"prompt"`
+		Category  string   `json:"category"`
+		Styles    []string `json:"styles"`
+		Scenes    []string `json:"scenes"`
+		GithubURL string   `json:"githubUrl"`
+	} `json:"cases"`
+}
+
 func SyncPromptCategory(category string) ([]model.PromptCategory, error) {
 	for _, item := range repository.PromptCategories() {
 		if item.Category != category {
@@ -69,7 +84,7 @@ func SyncPromptCategory(category string) ([]model.PromptCategory, error) {
 func buildPromptCategory(category string) ([]model.Prompt, error) {
 	switch category {
 	case "gpt-image-2-prompts":
-		return buildGptImage2Prompts()
+		return buildFreestyleGptImage2Prompts()
 	case "awesome-gpt-image":
 		return buildAwesomeGptImagePrompts()
 	case "awesome-gpt4o-image-prompts":
@@ -80,6 +95,10 @@ func buildPromptCategory(category string) ([]model.Prompt, error) {
 		return buildYouMindNanoBananaProPrompts()
 	case "davidwu-gpt-image2-prompts":
 		return buildDavidWuGptImage2Prompts()
+	case "freestyle-gpt-image-2":
+		return buildFreestyleGptImage2Prompts()
+	case "awesome-seedance":
+		return buildSeedancePrompts()
 	}
 	return nil, errors.New("未知提示词分类")
 }
@@ -211,6 +230,58 @@ func buildDavidWuGptImage2Prompts() ([]model.Prompt, error) {
 		}
 		image := absoluteImage(davidWuGptImage2RawBase, item.Image)
 		items = append(items, model.Prompt{ID: "davidwu-gpt-image2-prompts-" + leftPad(item.ID), Title: title, CoverURL: image, Prompt: prompt, Tags: davidWuGptImage2Tags(item), Preview: davidWuGptImage2Preview(item, image)})
+	}
+	return items, nil
+}
+
+func buildFreestyleGptImage2Prompts() ([]model.Prompt, error) {
+	raw, err := fetchText(freestyleGptImage2RawBase, "data/cases.json")
+	if err != nil {
+		return nil, err
+	}
+	data := freestyleGptImage2Data{}
+	if err := json.Unmarshal([]byte(raw), &data); err != nil {
+		return nil, err
+	}
+	items := make([]model.Prompt, 0, len(data.Cases))
+	for _, item := range data.Cases {
+		title, prompt := strings.TrimSpace(item.Title), strings.TrimSpace(item.Prompt)
+		if title == "" || prompt == "" {
+			continue
+		}
+		tags := append([]string{}, splitTags(item.Category, `\s*&\s*`)...)
+		tags = append(tags, item.Styles...)
+		tags = append(tags, item.Scenes...)
+		image := absoluteImage(freestyleGptImage2RawBase+"/data", item.Image)
+		items = append(items, model.Prompt{ID: "freestyle-gpt-image-2-" + leftPad(item.ID), Title: title, CoverURL: image, Prompt: prompt, Tags: tags, Category: "freestyle-gpt-image-2", GithubURL: item.GithubURL, Preview: markdownPreview([]string{image})})
+	}
+	return items, nil
+}
+
+func buildSeedancePrompts() ([]model.Prompt, error) {
+	markdown, err := fetchText(seedanceRawBase, "README-zh.md")
+	if err != nil {
+		return nil, err
+	}
+	items := []model.Prompt{}
+	codeBlock := regexp.MustCompile("(?s)```(?:\\w+)?\\r?\\n(.*?)\\r?\\n```")
+	for _, section := range splitBeforeHeading(markdown, "### ") {
+		heading := strings.TrimSpace(firstMatch(section, `(?m)^###\s+(.+)$`))
+		if heading == "" || strings.HasPrefix(heading, "赞助") {
+			continue
+		}
+		blocks := codeBlock.FindAllStringSubmatch(section, -1)
+		for index, match := range blocks {
+			prompt := strings.TrimSpace(match[1])
+			if prompt == "" {
+				continue
+			}
+			title := heading
+			if len(blocks) > 1 {
+				title += " - " + strconv.Itoa(index+1)
+			}
+			items = append(items, model.Prompt{ID: "awesome-seedance-" + leftPad(len(items)+1), Title: title, Prompt: prompt, Tags: []string{"seedance", "video"}, Category: "awesome-seedance", GithubURL: "https://github.com/ZeroLu/awesome-seedance"})
+		}
 	}
 	return items, nil
 }

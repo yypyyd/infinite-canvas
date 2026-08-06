@@ -245,9 +245,47 @@ Idempotency-Key: 调用方生成的唯一请求编号
 X-Request-ID: 可选的链路追踪编号
 ```
 
-- `Idempotency-Key` 最长 191 个字符，同一用户和企业内必须唯一。重复提交会返回“请求已提交，请勿重复操作”，不会再次扣费，也不会把上一次结果重新返回。
+- `Idempotency-Key` 最长 191 个字符，同一用户和企业内必须唯一。重复提交会返回“请求已提交，请勿重复操作”，不会再次扣费；请通过下方恢复接口读取原任务。
 - `X-Request-ID` 最长 128 个字符，可使用字母、数字、点、下划线、冒号和短横线；服务端会在响应头返回最终的 `X-Request-ID`。
-- 网络超时时不要立即更换幂等编号重试，否则可能创建第二个生成任务。视频任务应继续使用已取得的任务 ID 查询。
+- 网络超时时不要立即更换幂等编号重试，否则可能创建第二个生成任务。先使用原 `Idempotency-Key` 查询恢复状态；已取得视频任务 ID 时仍可继续轮询视频接口。
+
+## 请求结果恢复
+
+调用方在等待生成时断线、超时或重启，可使用原 API Key 和原 `Idempotency-Key` 查询服务端保存的真实任务状态：
+
+```bash
+curl "https://huantu.xyz/api/v1/generation-tasks/recovery" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Idempotency-Key: YOUR_ORIGINAL_REQUEST_ID"
+```
+
+接口只能读取当前 API Key 所属账号和企业的任务，查询不会重复生成或扣费。响应中 `status` 可为 `running`、`success` 或 `failed`：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "requestId": "YOUR_ORIGINAL_REQUEST_ID",
+    "model": "MODEL_ID",
+    "modality": "image",
+    "path": "/images/generations",
+    "status": "success",
+    "result": {
+      "created": 1760000000,
+      "data": [{ "b64_json": "iVBORw0KGgoAAA..." }]
+    },
+    "createdAt": "...",
+    "updatedAt": "..."
+  },
+  "msg": "ok"
+}
+```
+
+- `running`：任务仍在处理，可根据响应头 `Retry-After` 继续查询。视频创建已成功时还会返回 `upstreamTaskId`，可转为正常视频轮询。
+- `success`：图片和已完成视频会在 `result` 中返回已保存结果。
+- `failed`：`errorMessage` 返回真实失败原因，已扣算力会按原扣费来源返还。
+
+恢复结果可重复查询，调用方应继续保存自己生成的 `Idempotency-Key`，不要将 API Key 或完整结果写入客户端日志。
 
 ## 响应与错误处理
 
@@ -278,6 +316,7 @@ X-Request-ID: 可选的链路追踪编号
 - 图片同时兼容 Base64 和 URL，音频与视频下载按二进制处理。
 - 视频保存任务 ID 和模型 ID，完成轮询后再下载。
 - 每个生成请求使用唯一的 `Idempotency-Key`，日志只记录 Key 的内部编号或前缀。
+- 超时或响应丢失时使用原 `Idempotency-Key` 调用恢复接口，不要换 Key 重复生成。
 - 对所有 JSON 响应检查非零 `code`，不要只判断 HTTP 200。
 
 接口统一响应的内部约定和安全边界见[接口响应约定](/docs/backend/api-response)。

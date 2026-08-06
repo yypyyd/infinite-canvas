@@ -44,6 +44,24 @@ func RecoverUserGenerationTask(w http.ResponseWriter, r *http.Request) {
 	OK(w, result)
 }
 
+func RecoverAPIGenerationTask(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	user, ok := service.UserFromContext(r.Context())
+	if !ok {
+		Fail(w, "未登录或权限不足")
+		return
+	}
+	result, err := service.RecoverGenerationTask(user.OrganizationID, user.ID, strings.TrimSpace(r.Header.Get("Idempotency-Key")))
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	if result.Status == "running" {
+		w.Header().Set("Retry-After", "2")
+	}
+	OK(w, result)
+}
+
 func UserGenerationTasks(w http.ResponseWriter, r *http.Request) {
 	user, ok := service.UserFromContext(r.Context())
 	if !ok {

@@ -1,7 +1,7 @@
 "use client";
 
 import { Button, Drawer, Empty, Input, Pagination, Segmented, Skeleton, type InputRef } from "antd";
-import { AudioLines, ChevronRight, Coins, Copy, ImageIcon, KeyRound, LayoutGrid, RotateCcw, Search, Sparkles, Video } from "lucide-react";
+import { AudioLines, ChevronRight, Coins, Copy, ImageIcon, KeyRound, LayoutGrid, RefreshCw, RotateCcw, Search, Sparkles, Video } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -296,6 +296,12 @@ function ModelDetails({ model, rules, endpoint, operation, operations, onOperati
                 </div>
                 {operation ? <div className="bg-muted/45"><div className="flex items-center justify-between border-b border-border px-4 py-2.5"><span className="font-mono text-[11px] text-muted-foreground">cURL</span><Button type="text" size="small" icon={<Copy className="size-3.5" />} onClick={onCopySnippet}>复制</Button></div><pre className="thin-scrollbar max-h-[380px] overflow-auto p-4 text-[11px] leading-6"><code>{snippet}</code></pre></div> : <div className="p-5 text-sm text-muted-foreground">当前模型未配置可用操作。</div>}
             </section>
+
+            <div className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl bg-primary/[.055] px-3.5 py-3 text-xs ring-1 ring-primary/15">
+                <RefreshCw className="size-3.5 shrink-0 text-primary" />
+                <span className="text-muted-foreground">请求超时或响应丢失？</span>
+                <Link href="/account?tab=api" className="font-medium text-primary transition hover:text-primary/80">使用原 Idempotency-Key 恢复结果</Link>
+            </div>
 
             <div className="mt-6 flex flex-wrap gap-2">
                 <Link href="/account?tab=api" className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-primary px-3.5 text-sm font-medium text-primary-foreground transition hover:bg-primary/90"><KeyRound className="size-4" />创建 API Key</Link>

@@ -22,6 +22,7 @@ type AccountTab = "profile" | "tasks" | "history" | "credits" | "api";
 type ProfileFormValues = { displayName: string; avatarUrl: string };
 type PasswordFormValues = { currentPassword: string; newPassword: string; confirmPassword: string };
 type APIKeyFormValues = { name: string };
+type APIExampleType = "models" | "image" | "recovery";
 
 const historyPageSize = 12;
 const creditPageSize = 12;
@@ -973,7 +974,7 @@ function APIKeySection() {
     const [createOpen, setCreateOpen] = useState(false);
     const [createdKey, setCreatedKey] = useState<CreatedUserAPIKey | null>(null);
     const [endpoint, setEndpoint] = useState("/api/v1");
-    const [exampleType, setExampleType] = useState<"models" | "image">("models");
+    const [exampleType, setExampleType] = useState<APIExampleType>("models");
     const queryKey = ["user-api-keys", organizationId];
     const keysQuery = useQuery({
         queryKey,
@@ -1004,9 +1005,13 @@ function APIKeySection() {
   -H "Authorization: Bearer YOUR_API_KEY"`;
     const imageCurlExample = `curl -X POST "${endpoint}/images/generations" \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
+  -H "Idempotency-Key: YOUR_UNIQUE_REQUEST_ID" \\
   -H "Content-Type: application/json" \\
   -d '{"model":"YOUR_IMAGE_MODEL","prompt":"生成一张商品主图","size":"1024x1024","n":1}'`;
-    const curlExample = exampleType === "models" ? modelCurlExample : imageCurlExample;
+    const recoveryCurlExample = `curl "${endpoint}/generation-tasks/recovery" \\
+  -H "Authorization: Bearer YOUR_API_KEY" \\
+  -H "Idempotency-Key: YOUR_ORIGINAL_REQUEST_ID"`;
+    const curlExample = exampleType === "models" ? modelCurlExample : exampleType === "image" ? imageCurlExample : recoveryCurlExample;
 
     useEffect(() => setEndpoint(`${window.location.origin}/api/v1`), []);
 
@@ -1099,6 +1104,7 @@ function APIKeySection() {
                                 <code>GET /models</code>
                                 <code>POST /images/generations</code>
                                 <code>POST /videos</code>
+                                <code>GET /generation-tasks/recovery</code>
                             </div>
                         </div>
                         <div className="mt-3 rounded-2xl bg-muted/70 p-4">
@@ -1106,12 +1112,18 @@ function APIKeySection() {
                                 <Segmented
                                     size="small"
                                     value={exampleType}
-                                    options={[{ label: "获取模型", value: "models" }, { label: "图片生成", value: "image" }]}
-                                    onChange={(value) => setExampleType(value as "models" | "image")}
+                                    options={[{ label: "获取模型", value: "models" }, { label: "图片生成", value: "image" }, { label: "结果恢复", value: "recovery" }]}
+                                    onChange={(value) => setExampleType(value as APIExampleType)}
                                 />
                                 <Button type="text" size="small" icon={<Copy className="size-3.5" />} onClick={() => copyText(curlExample, "示例已复制")} />
                             </div>
                             <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-all text-xs leading-5">{curlExample}</pre>
+                        </div>
+                        <div className="mt-3 rounded-2xl bg-primary/[.055] p-4 ring-1 ring-primary/15">
+                            <div className="flex gap-2 text-xs leading-5">
+                                <RefreshCw className="mt-0.5 size-3.5 shrink-0 text-primary" />
+                                <div><span className="font-medium text-foreground">请求超时不要更换 Key。</span><span className="text-muted-foreground"> 使用原 </span><code className="text-foreground">Idempotency-Key</code><span className="text-muted-foreground"> 查询真实状态，避免重复生成和扣费。</span></div>
+                            </div>
                         </div>
                         <div className="mt-4 flex gap-2 text-xs leading-5 text-muted-foreground">
                             <ShieldCheck className="mt-0.5 size-3.5 shrink-0" />

@@ -37,11 +37,11 @@ export function PromptSelectDialog({ open, onOpenChange, onSelect }: { open: boo
         <Modal title="灵感模板" open={open} onCancel={() => onOpenChange(false)} footer={null} width={1040} centered>
             <div data-canvas-no-zoom onWheelCapture={(event) => event.stopPropagation()}>
                 <div className="mx-auto max-w-2xl">
-                    <Input size="large" prefix={<Search className="size-4 text-stone-400" />} value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="按标题查询" />
+                    <Input size="large" prefix={<Search className="size-4 text-neutral-400" />} value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="按标题查询" />
                 </div>
                 <div className="mt-5 grid gap-3">
                     <div className="grid gap-2 sm:grid-cols-[56px_minmax(0,1fr)] sm:items-start">
-                        <div className="pt-2 text-xs font-medium text-stone-500 dark:text-stone-400">分类</div>
+                        <div className="pt-2 text-xs font-medium text-neutral-500 dark:text-neutral-400">分类</div>
                         <div className="flex flex-wrap gap-2">
                             {promptCategories.map((category) => (
                                 <Tag.CheckableTag key={category} checked={selectedCategory === category} className={cn("prompt-filter-tag", selectedCategory === category && "is-active")} onChange={() => setSelectedCategory(category)}>
@@ -51,7 +51,7 @@ export function PromptSelectDialog({ open, onOpenChange, onSelect }: { open: boo
                         </div>
                     </div>
                     <div className="grid gap-2 sm:grid-cols-[56px_minmax(0,1fr)] sm:items-start">
-                        <div className="pt-2 text-xs font-medium text-stone-500 dark:text-stone-400">标签</div>
+                        <div className="pt-2 text-xs font-medium text-neutral-500 dark:text-neutral-400">标签</div>
                         <div className="flex flex-wrap gap-2">
                             {promptTags.map((tag) => {
                                 const active = tag === ALL_PROMPTS_OPTION ? selectedTags.length === 0 : selectedTags.includes(tag);

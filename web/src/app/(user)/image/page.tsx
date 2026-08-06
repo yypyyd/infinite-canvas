@@ -18,7 +18,7 @@ import { supportsImageQuality, supportsImageReferences } from "@/lib/image-model
 import { useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { nanoid } from "nanoid";
-import { formatBytes, formatDuration, getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
+import { formatBytes, formatDuration, getDataUrlByteSize, normalizeImageCount, readImageMeta } from "@/lib/image-utils";
 import { requestEdit, requestGeneration } from "@/services/api/image";
 import { deleteStoredGenerationRecord, GENERATION_HISTORY_CHANGED_EVENT, readWorkbenchGenerationRecords, saveGenerationRecord, type GenerationRecordStatus } from "@/services/generation-history";
 import { resolveImageUrl, resolveImageVariantUrl, storeGeneratedImage, uploadImage } from "@/services/image-storage";
@@ -118,7 +118,7 @@ export default function ImagePage() {
     const supportsQuality = supportsImageQuality(model);
     const imageOperation = supportsReferences && references.length ? "edit" : "generation";
     const canGenerate = Boolean(prompt.trim());
-    const generationCount = Math.max(1, Math.min(10, Number(config.count) || 1));
+    const generationCount = normalizeImageCount(config.count, 10);
     const creditQuote = requestCreditQuote({
         pricingRules,
         groupRatios,
@@ -437,7 +437,7 @@ export default function ImagePage() {
     return (
         <div className="flex h-full flex-col overflow-hidden bg-background text-foreground">
             <main className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[300px_minmax(0,1fr)] lg:overflow-hidden xl:grid-cols-[320px_minmax(0,1fr)] xl:p-6">
-                <aside className="thin-scrollbar hidden min-h-0 overflow-y-auto rounded-[24px] bg-card p-5 shadow-[0_16px_48px_rgba(29,29,31,.07)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border lg:block">
+                <aside className="thin-scrollbar hidden min-h-0 overflow-y-auto rounded-[24px] bg-card p-5 shadow-[0_16px_48px_rgba(23,23,23,.07)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border lg:block">
                     <LogPanel
                         logs={logs}
                         selectedLogIds={selectedLogIds}
@@ -450,7 +450,7 @@ export default function ImagePage() {
                 </aside>
 
                 <section className="grid gap-4 lg:min-h-0 lg:overflow-hidden xl:grid-cols-[420px_minmax(0,1fr)]">
-                    <div className="thin-scrollbar flex flex-col rounded-[24px] bg-card p-5 shadow-[0_16px_48px_rgba(29,29,31,.07)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border lg:min-h-0 lg:overflow-y-auto lg:p-6">
+                    <div className="thin-scrollbar flex flex-col rounded-[24px] bg-card p-5 shadow-[0_16px_48px_rgba(23,23,23,.07)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border lg:min-h-0 lg:overflow-y-auto lg:p-6">
                         <div>
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
@@ -471,7 +471,7 @@ export default function ImagePage() {
 
                         <div className="mt-6 space-y-5">
                             <div>
-                                <div className="mb-2 text-xs font-medium tracking-[.12em] text-stone-500">电商任务模板</div>
+                                <div className="mb-2 text-xs font-medium tracking-[.12em] text-neutral-500">电商任务模板</div>
                                 <div className="flex flex-wrap gap-2">
                                     {commercePresets.map((preset) => {
                                         const Icon = preset.icon;
@@ -519,7 +519,7 @@ export default function ImagePage() {
                                         </div>
                                     </div>
                                     <div
-                                        className="hover-scrollbar hover-scrollbar-hint flex min-h-24 w-full min-w-0 max-w-full gap-2 overflow-x-scroll overflow-y-hidden rounded-lg border border-dashed border-stone-300 p-2 pb-3 overscroll-x-contain dark:border-stone-700"
+                                        className="hover-scrollbar hover-scrollbar-hint flex min-h-24 w-full min-w-0 max-w-full gap-2 overflow-x-scroll overflow-y-hidden rounded-lg border border-dashed border-neutral-300 p-2 pb-3 overscroll-x-contain dark:border-neutral-700"
                                         onWheel={(event) => {
                                             if (event.currentTarget.scrollWidth <= event.currentTarget.clientWidth) return;
                                             event.preventDefault();
@@ -527,7 +527,7 @@ export default function ImagePage() {
                                         }}
                                     >
                                         {references.map((item, index) => (
-                                            <div key={item.id} className="group relative size-20 shrink-0 overflow-hidden rounded-md border border-stone-200 dark:border-stone-800">
+                                            <div key={item.id} className="group relative size-20 shrink-0 overflow-hidden rounded-md border border-neutral-200 dark:border-neutral-800">
                                                 <img src={resolveImageVariantUrl(item.storageKey, item.dataUrl, "thumb")} alt={item.name} loading="lazy" decoding="async" className="size-full object-cover" />
                                                 <span className="absolute left-1 top-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">{imageReferenceLabel(index)}</span>
                                                 <ReferenceOrderButtons index={index} total={references.length} onMove={(offset) => setReferences((value) => moveListItem(value, index, offset))} />
@@ -541,13 +541,13 @@ export default function ImagePage() {
                                                 </button>
                                             </div>
                                         ))}
-                                        {!references.length ? <div className="flex min-w-full items-center justify-center text-sm text-stone-500">暂无参考图</div> : null}
+                                        {!references.length ? <div className="flex min-w-full items-center justify-center text-sm text-neutral-500">暂无参考图</div> : null}
                                     </div>
                                 </div>
                             ) : null}
 
-                            <div className="flex items-center justify-between rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm dark:border-stone-800 dark:bg-stone-900 sm:hidden">
-                                <span className="truncate text-stone-500 dark:text-stone-400">
+                            <div className="flex items-center justify-between rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm dark:border-neutral-800 dark:bg-neutral-900 sm:hidden">
+                                <span className="truncate text-neutral-500 dark:text-neutral-400">
                                     {model} · {effectiveConfig.size}
                                     {supportsQuality ? ` · ${effectiveConfig.quality}` : ""}
                                 </span>
@@ -587,7 +587,7 @@ export default function ImagePage() {
                         </div>
                     </div>
 
-                    <div className="thin-scrollbar rounded-[24px] bg-card p-5 shadow-[0_16px_48px_rgba(29,29,31,.07)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border lg:min-h-0 lg:overflow-y-auto lg:p-6">
+                    <div className="thin-scrollbar rounded-[24px] bg-card p-5 shadow-[0_16px_48px_rgba(23,23,23,.07)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border lg:min-h-0 lg:overflow-y-auto lg:p-6">
                         <div className="mb-4 flex items-center justify-between gap-3">
                             <div>
                                 <div className="text-xs font-medium text-primary">实时结果</div>
@@ -608,8 +608,8 @@ export default function ImagePage() {
                                 )}
                             </div>
                         ) : (
-                            <div className="flex min-h-[320px] flex-col items-center justify-center rounded-lg border border-dashed border-stone-300 text-center dark:border-stone-700 lg:min-h-[560px]">
-                                <ImagePlus className="mb-4 size-11 text-stone-400" />
+                            <div className="flex min-h-[320px] flex-col items-center justify-center rounded-lg border border-dashed border-neutral-300 text-center dark:border-neutral-700 lg:min-h-[560px]">
+                                <ImagePlus className="mb-4 size-11 text-neutral-400" />
                                 <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有生成图片" />
                             </div>
                         )}
@@ -727,12 +727,12 @@ function ResultImageCard({
     onSaveAsset: (image: GeneratedImage, index: number) => void;
 }) {
     return (
-        <div className="overflow-hidden rounded-lg border border-stone-200 bg-background dark:border-stone-800">
+        <div className="overflow-hidden rounded-lg border border-neutral-200 bg-background dark:border-neutral-800">
             <Image
                 src={resolveImageVariantUrl(image.storageKey, image.dataUrl, "preview")}
                 preview={{ src: image.dataUrl }}
                 placeholder={
-                    <div className="grid aspect-square place-items-center bg-stone-100 text-stone-400 dark:bg-stone-900">
+                    <div className="grid aspect-square place-items-center bg-neutral-100 text-neutral-400 dark:bg-neutral-900">
                         <LoaderCircle className="size-5 animate-spin" />
                     </div>
                 }
@@ -741,8 +741,8 @@ function ResultImageCard({
                 decoding="async"
                 className="aspect-square object-cover"
             />
-            <div className="space-y-2 border-t border-stone-200 px-3 py-2.5 dark:border-stone-800">
-                <div className="flex min-w-0 gap-x-2 gap-y-1 text-xs text-stone-500 dark:text-stone-400">
+            <div className="space-y-2 border-t border-neutral-200 px-3 py-2.5 dark:border-neutral-800">
+                <div className="flex min-w-0 gap-x-2 gap-y-1 text-xs text-neutral-500 dark:text-neutral-400">
                     <span>
                         {image.width}x{image.height}
                     </span>
@@ -775,15 +775,15 @@ function ResultImageCard({
 
 function PendingImageCard() {
     return (
-        <div className="relative aspect-square overflow-hidden rounded-lg border border-dashed border-stone-300 bg-stone-50 dark:border-stone-700 dark:bg-stone-900">
+        <div className="relative aspect-square overflow-hidden rounded-lg border border-dashed border-neutral-300 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900">
             <div
                 className="absolute inset-0 opacity-60"
                 style={{
-                    backgroundImage: "radial-gradient(circle, rgba(120,113,108,0.35) 1.4px, transparent 1.6px)",
+                    backgroundImage: "radial-gradient(circle, rgba(115,115,115,0.35) 1.4px, transparent 1.6px)",
                     backgroundSize: "16px 16px",
                 }}
             />
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-sm text-stone-500 dark:text-stone-400">
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-sm text-neutral-500 dark:text-neutral-400">
                 <LoaderCircle className="size-6 animate-spin" />
                 <span>生成中</span>
             </div>
@@ -863,7 +863,7 @@ function LogPanel({
                         onClick={() => onPreviewLog(log)}
                     />
                 ))}
-                {!logs.length ? <div className="flex min-h-48 items-center justify-center rounded-lg border border-dashed border-stone-300 text-center text-sm text-stone-500 dark:border-stone-700">暂无生成记录</div> : null}
+                {!logs.length ? <div className="flex min-h-48 items-center justify-center rounded-lg border border-dashed border-neutral-300 text-center text-sm text-neutral-500 dark:border-neutral-700">暂无生成记录</div> : null}
             </div>
         </>
     );
@@ -875,7 +875,7 @@ function LogCard({ log, selected, active, onSelectedChange, onClick }: { log: Ge
     return (
         <button
             type="button"
-            className={`block w-full rounded-lg border p-2 text-left transition ${active ? "border-stone-900 bg-blue-50 dark:border-stone-100 dark:bg-blue-950/20" : "border-stone-200 bg-background hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-stone-900"}`}
+            className={`block w-full rounded-lg border p-2 text-left transition ${active ? "border-neutral-900 bg-blue-50 dark:border-neutral-100 dark:bg-blue-950/20" : "border-neutral-200 bg-background hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-neutral-900"}`}
             onClick={onClick}
         >
             <div className="grid grid-cols-[minmax(128px,1fr)_auto] gap-2">

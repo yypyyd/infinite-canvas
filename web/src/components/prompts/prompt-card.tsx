@@ -37,10 +37,10 @@ export function PromptCard({
             <button type="button" className="block w-full text-left" onClick={onOpen}>
                 <div className="p-4">
                     <div className="flex items-start justify-between gap-3">
-                        <h2 className="line-clamp-1 text-sm font-semibold text-stone-950 dark:text-stone-100">{item.title}</h2>
-                        <span className="shrink-0 text-xs text-stone-400 dark:text-stone-500">{formatPromptDate(item.updatedAt)}</span>
+                        <h2 className="line-clamp-1 text-sm font-semibold text-neutral-950 dark:text-neutral-100">{item.title}</h2>
+                        <span className="shrink-0 text-xs text-neutral-400 dark:text-neutral-500">{formatPromptDate(item.updatedAt)}</span>
                     </div>
-                    <p className="mt-2 line-clamp-3 text-xs leading-5 text-stone-600 dark:text-stone-400">{item.prompt}</p>
+                    <p className="mt-2 line-clamp-3 text-xs leading-5 text-neutral-600 dark:text-neutral-400">{item.prompt}</p>
                     <div className="mt-3 flex flex-wrap gap-1.5">
                         {item.tags.map((tag) => (
                             <Tag key={tag} className="m-0 text-[11px]">

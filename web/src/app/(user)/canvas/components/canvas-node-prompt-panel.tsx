@@ -9,6 +9,7 @@ import { defaultConfig, useConfigStore, useEffectiveConfig, type AiConfig } from
 import { CreditSymbol, requestCreditQuote } from "@/constant/credits";
 import { useUserStore } from "@/stores/use-user-store";
 import { canvasThemes } from "@/lib/canvas-theme";
+import { normalizeImageCount } from "@/lib/image-utils";
 import { supportsImageReferences } from "@/lib/image-model-capabilities";
 import { videoReferenceCapabilities } from "@/lib/video-reference";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -62,7 +63,7 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
         modality: mode,
         operation: mode === "text" ? "completion" : mode === "audio" ? "speech" : hasImageContent && imageSupportsReferences ? "edit" : "generation",
         unit: mode === "image" ? "image" : mode === "video" ? "second" : "request",
-        count: mode === "image" ? config.count : mode === "video" ? config.videoSeconds : 1,
+        count: mode === "image" ? normalizeImageCount(config.count) : mode === "video" ? config.videoSeconds : 1,
         size: config.size,
         resolution: config.vquality,
     });

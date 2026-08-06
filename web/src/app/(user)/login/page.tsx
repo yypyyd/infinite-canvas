@@ -97,8 +97,8 @@ function LoginContent() {
 
     return (
         <main className="flex h-full min-h-0 items-center justify-center overflow-y-auto bg-background px-4 py-8 sm:px-6">
-            <section className="w-full max-w-[1040px] overflow-hidden rounded-[32px] bg-[#f5f5f7] shadow-[0_28px_90px_rgba(29,29,31,.1)] dark:bg-card dark:shadow-none dark:ring-1 dark:ring-border lg:grid lg:grid-cols-[1.05fr_.95fr]">
-                <div className="hidden min-h-[680px] flex-col justify-between bg-[linear-gradient(145deg,#e9e4dc,#fbfbfd_54%,#f5e0d5)] p-12 dark:bg-[linear-gradient(145deg,#303033,#1d1d1f_54%,#3b2417)] lg:flex">
+            <section className="w-full max-w-[1040px] overflow-hidden rounded-[32px] bg-[#f5f5f5] shadow-[0_28px_90px_rgba(23,23,23,.1)] dark:bg-card dark:shadow-none dark:ring-1 dark:ring-border lg:grid lg:grid-cols-[1.05fr_.95fr]">
+                <div className="hidden min-h-[680px] flex-col justify-between bg-[linear-gradient(145deg,#f0f0f0,#fafafa_54%,#e5e5e5)] p-12 dark:bg-[linear-gradient(145deg,#171717,#000000_54%,#262626)] lg:flex">
                     <div className="text-sm font-medium text-primary">道生画境</div>
                     <div>
                         <h1 className="text-6xl font-semibold leading-[.98] tracking-[-.055em]">
@@ -136,7 +136,7 @@ function LoginContent() {
                             </Form.Item>
                             <Form.Item
                                 name="username"
-                                label={<span className="font-medium text-stone-800 dark:text-stone-200">{mode === "login" ? "用户名或邮箱" : "用户名"}</span>}
+                                label={<span className="font-medium text-neutral-800 dark:text-neutral-200">{mode === "login" ? "用户名或邮箱" : "用户名"}</span>}
                                 rules={[{ required: true, message: mode === "login" ? "请输入用户名或邮箱" : "请输入用户名" }]}
                             >
                                 <Input prefix={<UserOutlined />} autoComplete="username" placeholder={mode === "login" ? "输入用户名或邮箱" : "设置用户名"} />
@@ -145,7 +145,7 @@ function LoginContent() {
                                 <>
                                     <Form.Item
                                         name="email"
-                                        label={<span className="font-medium text-stone-800 dark:text-stone-200">电子邮箱</span>}
+                                        label={<span className="font-medium text-neutral-800 dark:text-neutral-200">电子邮箱</span>}
                                         extra={emailDomainRestriction && emailDomains?.length ? `支持：${emailDomains.join("、")}` : "用于接收注册验证码"}
                                         rules={[
                                             { required: true, message: "请输入电子邮箱" },
@@ -154,7 +154,7 @@ function LoginContent() {
                                     >
                                         <Input prefix={<MailOutlined />} autoComplete="email" placeholder="name@example.com" />
                                     </Form.Item>
-                                    <Form.Item label={<span className="font-medium text-stone-800 dark:text-stone-200">邮箱验证码</span>}>
+                                    <Form.Item label={<span className="font-medium text-neutral-800 dark:text-neutral-200">邮箱验证码</span>}>
                                         <Space.Compact block>
                                             <Form.Item
                                                 name="code"
@@ -173,11 +173,11 @@ function LoginContent() {
                                     </Form.Item>
                                 </>
                             ) : null}
-                            <Form.Item name="password" label={<span className="font-medium text-stone-800 dark:text-stone-200">密码</span>} rules={[{ required: true, message: "请输入密码" }]}>
+                            <Form.Item name="password" label={<span className="font-medium text-neutral-800 dark:text-neutral-200">密码</span>} rules={[{ required: true, message: "请输入密码" }]}>
                                 <Input.Password prefix={<LockOutlined />} autoComplete={mode === "register" ? "new-password" : "current-password"} />
                             </Form.Item>
                             {mode === "register" ? (
-                                <Form.Item name="confirmPassword" label={<span className="font-medium text-stone-800 dark:text-stone-200">确认密码</span>} rules={[{ required: true, message: "请再次输入密码" }]}>
+                                <Form.Item name="confirmPassword" label={<span className="font-medium text-neutral-800 dark:text-neutral-200">确认密码</span>} rules={[{ required: true, message: "请再次输入密码" }]}>
                                     <Input.Password prefix={<LockOutlined />} autoComplete="new-password" />
                                 </Form.Item>
                             ) : null}

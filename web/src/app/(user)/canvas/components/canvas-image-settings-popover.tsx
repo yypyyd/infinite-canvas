@@ -8,6 +8,7 @@ import { Button } from "antd";
 import type { PricingRule } from "@/constant/credits";
 import { ImageSettingsPanel, imageQualityLabel, imageSizeLabel } from "@/components/image-settings-panel";
 import { canvasThemes } from "@/lib/canvas-theme";
+import { normalizeImageCount } from "@/lib/image-utils";
 import { supportsImageQuality } from "@/lib/image-model-capabilities";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useConfigStore, type AiConfig } from "@/stores/use-config-store";
@@ -35,7 +36,7 @@ export function CanvasImageSettingsPopover({ config, model, onConfigChange, onOp
     const [open, setOpen] = useState(false);
     const [buttonRect, setButtonRect] = useState<DOMRect | null>(null);
     const quality = config.quality || "auto";
-    const count = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
+    const count = normalizeImageCount(config.count);
     const activeSize = config.size || "auto";
     const activeModel = model || config.imageModel || config.model;
     const modelDefinition = managedModels?.find((item) => item.id === activeModel);
@@ -153,7 +154,7 @@ function ImageSettingsPortal({
         ...(topPlacement ? { bottom: window.innerHeight - buttonRect.top + gap, maxHeight: Math.max(260, buttonRect.top - margin * 2) } : { top: buttonRect.bottom + gap, maxHeight: Math.max(260, window.innerHeight - buttonRect.bottom - margin * 2) }),
         background: theme.toolbar.panel,
         borderRadius: 18,
-        boxShadow: "0 18px 54px rgba(28, 25, 23, 0.16)",
+        boxShadow: "0 18px 54px rgba(23,23,23,0.16)",
         padding: 18,
         overflowY: "auto",
         color: theme.node.text,

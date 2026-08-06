@@ -46,17 +46,17 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
     const creditLabel = user?.creditMode === "shared" ? "企业共享算力余额" : "个人算力余额";
     const avatarUrl = user?.avatarUrl?.trim();
     const avatarText = (userName.trim()[0] || "U").toUpperCase();
-    const naturalIconClass = "inline-flex size-7 shrink-0 items-center justify-center text-stone-600 transition hover:text-stone-950 dark:text-stone-300 dark:hover:text-white [&_svg]:size-4";
+    const naturalIconClass = "inline-flex size-7 shrink-0 items-center justify-center text-neutral-600 transition hover:text-neutral-950 dark:text-neutral-300 dark:hover:text-white [&_svg]:size-4";
     const iconStyle: CSSProperties | undefined = variant === "canvas" ? { color: canvasTheme.node.text } : undefined;
     const creditStyle = iconStyle;
     const creditClass =
         variant === "canvas"
             ? "flex h-8 shrink-0 items-center gap-1.5 px-1.5 text-xs font-medium tabular-nums opacity-75 transition hover:opacity-100"
-            : "flex h-8 shrink-0 items-center gap-1.5 px-1.5 text-xs font-medium tabular-nums text-stone-600 transition hover:text-stone-950 dark:text-stone-300 dark:hover:text-white";
+            : "flex h-8 shrink-0 items-center gap-1.5 px-1.5 text-xs font-medium tabular-nums text-neutral-600 transition hover:text-neutral-950 dark:text-neutral-300 dark:hover:text-white";
     const purchaseClass =
         variant === "canvas"
             ? "hidden h-8 shrink-0 items-center gap-1 px-1.5 text-xs font-medium opacity-75 transition hover:opacity-100 sm:inline-flex"
-            : "hidden h-8 shrink-0 items-center gap-1 px-1.5 text-xs font-medium text-stone-600 transition hover:text-stone-950 sm:inline-flex dark:text-stone-300 dark:hover:text-white";
+            : "hidden h-8 shrink-0 items-center gap-1 px-1.5 text-xs font-medium text-neutral-600 transition hover:text-neutral-950 sm:inline-flex dark:text-neutral-300 dark:hover:text-white";
     const avatarStyle: CSSProperties | undefined = variant === "canvas" ? { borderColor: canvasTheme.toolbar.border, color: canvasTheme.node.text, background: "transparent" } : undefined;
 
     useEffect(() => {
@@ -177,7 +177,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
                     </button>
                 ) : null}
                 {!user ? (
-                    <Link href="/login" prefetch={false} className="px-1.5 text-sm font-medium text-stone-600 underline-offset-4 transition hover:text-stone-950 hover:underline dark:text-stone-300 dark:hover:text-stone-100" style={iconStyle}>
+                    <Link href="/login" prefetch={false} className="px-1.5 text-sm font-medium text-neutral-600 underline-offset-4 transition hover:text-neutral-950 hover:underline dark:text-neutral-300 dark:hover:text-neutral-100" style={iconStyle}>
                         登录
                     </Link>
                 ) : null}
@@ -189,7 +189,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
                                     size={24}
                                     src={avatarUrl ? <img src={avatarUrl} alt={userName} referrerPolicy="no-referrer" /> : undefined}
                                     alt={userName}
-                                    className="!flex !items-center !justify-center border border-stone-300 bg-transparent text-[11px] font-semibold text-stone-800 transition hover:border-stone-500 hover:text-stone-950 dark:border-stone-700 dark:text-stone-100 dark:hover:border-stone-400 dark:hover:text-white"
+                                    className="!flex !items-center !justify-center border border-neutral-300 bg-transparent text-[11px] font-semibold text-neutral-800 transition hover:border-neutral-500 hover:text-neutral-950 dark:border-neutral-700 dark:text-neutral-100 dark:hover:border-neutral-400 dark:hover:text-white"
                                     style={avatarStyle}
                                 >
                                     {avatarText}

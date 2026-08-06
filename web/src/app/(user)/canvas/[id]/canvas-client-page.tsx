@@ -17,12 +17,12 @@ import { defaultConfig, type AiConfig, useConfigStore, useEffectiveConfig } from
 import { resolveImageUrl, storeGeneratedImage, uploadImage, type UploadedImage } from "@/services/image-storage";
 import { resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { nanoid } from "nanoid";
-import { getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
+import { getDataUrlByteSize, normalizeImageCount, readImageMeta } from "@/lib/image-utils";
 import { supportsImageQuality, supportsImageReferences, type ImageModelDefinition } from "@/lib/image-model-capabilities";
 import { videoReferenceCapabilities } from "@/lib/video-reference";
 import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
-import { flushActiveWorkspaceChanges } from "@/components/layout/workspace-provider";
+import { flushActiveWorkspaceChanges, isWorkspaceVersionConflictError } from "@/components/layout/workspace-provider";
 import type { AgentToolName, AgentToolResult } from "@/services/api/agent";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useUserStore } from "@/stores/use-user-store";
@@ -379,6 +379,7 @@ function InfiniteCanvasPage() {
             try {
                 await flushActiveWorkspaceChanges();
             } catch (error) {
+                if (isWorkspaceVersionConflictError(error)) return id;
                 await saveCanvasImageGenerationRecord(historyOwnerId, {
                     id,
                     prompt,
@@ -433,6 +434,7 @@ function InfiniteCanvasPage() {
             try {
                 await flushActiveWorkspaceChanges();
             } catch (error) {
+                if (isWorkspaceVersionConflictError(error)) return id;
                 await saveCanvasVideoGenerationRecord(historyOwnerId, {
                     id,
                     prompt,
@@ -3840,7 +3842,7 @@ function CanvasTopBar({
                 </div>
 
                 <div className="pointer-events-auto flex items-center gap-1.5">
-                    <div className="flex h-10 items-center gap-2 rounded-xl px-2" style={{ background: theme.toolbar.panel, color: theme.node.text, boxShadow: "0 10px 30px rgba(28,25,23,.10)" }}>
+                    <div className="flex h-10 items-center gap-2 rounded-xl px-2" style={{ background: theme.toolbar.panel, color: theme.node.text, boxShadow: "0 10px 30px rgba(23,23,23,.10)" }}>
                         <Button type="text" shape="circle" className="!h-8 !w-8 !min-w-8 !p-0" style={{ color: theme.node.text }} icon={<Save className="size-4" />} onClick={onSaveCanvas} title="保存画布 Ctrl+S" aria-label="保存画布" />
                         <span className="relative hidden text-xs font-medium opacity-75 sm:inline">
                             自动保存
@@ -3866,7 +3868,7 @@ function CanvasTopBar({
                             <Button
                                 type="text"
                                 className="!h-10 !rounded-xl !px-3 !font-medium"
-                                style={{ background: theme.toolbar.panel, color: theme.node.text, boxShadow: "0 10px 30px rgba(28,25,23,.10)" }}
+                                style={{ background: theme.toolbar.panel, color: theme.node.text, boxShadow: "0 10px 30px rgba(23,23,23,.10)" }}
                                 icon={<MessageSquare className="size-4" />}
                                 onClick={onExpandAssistant}
                             >
@@ -3916,7 +3918,7 @@ function Shortcut({ keys, value }: { keys: string[]; value: string }) {
                         {index ? <span className="text-xs opacity-35">+</span> : null}
                         <kbd
                             className="min-w-9 rounded-md border px-2.5 py-1.5 text-center text-xs font-medium leading-none shadow-[inset_0_-1px_0_rgba(0,0,0,.08),0_1px_2px_rgba(0,0,0,.06)]"
-                            style={{ borderColor: "rgba(120,113,108,.28)", background: "linear-gradient(#fff, rgba(245,245,244,.92))", color: "rgb(68,64,60)" }}
+                            style={{ borderColor: "rgba(115,115,115,.28)", background: "linear-gradient(#fff, rgba(255,255,255,.92))", color: "rgb(64,64,64)" }}
                         >
                             {key}
                         </kbd>
@@ -4035,7 +4037,7 @@ async function hydrateAssistantImages(sessions: CanvasAssistantSession[]) {
 }
 
 function getGenerationCount(count: string) {
-    return Math.max(1, Math.min(15, Math.floor(Math.abs(Number(count)) || 1)));
+    return normalizeImageCount(count);
 }
 
 function isSameSaveSnapshot(first: CanvasSaveSnapshot, second: CanvasSaveSnapshot) {

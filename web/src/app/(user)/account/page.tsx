@@ -165,7 +165,7 @@ function AccountContent() {
                     </div>
                 </section>
 
-                <div className="mt-6 rounded-[22px] bg-card px-4 shadow-[0_12px_36px_rgba(29,29,31,.06)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border sm:px-6">
+                <div className="mt-6 rounded-[22px] bg-card px-4 shadow-[0_12px_36px_rgba(23,23,23,.06)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border sm:px-6">
                     <Tabs activeKey={activeTab} items={accountTabs} onChange={(key) => router.replace(key === "profile" ? "/account" : `/account?tab=${key}`, { scroll: false })} tabBarStyle={{ margin: 0 }} />
                 </div>
 
@@ -242,7 +242,7 @@ function ProfileSection() {
 
     return (
         <>
-            <section className="overflow-hidden rounded-[28px] bg-card shadow-[0_18px_50px_rgba(29,29,31,.07)] ring-1 ring-border/70">
+            <section className="overflow-hidden rounded-[28px] bg-card shadow-[0_18px_50px_rgba(23,23,23,.07)] ring-1 ring-border/70">
                 <header className="flex flex-col gap-4 border-b border-border px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-7">
                     <div>
                         <div className="flex items-center gap-2 text-lg font-semibold tracking-tight">
@@ -1033,7 +1033,7 @@ function APIKeySection() {
 
     return (
         <>
-            <section className="overflow-hidden rounded-[28px] bg-card shadow-[0_18px_50px_rgba(29,29,31,.07)] ring-1 ring-border/70">
+            <section className="overflow-hidden rounded-[28px] bg-card shadow-[0_18px_50px_rgba(23,23,23,.07)] ring-1 ring-border/70">
                 <header className="flex flex-col gap-4 border-b border-border px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-7">
                     <div>
                         <div className="flex items-center gap-2 text-lg font-semibold tracking-tight">

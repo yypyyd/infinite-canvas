@@ -64,12 +64,12 @@ export default function PromptsPage() {
                     ) : null}
                     {!query.isLoading ? (
                         <>
-                            <div className="mx-auto mt-9 w-full max-w-2xl rounded-full bg-card p-1.5 shadow-[0_14px_40px_rgba(29,29,31,.08)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border">
+                            <div className="mx-auto mt-9 w-full max-w-2xl rounded-full bg-card p-1.5 shadow-[0_14px_40px_rgba(23,23,23,.08)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border">
                                 <Input size="large" className="w-full" prefix={<Search className="size-4 text-muted-foreground" />} value={titleKeyword} placeholder="搜索标题、品类或视觉风格" onChange={(event) => setTitleKeyword(event.target.value)} />
                             </div>
                             <div className="mx-auto mt-6 grid max-w-6xl gap-3 text-left">
                                 <div className="grid gap-2 sm:grid-cols-[56px_minmax(0,1fr)] sm:items-start">
-                                    <div className="pt-2 text-xs font-medium text-stone-500 dark:text-stone-400">分类</div>
+                                    <div className="pt-2 text-xs font-medium text-neutral-500 dark:text-neutral-400">分类</div>
                                     <div className="flex flex-wrap gap-2">
                                         {promptCategoryOptions.map((category) => (
                                             <Tag.CheckableTag key={category} checked={selectedCategory === category} className={cn("prompt-filter-tag", selectedCategory === category && "is-active")} onChange={() => setSelectedCategory(category)}>
@@ -79,7 +79,7 @@ export default function PromptsPage() {
                                     </div>
                                 </div>
                                 <div className="grid gap-2 sm:grid-cols-[56px_minmax(0,1fr)] sm:items-start">
-                                    <div className="pt-2 text-xs font-medium text-stone-500 dark:text-stone-400">标签</div>
+                                    <div className="pt-2 text-xs font-medium text-neutral-500 dark:text-neutral-400">标签</div>
                                     <div className="flex flex-wrap gap-2">
                                         {promptTags.map((tag) => (
                                             <Tag.CheckableTag
@@ -116,7 +116,7 @@ export default function PromptsPage() {
                             ))}
                         </div>
                         {promptItems.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有找到匹配的提示词" className="py-16" /> : null}
-                        <div className="mx-auto mt-6 max-w-7xl text-center text-xs text-stone-500 dark:text-stone-400">
+                        <div className="mx-auto mt-6 max-w-7xl text-center text-xs text-neutral-500 dark:text-neutral-400">
                             {query.isFetchingNextPage ? "加载中..." : query.hasNextPage ? "继续向下滚动加载更多" : promptItems.length > 0 ? "已经到底了" : null}
                         </div>
                     </div>

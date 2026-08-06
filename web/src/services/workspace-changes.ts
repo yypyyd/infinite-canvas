@@ -1,6 +1,6 @@
 "use client";
 
-import type { WorkspaceChange, WorkspaceDomain } from "@/services/api/workspace";
+import type { WorkspaceChange, WorkspaceDomain, WorkspaceRecord } from "@/services/api/workspace";
 
 export const WORKSPACE_CHANGES_UPDATED_EVENT = "infinite-canvas:workspace-changes-updated";
 
@@ -44,6 +44,31 @@ export function commitWorkspaceChanges(items: PendingWorkspaceChange[], records:
         if (current === item) pendingChanges.delete(item.key);
         else if (current) pendingChanges.set(item.key, { ...current, version: versions.get(`${item.domain}:${item.objectId}`) || current.version });
     });
+}
+
+export function rebasePendingWorkspaceChanges(ownerId: string, records: WorkspaceRecord[]) {
+    const remote = new Map(records.map((item) => [`${item.domain}:${item.objectId}`, item]));
+    let changed = false;
+    [...pendingChanges.entries()].forEach(([key, item]) => {
+        if (item.ownerId !== ownerId || item.actorId !== activeWorkspaceActorId) return;
+        const current = remote.get(`${item.domain}:${item.objectId}`);
+        if (current?.deleted && !item.deleted && item.version > 0) {
+            pendingChanges.delete(key);
+            changed = true;
+            return;
+        }
+        if (!current && (item.deleted || item.version > 0)) {
+            pendingChanges.delete(key);
+            changed = true;
+            return;
+        }
+        const version = current?.version || 0;
+        if (item.version !== version) {
+            pendingChanges.set(key, { ...item, version });
+            changed = true;
+        }
+    });
+    if (changed && typeof window !== "undefined") window.dispatchEvent(new CustomEvent(WORKSPACE_CHANGES_UPDATED_EVENT));
 }
 
 export function stageWorkspaceRecord(ownerId: string, domain: WorkspaceDomain, objectId: string, data: Record<string, unknown>, version = 0) {

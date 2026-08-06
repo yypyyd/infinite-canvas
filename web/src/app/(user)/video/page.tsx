@@ -393,7 +393,7 @@ export default function VideoPage() {
     return (
         <div className="flex h-full flex-col overflow-hidden bg-background text-foreground">
             <main className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[300px_minmax(0,1fr)] lg:overflow-hidden xl:grid-cols-[320px_minmax(0,1fr)] xl:p-6">
-                <aside className="thin-scrollbar hidden min-h-0 overflow-y-auto rounded-[24px] bg-card p-5 shadow-[0_16px_48px_rgba(29,29,31,.07)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border lg:block">
+                <aside className="thin-scrollbar hidden min-h-0 overflow-y-auto rounded-[24px] bg-card p-5 shadow-[0_16px_48px_rgba(23,23,23,.07)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border lg:block">
                     <LogPanel
                         logs={logs}
                         selectedLogIds={selectedLogIds}
@@ -406,7 +406,7 @@ export default function VideoPage() {
                 </aside>
 
                 <section className="grid gap-4 lg:min-h-0 lg:overflow-hidden xl:grid-cols-[420px_minmax(0,1fr)]">
-                    <div className="thin-scrollbar flex flex-col rounded-[24px] bg-card p-5 shadow-[0_16px_48px_rgba(29,29,31,.07)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border lg:min-h-0 lg:overflow-y-auto lg:p-6">
+                    <div className="thin-scrollbar flex flex-col rounded-[24px] bg-card p-5 shadow-[0_16px_48px_rgba(23,23,23,.07)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border lg:min-h-0 lg:overflow-y-auto lg:p-6">
                         <div className="flex items-start justify-between gap-3">
                             <div>
                                 <div className="mb-2 text-xs font-medium text-primary">AI 动态影棚</div>
@@ -452,9 +452,9 @@ export default function VideoPage() {
                                             </Button>
                                         </div>
                                     </div>
-                                    <div className="hover-scrollbar hover-scrollbar-hint flex min-h-24 w-full min-w-0 max-w-full gap-2 overflow-x-scroll overflow-y-hidden rounded-lg border border-dashed border-stone-300 p-2 pb-3 overscroll-x-contain dark:border-stone-700">
+                                    <div className="hover-scrollbar hover-scrollbar-hint flex min-h-24 w-full min-w-0 max-w-full gap-2 overflow-x-scroll overflow-y-hidden rounded-lg border border-dashed border-neutral-300 p-2 pb-3 overscroll-x-contain dark:border-neutral-700">
                                         {references.map((item, index) => (
-                                            <div key={item.id} className="group relative size-20 shrink-0 overflow-hidden rounded-md border border-stone-200 dark:border-stone-800">
+                                            <div key={item.id} className="group relative size-20 shrink-0 overflow-hidden rounded-md border border-neutral-200 dark:border-neutral-800">
                                                 <img src={item.dataUrl} alt={item.name} className="size-full object-cover" />
                                                 <span className="absolute left-1 top-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">{videoReferenceLabel("image", index)}</span>
                                                 <ReferenceOrderButtons index={index} total={references.length} onMove={(offset) => setReferences((value) => moveListItem(value, index, offset))} />
@@ -468,7 +468,7 @@ export default function VideoPage() {
                                                 </button>
                                             </div>
                                         ))}
-                                        {!references.length ? <div className="flex min-w-full items-center justify-center text-sm text-stone-500">暂无参考图，最多 {imageReferenceLimit} 张</div> : null}
+                                        {!references.length ? <div className="flex min-w-full items-center justify-center text-sm text-neutral-500">暂无参考图，最多 {imageReferenceLimit} 张</div> : null}
                                     </div>
                                 </div>
                             ) : null}
@@ -481,9 +481,9 @@ export default function VideoPage() {
                                             上传
                                         </Button>
                                     </div>
-                                    <div className="hover-scrollbar hover-scrollbar-hint flex min-h-24 w-full min-w-0 max-w-full gap-2 overflow-x-scroll overflow-y-hidden rounded-lg border border-dashed border-stone-300 p-2 pb-3 overscroll-x-contain dark:border-stone-700">
+                                    <div className="hover-scrollbar hover-scrollbar-hint flex min-h-24 w-full min-w-0 max-w-full gap-2 overflow-x-scroll overflow-y-hidden rounded-lg border border-dashed border-neutral-300 p-2 pb-3 overscroll-x-contain dark:border-neutral-700">
                                         {videoReferences.map((item, index) => (
-                                            <div key={item.id} className="group relative h-20 w-32 shrink-0 overflow-hidden rounded-md border border-stone-200 bg-black dark:border-stone-800">
+                                            <div key={item.id} className="group relative h-20 w-32 shrink-0 overflow-hidden rounded-md border border-neutral-200 bg-black dark:border-neutral-800">
                                                 <video src={item.url} className="size-full object-cover" muted preload="metadata" />
                                                 <span className="absolute left-1 top-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">{videoReferenceLabel("video", index)}</span>
                                                 <ReferenceOrderButtons index={index} total={videoReferences.length} onMove={(offset) => setVideoReferences((value) => moveListItem(value, index, offset))} />
@@ -497,7 +497,7 @@ export default function VideoPage() {
                                                 </button>
                                             </div>
                                         ))}
-                                        {!videoReferences.length ? <div className="flex min-w-full items-center justify-center text-sm text-stone-500">暂无参考视频，最多 3 个</div> : null}
+                                        {!videoReferences.length ? <div className="flex min-w-full items-center justify-center text-sm text-neutral-500">暂无参考视频，最多 3 个</div> : null}
                                     </div>
                                 </div>
                             ) : null}
@@ -510,12 +510,12 @@ export default function VideoPage() {
                                             上传
                                         </Button>
                                     </div>
-                                    <div className="hover-scrollbar hover-scrollbar-hint flex min-h-24 w-full min-w-0 max-w-full gap-2 overflow-x-scroll overflow-y-hidden rounded-lg border border-dashed border-stone-300 p-2 pb-3 overscroll-x-contain dark:border-stone-700">
+                                    <div className="hover-scrollbar hover-scrollbar-hint flex min-h-24 w-full min-w-0 max-w-full gap-2 overflow-x-scroll overflow-y-hidden rounded-lg border border-dashed border-neutral-300 p-2 pb-3 overscroll-x-contain dark:border-neutral-700">
                                         {audioReferences.map((item, index) => (
-                                            <div key={item.id} className="group relative flex h-20 w-48 shrink-0 flex-col justify-center gap-2 rounded-md border border-stone-200 bg-stone-50 px-2 dark:border-stone-800 dark:bg-stone-900">
-                                                <div className="flex min-w-0 items-center gap-2 text-xs text-stone-500 dark:text-stone-400">
+                                            <div key={item.id} className="group relative flex h-20 w-48 shrink-0 flex-col justify-center gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-2 dark:border-neutral-800 dark:bg-neutral-900">
+                                                <div className="flex min-w-0 items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
                                                     <Music2 className="size-4 shrink-0" />
-                                                    <span className="shrink-0 rounded bg-stone-200 px-1 text-[10px] text-stone-700 dark:bg-stone-800 dark:text-stone-200">{videoReferenceLabel("audio", index)}</span>
+                                                    <span className="shrink-0 rounded bg-neutral-200 px-1 text-[10px] text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200">{videoReferenceLabel("audio", index)}</span>
                                                     <span className="truncate">{item.name}</span>
                                                 </div>
                                                 <audio src={item.url} controls className="h-8 w-full" preload="metadata" />
@@ -530,13 +530,13 @@ export default function VideoPage() {
                                                 </button>
                                             </div>
                                         ))}
-                                        {!audioReferences.length ? <div className="flex min-w-full items-center justify-center text-center text-sm text-stone-500">暂无参考音频，最多 3 个，mp3/wav，单个 15MB 内</div> : null}
+                                        {!audioReferences.length ? <div className="flex min-w-full items-center justify-center text-center text-sm text-neutral-500">暂无参考音频，最多 3 个，mp3/wav，单个 15MB 内</div> : null}
                                     </div>
                                 </div>
                             ) : null}
 
-                            <div className="flex items-center justify-between rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm dark:border-stone-800 dark:bg-stone-900 sm:hidden">
-                                <span className="truncate text-stone-500 dark:text-stone-400">
+                            <div className="flex items-center justify-between rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm dark:border-neutral-800 dark:bg-neutral-900 sm:hidden">
+                                <span className="truncate text-neutral-500 dark:text-neutral-400">
                                     {model} · {videoResolutionLabel(effectiveConfig.vquality)} · {videoSizeLabel(effectiveConfig.size)} · {normalizeVideoSeconds(effectiveConfig.videoSeconds)}s
                                 </span>
                                 <Button size="small" type="text" icon={<SlidersHorizontal className="size-4" />} onClick={() => setSettingsOpen(true)}>
@@ -565,7 +565,7 @@ export default function VideoPage() {
                         </div>
                     </div>
 
-                    <div className="thin-scrollbar rounded-[24px] bg-card p-5 shadow-[0_16px_48px_rgba(29,29,31,.07)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border lg:min-h-0 lg:overflow-y-auto lg:p-6">
+                    <div className="thin-scrollbar rounded-[24px] bg-card p-5 shadow-[0_16px_48px_rgba(23,23,23,.07)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border lg:min-h-0 lg:overflow-y-auto lg:p-6">
                         <div className="mb-4 flex items-center justify-between gap-3">
                             <div>
                                 <div className="text-xs font-medium text-primary">实时结果</div>
@@ -586,8 +586,8 @@ export default function VideoPage() {
                                 )}
                             </div>
                         ) : (
-                            <div className="flex min-h-[320px] flex-col items-center justify-center rounded-lg border border-dashed border-stone-300 text-center dark:border-stone-700 lg:min-h-[560px]">
-                                <VideoIcon className="mb-4 size-11 text-stone-400" />
+                            <div className="flex min-h-[320px] flex-col items-center justify-center rounded-lg border border-dashed border-neutral-300 text-center dark:border-neutral-700 lg:min-h-[560px]">
+                                <VideoIcon className="mb-4 size-11 text-neutral-400" />
                                 <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有生成视频" />
                             </div>
                         )}
@@ -650,7 +650,7 @@ function ResultVideoCard({ video, onDownload, onSaveAsset }: { video: GeneratedV
     const [buffering, setBuffering] = useState(false);
 
     return (
-        <div className="overflow-hidden rounded-lg border border-stone-200 bg-background dark:border-stone-800">
+        <div className="overflow-hidden rounded-lg border border-neutral-200 bg-background dark:border-neutral-800">
             <div className="relative bg-black">
                 <video
                     src={video.url}
@@ -670,8 +670,8 @@ function ResultVideoCard({ video, onDownload, onSaveAsset }: { video: GeneratedV
                     </div>
                 ) : null}
             </div>
-            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-stone-200 px-3 py-2.5 dark:border-stone-800">
-                <div className="flex min-w-0 flex-wrap gap-x-2 gap-y-1 text-xs text-stone-500 dark:text-stone-400">
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-neutral-200 px-3 py-2.5 dark:border-neutral-800">
+                <div className="flex min-w-0 flex-wrap gap-x-2 gap-y-1 text-xs text-neutral-500 dark:text-neutral-400">
                     <span>
                         {video.width}x{video.height}
                     </span>
@@ -693,8 +693,8 @@ function ResultVideoCard({ video, onDownload, onSaveAsset }: { video: GeneratedV
 
 function PendingVideoCard() {
     return (
-        <div className="relative aspect-video overflow-hidden rounded-lg border border-dashed border-stone-300 bg-stone-50 dark:border-stone-700 dark:bg-stone-900">
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-sm text-stone-500 dark:text-stone-400">
+        <div className="relative aspect-video overflow-hidden rounded-lg border border-dashed border-neutral-300 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900">
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-sm text-neutral-500 dark:text-neutral-400">
                 <LoaderCircle className="size-6 animate-spin" />
                 <span>生成中</span>
             </div>
@@ -768,7 +768,7 @@ function LogPanel({
                         onClick={() => onPreviewLog(log)}
                     />
                 ))}
-                {!logs.length ? <div className="flex min-h-48 items-center justify-center rounded-lg border border-dashed border-stone-300 text-center text-sm text-stone-500 dark:border-stone-700">暂无生成记录</div> : null}
+                {!logs.length ? <div className="flex min-h-48 items-center justify-center rounded-lg border border-dashed border-neutral-300 text-center text-sm text-neutral-500 dark:border-neutral-700">暂无生成记录</div> : null}
             </div>
         </>
     );
@@ -778,7 +778,7 @@ function LogCard({ log, selected, active, onSelectedChange, onClick }: { log: Ge
     return (
         <button
             type="button"
-            className={`block w-full rounded-lg border p-2 text-left transition ${active ? "border-stone-900 bg-blue-50 dark:border-stone-100 dark:bg-blue-950/20" : "border-stone-200 bg-background hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-stone-900"}`}
+            className={`block w-full rounded-lg border p-2 text-left transition ${active ? "border-neutral-900 bg-blue-50 dark:border-neutral-100 dark:bg-blue-950/20" : "border-neutral-200 bg-background hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-neutral-900"}`}
             onClick={onClick}
         >
             <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2">

@@ -612,7 +612,7 @@ function ImageContent({
             {isBatchChild ? (
                 <button
                     type="button"
-                    className="absolute right-3 top-3 z-30 flex h-9 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-medium opacity-0 shadow-[0_8px_20px_rgba(68,64,60,.13)] backdrop-blur-md transition group-hover/batch:opacity-100 hover:scale-[1.02]"
+                    className="absolute right-3 top-3 z-30 flex h-9 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-medium opacity-0 shadow-[0_8px_20px_rgba(64,64,64,.13)] backdrop-blur-md transition group-hover/batch:opacity-100 hover:scale-[1.02]"
                     style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
                     onClick={(event) => {
                         event.stopPropagation();
@@ -663,7 +663,7 @@ function BatchFrame({ batchCount, batchExpanded, batchOpening, batchRecovering, 
                     {Array.from({ length: Math.min(batchCount - 1, 5) }).map((_, index) => (
                         <div
                             key={index}
-                            className="absolute rounded-[inherit] border shadow-[0_14px_34px_rgba(68,64,60,.16)] transition-all duration-300 group-hover/batch:translate-x-2"
+                            className="absolute rounded-[inherit] border shadow-[0_14px_34px_rgba(64,64,64,.16)] transition-all duration-300 group-hover/batch:translate-x-2"
                             style={{
                                 inset: 0,
                                 background: `linear-gradient(135deg, ${theme.node.panel}, ${theme.node.fill})`,

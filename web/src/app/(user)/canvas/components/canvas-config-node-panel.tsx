@@ -9,6 +9,7 @@ import { defaultConfig, useConfigStore, useEffectiveConfig, type AiConfig } from
 import { CreditSymbol, requestCreditQuote } from "@/constant/credits";
 import { useUserStore } from "@/stores/use-user-store";
 import { canvasThemes } from "@/lib/canvas-theme";
+import { normalizeImageCount } from "@/lib/image-utils";
 import { supportsImageReferences } from "@/lib/image-model-capabilities";
 import { videoReferenceCapabilities } from "@/lib/video-reference";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -44,7 +45,7 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
     const supportsImageInput = mode === "text" || (mode === "image" && imageSupportsReferences) || (mode === "video" && videoCapabilities.image);
     const supportsVideoInput = mode === "video" && videoCapabilities.video;
     const supportsAudioInput = mode === "video" && videoCapabilities.audio;
-    const count = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
+    const count = normalizeImageCount(config.count);
     const creditQuote = requestCreditQuote({
         pricingRules,
         groupRatios,

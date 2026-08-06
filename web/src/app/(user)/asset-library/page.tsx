@@ -115,11 +115,11 @@ export default function AssetLibraryPage() {
                         <h1 className="text-5xl font-semibold tracking-[-.045em] sm:text-6xl">好素材，让创作更快开始。</h1>
                         <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-muted-foreground">挑选团队素材，加入我的素材后继续编辑和使用。</p>
                     </div>
-                    <div className="mx-auto mt-9 w-full max-w-2xl rounded-full bg-card p-1.5 shadow-[0_14px_40px_rgba(29,29,31,.08)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border">
+                    <div className="mx-auto mt-9 w-full max-w-2xl rounded-full bg-card p-1.5 shadow-[0_14px_40px_rgba(23,23,23,.08)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border">
                         <Input
                             size="large"
                             className="w-full"
-                            prefix={<Search className="size-4 text-stone-400" />}
+                            prefix={<Search className="size-4 text-neutral-400" />}
                             value={keyword}
                             placeholder="按标题查询"
                             onChange={(event) => {
@@ -130,7 +130,7 @@ export default function AssetLibraryPage() {
                     </div>
                     <div className="mx-auto mt-6 max-w-6xl space-y-3">
                         <div className="grid gap-2 sm:grid-cols-[56px_minmax(0,1fr)] sm:items-start">
-                            <div className="pt-2 text-xs font-medium text-stone-500 dark:text-stone-400">类型</div>
+                            <div className="pt-2 text-xs font-medium text-neutral-500 dark:text-neutral-400">类型</div>
                             <div className="flex flex-wrap gap-2">
                                 {[
                                     { label: "全部", value: "" },
@@ -154,7 +154,7 @@ export default function AssetLibraryPage() {
                             </div>
                         </div>
                         <div className="grid gap-2 sm:grid-cols-[56px_minmax(0,1fr)] sm:items-start">
-                            <div className="pt-2 text-xs font-medium text-stone-500 dark:text-stone-400">标签</div>
+                            <div className="pt-2 text-xs font-medium text-neutral-500 dark:text-neutral-400">标签</div>
                             <div className="flex flex-wrap gap-2">
                                 <Tag.CheckableTag
                                     checked={selectedTags.length === 0}
@@ -205,7 +205,7 @@ export default function AssetLibraryPage() {
                         {selectedAsset.coverUrl ? (
                             <Image src={selectedAsset.coverUrl} alt={selectedAsset.title} className="rounded-lg" />
                         ) : (
-                            <div className="rounded-lg border border-stone-200 bg-stone-50 p-5 text-sm leading-6 text-stone-600 dark:border-stone-800 dark:bg-stone-900 dark:text-stone-300">{selectedAsset.content || "暂无封面"}</div>
+                            <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-5 text-sm leading-6 text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">{selectedAsset.content || "暂无封面"}</div>
                         )}
                         <div>
                             <Typography.Title level={4} className="!mb-2">
@@ -218,7 +218,7 @@ export default function AssetLibraryPage() {
                                 ))}
                             </div>
                         </div>
-                        <div className="rounded-lg border border-stone-200 p-4 dark:border-stone-800">
+                        <div className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
                             <Typography.Text type="secondary" className="block text-xs">
                                 内容
                             </Typography.Text>
@@ -259,7 +259,7 @@ function LibraryCard({ asset, onOpen, onAdd }: { asset: AssetLibraryItem; onOpen
                     {cover ? (
                         <img src={cover} alt={asset.title} className="aspect-[4/3] w-full object-cover" />
                     ) : (
-                        <div className="flex aspect-[4/3] items-center justify-center bg-stone-100 p-5 text-center text-sm leading-6 text-stone-600 dark:bg-stone-900 dark:text-stone-300">{asset.content || "暂无封面"}</div>
+                        <div className="flex aspect-[4/3] items-center justify-center bg-neutral-100 p-5 text-center text-sm leading-6 text-neutral-600 dark:bg-neutral-900 dark:text-neutral-300">{asset.content || "暂无封面"}</div>
                     )}
                 </button>
             }
@@ -267,7 +267,7 @@ function LibraryCard({ asset, onOpen, onAdd }: { asset: AssetLibraryItem; onOpen
             <button type="button" className="block w-full text-left" onClick={onOpen}>
                 <div className="p-4">
                     <div className="flex items-start justify-between gap-3">
-                        <h2 className="line-clamp-1 text-sm font-semibold text-stone-950 dark:text-stone-100">{asset.title}</h2>
+                        <h2 className="line-clamp-1 text-sm font-semibold text-neutral-950 dark:text-neutral-100">{asset.title}</h2>
                         <Tag className="m-0 shrink-0 text-[11px]">{typeLabel(asset.type)}</Tag>
                     </div>
                     <Typography.Paragraph type="secondary" ellipsis={{ rows: 3 }} className="!mb-0 !mt-2 !text-xs !leading-5">

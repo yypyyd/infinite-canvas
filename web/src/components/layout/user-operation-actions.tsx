@@ -40,7 +40,7 @@ export function UserOperationActions({ variant = "default" }: { variant?: "defau
     const iconClass =
         variant === "canvas"
             ? "inline-flex size-7 shrink-0 items-center justify-center opacity-75 transition hover:opacity-100 disabled:cursor-default disabled:opacity-40 [&_svg]:size-4"
-            : "inline-flex size-7 shrink-0 items-center justify-center text-stone-600 transition hover:text-stone-950 disabled:cursor-default disabled:text-stone-300 dark:text-stone-300 dark:hover:text-white dark:disabled:text-stone-700 [&_svg]:size-4";
+            : "inline-flex size-7 shrink-0 items-center justify-center text-neutral-600 transition hover:text-neutral-950 disabled:cursor-default disabled:text-neutral-300 dark:text-neutral-300 dark:hover:text-white dark:disabled:text-neutral-700 [&_svg]:size-4";
 
     useEffect(() => {
         if (!latestAnnouncementKey) {

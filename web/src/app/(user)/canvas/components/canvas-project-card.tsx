@@ -62,7 +62,7 @@ export function CanvasProjectCard({ project, featured = false }: { project: Canv
     return (
         <article
             className={cn(
-                "group cursor-pointer overflow-hidden rounded-[22px] bg-white shadow-[0_2px_14px_rgba(29,29,31,.06)] ring-1 ring-black/[.04] transition hover:-translate-y-[3px] hover:shadow-[0_14px_44px_rgba(29,29,31,.12)] dark:bg-card dark:shadow-none dark:ring-border dark:hover:shadow-none dark:hover:ring-border-strong",
+                "group cursor-pointer overflow-hidden rounded-[22px] bg-white shadow-[0_2px_14px_rgba(23,23,23,.06)] ring-1 ring-black/[.04] transition hover:-translate-y-[3px] hover:shadow-[0_14px_44px_rgba(23,23,23,.12)] dark:bg-card dark:shadow-none dark:ring-border dark:hover:shadow-none dark:hover:ring-border-strong",
                 featured && "sm:col-span-2",
             )}
             onClick={() => !editing && open()}

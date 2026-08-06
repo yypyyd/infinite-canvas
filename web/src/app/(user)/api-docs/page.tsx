@@ -209,7 +209,7 @@ function ModelCard({ model, rules, onDetails, onCopy }: { model: MarketplaceMode
     const Icon = meta.icon;
     const tags = capabilityTags(model);
     return (
-        <article className="group flex min-h-[250px] flex-col rounded-2xl border border-border bg-card p-5 transition duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[0_14px_40px_rgba(29,29,31,.07)] dark:hover:shadow-none">
+        <article className="group flex min-h-[250px] flex-col rounded-2xl border border-border bg-card p-5 transition duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[0_14px_40px_rgba(23,23,23,.07)] dark:hover:shadow-none">
             <div className="flex items-start justify-between gap-3">
                 <div className="flex min-w-0 items-start gap-3">
                     <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/15"><Icon className="size-[18px]" /></span>

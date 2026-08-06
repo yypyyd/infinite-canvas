@@ -5,7 +5,7 @@ import { useUserStore } from "@/stores/use-user-store";
 import { authorizationHeaders, organizationHeaders } from "@/services/api/request";
 import { workspaceFileUrl } from "@/services/api/workspace";
 import { nanoid } from "nanoid";
-import { dataUrlToFile } from "@/lib/image-utils";
+import { dataUrlToFile, normalizeImageCount } from "@/lib/image-utils";
 import { buildImageReferencePromptText } from "@/lib/image-reference-prompt";
 import { imageToDataUrl } from "@/services/image-storage";
 import { waitForGenerationTaskRecovery } from "@/services/api/generation-task";
@@ -208,7 +208,7 @@ function withSystemMessage(config: AiConfig, messages: ChatCompletionMessage[]) 
 }
 
 export async function requestGeneration(config: AiConfig, prompt: string, options?: RequestOptions) {
-    const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
+    const n = normalizeImageCount(config.count);
     const quality = normalizeQuality(config.quality);
     const requestSize = resolveRequestSize(config.size);
     try {
@@ -243,7 +243,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
 }
 
 export async function requestEdit(config: AiConfig, prompt: string, references: ReferenceImage[], mask?: ReferenceImage, options?: RequestOptions) {
-    const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
+    const n = normalizeImageCount(config.count);
     const quality = normalizeQuality(config.quality);
     const requestSize = resolveRequestSize(config.size);
     const requestPrompt = buildImageReferencePromptText(prompt, references);

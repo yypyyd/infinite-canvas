@@ -201,12 +201,12 @@ export default function AssetsPage() {
                         <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-muted-foreground">集中管理商品实拍、品牌参考、卖点文案与生成结果。</p>
                     </div>
 
-                    <div className="mx-auto mt-9 w-full max-w-2xl rounded-full bg-card p-1.5 shadow-[0_14px_40px_rgba(29,29,31,.08)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border">
+                    <div className="mx-auto mt-9 w-full max-w-2xl rounded-full bg-card p-1.5 shadow-[0_14px_40px_rgba(23,23,23,.08)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border">
                         <Input.Search
                             className="w-full"
                             size="large"
                             allowClear
-                            prefix={<Search className="size-4 text-stone-400" />}
+                            prefix={<Search className="size-4 text-neutral-400" />}
                             value={keyword}
                             placeholder="搜索标题、内容、标签或来源"
                             onChange={(event) => {
@@ -223,7 +223,7 @@ export default function AssetsPage() {
                     <div className="mx-auto mt-6 grid max-w-6xl gap-3 text-left">
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                             <div className="grid gap-2 sm:grid-cols-[56px_minmax(0,1fr)] sm:items-center">
-                                <div className="text-xs font-medium text-stone-500 dark:text-stone-400">类型</div>
+                                <div className="text-xs font-medium text-neutral-500 dark:text-neutral-400">类型</div>
                                 <div className="flex flex-wrap gap-2">
                                     {kindOptions.map((option) => (
                                         <Tag.CheckableTag
@@ -243,19 +243,19 @@ export default function AssetsPage() {
                             <div className="flex flex-wrap gap-4">
                                 <button
                                     type="button"
-                                    className="cursor-pointer text-sm font-medium text-stone-700 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:underline dark:text-stone-300"
+                                    className="cursor-pointer text-sm font-medium text-neutral-700 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:underline dark:text-neutral-300"
                                     onClick={() => void exportAllAssets()}
                                 >
                                     导出素材
                                 </button>
                                 <button
                                     type="button"
-                                    className="cursor-pointer text-sm font-medium text-stone-700 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:underline dark:text-stone-300"
+                                    className="cursor-pointer text-sm font-medium text-neutral-700 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:underline dark:text-neutral-300"
                                     onClick={() => assetInputRef.current?.click()}
                                 >
                                     导入素材
                                 </button>
-                                <button type="button" className="cursor-pointer text-sm font-medium text-stone-700 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:underline dark:text-stone-300" onClick={openCreate}>
+                                <button type="button" className="cursor-pointer text-sm font-medium text-neutral-700 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:underline dark:text-neutral-300" onClick={openCreate}>
                                     新增素材
                                 </button>
                             </div>
@@ -328,7 +328,7 @@ export default function AssetsPage() {
                             </Form.Item>
                         ) : (
                             <Form.Item label="图片内容" required>
-                                <div className="rounded-lg border border-dashed border-stone-300 p-4 dark:border-stone-700">
+                                <div className="rounded-lg border border-dashed border-neutral-300 p-4 dark:border-neutral-700">
                                     <Button icon={<Upload className="size-4" />} onClick={() => imageInputRef.current?.click()}>
                                         选择图片文件
                                     </Button>
@@ -345,13 +345,13 @@ export default function AssetsPage() {
                             </Form.Item>
                         )}
                     </Form>
-                    <div className="rounded-xl border border-stone-200 bg-stone-50 p-4 dark:border-stone-800 dark:bg-stone-950">
+                    <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-950">
                         <Typography.Text strong>预览</Typography.Text>
-                        <div className="mt-3 overflow-hidden rounded-lg border border-stone-200 bg-background dark:border-stone-800">
+                        <div className="mt-3 overflow-hidden rounded-lg border border-neutral-200 bg-background dark:border-neutral-800">
                             {coverUrl || imageDraft?.dataUrl ? (
                                 <img src={coverUrl || imageDraft?.dataUrl} alt="" className="aspect-[4/3] w-full object-cover" />
                             ) : (
-                                <div className="flex aspect-[4/3] items-center justify-center bg-stone-100 p-5 text-center text-sm text-stone-500 dark:bg-stone-900">{content || "暂无封面"}</div>
+                                <div className="flex aspect-[4/3] items-center justify-center bg-neutral-100 p-5 text-center text-sm text-neutral-500 dark:bg-neutral-900">{content || "暂无封面"}</div>
                             )}
                             <div className="p-4">
                                 <Typography.Text strong ellipsis className="block">
@@ -418,7 +418,7 @@ function AssetCard({ asset, onOpen, onEdit, onCopy, onDownload, onDelete }: { as
                     {cover ? (
                         <img src={cover} alt={asset.title} className="aspect-[4/3] w-full object-cover" />
                     ) : (
-                        <div className="flex aspect-[4/3] items-center justify-center bg-stone-100 p-5 text-center text-sm leading-6 text-stone-600 dark:bg-stone-900 dark:text-stone-300">{asset.kind === "text" ? asset.data.content : "暂无封面"}</div>
+                        <div className="flex aspect-[4/3] items-center justify-center bg-neutral-100 p-5 text-center text-sm leading-6 text-neutral-600 dark:bg-neutral-900 dark:text-neutral-300">{asset.kind === "text" ? asset.data.content : "暂无封面"}</div>
                     )}
                 </button>
             }
@@ -427,7 +427,7 @@ function AssetCard({ asset, onOpen, onEdit, onCopy, onDownload, onDelete }: { as
                 <div className="p-4">
                     <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                            <h2 className="line-clamp-1 text-sm font-semibold text-stone-950 dark:text-stone-100">{asset.title}</h2>
+                            <h2 className="line-clamp-1 text-sm font-semibold text-neutral-950 dark:text-neutral-100">{asset.title}</h2>
                             <Typography.Text type="secondary" className="mt-1 block text-xs">
                                 {asset.source || "未标注来源"}
                             </Typography.Text>
@@ -483,7 +483,7 @@ function AssetDrawer({ asset, onClose, onCopy, onDownload }: { asset: Asset | nu
                     {cover ? (
                         <Image src={cover} alt={asset.title} className="rounded-lg" />
                     ) : (
-                        <div className="rounded-lg border border-stone-200 bg-stone-50 p-5 text-sm leading-6 text-stone-600 dark:border-stone-800 dark:bg-stone-900 dark:text-stone-300">{asset.kind === "text" ? asset.data.content : "暂无封面"}</div>
+                        <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-5 text-sm leading-6 text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">{asset.kind === "text" ? asset.data.content : "暂无封面"}</div>
                     )}
                     <div>
                         <Typography.Title level={4} className="!mb-2">
@@ -496,7 +496,7 @@ function AssetDrawer({ asset, onClose, onCopy, onDownload }: { asset: Asset | nu
                             ))}
                         </Space>
                     </div>
-                    <div className="rounded-lg border border-stone-200 p-4 dark:border-stone-800">
+                    <div className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
                         <Typography.Text type="secondary" className="block text-xs">
                             内容
                         </Typography.Text>

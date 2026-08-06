@@ -5,6 +5,7 @@ import { ConfigProvider, Switch } from "antd";
 
 import type { PricingRule } from "@/constant/credits";
 import { type CanvasTheme } from "@/lib/canvas-theme";
+import { normalizeImageCount } from "@/lib/image-utils";
 import type { AiConfig } from "@/stores/use-config-store";
 
 const qualityOptions = [
@@ -88,7 +89,7 @@ export function ImageSettingsPanel({
 }: ImageSettingsPanelProps) {
     const [snapDimensionToStep, setSnapDimensionToStep] = useState(true);
     const quality = config.quality || "auto";
-    const count = Math.max(1, Math.min(maxCount, Math.floor(Math.abs(Number(config.count)) || 1)));
+    const count = normalizeImageCount(config.count, maxCount);
     const activeSize = config.size || "auto";
     const activeRatios = normalizeSupportedRatios(supportedRatios);
     const activeResolutionTiers = supportedResolutionTiers ? normalizeSupportedResolutionTiers(supportedResolutionTiers) : null;
@@ -287,7 +288,7 @@ function CountInput({ value, max, theme, onChange }: { value: number; max: numbe
                 className="min-w-0 flex-1 bg-transparent px-3 text-center outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 style={{ color: theme.node.text, WebkitTextFillColor: theme.node.text }}
                 value={value || ""}
-                onChange={(event) => onChange(Number(event.target.value) || null)}
+                onChange={(event) => onChange(normalizeImageCount(event.target.value, max))}
                 onMouseDown={(event) => event.stopPropagation()}
             />
         </label>

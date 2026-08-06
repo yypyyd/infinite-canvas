@@ -8,8 +8,8 @@ import { getMediaBlob, resolveMediaUrl } from "@/services/file-storage";
 import { applyGenerationRecordSnapshot, clearGenerationRecordMemory } from "@/services/generation-history";
 import { acknowledgeGenerationTaskRecoveries } from "@/services/api/generation-task";
 import { getImageBlob, resolveImageUrl } from "@/services/image-storage";
-import { fetchWorkspace, fetchWorkspaceStorageStatus, saveWorkspaceChanges, uploadWorkspaceFile, workspaceFileExists, type WorkspaceRecord } from "@/services/api/workspace";
-import { commitWorkspaceChanges, hasPendingWorkspaceChanges, readPendingWorkspaceChanges, workspaceOwnerId, WORKSPACE_CHANGES_UPDATED_EVENT, type PendingWorkspaceChange } from "@/services/workspace-changes";
+import { fetchWorkspace, fetchWorkspaceStorageStatus, saveWorkspaceChanges, uploadWorkspaceFile, workspaceFileExists, WorkspaceVersionConflictError, type WorkspaceRecord } from "@/services/api/workspace";
+import { commitWorkspaceChanges, hasPendingWorkspaceChanges, readPendingWorkspaceChanges, rebasePendingWorkspaceChanges, workspaceOwnerId, WORKSPACE_CHANGES_UPDATED_EVENT, type PendingWorkspaceChange } from "@/services/workspace-changes";
 import type { Asset } from "@/stores/use-asset-store";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useWorkspaceStatusStore } from "@/stores/use-workspace-status-store";
@@ -19,6 +19,10 @@ const storageKeyPattern = /^(image|video|audio|file|video-reference|audio-refere
 const fileConcurrency = 3;
 const flushTimeoutMs = 15_000;
 let activeWorkspaceFlush: (() => Promise<void>) | null = null;
+
+export function isWorkspaceVersionConflictError(error: unknown) {
+    return error instanceof WorkspaceVersionConflictError;
+}
 
 export async function flushActiveWorkspaceChanges() {
     if (activeWorkspaceFlush) return activeWorkspaceFlush();
@@ -76,6 +80,21 @@ export function WorkspaceProvider() {
                 lastSaveError = null;
             } catch (error) {
                 const text = error instanceof Error ? error.message : "账号数据保存失败";
+                if (error instanceof WorkspaceVersionConflictError) {
+                    try {
+                        const latestWorkspace = await fetchWorkspace(token);
+                        rebasePendingWorkspaceChanges(ownerId, latestWorkspace.records);
+                        const pending = readPendingWorkspaceChanges(ownerId);
+                        applyWorkspaceSnapshot(ownerId, latestWorkspace.records, pending, false);
+                        await applyGenerationRecordSnapshot(ownerId, latestWorkspace.records, pending);
+                        lastSaveError = null;
+                        if (pending.length) statusStore.setStatus("syncing");
+                        else statusStore.markSaved();
+                        return;
+                    } catch (recoveryError) {
+                        error = recoveryError;
+                    }
+                }
                 lastSaveError = error instanceof Error ? error : new Error(text);
                 statusStore.setStatus(navigator.onLine ? "error" : "offline", text);
             } finally {

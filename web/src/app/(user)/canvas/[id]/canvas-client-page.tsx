@@ -637,15 +637,27 @@ function InfiniteCanvasPage() {
     }, [historyOwnerId, projectId]);
 
     useEffect(() => {
+        let restoreTimer: ReturnType<typeof setTimeout> | null = null;
         const restoreCompletedGenerations = () => {
-            const current = nodesRef.current;
-            void restoreInterruptedCanvasMedia(current, readCanvasImageGenerationResults(historyOwnerId, projectId), readCanvasVideoGenerationResults(historyOwnerId, projectId)).then((next) => {
-                if (nodesRef.current === current && next !== current) setNodes(next);
-            });
+            // Generation records are written before the corresponding React state
+            // update has necessarily committed. Defer recovery until that update
+            // settles, and never let recovery overwrite an active local edit.
+            if (restoreTimer) clearTimeout(restoreTimer);
+            restoreTimer = setTimeout(() => {
+                restoreTimer = null;
+                if (generationRequestsRef.current.size || hasUnsavedChangesRef.current) return;
+                const current = nodesRef.current;
+                void restoreInterruptedCanvasMedia(current, readCanvasImageGenerationResults(historyOwnerId, projectId), readCanvasVideoGenerationResults(historyOwnerId, projectId)).then((next) => {
+                    if (nodesRef.current === current && next !== current && !generationRequestsRef.current.size && !hasUnsavedChangesRef.current) setNodes(next);
+                });
+            }, 0);
         };
         window.addEventListener(GENERATION_HISTORY_CHANGED_EVENT, restoreCompletedGenerations);
-        return () => window.removeEventListener(GENERATION_HISTORY_CHANGED_EVENT, restoreCompletedGenerations);
-    }, [historyOwnerId, projectId]);
+        return () => {
+            if (restoreTimer) clearTimeout(restoreTimer);
+            window.removeEventListener(GENERATION_HISTORY_CHANGED_EVENT, restoreCompletedGenerations);
+        };
+    }, [generationRequestsRef, hasUnsavedChangesRef, historyOwnerId, projectId]);
 
     useEffect(() => {
         if (!hydrated) return;

@@ -254,7 +254,9 @@ export function InfiniteCanvas({ containerRef, viewport, backgroundMode = "lines
                 className="absolute origin-top-left"
                 style={{
                     transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.k})`,
-                }}
+                    "--canvas-inverse-scale": `${2 / Math.max(viewport.k, 0.05)}`,
+                    "--canvas-menu-inverse-scale": `${1 / Math.max(viewport.k, 0.05)}`,
+                } as React.CSSProperties}
             >
                 {children}
             </div>

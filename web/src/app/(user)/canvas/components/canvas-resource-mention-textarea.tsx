@@ -87,6 +87,34 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
         updateValue(next, mention.start + insertText.length);
     };
 
+    const deleteAdjacentReference = (key: "Backspace" | "Delete") => {
+        const textarea = textareaRef.current;
+        if (!textarea || textarea.selectionStart !== textarea.selectionEnd) return false;
+        const cursor = textarea.selectionStart;
+        const labels = references.filter((item) => item.active).map((item) => item.label).sort((a, b) => b.length - a.length);
+        let start = cursor;
+        let end = cursor;
+        if (key === "Backspace") {
+            const labelEnd = value[cursor - 1] === " " ? cursor - 1 : cursor;
+            const label = labels.find((item) => value.slice(0, labelEnd).endsWith(item));
+            if (!label) return false;
+            start = labelEnd - label.length;
+            if (start > 0 && !/\s/.test(value[start - 1])) return false;
+            end = cursor;
+        } else {
+            const labelStart = value[cursor] === " " ? cursor + 1 : cursor;
+            const label = labels.find((item) => value.slice(labelStart).startsWith(item));
+            if (!label) return false;
+            start = labelStart;
+            end = start + label.length;
+            if (value[end] && !/\s/.test(value[end])) return false;
+            if (value[end] === " ") end += 1;
+        }
+        closeMention();
+        updateValue(`${value.slice(0, start)}${value.slice(end)}`, start);
+        return true;
+    };
+
     const syncOverlayScroll = () => {
         if (!overlayRef.current || !textareaRef.current) return;
         overlayRef.current.scrollTop = textareaRef.current.scrollTop;
@@ -101,6 +129,8 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
     const showOverlay = Boolean(value && activeLabels.some((label) => value.includes(label)) && !hasSelection);
     const mergedStyle = {
         ...(style || {}),
+        position: "relative",
+        zIndex: showOverlay ? 1 : undefined,
         color: showOverlay ? "transparent" : style?.color,
         caretColor: theme.node.text,
         ...(showOverlay ? { background: "transparent", backgroundColor: "transparent" } : {}),
@@ -110,7 +140,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
     return (
         <div className={`relative h-full w-full ${containerClassName || ""}`}>
             {showOverlay ? (
-                <div ref={overlayRef} className={`${className || ""} pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words`} style={{ ...style, color: theme.node.text }}>
+                <div ref={overlayRef} className={`${className || ""} pointer-events-none absolute inset-0 z-0 overflow-hidden whitespace-pre-wrap break-words`} style={{ ...style, color: theme.node.text }}>
                     <MentionHighlightText value={value || props.placeholder?.toString() || ""} labels={activeLabels} references={references} onPreview={setPreviewUrl} placeholder={!value} />
                 </div>
             ) : null}
@@ -145,7 +175,29 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
                     updateSelectionState();
                     props.onPointerUp?.(event);
                 }}
+                onDoubleClick={(event) => {
+                    const textarea = event.currentTarget;
+                    const selectionStart = Math.min(textarea.selectionStart, textarea.selectionEnd);
+                    const selectionEnd = Math.max(textarea.selectionStart, textarea.selectionEnd);
+                    const reference = references.find((item) => {
+                        if (!item.active || item.kind !== "image" || !item.previewUrl) return false;
+                        const labelStart = value.indexOf(item.label);
+                        if (labelStart < 0) return false;
+                        const labelEnd = labelStart + item.label.length;
+                        return selectionStart < labelEnd && selectionEnd > labelStart || selectionStart === selectionEnd && selectionStart >= labelStart && selectionStart <= labelEnd;
+                    });
+                    if (reference?.previewUrl) {
+                        event.preventDefault();
+                        setPreviewUrl(reference.previewUrl);
+                        return;
+                    }
+                    props.onDoubleClick?.(event);
+                }}
                 onKeyDown={(event) => {
+                    if ((event.key === "Backspace" || event.key === "Delete") && deleteAdjacentReference(event.key)) {
+                        event.preventDefault();
+                        return;
+                    }
                     if (mention && candidates.length) {
                         if (event.key === "ArrowDown") {
                             event.preventDefault();
@@ -274,7 +326,7 @@ function MentionMenu({
     return createPortal(
         <div
             data-canvas-resource-mention-menu="true"
-            className="fixed z-[120] max-h-56 w-64 overflow-y-auto rounded-xl border p-1 shadow-2xl backdrop-blur-md"
+            className="fixed z-[1200] max-h-56 w-64 overflow-y-auto rounded-xl border p-1 shadow-2xl backdrop-blur-md"
             style={{ left, top, background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
             onPointerDown={stopCanvasInteraction}
             onMouseDown={stopCanvasInteraction}

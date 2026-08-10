@@ -915,7 +915,7 @@ func CreateBatchProductionJob(job model.BatchProductionJob, itemEstimatedCredits
 		appendItem := func(productID string, skuID string) error {
 			if len(items) >= maxBatchProductionItems { return ErrBatchProductionItemsTooLarge }
 			estimatedCredits, ok := itemEstimatedCredits[productID+"\x00"+skuID]
-			if !ok || estimatedCredits <= 0 { return errors.New("batch production item estimate is missing") }
+			if !ok || estimatedCredits < 0 { return errors.New("batch production item estimate is missing") }
 			items = append(items, model.BatchProductionItem{ID: job.ID + "-item-" + strconv.Itoa(len(items)), OrganizationID: job.OrganizationID, JobID: job.ID, ProductID: productID, SKUID: skuID, EstimatedCredits: estimatedCredits, Status: model.BatchProductionStatusQueued, RunNumber: 1, CreatedAt: job.CreatedAt, UpdatedAt: job.UpdatedAt})
 			return nil
 		}
@@ -1141,7 +1141,7 @@ func aggregateBatchProductionJob(tx *gorm.DB, job *model.BatchProductionJob, tim
 }
 
 func reserveBatchProductionRetryCredits(tx *gorm.DB, job *model.BatchProductionJob, amount int, timestamp string) error {
-	if amount <= 0 {
+	if amount < 0 {
 		return ErrBatchProductionStateConflict
 	}
 	if job.CreditSource == model.CreditSourceOrganization {
@@ -1348,7 +1348,7 @@ func RetryBatchProductionJob(organizationID string, id string, timestamp string,
 		retryCredits := 0
 		itemIDs := make([]string, 0, len(retryItems))
 		for _, item := range retryItems {
-			if item.EstimatedCredits <= 0 { return ErrBatchProductionStateConflict }
+			if item.EstimatedCredits < 0 { return ErrBatchProductionStateConflict }
 			retryCredits += item.EstimatedCredits
 			itemIDs = append(itemIDs, item.ID)
 		}
@@ -1467,7 +1467,7 @@ func FinishBatchProductionItemWithSchedule(item model.BatchProductionItem, statu
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&job, "id = ? AND organization_id = ?", item.JobID, item.OrganizationID).Error; err != nil { return err }
 		if job.Status == model.BatchProductionStatusCancelled || job.Status == model.BatchProductionStatusCompleted || job.Status == model.BatchProductionStatusFailed || job.Status == model.BatchProductionStatusPendingReview || job.Status == model.BatchProductionStatusPartialSuccess { return ErrBatchProductionLeaseLost }
 		if retryable {
-			if status != model.BatchProductionStatusQueued || errorCategory == "" || nextAttemptAt == "" || item.EstimatedCredits <= 0 {
+			if status != model.BatchProductionStatusQueued || errorCategory == "" || nextAttemptAt == "" || item.EstimatedCredits < 0 {
 				return ErrBatchProductionStateConflict
 			}
 			if reserveRetryCredits {

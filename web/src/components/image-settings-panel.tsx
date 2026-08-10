@@ -28,13 +28,14 @@ type AspectOption = {
 };
 
 const baseAspectOptions: AspectOption[] = [
-    { value: "1:1", label: "1:1", width: 1024, height: 1024, icon: "square", resolutionTier: "1k" },
-    { value: "3:2", label: "3:2", width: 1536, height: 1024, icon: "landscape", resolutionTier: "1k" },
-    { value: "2:3", label: "2:3", width: 1024, height: 1536, icon: "portrait", resolutionTier: "1k" },
-    { value: "4:3", label: "4:3", width: 1360, height: 1024, icon: "landscape", resolutionTier: "1k" },
-    { value: "3:4", label: "3:4", width: 1024, height: 1360, icon: "portrait", resolutionTier: "1k" },
-    { value: "16:9", label: "16:9", width: 1824, height: 1024, icon: "landscape", resolutionTier: "1k" },
-    { value: "9:16", label: "9:16", width: 1024, height: 1824, icon: "portrait", resolutionTier: "1k" },
+    { value: "1:1", label: "1:1", size: "1024x1024", width: 1024, height: 1024, icon: "square", resolutionTier: "1k" },
+    { value: "3:2", label: "3:2", size: "1200x800", width: 1200, height: 800, icon: "landscape", resolutionTier: "1k" },
+    { value: "2:3", label: "2:3", size: "800x1200", width: 800, height: 1200, icon: "portrait", resolutionTier: "1k" },
+    { value: "4:3", label: "4:3", size: "1024x768", width: 1024, height: 768, icon: "landscape", resolutionTier: "1k" },
+    { value: "3:4", label: "3:4", size: "768x1024", width: 768, height: 1024, icon: "portrait", resolutionTier: "1k" },
+    { value: "16:9", label: "16:9", size: "1280x720", width: 1280, height: 720, icon: "landscape", resolutionTier: "1k" },
+    { value: "9:16", label: "9:16", size: "720x1280", width: 720, height: 1280, icon: "portrait", resolutionTier: "1k" },
+    { value: "21:9", label: "21:9", size: "1680x720", width: 1680, height: 720, icon: "landscape", resolutionTier: "1k" },
 ];
 
 const tierAspectOptions: AspectOption[] = [
@@ -45,6 +46,7 @@ const tierAspectOptions: AspectOption[] = [
     { value: "3:4-2k", label: "3:4(2k)", size: "1536x2048", width: 1536, height: 2048, icon: "portrait", ratio: "3:4", resolutionTier: "2k" },
     { value: "16:9-2k", label: "16:9(2k)", size: "2048x1152", width: 2048, height: 1152, icon: "landscape", ratio: "16:9", resolutionTier: "2k" },
     { value: "9:16-2k", label: "9:16(2k)", size: "1152x2048", width: 1152, height: 2048, icon: "portrait", ratio: "9:16", resolutionTier: "2k" },
+    { value: "21:9-2k", label: "21:9(2k)", size: "2520x1080", width: 2520, height: 1080, icon: "landscape", ratio: "21:9", resolutionTier: "2k" },
     { value: "1:1-4k", label: "1:1(4k)", size: "2880x2880", width: 2880, height: 2880, icon: "square", ratio: "1:1", resolutionTier: "4k" },
     { value: "3:2-4k", label: "3:2(4k)", size: "3520x2352", width: 3520, height: 2352, icon: "landscape", ratio: "3:2", resolutionTier: "4k" },
     { value: "2:3-4k", label: "2:3(4k)", size: "2352x3520", width: 2352, height: 3520, icon: "portrait", ratio: "2:3", resolutionTier: "4k" },
@@ -52,6 +54,7 @@ const tierAspectOptions: AspectOption[] = [
     { value: "3:4-4k", label: "3:4(4k)", size: "2480x3312", width: 2480, height: 3312, icon: "portrait", ratio: "3:4", resolutionTier: "4k" },
     { value: "16:9-4k", label: "16:9(4k)", size: "3840x2160", width: 3840, height: 2160, icon: "landscape", ratio: "16:9", resolutionTier: "4k" },
     { value: "9:16-4k", label: "9:16(4k)", size: "2160x3840", width: 2160, height: 3840, icon: "portrait", ratio: "9:16", resolutionTier: "4k" },
+    { value: "21:9-4k", label: "21:9(4k)", size: "3840x1648", width: 3840, height: 1648, icon: "landscape", ratio: "21:9", resolutionTier: "4k" },
 ];
 
 const autoAspectOption: AspectOption[] = [{ value: "auto", label: "auto", width: 0, height: 0, icon: "auto" }];

@@ -267,7 +267,7 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 					return
 				}
 				archiveCtx, cancelArchive := generatedArchiveContext(r.Context())
-				recoveredBody, storageKeys := archiveImageGenerationResponse(archiveCtx, user, task, recoveredBody)
+				recoveredBody, storageKeys := archiveImageGenerationResponseWithOptions(archiveCtx, user, task, recoveredBody, requestMeta.ResponseFormat, request.Header.Get("Authorization"))
 				cancelArchive()
 				if updateErr := service.UpdateGenerationTaskRecovery(&task, "", recoveredBody, storageKeys); updateErr != nil {
 					log.Printf("AI proxy persist recovered image result failed: task=%s err=%v", task.ID, updateErr)
@@ -315,7 +315,7 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 				upstreamTaskID = generationUpstreamTaskID(responseBody)
 			} else {
 				archiveCtx, cancelArchive := generatedArchiveContext(r.Context())
-				responseBody, storageKeys = archiveImageGenerationResponse(archiveCtx, user, task, responseBody)
+				responseBody, storageKeys = archiveImageGenerationResponseWithOptions(archiveCtx, user, task, responseBody, requestMeta.ResponseFormat, request.Header.Get("Authorization"))
 				cancelArchive()
 			}
 			if updateErr := service.UpdateGenerationTaskRecovery(&task, upstreamTaskID, responseBody, storageKeys); updateErr != nil {
@@ -917,6 +917,7 @@ func cacheVideoGeneration(body []byte, mimeType string) string {
 
 type aiRequestMeta struct {
 	ModelName       string
+	ResponseFormat  string
 	Count           int
 	Size            string
 	Quality         string
@@ -1033,6 +1034,7 @@ func readMultipartAIRequest(body []byte, contentType string) aiRequestMeta {
 	referenceImages := len(form.File["image"]) + len(form.File["image[]"]) + len(form.File["input_reference"]) + len(form.File["input_reference[]"]) + len(form.File["reference_images"]) + len(form.File["reference_images[]"])
 	return aiRequestMeta{
 		ModelName:       firstFormValue(form, "model"),
+		ResponseFormat:  firstFormValue(form, "response_format"),
 		Count:           readIntValue(firstFormValue(form, "n"), 1),
 		Size:            firstFormValue(form, "size", "ratio"),
 		Quality:         firstFormValue(form, "quality"),
@@ -1051,6 +1053,7 @@ func readJSONAIRequest(body []byte) aiRequestMeta {
 	_ = json.Unmarshal(body, &payload)
 	return aiRequestMeta{
 		ModelName:       readStringField(payload, "model"),
+		ResponseFormat:  readStringField(payload, "response_format"),
 		Count:           readIntField(payload, 1, "n"),
 		Size:            readStringField(payload, "size", "ratio"),
 		Quality:         readStringField(payload, "quality"),

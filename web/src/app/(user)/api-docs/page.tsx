@@ -184,7 +184,7 @@ export default function ModelSquarePage() {
                         onOperationChange={setSelectedOperation}
                         onCopyModel={() => copyText(selectedModel.id, "模型 ID 已复制")}
                         onCopyEndpoint={() => copyText(endpoint, "接口地址已复制")}
-                        onCopySnippet={() => copyText(activeOperation ? buildSnippet(endpoint, selectedModel, activeOperation) : "", "请求示例已复制")}
+                        onCopySnippet={() => copyText(activeOperation ? buildCompleteSnippet(endpoint, selectedModel, activeOperation) : "", "请求示例已复制")}
                     />
                 ) : null}
             </Drawer>
@@ -252,7 +252,7 @@ function ModelDetails({ model, rules, endpoint, operation, operations, onOperati
 }) {
     const meta = modalityMeta[model.modality];
     const Icon = meta.icon;
-    const snippet = operation ? buildSnippet(endpoint, model, operation) : "";
+    const snippet = operation ? buildCompleteSnippet(endpoint, model, operation) : "";
     return (
         <div className="pb-6">
             <div className="flex items-start gap-4 border-b border-border pb-6 pr-8">
@@ -314,7 +314,7 @@ function PriceCard({ rule }: { rule: AdminPricingRule }) {
     return (
         <div className="rounded-xl bg-primary/[.055] p-3.5 ring-1 ring-primary/15">
             <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground"><span className="font-medium text-foreground">{rule.resolutionTier ? rule.resolutionTier.toUpperCase() : "通用规格"}</span><span>{operationLabel(rule.operation)}</span></div>
-            <div className="mt-2 font-mono text-lg font-semibold text-primary">{rule.billingMode === "ratio" ? `${rule.modelRatio}×` : rule.credits}<span className="ml-1.5 font-sans text-[11px] font-normal text-muted-foreground">算力 / {unitLabel(rule.unit)}</span></div>
+            <div className="mt-2 font-mono text-lg font-semibold text-primary">{rule.billingMode === "ratio" ? `${rule.modelRatio}×` : rule.credits == null ? "未设置价格" : rule.credits}<span className="ml-1.5 font-sans text-[11px] font-normal text-muted-foreground">算力 / {unitLabel(rule.unit)}</span></div>
             {rule.minCredits > 0 ? <div className="mt-1 text-[11px] text-muted-foreground">单次最低 {rule.minCredits} 算力</div> : null}
         </div>
     );
@@ -330,10 +330,10 @@ function enabledPricingRules(rules: AdminPricingRule[], modelId: string, operati
 
 function pricingSummary(rules: AdminPricingRule[]) {
     if (!rules.length) return "暂未定价";
-    const fixedRules = rules.filter((rule) => rule.billingMode === "fixed");
+    const fixedRules = rules.filter((rule) => rule.billingMode === "fixed" && rule.credits != null);
     if (!fixedRules.length) return `${rules[0].modelRatio}× 倍率`;
-    const lowest = fixedRules.reduce((value, rule) => Math.min(value, rule.credits), Number.POSITIVE_INFINITY);
-    return `${fixedRules.length > 1 ? "最低 " : ""}${lowest} 算力 / ${unitLabel(fixedRules.find((rule) => rule.credits === lowest)?.unit || "request")}`;
+    const lowest = fixedRules.reduce((value, rule) => Math.min(value, Number(rule.credits)), Number.POSITIVE_INFINITY);
+    return `${fixedRules.length > 1 ? "最低 " : ""}${lowest} 算力 / ${unitLabel(fixedRules.find((rule) => Number(rule.credits) === lowest)?.unit || "request")}`;
 }
 
 function capabilityTags(model: MarketplaceModel) {
@@ -379,6 +379,21 @@ function buildSnippet(endpoint: string, model: MarketplaceModel, operation: Mode
         return `curl -X POST "${endpoint}/videos" \\\n  -H "Authorization: Bearer YOUR_API_KEY" \\\n  -H "Idempotency-Key: YOUR_UNIQUE_REQUEST_ID" \\\n  -F "model=${model.id}" \\\n  -F "prompt=商品在柔和光影中缓慢旋转"${fields.length ? ` \\\n${fields.map((field) => `  -F "${field}"`).join(" \\\n")}` : ""}`;
     }
     return `curl -X POST "${endpoint}/audio/speech" \\\n  -H "Authorization: Bearer YOUR_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -H "Idempotency-Key: YOUR_UNIQUE_REQUEST_ID" \\\n  -d '${JSON.stringify({ model: model.id, input: "欢迎使用道生画境开放接口。", voice: "alloy", response_format: "mp3" }, null, 2)}' \\\n  --output speech.mp3`;
+}
+
+function buildCompleteSnippet(endpoint: string, model: MarketplaceModel, operation: ModelOperation) {
+    const snippet = buildSnippet(endpoint, model, operation);
+    if (model.modality !== "video") return snippet;
+    return `${snippet}
+
+# 返回中的 id 保存为 VIDEO_TASK_ID；每 2-3 秒查询，直到 status=completed
+curl "${endpoint}/videos/VIDEO_TASK_ID?model=${model.id}" \\
+  -H "Authorization: Bearer YOUR_API_KEY"
+
+# 下载 MP4
+curl "${endpoint}/videos/VIDEO_TASK_ID/content?model=${model.id}" \\
+  -H "Authorization: Bearer YOUR_API_KEY" \\
+  --output result.mp4`;
 }
 
 function imageOutputSize(ratio: string) {

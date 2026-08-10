@@ -18,22 +18,35 @@ import (
 )
 
 func archiveImageGenerationResponse(ctx context.Context, user model.AuthUser, task model.GenerationTask, body []byte) ([]byte, []string) {
+	return archiveImageGenerationResponseWithOptions(ctx, user, task, body, "", "")
+}
+
+func archiveImageGenerationResponseWithOptions(ctx context.Context, user model.AuthUser, task model.GenerationTask, body []byte, responseFormat, authorization string) ([]byte, []string) {
 	var payload map[string]any
 	if json.Unmarshal(body, &payload) != nil { return body, nil }
 	items, ok := payload["data"].([]any)
 	if !ok { return body, nil }
 	storageKeys := make([]string, 0, len(items))
+	transformed := false
 	for index, raw := range items {
 		item, ok := raw.(map[string]any)
 		if !ok { continue }
-		data, mimeType, err := generatedImageBytes(ctx, item)
+		data, mimeType, err := generatedImageBytesWithAuthorization(ctx, item, authorization)
 		if err != nil { log.Printf("AI image archive read failed: task=%s index=%d err=%v", task.ID, index+1, err); continue }
+		if strings.EqualFold(strings.TrimSpace(responseFormat), "b64_json") {
+			item["b64_json"] = base64.StdEncoding.EncodeToString(data)
+			delete(item, "url")
+			transformed = true
+		}
 		file, err := service.ArchiveGeneratedFile(ctx, user, task.ID, "image", index+1, mimeType, int64(len(data)), bytes.NewReader(data))
-		if err != nil { log.Printf("AI image archive save failed: task=%s index=%d err=%v", task.ID, index+1, err); continue }
+		if err != nil {
+			log.Printf("AI image archive save failed: task=%s index=%d err=%v", task.ID, index+1, err)
+			continue
+		}
 		item["storage_key"], item["mime_type"], item["bytes"] = file.StorageKey, file.MimeType, file.Size
 		storageKeys = append(storageKeys, file.StorageKey)
 	}
-	if len(storageKeys) == 0 { return body, nil }
+	if !transformed && len(storageKeys) == 0 { return body, nil }
 	archived, err := json.Marshal(payload)
 	if err != nil { return body, nil }
 	return archived, storageKeys
@@ -44,6 +57,10 @@ func generatedArchiveContext(parent context.Context) (context.Context, context.C
 }
 
 func generatedImageBytes(ctx context.Context, item map[string]any) ([]byte, string, error) {
+	return generatedImageBytesWithAuthorization(ctx, item, "")
+}
+
+func generatedImageBytesWithAuthorization(ctx context.Context, item map[string]any, authorization string) ([]byte, string, error) {
 	if encoded, _ := item["b64_json"].(string); strings.TrimSpace(encoded) != "" {
 		mimeType := "image/png"
 		if comma := strings.Index(encoded, ","); comma >= 0 && strings.Contains(strings.ToLower(encoded[:comma]), "base64") {
@@ -55,7 +72,7 @@ func generatedImageBytes(ctx context.Context, item map[string]any) ([]byte, stri
 		if detected := http.DetectContentType(data); strings.HasPrefix(detected, "image/") { mimeType = detected }
 		return data, mimeType, nil
 	}
-	if rawURL, _ := item["url"].(string); strings.TrimSpace(rawURL) != "" { return service.ReadGeneratedURL(ctx, rawURL, "image") }
+	if rawURL, _ := item["url"].(string); strings.TrimSpace(rawURL) != "" { return service.ReadGeneratedURLWithAuthorization(ctx, rawURL, "image", authorization) }
 	return nil, "", errors.New("generated image is missing")
 }
 

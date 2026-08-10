@@ -51,6 +51,7 @@ import { InfiniteCanvas } from "../components/infinite-canvas";
 import { Minimap } from "../components/canvas-mini-map";
 import { CanvasNode } from "../components/canvas-node";
 import { CanvasNodePromptPanel, type CanvasNodeGenerationMode } from "../components/canvas-node-prompt-panel";
+import { CanvasPromptEditorModal } from "../components/canvas-prompt-editor-modal";
 import { CanvasToolbar } from "../components/canvas-toolbar";
 import { AssetPickerModal, type AssetPickerTab, type InsertAssetPayload } from "../components/asset-picker-modal";
 import { CanvasZoomControls } from "../components/canvas-zoom-controls";
@@ -65,6 +66,7 @@ import {
     type CanvasImageGenerationType,
     type CanvasNodeData,
     type CanvasNodeMetadata,
+    type CanvasTool,
     type ConnectionHandle,
     type ContextMenuState,
     type Position,
@@ -83,6 +85,8 @@ type PendingConnectionCreate = {
     connection: ConnectionHandle;
     position: Position;
 };
+
+type PendingNodeCreate = { position: Position };
 
 type ConnectionDropTarget = {
     nodeId: string | null;
@@ -189,10 +193,12 @@ function CanvasRefreshShell() {
 
 function ConnectionCreateMenu({
     pending,
+    title = "引用该节点生成",
     onCreate,
     onClose,
 }: {
-    pending: PendingConnectionCreate;
+    pending: PendingConnectionCreate | PendingNodeCreate;
+    title?: string;
     onCreate: (type: CanvasNodeType.Image | CanvasNodeType.Text | CanvasNodeType.Config | CanvasNodeType.Video | CanvasNodeType.Audio) => void;
     onClose: () => void;
 }) {
@@ -207,7 +213,7 @@ function ConnectionCreateMenu({
         >
             <div className="mb-2 flex items-center justify-between px-1">
                 <span className="text-sm font-medium" style={{ color: theme.node.muted }}>
-                    引用该节点生成
+                    {title}
                 </span>
                 <button type="button" className="grid size-7 place-items-center rounded-lg text-base opacity-55 transition hover:bg-white/10 hover:opacity-100" onClick={onClose} aria-label="关闭">
                     ×
@@ -312,6 +318,7 @@ function InfiniteCanvasPage() {
     const [connectingParams, setConnectingParams] = useState<ConnectionHandle | null>(null);
     const [connectionTargetNodeId, setConnectionTargetNodeId] = useState<string | null>(null);
     const [pendingConnectionCreate, setPendingConnectionCreate] = useState<PendingConnectionCreate | null>(null);
+    const [pendingNodeCreate, setPendingNodeCreate] = useState<PendingNodeCreate | null>(null);
     const [mouseWorld, setMouseWorld] = useState<Position>({ x: 0, y: 0 });
     const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -349,6 +356,8 @@ function InfiniteCanvasPage() {
     const [openingBatchIds, setOpeningBatchIds] = useState<Set<string>>(new Set());
     const [isNodeDragging, setIsNodeDragging] = useState(false);
     const [nodeDragOffset, setNodeDragOffset] = useState<Position | null>(null);
+    const [canvasTool, setCanvasTool] = useState<CanvasTool>("pan");
+    const [promptEditorNodeId, setPromptEditorNodeId] = useState<string | null>(null);
 
     const nodesRef = useRef(nodes);
     const connectionsRef = useRef(connections);
@@ -956,6 +965,7 @@ function InfiniteCanvasPage() {
     const superResolveNode = superResolveNodeId ? nodeById.get(superResolveNodeId) || null : null;
     const angleNode = angleNodeId ? nodeById.get(angleNodeId) || null : null;
     const previewNode = previewNodeId ? nodeById.get(previewNodeId) || null : null;
+    const promptEditorNode = promptEditorNodeId ? nodeById.get(promptEditorNodeId) || null : null;
     const hasMultipleSelectedNodes = selectedNodeIds.size > 1;
     const activeNodeId = hasMultipleSelectedNodes ? null : hoveredNodeId || (selectedNodeIds.size === 1 ? Array.from(selectedNodeIds)[0] : null);
     const batchChildCountById = useMemo(() => {
@@ -1034,6 +1044,15 @@ function InfiniteCanvasPage() {
             if (type !== CanvasNodeType.Text && type !== CanvasNodeType.Audio) setDialogNodeId(newNode.id);
         },
         [effectiveConfig.canvasImageCount, effectiveConfig.count, effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, getCanvasCenter],
+    );
+
+    const createPendingNode = useCallback(
+        (type: CanvasNodeType) => {
+            if (!pendingNodeCreate) return;
+            createNode(type, pendingNodeCreate.position);
+            setPendingNodeCreate(null);
+        },
+        [createNode, pendingNodeCreate],
     );
 
     const deleteNodes = useCallback(
@@ -1307,14 +1326,8 @@ function InfiniteCanvasPage() {
         (event: ReactPointerEvent<HTMLDivElement>) => {
             setContextMenu(null);
             if (pendingConnectionCreateRef.current) cancelPendingConnectionCreate();
+            if (pendingNodeCreate) setPendingNodeCreate(null);
             if (event.button !== 0) return;
-
-            if (!event.ctrlKey && !event.metaKey) {
-                setSelectionBox(null);
-                setSelectedNodeIds(new Set());
-                setSelectedConnectionId(null);
-                return;
-            }
 
             const world = screenToCanvas(event.clientX, event.clientY);
             const nextSelectionBox = {
@@ -1333,7 +1346,17 @@ function InfiniteCanvasPage() {
 
             setSelectedConnectionId(null);
         },
-        [cancelPendingConnectionCreate, screenToCanvas],
+        [cancelPendingConnectionCreate, pendingNodeCreate, screenToCanvas],
+    );
+
+    const handleCanvasDoubleClick = useCallback(
+        (event: ReactMouseEvent<HTMLDivElement>) => {
+            if (pendingConnectionCreateRef.current) return;
+            setContextMenu(null);
+            setSelectedConnectionId(null);
+            setPendingNodeCreate({ position: screenToCanvas(event.clientX, event.clientY) });
+        },
+        [screenToCanvas],
     );
 
     const handleNodeMouseDown = useCallback((event: ReactMouseEvent, nodeId: string) => {
@@ -1799,7 +1822,7 @@ function InfiniteCanvasPage() {
     }, []);
 
     const handleNodePromptChange = useCallback((nodeId: string, prompt: string) => {
-        setNodes((prev) => prev.map((node) => (node.id === nodeId ? { ...node, metadata: { ...node.metadata, prompt } } : node)));
+        setNodes((prev) => prev.map((node) => (node.id === nodeId ? { ...node, metadata: { ...node.metadata, promptDraft: prompt || undefined } } : node)));
     }, []);
 
     const handleConfigNodeChange = useCallback((nodeId: string, patch: Partial<CanvasNodeData["metadata"]>) => {
@@ -3384,13 +3407,15 @@ function InfiniteCanvasPage() {
                     onConfigChange={handleConfigNodeChange}
                     onGenerate={handleGenerateNode}
                     onStop={confirmStopGeneration}
+                    mentionMenuDisabled={promptEditorNodeId === panelNode.id}
+                    onOpenPromptEditor={(nodeId) => setPromptEditorNodeId(nodeId)}
                     onImageSettingsOpenChange={(open) => {
                         setNodeImageSettingsOpen(open);
                         if (open) setToolbarNodeId(null);
                     }}
                 />
             ),
-        [configInputsById, confirmStopGeneration, handleConfigNodeChange, handleGenerateNode, handleNodePromptChange, mentionReferencesByNodeId, runningNodeId],
+        [configInputsById, confirmStopGeneration, handleConfigNodeChange, handleGenerateNode, handleNodePromptChange, mentionReferencesByNodeId, promptEditorNodeId, runningNodeId],
     );
 
     const renderCanvasConfigNode = useCallback(
@@ -3447,9 +3472,11 @@ function InfiniteCanvasPage() {
                 <InfiniteCanvas
                     containerRef={containerRef}
                     viewport={viewport}
+                    tool={canvasTool}
                     backgroundMode={backgroundMode}
                     onViewportChange={handleViewportChange}
                     onCanvasMouseDown={handleCanvasMouseDown}
+                    onCanvasDoubleClick={handleCanvasDoubleClick}
                     onCanvasDeselect={deselectCanvas}
                     onContextMenu={preventCanvasContextMenu}
                     onDrop={handleDrop}
@@ -3533,6 +3560,7 @@ function InfiniteCanvasPage() {
                         />
                     ) : null}
                     {pendingConnectionCreate ? <ConnectionCreateMenu pending={pendingConnectionCreate} onCreate={(type) => createConnectedNode(type, pendingConnectionCreate)} onClose={cancelPendingConnectionCreate} /> : null}
+                    {pendingNodeCreate ? <ConnectionCreateMenu pending={pendingNodeCreate} title="在此创建节点" onCreate={createPendingNode} onClose={() => setPendingNodeCreate(null)} /> : null}
                 </InfiniteCanvas>
 
                 <CanvasNodeHoverToolbar
@@ -3582,6 +3610,8 @@ function InfiniteCanvasPage() {
                     onDelete={() => deleteNodes(new Set(selectedNodeIds))}
                     onClear={() => setClearConfirmOpen(true)}
                     onDeselect={deselectCanvas}
+                    tool={canvasTool}
+                    onToolChange={setCanvasTool}
                     onBackgroundModeChange={setBackgroundMode}
                     onShowImageInfoChange={setShowImageInfo}
                     onOpenAssetLibrary={() => {
@@ -3650,6 +3680,24 @@ function InfiniteCanvasPage() {
                 <input ref={imageInputRef} type="file" accept="image/*,video/*,audio/mpeg,audio/wav,audio/x-wav,.mp3,.wav" className="hidden" onChange={handleImageInputChange} />
 
                 <CanvasNodeInfoModal node={infoNode} open={Boolean(infoNode)} onClose={() => setInfoNodeId(null)} />
+
+                <CanvasPromptEditorModal
+                    node={promptEditorNode}
+                    open={Boolean(promptEditorNode)}
+                    references={promptEditorNode ? mentionReferencesByNodeId.get(promptEditorNode.id) || EMPTY_MENTION_REFERENCES : EMPTY_MENTION_REFERENCES}
+                    onChange={(value) => {
+                        if (promptEditorNode) handleNodePromptChange(promptEditorNode.id, value);
+                    }}
+                    onGenerate={() => {
+                        if (!promptEditorNode) return;
+                        const mode: CanvasNodeGenerationMode = promptEditorNode.type === CanvasNodeType.Text ? "text" : promptEditorNode.type === CanvasNodeType.Video ? "video" : promptEditorNode.type === CanvasNodeType.Audio ? "audio" : "image";
+                        const prompt = promptEditorNode.metadata?.promptDraft || "";
+                        handleNodePromptChange(promptEditorNode.id, "");
+                        void handleGenerateNode(promptEditorNode.id, mode, prompt);
+                        setPromptEditorNodeId(null);
+                    }}
+                    onClose={() => setPromptEditorNodeId(null)}
+                />
 
                 {cropNode?.metadata?.content ? <CanvasNodeCropDialog dataUrl={cropNode.metadata.content} open={Boolean(cropNode)} onClose={() => setCropNodeId(null)} onConfirm={(crop) => void cropImageNode(cropNode!, crop)} /> : null}
 

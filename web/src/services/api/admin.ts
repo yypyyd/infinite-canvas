@@ -381,7 +381,7 @@ export type AdminPricingRule = {
     unit: string;
     resolutionTier: string;
     billingMode: "fixed" | "ratio";
-    credits: number;
+    credits: number | null;
     minCredits: number;
     modelRatio: number;
     completionRatio: number;

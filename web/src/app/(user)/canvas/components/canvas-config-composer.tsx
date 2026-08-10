@@ -235,8 +235,8 @@ function MentionMenu({
 }
 
 function ResourcePreview({ input }: { input: NodeGenerationInput }) {
-    if (input.type === "image" && input.image) return <img src={input.image.dataUrl} alt="" className="size-9 rounded-md object-cover" />;
-    if (input.type === "video" && input.video) return <video src={input.video.url} className="size-9 rounded-md bg-black object-cover" muted preload="metadata" />;
+    if (input.type === "image" && input.image) return <img src={input.image.dataUrl} alt="" className="size-9 rounded-none object-cover" />;
+    if (input.type === "video" && input.video) return <video src={input.video.url} className="size-9 rounded-none bg-black object-cover" muted preload="metadata" />;
     const Icon = input.type === "audio" ? Music2 : input.type === "video" ? Video : input.type === "image" ? ImageIcon : FileText;
     return (
         <span className="grid size-9 shrink-0 place-items-center rounded-md bg-black/10">
@@ -255,8 +255,8 @@ function createReferenceChip(input: NodeGenerationInput, inputs: NodeGenerationI
         const image = document.createElement("img");
         image.src = input.image.dataUrl;
         image.alt = input.title;
-        image.className = "size-6 rounded object-cover";
-        wrapper.className = "mx-px inline-flex size-6 items-center justify-center overflow-hidden rounded align-middle";
+        image.className = "size-6 rounded-none object-cover";
+        wrapper.className = "mx-px inline-flex size-6 items-center justify-center overflow-hidden rounded-none align-middle";
         wrapper.appendChild(image);
         wrapper.addEventListener("click", (event) => {
             event.preventDefault();

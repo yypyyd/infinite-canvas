@@ -115,9 +115,16 @@ func ArchiveGeneratedStream(ctx context.Context, user model.AuthUser, taskID, me
 }
 
 func ReadGeneratedURL(ctx context.Context, rawURL, mediaType string) ([]byte, string, error) {
+	return ReadGeneratedURLWithAuthorization(ctx, rawURL, mediaType, "")
+}
+
+func ReadGeneratedURLWithAuthorization(ctx context.Context, rawURL, mediaType, authorization string) ([]byte, string, error) {
 	if !validHTTPSURL(rawURL) { return nil, "", errors.New("generated file URL is invalid") }
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil { return nil, "", err }
+	if authorization = strings.TrimSpace(authorization); authorization != "" {
+		request.Header.Set("Authorization", authorization)
+	}
 	transport := batchResultTransport()
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, Timeout: 15 * time.Minute, CheckRedirect: func(request *http.Request, via []*http.Request) error {

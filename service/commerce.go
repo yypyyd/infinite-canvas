@@ -603,7 +603,6 @@ func legacyCreateBatchProductionJob(user model.AuthUser, input model.CreateBatch
 	for key, operation := range itemOperations {
 		credits, ok := creditsByOperation[operation]
 		if !ok { credits, err = CalculateRequestCreditsForGroup(standardBatchPricingRequest(modelName, operation, deliverySpec), user.Group); if err != nil { return model.BatchProductionJob{}, err }; creditsByOperation[operation] = credits }
-		if credits <= 0 { return model.BatchProductionJob{}, safeMessageError{message: "默认图片模型未设置有效价格"} }
 		itemEstimatedCredits[key] = credits
 	}
 	timestamp, jobID := now(), newID("batch")

@@ -69,7 +69,7 @@ type SettingsTabKey = "public" | "private";
 type SettingsSectionKey = "models" | "access" | "operations" | "monitoring" | "email" | "sync";
 type EditorMode = "visual" | "json";
 
-const modelAspectRatioOptions = ["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16"];
+const modelAspectRatioOptions = ["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "21:9"];
 const settingsTabs = [
     {
         key: "models",
@@ -585,20 +585,26 @@ function inferModelAspectRatios(modelName: string) {
 function normalizePricingRules(items: Partial<AdminSettings["public"]["modelChannel"]["pricingRules"][number]>[]): AdminPricingRule[] {
     return items
         .filter((item) => item.model)
-        .map((item) => ({
-            model: item.model || "",
-            modality: normalizePricingToken(item.modality || "image"),
-            operation: normalizePricingToken(item.operation || "generation"),
-            unit: normalizePricingToken(item.unit || (item.modality === "video" ? "second" : "image")),
-            resolutionTier: normalizePricingToken(item.resolutionTier || ""),
-            billingMode: item.billingMode === "ratio" ? "ratio" : "fixed",
-            credits: Math.max(0, Number(item.credits) || 0),
-            minCredits: Math.max(0, Number(item.minCredits) || 0),
-            modelRatio: Math.max(0, Number(item.modelRatio) || 1),
-            completionRatio: Math.max(0, Number(item.completionRatio) || 1),
-            enabled: item.enabled !== false,
-            remark: item.remark || "",
-        }))
+        .map((item) => {
+            const rawCredits = item.credits as unknown;
+            const importedCredits = rawCredits == null || rawCredits === "" ? null : Math.max(0, Number(rawCredits) || 0);
+            const billingMode = item.billingMode === "ratio" ? "ratio" : "fixed";
+            const hasConfiguredPrice = billingMode === "ratio" || (importedCredits != null && !(item.enabled === false && importedCredits === 0));
+            return {
+                model: item.model || "",
+                modality: normalizePricingToken(item.modality || "image"),
+                operation: normalizePricingToken(item.operation || "generation"),
+                unit: normalizePricingToken(item.unit || (item.modality === "video" ? "second" : "image")),
+                resolutionTier: normalizePricingToken(item.resolutionTier || ""),
+                billingMode,
+                credits: hasConfiguredPrice ? importedCredits : null,
+                minCredits: Math.max(0, Number(item.minCredits) || 0),
+                modelRatio: Math.max(0, Number(item.modelRatio) || 1),
+                completionRatio: Math.max(0, Number(item.completionRatio) || 1),
+                enabled: hasConfiguredPrice && item.enabled !== false,
+                remark: item.remark || "",
+            };
+        })
         .filter((item) => (item.modality === "image" || item.modality === "video" ? Boolean(item.resolutionTier) : !item.resolutionTier));
 }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowUp, LoaderCircle, Square } from "lucide-react";
+import { ArrowUp, Expand, LoaderCircle, Square } from "lucide-react";
 import { Button } from "antd";
 
 import { ModelPicker } from "@/components/model-picker";
@@ -32,10 +32,12 @@ type CanvasNodePromptPanelProps = {
     onGenerate: (nodeId: string, mode: CanvasNodeGenerationMode, prompt: string) => void;
     onStop: (nodeId: string) => void;
     mentionReferences?: CanvasResourceReference[];
+    mentionMenuDisabled?: boolean;
     onImageSettingsOpenChange?: (open: boolean) => void;
+    onOpenPromptEditor?: (nodeId: string) => void;
 };
 
-export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfigChange, onGenerate, onStop, mentionReferences = [], onImageSettingsOpenChange }: CanvasNodePromptPanelProps) {
+export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfigChange, onGenerate, onStop, mentionReferences = [], mentionMenuDisabled = false, onImageSettingsOpenChange, onOpenPromptEditor }: CanvasNodePromptPanelProps) {
     const globalConfig = useEffectiveConfig();
     const pricingRules = useConfigStore((state) => state.publicSettings?.modelChannel.pricingRules);
     const groupRatios = useConfigStore((state) => state.publicSettings?.modelChannel.groupRatios);
@@ -54,7 +56,7 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
     const hasTextContent = node.type === CanvasNodeType.Text && Boolean(node.metadata?.content?.trim());
     const hasImageContent = node.type === CanvasNodeType.Image && Boolean(node.metadata?.content);
     const isEditingExistingContent = hasTextContent || hasImageContent;
-    const [prompt, setPrompt] = useState(isEditingExistingContent ? "" : node.metadata?.prompt || "");
+    const [prompt, setPrompt] = useState(node.metadata?.promptDraft ?? (isEditingExistingContent ? "" : node.metadata?.prompt || ""));
     const creditQuote = requestCreditQuote({
         pricingRules,
         groupRatios,
@@ -69,12 +71,12 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
     });
 
     useEffect(() => {
-        setPrompt(isEditingExistingContent ? "" : node.metadata?.prompt || "");
-    }, [isEditingExistingContent, node.id]);
+        setPrompt(node.metadata?.promptDraft ?? (isEditingExistingContent ? "" : node.metadata?.prompt || ""));
+    }, [isEditingExistingContent, node.id, node.metadata?.prompt, node.metadata?.promptDraft]);
 
     const updatePrompt = (value: string) => {
         setPrompt(value);
-        if (!isEditingExistingContent) onPromptChange(node.id, value);
+        onPromptChange(node.id, value);
     };
 
     const submit = () => {
@@ -82,6 +84,7 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
         if (!text || isRunning) return;
         onGenerate(node.id, mode, text);
         setPrompt("");
+        onPromptChange(node.id, "");
     };
 
     return (
@@ -95,6 +98,7 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
             <CanvasResourceMentionTextarea
                 value={prompt}
                 references={visibleMentionReferences}
+                mentionMenuDisabled={mentionMenuDisabled}
                 onChange={updatePrompt}
                 onSubmit={submit}
                 className="thin-scrollbar h-24 w-full resize-none rounded-xl border px-3 py-2 text-sm leading-5 outline-none"
@@ -105,6 +109,7 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
             <div className="mt-2 flex min-w-0 items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-2">
                     <CanvasPromptLibrary onSelect={updatePrompt} />
+                    {onOpenPromptEditor ? <Button type="text" size="small" icon={<Expand className="size-4" />} onClick={() => onOpenPromptEditor(node.id)} aria-label="展开提示词编辑器" /> : null}
                     {mode === "image" ? (
                         <>
                             <ModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} capability="image" onMissingConfig={() => openConfigDialog(true)} />

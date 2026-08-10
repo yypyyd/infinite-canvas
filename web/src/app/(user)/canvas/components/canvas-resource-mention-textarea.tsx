@@ -1,8 +1,9 @@
 "use client";
 
-import { forwardRef, useMemo, useRef, useState } from "react";
+import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MouseEvent, PointerEvent, TextareaHTMLAttributes } from "react";
 import { createPortal } from "react-dom";
+import { Image as AntImage } from "antd";
 import { FileText, Image as ImageIcon, Music2, Video } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -21,10 +22,11 @@ type Props = Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "onChange" | "val
     onSubmit?: () => void;
     containerClassName?: string;
     highlightLabels?: boolean;
+    mentionMenuDisabled?: boolean;
 };
 
 export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Props>(function CanvasResourceMentionTextarea(
-    { value, references, onChange, onSubmit, onKeyDown, className, containerClassName, style, highlightLabels = true, ...props },
+    { value, references, onChange, onSubmit, onKeyDown, className, containerClassName, style, highlightLabels = true, mentionMenuDisabled = false, ...props },
     forwardedRef,
 ) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
@@ -33,14 +35,21 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
     const [mention, setMention] = useState<MentionState | null>(null);
     const [activeIndex, setActiveIndex] = useState(0);
     const [hasSelection, setHasSelection] = useState(false);
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const candidates = useMemo(() => {
-        if (!mention) return [];
+        if (!mention || mentionMenuDisabled) return [];
         const query = mention.query.trim().toLowerCase();
         const activeReferences = references.filter((item) => item.active);
         if (!query) return activeReferences;
         return activeReferences.filter((item) => `${item.label} ${item.title} ${item.kind} ${item.text || ""}`.toLowerCase().includes(query));
-    }, [mention, references]);
+    }, [mention, mentionMenuDisabled, references]);
     const activeLabels = useMemo(() => (highlightLabels ? Array.from(new Set(references.filter((item) => item.active).map((item) => item.label))).sort((a, b) => b.length - a.length) : []), [highlightLabels, references]);
+
+    useEffect(() => {
+        if (!mentionMenuDisabled) return;
+        setMention(null);
+        setActiveIndex(0);
+    }, [mentionMenuDisabled]);
 
     const updateValue = (next: string, selectionStart?: number) => {
         onChange(next);
@@ -57,6 +66,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
     };
 
     const syncMention = (nextValue: string, cursor: number) => {
+        if (mentionMenuDisabled) return;
         const prefix = nextValue.slice(0, cursor);
         const match = /(^|\s)@([^\s@]*)$/.exec(prefix);
         if (!match || !references.some((item) => item.active)) {
@@ -88,11 +98,11 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
         setHasSelection(Boolean(textarea && textarea.selectionStart !== textarea.selectionEnd));
     };
 
-    const showOverlay = Boolean(activeLabels.length && !hasSelection);
+    const showOverlay = Boolean(value && activeLabels.some((label) => value.includes(label)) && !hasSelection);
     const mergedStyle = {
         ...(style || {}),
         color: showOverlay ? "transparent" : style?.color,
-        caretColor: style?.color || theme.node.text,
+        caretColor: theme.node.text,
         ...(showOverlay ? { background: "transparent", backgroundColor: "transparent" } : {}),
     } as CSSProperties;
     const menu = mention && candidates.length && textareaRef.current ? <MentionMenu textarea={textareaRef.current} references={candidates} activeIndex={Math.min(activeIndex, candidates.length - 1)} theme={theme} onSelect={insertReference} /> : null;
@@ -101,7 +111,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
         <div className={`relative h-full w-full ${containerClassName || ""}`}>
             {showOverlay ? (
                 <div ref={overlayRef} className={`${className || ""} pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words`} style={{ ...style, color: theme.node.text }}>
-                    <MentionHighlightText value={value || props.placeholder?.toString() || ""} labels={activeLabels} placeholder={!value} />
+                    <MentionHighlightText value={value || props.placeholder?.toString() || ""} labels={activeLabels} references={references} onPreview={setPreviewUrl} placeholder={!value} />
                 </div>
             ) : null}
             <textarea
@@ -176,11 +186,19 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
                 }}
             />
             {menu}
+            {previewUrl ? (
+                <AntImage
+                    src={previewUrl}
+                    alt="引用图片预览"
+                    style={{ display: "none" }}
+                    preview={{ visible: true, src: previewUrl, onVisibleChange: (visible) => !visible && setPreviewUrl(null) }}
+                />
+            ) : null}
         </div>
     );
 });
 
-function MentionHighlightText({ value, labels, placeholder }: { value: string; labels: string[]; placeholder: boolean }) {
+function MentionHighlightText({ value, labels, references, onPreview, placeholder }: { value: string; labels: string[]; references: CanvasResourceReference[]; onPreview: (url: string) => void; placeholder: boolean }) {
     if (placeholder) return <span className="opacity-45">{value}</span>;
     if (!labels.length) return <>{value}</>;
     const pattern = new RegExp(`(${labels.map(escapeRegExp).join("|")})`, "g");
@@ -188,14 +206,36 @@ function MentionHighlightText({ value, labels, placeholder }: { value: string; l
         <>
             {value.split(pattern).map((part, index) =>
                 labels.includes(part) ? (
-                    <span key={`${part}-${index}`} className="rounded-md bg-[#2f80ff]/16 px-1 py-0.5 font-medium text-[#2f80ff] ring-1 ring-[#2f80ff]/24">
-                        {part}
-                    </span>
+                    <MentionInlineChip key={`${part}-${index}`} reference={references.find((reference) => reference.label === part)} label={part} onPreview={onPreview} />
                 ) : (
                     <span key={`${part}-${index}`}>{part}</span>
                 ),
             )}
         </>
+    );
+}
+
+function MentionInlineChip({ reference, label, onPreview }: { reference?: CanvasResourceReference; label: string; onPreview: (url: string) => void }) {
+    const Icon = reference?.kind === "image" ? ImageIcon : reference?.kind === "video" ? Video : reference?.kind === "audio" ? Music2 : FileText;
+    return (
+        <span
+            className="pointer-events-auto mx-0.5 inline-flex size-6 translate-y-[-1px] items-center justify-center overflow-hidden rounded-none bg-[#2f80ff]/16 align-middle text-[#2f80ff] ring-1 ring-[#2f80ff]/24"
+            title={reference?.kind === "image" ? "双击查看大图" : label}
+            aria-label={label}
+            onPointerDown={(event) => {
+                if (reference?.kind !== "image" || !reference.previewUrl) return;
+                event.preventDefault();
+                event.stopPropagation();
+            }}
+            onDoubleClick={(event) => {
+                if (reference?.kind !== "image" || !reference.previewUrl) return;
+                event.preventDefault();
+                event.stopPropagation();
+                onPreview(reference.previewUrl);
+            }}
+        >
+            {reference?.previewUrl && reference.kind === "image" ? <img src={reference.previewUrl} alt="" className="size-full rounded-none object-cover" /> : reference?.previewUrl && reference.kind === "video" ? <video src={reference.previewUrl} className="size-full rounded-none bg-black object-cover" muted preload="metadata" /> : <Icon className="size-3.5 shrink-0" />}
+        </span>
     );
 }
 
@@ -270,8 +310,8 @@ function MentionMenu({
 }
 
 function ReferencePreview({ reference }: { reference: CanvasResourceReference }) {
-    if (reference.kind === "image" && reference.previewUrl) return <img src={reference.previewUrl} alt="" className="size-9 rounded-md object-cover" />;
-    if (reference.kind === "video" && reference.previewUrl) return <video src={reference.previewUrl} className="size-9 rounded-md bg-black object-cover" muted preload="metadata" />;
+    if (reference.kind === "image" && reference.previewUrl) return <img src={reference.previewUrl} alt="" className="size-9 rounded-none object-cover" />;
+    if (reference.kind === "video" && reference.previewUrl) return <video src={reference.previewUrl} className="size-9 rounded-none bg-black object-cover" muted preload="metadata" />;
     const Icon = reference.kind === "audio" ? Music2 : reference.kind === "video" ? Video : reference.kind === "image" ? ImageIcon : FileText;
     return (
         <span className="grid size-9 shrink-0 place-items-center rounded-md bg-black/10">

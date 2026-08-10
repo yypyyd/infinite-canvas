@@ -456,6 +456,7 @@ export default function AdminChannelsPage() {
                                         <Space size={6} wrap>
                                             <Typography.Text style={{ wordBreak: "break-all" }}>{model}</Typography.Text>
                                             {discoveredModels[model]?.modality ? <Tag bordered={false}>{discoveredModels[model].modality}</Tag> : null}
+                                            {discoveredModels[model]?.supportedRatios?.length ? <Tag bordered={false}>比例 {discoveredModels[model].supportedRatios.join(" / ")}</Tag> : null}
                                             {discoveredModels[model]?.supportedDurations?.length ? <Tag bordered={false}>{discoveredModels[model].supportedDurations.join("/")} 秒</Tag> : null}
                                             {discoveredModels[model]?.referenceCapabilityProvided ? <Tag bordered={false}>{discoveredModels[model].maxReferenceImages ? `参考图 ${discoveredModels[model].maxReferenceImages} 张` : "无参考图"}</Tag> : null}
                                             {discoveredModels[model]?.referenceVideosProvided ? <Tag bordered={false}>参考视频 {discoveredModels[model].maxReferenceVideos} 个</Tag> : null}

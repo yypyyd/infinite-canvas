@@ -106,6 +106,18 @@ func TestSelectPricingRuleIgnoresImageQuality(t *testing.T) {
 	}
 }
 
+func TestSelectPricingRuleAllowsExplicitZeroCredits(t *testing.T) {
+	request := normalizePricingRequest(PricingRequest{Model: "gpt-image-2", Modality: "image", Operation: "generation", Unit: "image", Size: "1024x1024"})
+	rules := normalizePricingRules([]model.PricingRule{{Model: "gpt-image-2", Modality: "image", Operation: "generation", Unit: "image", ResolutionTier: "1k", Credits: 0, Enabled: true}})
+	rule, ok := selectPricingRule(rules, request)
+	if !ok {
+		t.Fatal("expected explicit zero-price rule to match")
+	}
+	if credits := calculateRuleCredits(rule, request.Quantity, 1); credits != 0 {
+		t.Fatalf("credits = %d, want explicit zero price", credits)
+	}
+}
+
 func TestSelectPricingRuleSkipsDisabledAndMismatchedRules(t *testing.T) {
 	request := normalizePricingRequest(PricingRequest{
 		Model:     "gpt-image-2",

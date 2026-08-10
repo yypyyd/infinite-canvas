@@ -1,14 +1,15 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { App, Avatar, Button, Card, Descriptions, Empty, Form, Image as AntImage, Input, Modal, Pagination, Progress, Segmented, Select, Skeleton, Table, Tabs, Tag, Typography, type TableColumnsType } from "antd";
+import { App, Avatar, Button, Card, Checkbox, Descriptions, Empty, Form, Image as AntImage, Input, Modal, Pagination, Progress, Segmented, Select, Skeleton, Table, Tabs, Tag, Typography, type TableColumnsType } from "antd";
 import dayjs from "dayjs";
-import { CircleUserRound, Clock3, Cloud, Code2, Coins, Copy, ExternalLink, Film, History, ImageIcon, KeyRound, ListChecks, LoaderCircle, PencilLine, Plus, ReceiptText, RefreshCw, Search, ShieldCheck, Trash2, WalletCards } from "lucide-react";
+import { CheckSquare, CircleUserRound, Clock3, Cloud, Code2, Coins, Copy, ExternalLink, Film, History, ImageIcon, KeyRound, ListChecks, LoaderCircle, PencilLine, Plus, ReceiptText, RefreshCw, Search, ShieldCheck, Trash2, WalletCards } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { CREDIT_PURCHASE_URL, CreditSymbol } from "@/constant/credits";
+import { DOCS_URL } from "@/constant/env";
 import { useCopyText } from "@/hooks/use-copy-text";
 import { useOpenMedia } from "@/hooks/use-open-media";
 import { formatDuration } from "@/lib/image-utils";
@@ -22,7 +23,7 @@ type AccountTab = "profile" | "tasks" | "history" | "credits" | "api";
 type ProfileFormValues = { displayName: string; avatarUrl: string };
 type PasswordFormValues = { currentPassword: string; newPassword: string; confirmPassword: string };
 type APIKeyFormValues = { name: string };
-type APIExampleType = "models" | "image" | "recovery";
+type APIExampleType = "models" | "image" | "video" | "recovery";
 
 const historyPageSize = 12;
 const creditPageSize = 12;
@@ -526,6 +527,7 @@ function HistorySection() {
     const [status, setStatus] = useState<"all" | GenerationHistoryItem["status"]>("all");
     const [page, setPage] = useState(1);
     const [selected, setSelected] = useState<GenerationHistoryItem | null>(null);
+    const [selectedHistoryKeys, setSelectedHistoryKeys] = useState<string[]>([]);
     const query = useQuery({
         queryKey: ["generation-history", ownerId],
         queryFn: () => readGenerationHistory(ownerId),
@@ -541,6 +543,19 @@ function HistorySection() {
         },
         onError: (error) => message.error(error instanceof Error ? error.message : "删除失败"),
     });
+    const batchDeleteMutation = useMutation({
+        mutationFn: async (items: GenerationHistoryItem[]) => {
+            await Promise.all(items.map((item) => deleteGenerationHistory(item)));
+            return items.length;
+        },
+        onSuccess: async (count) => {
+            setSelectedHistoryKeys([]);
+            setSelected(null);
+            await Promise.all([queryClient.invalidateQueries({ queryKey: ["generation-history", ownerId] }), queryClient.invalidateQueries({ queryKey: ["generation-history-count", ownerId] })]);
+            message.success(`已删除 ${count} 条生成记录`);
+        },
+        onError: (error) => message.error(error instanceof Error ? error.message : "批量删除失败"),
+    });
     const filtered = useMemo(() => {
         const normalizedKeyword = keyword.trim().toLowerCase();
         return (query.data || []).filter((item) => {
@@ -551,11 +566,20 @@ function HistorySection() {
         });
     }, [kind, keyword, query.data, status]);
     const pageItems = filtered.slice((page - 1) * historyPageSize, page * historyPageSize);
+    const selectedHistoryKeySet = useMemo(() => new Set(selectedHistoryKeys), [selectedHistoryKeys]);
+    const selectedItems = useMemo(() => (query.data || []).filter((item) => selectedHistoryKeySet.has(historySelectionKey(item))), [query.data, selectedHistoryKeySet]);
+    const pageKeys = pageItems.map(historySelectionKey);
+    const allPageSelected = Boolean(pageKeys.length) && pageKeys.every((key) => selectedHistoryKeySet.has(key));
 
     useEffect(() => {
         const lastPage = Math.max(1, Math.ceil(filtered.length / historyPageSize));
         setPage((current) => Math.min(current, lastPage));
     }, [filtered.length]);
+
+    useEffect(() => {
+        const knownKeys = new Set((query.data || []).map(historySelectionKey));
+        setSelectedHistoryKeys((current) => current.filter((key) => knownKeys.has(key)));
+    }, [query.data]);
 
     const confirmDelete = (item: GenerationHistoryItem) => {
         modal.confirm({
@@ -565,6 +589,27 @@ function HistorySection() {
             cancelText: "取消",
             okButtonProps: { danger: true },
             onOk: () => deleteMutation.mutateAsync(item),
+        });
+    };
+
+    const togglePageSelection = () => {
+        setSelectedHistoryKeys((current) => {
+            const next = new Set(current);
+            if (allPageSelected) pageKeys.forEach((key) => next.delete(key));
+            else pageKeys.forEach((key) => next.add(key));
+            return [...next];
+        });
+    };
+
+    const confirmBatchDelete = () => {
+        if (!selectedItems.length) return;
+        modal.confirm({
+            title: "批量删除生成记录",
+            content: `确定删除选中的 ${selectedItems.length} 条生成记录吗？此操作不可撤销。`,
+            okText: "删除",
+            cancelText: "取消",
+            okButtonProps: { danger: true },
+            onOk: () => batchDeleteMutation.mutateAsync(selectedItems),
         });
     };
 
@@ -624,6 +669,17 @@ function HistorySection() {
             </Card>
 
             <div className="mt-5">
+                <div className="mb-3 flex flex-wrap items-center gap-2">
+                    <Button size="small" icon={<CheckSquare className="size-3.5" />} disabled={!pageItems.length || batchDeleteMutation.isPending} onClick={togglePageSelection}>
+                        {allPageSelected ? "取消本页" : "全选本页"}
+                    </Button>
+                    {selectedHistoryKeys.length ? <span className="text-sm text-muted-foreground">已选 {selectedHistoryKeys.length} 条</span> : null}
+                    {selectedItems.length ? (
+                        <Button size="small" danger icon={<Trash2 className="size-3.5" />} loading={batchDeleteMutation.isPending} onClick={confirmBatchDelete}>
+                            批量删除
+                        </Button>
+                    ) : null}
+                </div>
                 {query.isLoading ? (
                     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                         <SkeletonHistoryCards />
@@ -631,7 +687,14 @@ function HistorySection() {
                 ) : pageItems.length ? (
                     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                         {pageItems.map((item) => (
-                            <HistoryCard key={`${item.kind}-${item.id}`} item={item} onOpen={() => setSelected(item)} onDelete={() => confirmDelete(item)} />
+                            <HistoryCard
+                                key={`${item.kind}-${item.id}`}
+                                item={item}
+                                selected={selectedHistoryKeySet.has(historySelectionKey(item))}
+                                onSelectedChange={(checked) => setSelectedHistoryKeys((current) => (checked ? [...new Set([...current, historySelectionKey(item)])] : current.filter((key) => key !== historySelectionKey(item))))}
+                                onOpen={() => setSelected(item)}
+                                onDelete={() => confirmDelete(item)}
+                            />
                         ))}
                     </div>
                 ) : (
@@ -655,7 +718,11 @@ function generationStatusColor(status: GenerationHistoryItem["status"]) {
     return status === "成功" ? "green" : status === "生成中" ? "processing" : status === "部分失败" ? "orange" : "red";
 }
 
-function HistoryCard({ item, onOpen, onDelete }: { item: GenerationHistoryItem; onOpen: () => void; onDelete: () => void }) {
+function historySelectionKey(item: GenerationHistoryItem) {
+    return `${item.kind}:${item.id}`;
+}
+
+function HistoryCard({ item, selected, onSelectedChange, onOpen, onDelete }: { item: GenerationHistoryItem; selected: boolean; onSelectedChange: (checked: boolean) => void; onOpen: () => void; onDelete: () => void }) {
     const previewQuery = useQuery({
         queryKey: ["generation-history-preview", item.ownerId, item.kind, item.id],
         queryFn: () => resolveGenerationHistoryPreview(item),
@@ -665,17 +732,20 @@ function HistoryCard({ item, onOpen, onDelete }: { item: GenerationHistoryItem; 
     const preview = previewQuery.data || item.previewUrls[0];
     const mediaUrl = previewQuery.data || item.mediaUrl;
     return (
-        <article className="group overflow-hidden rounded-2xl border border-border bg-card transition hover:-translate-y-0.5 hover:border-foreground/25" style={{ contentVisibility: "auto", containIntrinsicSize: "0 360px" }}>
+        <article className={`group relative overflow-hidden rounded-2xl border border-border bg-card transition hover:-translate-y-0.5 hover:border-foreground/25 ${selected ? "ring-2 ring-primary/40" : ""}`} style={{ contentVisibility: "auto", containIntrinsicSize: "0 360px" }}>
             <button type="button" onClick={onOpen} className="relative block aspect-[16/10] w-full overflow-hidden bg-muted text-left">
                 {item.kind === "image" && preview ? <img src={preview} alt={item.title} className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.025]" /> : null}
                 {item.kind === "video" && mediaUrl ? <video src={mediaUrl} muted preload="metadata" className="h-full w-full object-cover" /> : null}
                 {!preview && !mediaUrl ? <span className="flex h-full items-center justify-center text-muted-foreground">{item.kind === "image" ? <ImageIcon className="size-8" /> : <Film className="size-8" />}</span> : null}
-                <span className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-md bg-background/90 px-2 py-1 text-xs font-medium text-foreground backdrop-blur">
+                <span className="absolute left-11 top-3 inline-flex items-center gap-1 rounded-md bg-background/90 px-2 py-1 text-xs font-medium text-foreground backdrop-blur">
                     {item.kind === "image" ? <ImageIcon className="size-3.5" /> : <Film className="size-3.5" />}
                     {item.kind === "image" ? "图片" : "视频"}
                 </span>
                 {item.resultCount > 1 ? <span className="absolute right-3 top-3 rounded-md bg-black/65 px-2 py-1 text-xs text-white">{item.resultCount} 个结果</span> : null}
             </button>
+            <span className="absolute left-3 top-3 z-10 flex size-7 items-center justify-center rounded-md bg-background/90 backdrop-blur" onClick={(event) => event.stopPropagation()}>
+                <Checkbox checked={selected} onChange={(event) => onSelectedChange(event.target.checked)} aria-label={`选择${item.title || "生成记录"}`} />
+            </span>
             <div className="p-4">
                 <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -1008,10 +1078,27 @@ function APIKeySection() {
   -H "Idempotency-Key: YOUR_UNIQUE_REQUEST_ID" \\
   -H "Content-Type: application/json" \\
   -d '{"model":"YOUR_IMAGE_MODEL","prompt":"生成一张商品主图","size":"1024x1024","n":1}'`;
+    const videoCurlExample = `# 1. 创建任务，保存响应中的 id
+curl -X POST "${endpoint}/videos" \\
+  -H "Authorization: Bearer YOUR_API_KEY" \\
+  -H "Idempotency-Key: YOUR_UNIQUE_REQUEST_ID" \\
+  -F "model=YOUR_VIDEO_MODEL" \\
+  -F "prompt=商品在柔和光影中缓慢旋转" \\
+  -F "seconds=5" \\
+  -F "size=1280x720"
+
+# 2. 每 2-3 秒查询，直到 status=completed
+curl "${endpoint}/videos/VIDEO_TASK_ID?model=YOUR_VIDEO_MODEL" \\
+  -H "Authorization: Bearer YOUR_API_KEY"
+
+# 3. 下载 MP4
+curl "${endpoint}/videos/VIDEO_TASK_ID/content?model=YOUR_VIDEO_MODEL" \\
+  -H "Authorization: Bearer YOUR_API_KEY" \\
+  --output result.mp4`;
     const recoveryCurlExample = `curl "${endpoint}/generation-tasks/recovery" \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Idempotency-Key: YOUR_ORIGINAL_REQUEST_ID"`;
-    const curlExample = exampleType === "models" ? modelCurlExample : exampleType === "image" ? imageCurlExample : recoveryCurlExample;
+    const curlExample = { models: modelCurlExample, image: imageCurlExample, video: videoCurlExample, recovery: recoveryCurlExample }[exampleType];
 
     useEffect(() => setEndpoint(`${window.location.origin}/api/v1`), []);
 
@@ -1104,6 +1191,8 @@ function APIKeySection() {
                                 <code>GET /models</code>
                                 <code>POST /images/generations</code>
                                 <code>POST /videos</code>
+                                <code>GET /videos/&#123;id&#125;</code>
+                                <code>GET /videos/&#123;id&#125;/content</code>
                                 <code>GET /generation-tasks/recovery</code>
                             </div>
                         </div>
@@ -1112,7 +1201,7 @@ function APIKeySection() {
                                 <Segmented
                                     size="small"
                                     value={exampleType}
-                                    options={[{ label: "获取模型", value: "models" }, { label: "图片生成", value: "image" }, { label: "结果恢复", value: "recovery" }]}
+                                    options={[{ label: "模型", value: "models" }, { label: "图片", value: "image" }, { label: "视频", value: "video" }, { label: "恢复", value: "recovery" }]}
                                     onChange={(value) => setExampleType(value as APIExampleType)}
                                 />
                                 <Button type="text" size="small" icon={<Copy className="size-3.5" />} onClick={() => copyText(curlExample, "示例已复制")} />
@@ -1127,7 +1216,12 @@ function APIKeySection() {
                         </div>
                         <div className="mt-4 flex gap-2 text-xs leading-5 text-muted-foreground">
                             <ShieldCheck className="mt-0.5 size-3.5 shrink-0" />
-                            模型列表不会返回文本模型；Key 不能登录账号、管理企业或进入后台。
+                            <div>
+                                <div>模型列表不会返回文本模型；Key 不能登录账号、管理企业或进入后台。</div>
+                                <a href={`${DOCS_URL.replace(/\/$/, "")}/docs/api/integration`} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 font-medium text-primary hover:text-primary/80">
+                                    查看完整 API 接入文档 <ExternalLink className="size-3" />
+                                </a>
+                            </div>
                         </div>
                     </aside>
                 </div>

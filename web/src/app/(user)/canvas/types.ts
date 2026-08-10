@@ -20,11 +20,13 @@ export enum CanvasNodeType {
 export type CanvasNodeStatus = "idle" | "success" | "loading" | "error";
 export type CanvasGenerationMode = "text" | "image" | "video" | "audio";
 export type CanvasImageGenerationType = "generation" | "edit";
+export type CanvasTool = "select" | "pan";
 
 export type CanvasNodeMetadata = {
     content?: string;
     composerContent?: string;
     prompt?: string;
+    promptDraft?: string;
     status?: CanvasNodeStatus;
     errorDetails?: string;
     fontSize?: number;

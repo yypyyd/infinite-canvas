@@ -13,7 +13,7 @@ const modalityOptions = [
     { label: "文本", value: "text" },
     { label: "音频", value: "audio" },
 ];
-const aspectRatioOptions = ["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16"];
+const aspectRatioOptions = ["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "21:9"];
 const resolutionOptions = ["1k", "2k", "4k", "480p", "720p", "1080p"];
 const durationOptions = Array.from({ length: 27 }, (_, index) => index + 4);
 const modalityLabel = Object.fromEntries(modalityOptions.map((item) => [item.value, item.label]));
@@ -90,8 +90,8 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
             message.warning("模型已存在，请直接编辑现有模型");
             return;
         }
-        if (draftRules.some((rule) => rule.enabled && rule.billingMode === "fixed" && rule.credits <= 0)) {
-            message.warning("请为已启用的计费规则设置有效单价");
+        if (draftRules.some((rule) => rule.enabled && rule.billingMode === "fixed" && rule.credits == null)) {
+            message.warning("请填写已启用计费规则的单价；单价可以设置为 0");
             return;
         }
         updateModels(editingModel ? models.map((item) => (item.id === editingModel ? model : item)) : [...models, model]);
@@ -431,7 +431,7 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
                                     {rule.billingMode === "fixed" ? (
                                         <Col span={selectedModality === "image" || selectedModality === "video" ? 6 : 7}>
                                             <Form.Item label={`单价（算力点/${unitLabel[defaultUnit(selectedModality)]}）`}>
-                                                <InputNumber min={0} precision={0} className="!w-full" value={rule.credits} onChange={(value) => setRuleField(index, "credits", Number(value) || 0)} />
+                                                <InputNumber min={0} precision={0} className="!w-full" placeholder="未设置" value={rule.credits} onChange={(value) => setRuleField(index, "credits", value == null ? null : Number(value))} />
                                             </Form.Item>
                                         </Col>
                                     ) : (
@@ -468,7 +468,7 @@ function RuleSummary({ rules }: { rules: AdminPricingRule[] }) {
         <Space size={[4, 4]} wrap>
             {enabled.slice(0, 3).map((rule, index) => (
                 <Tag key={`${index}-${rule.resolutionTier}`} color={rule.billingMode === "ratio" ? "blue" : "green"}>
-                    {pricingTierLabel(rule, rule.modality, false)} · {rule.billingMode === "ratio" ? `×${rule.modelRatio}` : `${rule.credits} 点/${unitLabel[rule.unit] || rule.unit}`}
+                    {pricingTierLabel(rule, rule.modality, false)} · {rule.billingMode === "ratio" ? `×${rule.modelRatio}` : rule.credits == null ? "未设置价格" : `${rule.credits} 点/${unitLabel[rule.unit] || rule.unit}`}
                 </Tag>
             ))}
             {enabled.length > 3 ? <Tag>+{enabled.length - 3}</Tag> : null}
@@ -577,7 +577,7 @@ function uniquePricingTiers(rules: AdminPricingRule[]) {
 }
 
 function createPricingRule(model: string, modality: string, resolutionTier: string): AdminPricingRule {
-    return { model, modality, operation: defaultOperation(modality), unit: defaultUnit(modality), resolutionTier, billingMode: "fixed", credits: 0, minCredits: 0, modelRatio: 1, completionRatio: 1, enabled: true, remark: "" };
+    return { model, modality, operation: defaultOperation(modality), unit: defaultUnit(modality), resolutionTier, billingMode: "fixed", credits: null, minCredits: 0, modelRatio: 1, completionRatio: 1, enabled: true, remark: "" };
 }
 
 function normalizeRule(rule: AdminPricingRule): AdminPricingRule {
@@ -588,7 +588,7 @@ function normalizeRule(rule: AdminPricingRule): AdminPricingRule {
         operation: rule.operation.trim().toLowerCase(),
         unit: rule.unit.trim().toLowerCase(),
         resolutionTier: rule.resolutionTier.trim().toLowerCase(),
-        credits: Math.max(0, Number(rule.credits) || 0),
+        credits: rule.credits == null ? null : Math.max(0, Number(rule.credits) || 0),
         minCredits: Math.max(0, Number(rule.minCredits) || 0),
         modelRatio: Math.max(0, Number(rule.modelRatio) || 1),
         completionRatio: Math.max(0, Number(rule.completionRatio) || 1),

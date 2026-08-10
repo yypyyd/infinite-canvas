@@ -26,6 +26,8 @@ export type ImageUpscaleParams = {
 export type ImageSplitParams = {
     rows: number;
     columns: number;
+    horizontalLines?: number[];
+    verticalLines?: number[];
 };
 
 export type ImageSplitPiece = {
@@ -47,21 +49,31 @@ export async function cropDataUrl(dataUrl: string, crop?: ImageCropRect) {
 
 export async function splitDataUrl(dataUrl: string, params: ImageSplitParams): Promise<ImageSplitPiece[]> {
     const image = await loadImage(dataUrl);
-    const rows = Math.max(1, Math.floor(params.rows));
-    const columns = Math.max(1, Math.floor(params.columns));
+    const horizontalLines = normalizeSplitLines(params.horizontalLines, params.rows);
+    const verticalLines = normalizeSplitLines(params.verticalLines, params.columns);
+    const rowBounds = [0, ...horizontalLines, 1];
+    const columnBounds = [0, ...verticalLines, 1];
+    const rows = rowBounds.length - 1;
+    const columns = columnBounds.length - 1;
     const pieces: ImageSplitPiece[] = [];
 
     for (let row = 0; row < rows; row += 1) {
-        const sy = Math.floor((row * image.height) / rows);
-        const sh = Math.floor(((row + 1) * image.height) / rows) - sy;
+        const sy = Math.floor(rowBounds[row] * image.height);
+        const sh = Math.floor(rowBounds[row + 1] * image.height) - sy;
         for (let column = 0; column < columns; column += 1) {
-            const sx = Math.floor((column * image.width) / columns);
-            const sw = Math.floor(((column + 1) * image.width) / columns) - sx;
+            const sx = Math.floor(columnBounds[column] * image.width);
+            const sw = Math.floor(columnBounds[column + 1] * image.width) - sx;
             pieces.push({ row, column, dataUrl: drawCrop(image, sx, sy, sw, sh) });
         }
     }
 
     return pieces;
+}
+
+function normalizeSplitLines(lines: number[] | undefined, count: number) {
+    const target = Math.max(1, Math.floor(count));
+    const source = lines?.length ? lines : Array.from({ length: target - 1 }, (_, index) => (index + 1) / target);
+    return Array.from(new Set(source.map((line) => Math.min(0.97, Math.max(0.03, Number(line) || 0.03))).sort((a, b) => a - b))).filter((line, index, values) => index === 0 || line - values[index - 1] >= 0.01);
 }
 
 export async function transformAngleDataUrl(dataUrl: string, params: ImageAngleTransform) {

@@ -23,6 +23,7 @@ const (
 	davidWuGptImage2RawBase      = "https://raw.githubusercontent.com/davidwuw0811-boop/awesome-gpt-image2-prompts/main"
 	freestyleGptImage2RawBase    = "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main"
 	seedanceRawBase              = "https://raw.githubusercontent.com/ZeroLu/awesome-seedance/main"
+	wuyoscarGptImage2RawBase     = "https://raw.githubusercontent.com/wuyoscar/GPT-Image2-Skill/main"
 )
 
 var gptImage2CaseFiles = []string{"README.md", "cases/ad-creative.md", "cases/character.md", "cases/comparison.md", "cases/ecommerce.md", "cases/portrait.md", "cases/poster.md", "cases/ui.md"}
@@ -99,6 +100,8 @@ func buildPromptCategory(category string) ([]model.Prompt, error) {
 		return buildFreestyleGptImage2Prompts()
 	case "awesome-seedance":
 		return buildSeedancePrompts()
+	case "wuyoscar-gpt-image2-skill":
+		return buildWuyoscarGptImage2Prompts()
 	}
 	return nil, errors.New("未知提示词分类")
 }
@@ -284,6 +287,73 @@ func buildSeedancePrompts() ([]model.Prompt, error) {
 		}
 	}
 	return items, nil
+}
+
+func buildWuyoscarGptImage2Prompts() ([]model.Prompt, error) {
+	index, err := fetchText(wuyoscarGptImage2RawBase, "skills/gpt-image/references/gallery.md")
+	if err != nil {
+		return nil, err
+	}
+	files, seen := []string{}, map[string]bool{}
+	for _, match := range regexp.MustCompile(`\((gallery-[^)]+\.md)\)`).FindAllStringSubmatch(index, -1) {
+		if !seen[match[1]] {
+			seen[match[1]] = true
+			files = append(files, match[1])
+		}
+	}
+	items := []model.Prompt{}
+	for _, file := range files {
+		markdown, err := fetchText(wuyoscarGptImage2RawBase, "skills/gpt-image/references/"+file)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, collectWuyoscarGptImage2Prompts(markdown)...)
+	}
+	if len(items) == 0 {
+		return nil, errors.New("GPT Image 2 Skill Gallery 未找到提示词")
+	}
+	return items, nil
+}
+
+func collectWuyoscarGptImage2Prompts(markdown string) []model.Prompt {
+	items := []model.Prompt{}
+	for _, section := range splitBeforeHeading(markdown, "### No.") {
+		heading := regexp.MustCompile(`(?m)^### No\.\s*(\d+)\s*[·-]\s*(.+)$`).FindStringSubmatch(section)
+		if len(heading) < 3 {
+			continue
+		}
+		number, err := strconv.Atoi(heading[1])
+		if err != nil {
+			continue
+		}
+		title := strings.TrimSpace(heading[2])
+		prompt := strings.TrimSpace(firstMatch(section, "(?s)```[^\\r\\n]*\\r?\\n(.*?)\\r?\\n```"))
+		if title == "" || prompt == "" {
+			continue
+		}
+		images := []string{}
+		for _, match := range regexp.MustCompile("`(docs/[^`]+)`").FindAllStringSubmatch(section, -1) {
+			images = append(images, absoluteImage(wuyoscarGptImage2RawBase, strings.TrimSpace(match[1])))
+		}
+		cover := ""
+		if len(images) > 0 {
+			cover = images[len(images)-1]
+		}
+		metadata := strings.TrimSpace(firstMatch(section, `(?m)^- Metadata:\s*(.+)$`))
+		tags := []string{"gpt-image-2"}
+		if category := strings.TrimSpace(strings.Split(metadata, "·")[0]); category != "" {
+			tags = append(tags, tagsFromHeading(category)...)
+		}
+		if format := strings.TrimSpace(firstMatch(metadata, "`([^`]+)`")); format != "" {
+			tags = append(tags, strings.ToLower(format))
+		}
+		preview := markdownPreview(images)
+		if metadata != "" {
+			preview = strings.TrimSpace(metadata + "\n\n" + preview)
+		}
+		items = append(items, model.Prompt{ID: "wuyoscar-gpt-image2-skill-" + leftPad(number), Title: title, CoverURL: cover, Prompt: prompt, Tags: tags, Preview: preview})
+	}
+	return items
 }
 
 func buildYouMindPrompts(baseURL, idPrefix, modelTag string) ([]model.Prompt, error) {

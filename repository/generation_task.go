@@ -183,6 +183,22 @@ func GetGenerationTaskByUpstreamID(organizationID, userID, upstreamTaskID string
 	return task, err == nil, err
 }
 
+func ListStaleRunningGenerationTasks(createdBefore string, limit int) ([]model.GenerationTask, error) {
+	db, err := DB()
+	if err != nil {
+		return nil, err
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 100
+	}
+	var tasks []model.GenerationTask
+	err = db.Where("status = ? AND batch_job_id = '' AND batch_item_id = '' AND created_at <= ?", model.GenerationTaskStatusRunning, createdBefore).
+		Order("created_at asc").
+		Limit(limit).
+		Find(&tasks).Error
+	return tasks, err
+}
+
 func UpdateGenerationTaskRecovery(taskID, upstreamTaskID, resultJSON string, storageKeys []string, updatedAt string) error {
 	db, err := DB()
 	if err != nil {

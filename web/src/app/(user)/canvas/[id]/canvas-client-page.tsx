@@ -27,7 +27,6 @@ import type { AgentToolName, AgentToolResult } from "@/services/api/agent";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { useThemeStore } from "@/stores/use-theme-store";
-import { useOpenMedia } from "@/hooks/use-open-media";
 import { cropDataUrl, splitDataUrl, upscaleDataUrl } from "../utils/canvas-image-data";
 import { fitNodeSize, nodeSizeFromRatio } from "../utils/canvas-node-size";
 import { App, Button, Dropdown, Modal, Switch } from "antd";
@@ -257,7 +256,6 @@ function ConnectionCreateOption({ theme, icon, title, description, onClick }: { 
 
 function InfiniteCanvasPage() {
     const { message, modal } = App.useApp();
-    const openMedia = useOpenMedia();
     const params = useParams<{ id: string }>();
     const router = useRouter();
     const projectId = params.id;
@@ -355,6 +353,7 @@ function InfiniteCanvasPage() {
     const [collapsingBatchIds, setCollapsingBatchIds] = useState<Set<string>>(new Set());
     const [openingBatchIds, setOpeningBatchIds] = useState<Set<string>>(new Set());
     const [isNodeDragging, setIsNodeDragging] = useState(false);
+    const [isNodeResizing, setIsNodeResizing] = useState(false);
     const [nodeDragOffset, setNodeDragOffset] = useState<Position | null>(null);
     const [canvasTool, setCanvasTool] = useState<CanvasTool>("pan");
     const [promptEditorNodeId, setPromptEditorNodeId] = useState<string | null>(null);
@@ -1076,8 +1075,11 @@ function InfiniteCanvasPage() {
                             batchChildIds: childIds,
                             primaryImageId,
                             content: primaryNode?.metadata?.content || node.metadata.content,
+                            storageKey: primaryNode ? primaryNode.metadata?.storageKey : node.metadata.storageKey,
                             naturalWidth: primaryNode?.metadata?.naturalWidth || node.metadata.naturalWidth,
                             naturalHeight: primaryNode?.metadata?.naturalHeight || node.metadata.naturalHeight,
+                            mimeType: primaryNode?.metadata?.mimeType || node.metadata.mimeType,
+                            bytes: primaryNode?.metadata?.bytes || node.metadata.bytes,
                         },
                     };
                 });
@@ -1742,6 +1744,14 @@ function InfiniteCanvasPage() {
         setNodes((prev) => prev.map((node) => (node.id === nodeId ? { ...node, width, height, position: position || node.position } : node)));
     }, []);
 
+    const handleNodeResizeStart = useCallback((nodeId: string) => {
+        setIsNodeResizing(true);
+        setToolbarNodeId(null);
+        setNodes((prev) => prev.map((node) => (node.id === nodeId && node.metadata?.isBatchRoot && node.metadata.imageBatchExpanded ? { ...node, metadata: { ...node.metadata, imageBatchExpanded: false } } : node)));
+    }, []);
+
+    const handleNodeResizeEnd = useCallback(() => setIsNodeResizing(false), []);
+
     const toggleNodeFreeResize = useCallback((nodeId: string) => {
         setNodes((prev) =>
             prev.map((node) => {
@@ -1796,15 +1806,15 @@ function InfiniteCanvasPage() {
                 node.id === rootId
                     ? {
                           ...node,
-                          width: child.width,
-                          height: child.height,
                           metadata: {
                               ...node.metadata,
                               content: child.metadata?.content,
+                              storageKey: child.metadata?.storageKey,
                               primaryImageId: child.id,
                               naturalWidth: child.metadata?.naturalWidth,
                               naturalHeight: child.metadata?.naturalHeight,
-                              freeResize: child.metadata?.freeResize,
+                              mimeType: child.metadata?.mimeType,
+                              bytes: child.metadata?.bytes,
                           },
                       }
                     : node,
@@ -1831,12 +1841,9 @@ function InfiniteCanvasPage() {
 
     const downloadNodeImage = useCallback((node: CanvasNodeData) => {
         if ((node.type !== CanvasNodeType.Image && node.type !== CanvasNodeType.Video && node.type !== CanvasNodeType.Audio) || !node.metadata?.content) return;
-        if (node.type === CanvasNodeType.Audio) {
-            saveAs(node.metadata.content, `canvas-${node.type}-${node.id}.${audioExtension(node.metadata.mimeType)}`);
-            return;
-        }
-        openMedia(node.metadata.content);
-    }, [openMedia]);
+        const extension = node.type === CanvasNodeType.Video ? "mp4" : node.type === CanvasNodeType.Audio ? audioExtension(node.metadata.mimeType) : imageExtension(node.metadata.content, node.metadata.mimeType);
+        saveAs(node.metadata.content, `canvas-${node.type}-${node.id}.${extension}`);
+    }, []);
 
     const saveNodeAsset = useCallback(
         async (node: CanvasNodeData) => {
@@ -2404,13 +2411,14 @@ function InfiniteCanvasPage() {
                             imageBatchExpanded: count > 1 ? true : undefined,
                         },
                     };
+                    const batchColumns = Math.min(count, 4);
                     const childNodes: CanvasNodeData[] = childIds.map((id, index) => ({
                         id,
                         type: CanvasNodeType.Image,
                         title: effectivePrompt.slice(0, 32) || "Generated Image",
                         position: {
-                            x: rootNode.position.x + rootNode.width + 120 + (index % 2) * (imageConfig.width + 36),
-                            y: rootNode.position.y + Math.floor(index / 2) * (imageConfig.height + rowGap),
+                            x: rootNode.position.x + rootNode.width + 120 + (index % batchColumns) * (imageConfig.width + 36),
+                            y: rootNode.position.y + Math.floor(index / batchColumns) * (imageConfig.height + rowGap),
                         },
                         width: imageConfig.width,
                         height: imageConfig.height,
@@ -3535,7 +3543,9 @@ function InfiniteCanvasPage() {
                             onHoverStart={handleNodeHoverStart}
                             onHoverEnd={handleNodeHoverEnd}
                             onConnectStart={handleConnectStart}
+                            onResizeStart={handleNodeResizeStart}
                             onResize={handleNodeResize}
+                            onResizeEnd={handleNodeResizeEnd}
                             onContentChange={handleNodeContentChange}
                             onToggleBatch={toggleBatchExpanded}
                             onSetBatchPrimary={setBatchPrimary}
@@ -3564,7 +3574,7 @@ function InfiniteCanvasPage() {
                 </InfiniteCanvas>
 
                 <CanvasNodeHoverToolbar
-                    node={isNodeDragging || nodeImageSettingsOpen ? null : toolbarNode}
+                    node={isNodeDragging || isNodeResizing || nodeImageSettingsOpen ? null : toolbarNode}
                     canEditImage={supportsImageReferences(toolbarNode?.metadata?.model || effectiveConfig.imageModel || effectiveConfig.model, managedModels)}
                     viewport={viewport}
                     onKeep={keepNodeToolbar}
@@ -3990,8 +4000,9 @@ function Shortcut({ keys, value }: { keys: string[]; value: string }) {
     );
 }
 
-function imageExtension(dataUrl: string) {
-    return dataUrl.match(/^data:image[/]([^;]+)/)?.[1] || dataUrl.match(/image[/]([^;]+)/)?.[1] || "png";
+function imageExtension(dataUrl: string, mimeType?: string) {
+    const extension = mimeType?.match(/^image[/]([^;]+)/)?.[1] || dataUrl.match(/^data:image[/]([^;]+)/)?.[1] || dataUrl.match(/image[/]([^;]+)/)?.[1] || "png";
+    return extension === "jpeg" ? "jpg" : extension;
 }
 
 function audioExtension(mimeType?: string) {

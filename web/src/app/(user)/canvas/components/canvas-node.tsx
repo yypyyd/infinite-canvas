@@ -40,7 +40,9 @@ type CanvasNodeProps = {
     onHoverStart: (nodeId: string) => void;
     onHoverEnd: (nodeId: string) => void;
     onConnectStart: (event: React.MouseEvent, nodeId: string, handleType: "source" | "target") => void;
+    onResizeStart: (nodeId: string) => void;
     onResize: (nodeId: string, width: number, height: number, position?: Position) => void;
+    onResizeEnd: (nodeId: string) => void;
     onContentChange: (nodeId: string, content: string) => void;
     onToggleBatch?: (nodeId: string) => void;
     onSetBatchPrimary?: (node: CanvasNodeData) => void;
@@ -95,7 +97,9 @@ export const CanvasNode = React.memo(function CanvasNode({
     onHoverStart,
     onHoverEnd,
     onConnectStart,
+    onResizeStart,
     onResize,
+    onResizeEnd,
     onContentChange,
     onToggleBatch,
     onSetBatchPrimary,
@@ -246,14 +250,18 @@ export const CanvasNode = React.memo(function CanvasNode({
     );
 
     const handleResizeUp = useCallback(() => {
+        if (!resizeRef.current.isResizing) return;
         resizeRef.current.isResizing = false;
         window.removeEventListener("mousemove", handleResizeMove);
         window.removeEventListener("mouseup", handleResizeUp);
-    }, [handleResizeMove]);
+        window.removeEventListener("blur", handleResizeUp);
+        onResizeEnd(data.id);
+    }, [data.id, handleResizeMove, onResizeEnd]);
 
     const handleResizeMouseDown = (event: React.MouseEvent, corner: ResizeCorner) => {
         event.stopPropagation();
         event.preventDefault();
+        onResizeStart(data.id);
         resizeRef.current = {
             isResizing: true,
             corner,
@@ -268,14 +276,20 @@ export const CanvasNode = React.memo(function CanvasNode({
         };
         window.addEventListener("mousemove", handleResizeMove);
         window.addEventListener("mouseup", handleResizeUp);
+        window.addEventListener("blur", handleResizeUp);
     };
 
     useEffect(() => {
         return () => {
             window.removeEventListener("mousemove", handleResizeMove);
             window.removeEventListener("mouseup", handleResizeUp);
+            window.removeEventListener("blur", handleResizeUp);
+            if (resizeRef.current.isResizing) {
+                resizeRef.current.isResizing = false;
+                onResizeEnd(data.id);
+            }
         };
-    }, [handleResizeMove, handleResizeUp]);
+    }, [data.id, handleResizeMove, handleResizeUp, onResizeEnd]);
 
     return (
         <div

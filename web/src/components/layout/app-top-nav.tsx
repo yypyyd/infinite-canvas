@@ -51,7 +51,7 @@ export function AppTopNav() {
                                         active ? "font-medium text-foreground after:bg-primary" : "text-muted-foreground after:bg-transparent hover:text-foreground",
                                     );
 
-                                    if ("href" in tool) {
+                                    if ("href" in tool && typeof tool.href === "string") {
                                         return (
                                             <a key={tool.slug} href={tool.href} target="_blank" rel="noreferrer" className={className}>
                                                 <Icon className="size-4" />

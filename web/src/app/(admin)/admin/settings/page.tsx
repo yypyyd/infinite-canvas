@@ -585,7 +585,7 @@ function inferModelAspectRatios(modelName: string) {
 function normalizePricingRules(items: Partial<AdminSettings["public"]["modelChannel"]["pricingRules"][number]>[]): AdminPricingRule[] {
     return items
         .filter((item) => item.model)
-        .map((item) => {
+        .map<AdminPricingRule>((item) => {
             const rawCredits = item.credits as unknown;
             const importedCredits = rawCredits == null || rawCredits === "" ? null : Math.max(0, Number(rawCredits) || 0);
             const billingMode = item.billingMode === "ratio" ? "ratio" : "fixed";

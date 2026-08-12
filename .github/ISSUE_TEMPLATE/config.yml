@@ -1,5 +1,5 @@
 blank_issues_enabled: false
 contact_links:
   - name: 安全漏洞
-    url: mailto:1844025705@qq.com
+    url: https://github.com/yypyyd/infinite-canvas/security/advisories/new
     about: 请勿公开提交漏洞细节、凭据或用户数据

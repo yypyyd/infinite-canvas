@@ -42,6 +42,7 @@ FROM node:22-bookworm-slim
 WORKDIR /app
 COPY VERSION /app/VERSION
 COPY CHANGELOG.md /app/CHANGELOG.md
+COPY LICENSE NOTICE.md THIRD_PARTY_NOTICES.md /app/
 COPY --from=api-build /server /app/server
 COPY --from=api-build /batch-worker /app/batch-worker
 COPY --from=api-build /ops-backup /app/ops-backup

@@ -24,7 +24,7 @@ export function MobileNavDrawer({ open, activeToolSlug, onClose }: MobileNavDraw
                         active ? "bg-neutral-100 font-medium text-neutral-950 dark:bg-neutral-800 dark:text-neutral-100" : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-950 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-neutral-100",
                     );
 
-                    if ("href" in tool) {
+                    if ("href" in tool && typeof tool.href === "string") {
                         return (
                             <a key={tool.slug} href={tool.href} target="_blank" rel="noreferrer" onClick={onClose} className={className}>
                                 <Icon className="size-5" />

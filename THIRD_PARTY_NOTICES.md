@@ -5,7 +5,11 @@
 ## 开发辅助文件
 
 - `frontend-design` skill 来源于 [anthropics/skills](https://github.com/anthropics/skills)，仓库内保留其 Apache-2.0 许可证文本。
-- `vercel-react-best-practices` skill 来源于 [vercel-labs/agent-skills](https://github.com/vercel-labs/agent-skills)，其 skill 元数据声明为 MIT。
+- `vercel-react-best-practices` skill 来源于 [vercel-labs/agent-skills](https://github.com/vercel-labs/agent-skills)，其 `SKILL.md` 元数据声明为 MIT，仓库内保留对应许可证文本。
+
+## 软件依赖
+
+后端、前端和文档站的直接与间接依赖分别记录在 `go.mod`、`go.sum`、`web/package.json`、`web/bun.lock`、`docs/package.json` 和 `docs/bun.lock` 中。各依赖仍适用其自身许可证；发布镜像附带软件物料清单（SBOM），用于追踪实际打包版本。
 
 ## 提示词仓库
 

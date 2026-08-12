@@ -695,7 +695,7 @@ func SetBatchProductionPrimary(user model.AuthUser, jobID string, itemID string,
 func RetryBatchProductionItem(user model.AuthUser, jobID string, itemID string, input model.BatchProductionItemRunInput) error {
 	organization, membership, err := EnsureOrganization(user)
 	if err != nil { return err }
-	if !canWriteCommerce(membership.Role) { return safeMessageError{message: "没有重新生成权限"} }
+	if !canWriteCommerce(membership.Role) && !canReviewCommerce(membership.Role) { return safeMessageError{message: "没有重新生成权限"} }
 	if input.RunNumber < 1 { return safeMessageError{message: "生产轮次无效"} }
 	timestamp := now()
 	err = repository.RetryBatchProductionItem(organization.ID, strings.TrimSpace(jobID), strings.TrimSpace(itemID), input.RunNumber, timestamp, newAuditLog(user.ID, organization.ID, "batch.item_retry", "batch_item", itemID, map[string]any{"runNumber": input.RunNumber}, timestamp))

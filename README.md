@@ -56,10 +56,12 @@ git clone https://github.com/yypyyd/infinite-canvas.git
 cd infinite-canvas
 cp .env.example .env
 # 编辑 .env，填写至少 12 位的 ADMIN_PASSWORD 和至少 32 位的 JWT_SECRET
-docker compose up -d
+docker compose up -d --build
 ```
 
-本地源码构建运行：
+默认会从当前源码构建镜像。已有发布镜像时，可通过 `INFINITE_CANVAS_IMAGE` 指定镜像地址并省略 `--build`。
+
+兼容原有本地 Compose 文件：
 
 ```bash
 cp .env.example .env

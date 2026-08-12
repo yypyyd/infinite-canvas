@@ -199,7 +199,7 @@ func TestBatchJobHTTPCancelAndRetryRespectTenantAndState(t *testing.T) {
 	if err := database.Where("job_id = ?", retryJob.ID).Order("product_id asc").Find(&retryItems).Error; err != nil {
 		t.Fatal(err)
 	}
-	if savedJob.Status != model.BatchProductionStatusQueued || savedJob.FailedItems != 0 || savedJob.CompletedItems != 1 {
+	if savedJob.Status != model.BatchProductionStatusRunning || savedJob.FailedItems != 0 || savedJob.CompletedItems != 1 {
 		t.Fatalf("unexpected retried job: %#v", savedJob)
 	}
 	if retryItems[0].Status != model.BatchProductionStatusCompleted || retryItems[0].RunNumber != 1 || retryItems[0].ResultStorageKey != "image:completed-result" {
@@ -261,5 +261,5 @@ func TestBatchItemHTTPReviewRetryAndPrimaryWorkflow(t *testing.T) {
 	if response := routerTestJSON(t, reviewerClient, http.MethodPost, itemURL(reviewerURL, retried, "review"), map[string]any{"runNumber": 2, "status": model.BatchProductionReviewApproved, "comment": "重做通过"}, headers); response.Code != 0 { t.Fatalf("retried approve response: %#v", response) }
 	if response := routerTestJSON(t, reviewerClient, http.MethodPost, itemURL(reviewerURL, retried, "primary"), map[string]int{"runNumber": 2}, headers); response.Code != 0 { t.Fatalf("replace primary response: %#v", response) }
 	if err := database.Where("job_id = ?", job.ID).Order("sku_id asc").Find(&items).Error; err != nil { t.Fatal(err) }
-	if items[0].IsPrimary || !items[1].IsPrimary { t.Fatalf("product primary was not unique: %#v", items) }
+	if !items[0].IsPrimary || !items[1].IsPrimary { t.Fatalf("SKU primaries were not independent: %#v", items) }
 }

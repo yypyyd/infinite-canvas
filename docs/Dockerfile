@@ -15,6 +15,7 @@ ENV NODE_ENV=production
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
 RUN groupadd --system --gid 1001 nodejs && useradd --system --uid 1001 --gid nodejs nextjs
+COPY --chown=nextjs:nodejs LICENSE NOTICE.md THIRD_PARTY_NOTICES.md ./
 COPY --from=docs-build --chown=nextjs:nodejs /app/public ./public
 COPY --from=docs-build --chown=nextjs:nodejs /app/index.md ./index.md
 COPY --from=docs-build --chown=nextjs:nodejs /app/content ./content

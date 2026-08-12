@@ -256,7 +256,7 @@ export default function VideoPage() {
         });
         try {
             await saveLog(pendingLog);
-            await flushActiveWorkspaceChanges();
+            await flushActiveWorkspaceChanges({ domains: ["generation_record"] });
             const stored = await storeGeneratedVideo(await requestVideoGeneration(snapshot.config, snapshot.text, snapshot.references, snapshot.videoReferences, snapshot.audioReferences, { idempotencyKey: requestId }));
             const [outputWidth, outputHeight] = videoOutputSize(snapshot.config.vquality, snapshot.config.size).split("x").map(Number);
             const nextVideo: GeneratedVideo = {

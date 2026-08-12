@@ -266,6 +266,11 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 					Fail(w, message)
 					return
 				}
+				if message := aiImageResponseError(recoveredBody); message != "" {
+					finishTask(model.GenerationTaskStatusFailed, message)
+					Fail(w, message)
+					return
+				}
 				archiveCtx, cancelArchive := generatedArchiveContext(r.Context())
 				recoveredBody, storageKeys := archiveImageGenerationResponseWithOptions(archiveCtx, user, task, recoveredBody, requestMeta.ResponseFormat, request.Header.Get("Authorization"))
 				cancelArchive()
@@ -314,6 +319,11 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 			if path == "/videos" {
 				upstreamTaskID = generationUpstreamTaskID(responseBody)
 			} else {
+				if message := aiImageResponseError(responseBody); message != "" {
+					finishTask(model.GenerationTaskStatusFailed, message)
+					Fail(w, message)
+					return
+				}
 				archiveCtx, cancelArchive := generatedArchiveContext(r.Context())
 				responseBody, storageKeys = archiveImageGenerationResponseWithOptions(archiveCtx, user, task, responseBody, requestMeta.ResponseFormat, request.Header.Get("Authorization"))
 				cancelArchive()
@@ -1513,14 +1523,14 @@ func normalizeVividAIImageTier(value string, size string) string {
 	if !ok {
 		return "2k"
 	}
-	longEdge := math.Max(width, height)
-	if longEdge >= 3500 {
-		return "4k"
+	pixels := width * height
+	if pixels <= 2048*1024 {
+		return "1k"
 	}
-	if longEdge >= 1800 {
+	if pixels <= 2048*2048 {
 		return "2k"
 	}
-	return "1k"
+	return "4k"
 }
 
 func vividAIVideoSize(modelName string, size string, resolution string) string {
@@ -2025,6 +2035,28 @@ func aiUpstreamStatusMessage(statusCode int, body []byte) string {
 	return base + "：" + detail
 }
 
+func aiImageResponseError(body []byte) string {
+	var payload map[string]any
+	if json.Unmarshal(body, &payload) == nil {
+		if items, ok := payload["data"].([]any); ok {
+			for _, raw := range items {
+				if item, ok := raw.(map[string]any); ok && firstStringValue(item, "url", "b64_json", "storage_key") != "" {
+					return ""
+				}
+			}
+		}
+		if detail := nestedUpstreamErrorDetail(payload); detail != "" {
+			return "AI 接口请求失败：" + safeUpstreamText(detail)
+		}
+		return "AI 接口请求失败：上游没有返回图片"
+	}
+	detail := aiUpstreamErrorDetail(body)
+	if detail == "" {
+		detail = "上游没有返回图片"
+	}
+	return "AI 接口请求失败：" + detail
+}
+
 func aiUpstreamErrorDetail(body []byte) string {
 	text := strings.TrimSpace(string(body))
 	if text == "" {
@@ -2033,6 +2065,7 @@ func aiUpstreamErrorDetail(body []byte) string {
 	var payload struct {
 		Msg     string `json:"msg"`
 		Message string `json:"message"`
+		Detail  string `json:"detail"`
 		Error   struct {
 			Code    string `json:"code"`
 			Message string `json:"message"`
@@ -2054,8 +2087,52 @@ func aiUpstreamErrorDetail(body []byte) string {
 		if payload.Message != "" {
 			return safeUpstreamText(payload.Message)
 		}
+		if payload.Detail != "" {
+			return safeUpstreamText(payload.Detail)
+		}
+		var generic any
+		if json.Unmarshal(body, &generic) == nil {
+			if detail := nestedUpstreamErrorDetail(generic); detail != "" {
+				return safeUpstreamText(detail)
+			}
+		}
 	}
 	return safeUpstreamText(text)
+}
+
+func nestedUpstreamErrorDetail(value any) string {
+	switch typed := value.(type) {
+	case map[string]any:
+		code, _ := typed["code"].(string)
+		withCode := func(detail string) string {
+			if strings.TrimSpace(code) != "" && !strings.Contains(detail, code) {
+				return strings.TrimSpace(code + " " + detail)
+			}
+			return detail
+		}
+		for _, key := range []string{"error", "message", "msg", "detail", "reason"} {
+			candidate, exists := typed[key]
+			if !exists {
+				continue
+			}
+			if text, ok := candidate.(string); ok && strings.TrimSpace(text) != "" {
+				return withCode(text)
+			}
+			if detail := nestedUpstreamErrorDetail(candidate); detail != "" {
+				return withCode(detail)
+			}
+		}
+		if data, exists := typed["data"]; exists {
+			return nestedUpstreamErrorDetail(data)
+		}
+	case []any:
+		for _, item := range typed {
+			if detail := nestedUpstreamErrorDetail(item); detail != "" {
+				return detail
+			}
+		}
+	}
+	return ""
 }
 
 func friendlyUpstreamError(code string, message string) string {

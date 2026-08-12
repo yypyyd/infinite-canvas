@@ -19,6 +19,8 @@ export type ChatCompletionMessage = {
 type ImageApiResponse = {
     data?: Array<Record<string, unknown>>;
     error?: { message?: string };
+    message?: string;
+    detail?: string;
     code?: number;
     msg?: string;
 };
@@ -44,6 +46,16 @@ const IMAGE_MAX_EDGE = 3840;
 const IMAGE_MAX_RATIO = 3;
 const IMAGE_OUTPUT_FORMAT = "png";
 const RECOVERABLE_GATEWAY_STATUSES = new Set([504, 520, 521, 522, 523, 524, 525]);
+const STANDARD_1K_IMAGE_SIZES: Record<string, string> = {
+    "1:1": "1024x1024",
+    "3:2": "1200x800",
+    "2:3": "800x1200",
+    "4:3": "1024x768",
+    "3:4": "768x1024",
+    "16:9": "1280x720",
+    "9:16": "720x1280",
+    "21:9": "1680x720",
+};
 
 function normalizeQuality(quality: string) {
     const value = quality.trim().toLowerCase();
@@ -52,6 +64,8 @@ function normalizeQuality(quality: string) {
 }
 
 function resolveSize(ratio: string): string {
+    const standardSize = STANDARD_1K_IMAGE_SIZES[ratio.trim()];
+    if (standardSize) return standardSize;
     const parsedRatio = parseImageRatio(ratio);
     const isLandscape = parsedRatio.width >= parsedRatio.height;
     const longRatio = isLandscape ? parsedRatio.width / parsedRatio.height : parsedRatio.height / parsedRatio.width;
@@ -133,10 +147,27 @@ function parseImagePayload(payload: ImageApiResponse) {
             .filter((value): value is NonNullable<ReturnType<typeof parseStoredImage>> => Boolean(value)) || [];
 
     if (images.length === 0) {
-        throw new Error("接口没有返回图片");
+        throw new Error(readImagePayloadError(payload) || "上游没有返回图片");
     }
 
     return images;
+}
+
+function readImagePayloadError(payload: ImageApiResponse) {
+    const topLevel = payload.error?.message || payload.message || payload.msg || payload.detail;
+    if (topLevel) return topLevel;
+    for (const item of payload.data || []) {
+        for (const key of ["error", "message", "msg", "detail", "reason"]) {
+            const value = item[key];
+            if (typeof value === "string" && value.trim()) return value.trim();
+            if (value && typeof value === "object") {
+                const nested = value as Record<string, unknown>;
+                const message = [nested.code, nested.message, nested.msg, nested.detail, nested.reason].filter((part): part is string => typeof part === "string" && Boolean(part.trim())).join(" ");
+                if (message) return message;
+            }
+        }
+    }
+    return "";
 }
 
 export function parseRecoveredImageGeneration(payload: unknown) {

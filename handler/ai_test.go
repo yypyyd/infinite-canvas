@@ -55,6 +55,37 @@ func TestAdaptVividAIImageRequestDoesNotTreatQualityAsResolution(t *testing.T) {
 	}
 }
 
+func TestAIImageResponseErrorUsesNestedUpstreamMessage(t *testing.T) {
+	got := aiImageResponseError([]byte(`{"data":[{"error":{"code":"adobe_failed","message":"Adobe upstream rejected the image"}}]}`))
+	if got != "AI 接口请求失败：adobe_failed Adobe upstream rejected the image" {
+		t.Fatalf("message = %q", got)
+	}
+}
+
+func TestAIImageResponseErrorAcceptsImage(t *testing.T) {
+	if got := aiImageResponseError([]byte(`{"data":[{"url":"https://example.com/image.png"}]}`)); got != "" {
+		t.Fatalf("message = %q, want empty", got)
+	}
+}
+
+func TestAIImageResponseErrorExplainsEmptyData(t *testing.T) {
+	got := aiImageResponseError([]byte(`{"data":[]}`))
+	if got != "AI 接口请求失败：上游没有返回图片" {
+		t.Fatalf("message = %q", got)
+	}
+}
+
+func TestAdaptVividAIImageRequestUsesPixelTierForPortraitSize(t *testing.T) {
+	body, _ := adaptVividAIImageRequestBody([]byte(`{"model":"image","prompt":"test","size":"1024x1824"}`), "application/json")
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["size"] != "720x1280" {
+		t.Fatalf("size = %q, want 720x1280", payload["size"])
+	}
+}
+
 func TestAdaptVividAIImageMultipartPreservesReferenceContentType(t *testing.T) {
 	var source strings.Builder
 	writer := multipart.NewWriter(&source)

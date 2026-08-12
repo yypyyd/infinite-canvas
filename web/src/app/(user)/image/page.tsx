@@ -250,7 +250,7 @@ export default function ImagePage() {
 
         try {
             await saveLog(pendingLog);
-            await flushActiveWorkspaceChanges();
+            await flushActiveWorkspaceChanges({ domains: ["generation_record"] });
             generationStarted = true;
             await Promise.all(
                 Array.from({ length: generationCount }, (_, index) =>
@@ -292,7 +292,7 @@ export default function ImagePage() {
                         }),
                 ),
             );
-            await flushActiveWorkspaceChanges();
+            await flushActiveWorkspaceChanges({ domains: ["generation_record"] });
             if (storageFailCount) {
                 const detail = firstStorageFailure instanceof Error ? firstStorageFailure.message : "保存失败";
                 logImages.length ? message.warning(`已生成 ${generationSuccessCount} 张图片，其中 ${storageFailCount} 张未写入生成记录`) : message.error(`图片已生成，但生成记录保存失败：${detail}`);

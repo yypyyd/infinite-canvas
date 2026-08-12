@@ -407,7 +407,7 @@ export function CanvasAssistantPanel({
                                     canvasId: projectId,
                                     requestIds: [idempotencyKey],
                                 });
-                                await flushActiveWorkspaceChanges();
+                                await flushActiveWorkspaceChanges({ domains: ["generation_record"] });
                                 generationRecord = { kind: "image", id: generationRecordId, prompt: toolArguments.prompt, config: toolConfig, count: imageCount, startedAt: generationStartedAt };
                                 const generated = referenceImages.length
                                     ? await requestEdit(toolConfig, toolArguments.prompt, referenceImages, undefined, { signal: toolAbortController.signal, idempotencyKey })
@@ -456,7 +456,7 @@ export function CanvasAssistantPanel({
                                     canvasId: projectId,
                                     requestId: idempotencyKey,
                                 });
-                                await flushActiveWorkspaceChanges();
+                                await flushActiveWorkspaceChanges({ domains: ["generation_record"] });
                                 generationRecord = { kind: "video", id: generationRecordId, prompt: toolArguments.prompt, config: toolConfig, startedAt: generationStartedAt };
                                 const stored = await storeGeneratedVideo(await requestVideoGeneration(toolConfig, toolArguments.prompt, referenceImages, [], [], { signal: toolAbortController.signal, idempotencyKey }));
                                 if (!stored.storageKey) throw new Error("生成的视频未保存到工作区");
@@ -645,7 +645,7 @@ export function CanvasAssistantPanel({
                     status: "生成中",
                     canvasId: projectId,
                 });
-                await flushActiveWorkspaceChanges();
+                await flushActiveWorkspaceChanges({ domains: ["generation_record"] });
                 const referenceImages: ReferenceImage[] = await Promise.all(
                     refs.filter((item) => item.dataUrl).map(async (item) => ({ id: item.id, name: `${item.title}.png`, type: "image/png", dataUrl: await imageToDataUrl(item), storageKey: item.storageKey })),
                 );

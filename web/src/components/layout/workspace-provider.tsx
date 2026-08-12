@@ -8,7 +8,7 @@ import { getMediaBlob, resolveMediaUrl } from "@/services/file-storage";
 import { applyGenerationRecordSnapshot, clearGenerationRecordMemory } from "@/services/generation-history";
 import { acknowledgeGenerationTaskRecoveries } from "@/services/api/generation-task";
 import { getImageBlob, resolveImageUrl } from "@/services/image-storage";
-import { fetchWorkspace, fetchWorkspaceStorageStatus, saveWorkspaceChanges, uploadWorkspaceFile, workspaceFileExists, WorkspaceVersionConflictError, type WorkspaceRecord } from "@/services/api/workspace";
+import { fetchWorkspace, fetchWorkspaceStorageStatus, saveWorkspaceChanges, uploadWorkspaceFile, workspaceFileExists, WorkspaceVersionConflictError, type WorkspaceDomain, type WorkspaceRecord } from "@/services/api/workspace";
 import { commitWorkspaceChanges, hasPendingWorkspaceChanges, readPendingWorkspaceChanges, rebasePendingWorkspaceChanges, workspaceOwnerId, WORKSPACE_CHANGES_UPDATED_EVENT, type PendingWorkspaceChange } from "@/services/workspace-changes";
 import type { Asset } from "@/stores/use-asset-store";
 import { useAssetStore } from "@/stores/use-asset-store";
@@ -18,14 +18,15 @@ import { useUserStore } from "@/stores/use-user-store";
 const storageKeyPattern = /^(image|video|audio|file|video-reference|audio-reference):/;
 const fileConcurrency = 3;
 const flushTimeoutMs = 15_000;
-let activeWorkspaceFlush: (() => Promise<void>) | null = null;
+export type WorkspaceFlushOptions = { domains?: WorkspaceDomain[] };
+let activeWorkspaceFlush: ((options?: WorkspaceFlushOptions) => Promise<void>) | null = null;
 
 export function isWorkspaceVersionConflictError(error: unknown) {
     return error instanceof WorkspaceVersionConflictError;
 }
 
-export async function flushActiveWorkspaceChanges() {
-    if (activeWorkspaceFlush) return activeWorkspaceFlush();
+export async function flushActiveWorkspaceChanges(options?: WorkspaceFlushOptions) {
+    if (activeWorkspaceFlush) return activeWorkspaceFlush(options);
     if (hasPendingWorkspaceChanges()) throw new Error("当前账号仍有页面内数据未保存，请返回工作台联网同步后再继续");
 }
 
@@ -104,15 +105,22 @@ export function WorkspaceProvider() {
             }
         };
 
-        const flush = async () => {
-            if (!readPendingWorkspaceChanges(ownerId).length) return;
+        const flush = async (options: WorkspaceFlushOptions = {}) => {
+            const domains = options.domains?.length ? new Set(options.domains) : null;
+            const required = new Map(
+                readPendingWorkspaceChanges(ownerId)
+                    .filter((item) => !domains || domains.has(item.domain))
+                    .map((item) => [item.key, item]),
+            );
+            if (!required.size) return;
             if (!navigator.onLine) throw new Error("当前离线，无法保存账号数据");
             const deadline = Date.now() + flushTimeoutMs;
             let failedAttempts = 0;
             while (Date.now() < deadline) {
                 if (cancelled) throw new Error("账号数据同步已切换，请稍后重试");
                 await save(false);
-                if (!readPendingWorkspaceChanges(ownerId).length) return;
+                const pending = readPendingWorkspaceChanges(ownerId);
+                if (!pending.some((item) => required.get(item.key) === item)) return;
                 failedAttempts = lastSaveError ? failedAttempts + 1 : 0;
                 if (failedAttempts >= 3) throw lastSaveError;
                 await new Promise((resolve) => window.setTimeout(resolve, 50));

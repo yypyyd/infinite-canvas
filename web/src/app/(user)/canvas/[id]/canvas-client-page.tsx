@@ -385,7 +385,7 @@ function InfiniteCanvasPage() {
                 requestIds: Array.from({ length: imageCount }, (_, index) => imageGenerationRequestId(id, imageCount, index)),
             });
             try {
-                await flushActiveWorkspaceChanges();
+                await flushActiveWorkspaceChanges({ domains: ["generation_record"] });
             } catch (error) {
                 if (isWorkspaceVersionConflictError(error)) return id;
                 await saveCanvasImageGenerationRecord(historyOwnerId, {
@@ -440,7 +440,7 @@ function InfiniteCanvasPage() {
                 requestId: id,
             });
             try {
-                await flushActiveWorkspaceChanges();
+                await flushActiveWorkspaceChanges({ domains: ["generation_record"] });
             } catch (error) {
                 if (isWorkspaceVersionConflictError(error)) return id;
                 await saveCanvasVideoGenerationRecord(historyOwnerId, {
@@ -2535,11 +2535,11 @@ function InfiniteCanvasPage() {
                     setNodes((prev) =>
                         prev.map((node) =>
                             node.id === nodeId && isConfigNode
-                                ? { ...node, metadata: { ...node.metadata, status: hasSuccess ? NODE_STATUS_SUCCESS : NODE_STATUS_ERROR, errorDetails: hasSuccess ? undefined : "全部图片生成失败" } }
+                                ? { ...node, metadata: { ...node.metadata, status: hasSuccess ? NODE_STATUS_SUCCESS : NODE_STATUS_ERROR, errorDetails: hasSuccess ? undefined : node.metadata?.errorDetails || "全部图片生成失败" } }
                                 : node.id === nodeId && isEmptyImageNode
-                                  ? { ...node, metadata: { ...node.metadata, status: hasSuccess ? NODE_STATUS_SUCCESS : NODE_STATUS_ERROR, errorDetails: hasSuccess ? undefined : "全部图片生成失败" } }
+                                  ? { ...node, metadata: { ...node.metadata, status: hasSuccess ? NODE_STATUS_SUCCESS : NODE_STATUS_ERROR, errorDetails: hasSuccess ? undefined : node.metadata?.errorDetails || "全部图片生成失败" } }
                                   : node.id === rootId && !hasSuccess
-                                    ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_ERROR, errorDetails: "全部图片生成失败" } }
+                                    ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_ERROR, errorDetails: node.metadata?.errorDetails || "全部图片生成失败" } }
                                     : node,
                         ),
                     );

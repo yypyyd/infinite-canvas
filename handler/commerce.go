@@ -17,6 +17,10 @@ func CommerceWorkspace(w http.ResponseWriter, r *http.Request) {
 	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return service.OrganizationWorkspace(user) })
 }
 
+func APICreditSummary(w http.ResponseWriter, r *http.Request) {
+	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return service.CreditSummary(user) })
+}
+
 func CreateOrganization(w http.ResponseWriter, r *http.Request) {
 	var input struct { Name string `json:"name"` }
 	if !decodeCommerceJSON(w, r, &input) { return }

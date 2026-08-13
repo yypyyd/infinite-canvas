@@ -97,6 +97,12 @@ func TransferOrganizationCredits(user model.AuthUser, amount int) (model.Organiz
 	return organizationCreditSummary(organization, savedUser.Credits), err
 }
 
+func CreditSummary(user model.AuthUser) (model.OrganizationCreditSummary, error) {
+	organization, _, err := EnsureOrganization(user)
+	if err != nil { return model.OrganizationCreditSummary{}, err }
+	return organizationCreditSummary(organization, user.Credits), nil
+}
+
 func organizationCreditSummary(organization model.Organization, personalBalance int) model.OrganizationCreditSummary {
 	mode := organization.CreditMode
 	if mode == "" { mode = model.OrganizationCreditModePersonal }

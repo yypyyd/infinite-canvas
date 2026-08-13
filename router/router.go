@@ -112,6 +112,7 @@ func New() *gin.Engine {
 	})
 	v1 := api.Group("/v1", middleware.APIAuth, middleware.OrganizationAuth)
 	v1.GET("/models", gin.WrapF(handler.AIModels))
+	v1.GET("/credits", gin.WrapF(handler.APICreditSummary))
 	v1.GET("/generation-tasks/recovery", gin.WrapF(handler.RecoverAPIGenerationTask))
 	v1.POST("/images/generations", gin.WrapF(handler.AIImagesGenerations))
 	v1.POST("/images/edits", gin.WrapF(handler.AIImagesEdits))

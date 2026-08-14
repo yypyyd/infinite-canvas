@@ -180,7 +180,13 @@ function AccountContent() {
                             </div>
                         </div>
                     </div>
-                    <div className="relative grid grid-cols-1 border-t border-border md:grid-cols-2 md:divide-x md:divide-border">
+                    <div className="relative grid grid-cols-2 border-t border-border md:grid-cols-4 md:divide-x md:divide-border">
+                        <Link href="/account?tab=balance" className="transition-colors hover:bg-muted/60">
+                            <AccountMetric icon={<CircleDollarSign />} label="账户余额" value={`¥${formatYuan(user.balanceCents)}`} />
+                        </Link>
+                        <Link href="/account?tab=credits" className="transition-colors hover:bg-muted/60">
+                            <AccountMetric icon={<Coins />} label={user.creditMode === "shared" ? "企业共享算力" : "个人算力"} value={(user.effectiveCredits ?? user.credits).toLocaleString()} suffix="点" />
+                        </Link>
                         <AccountMetric icon={<History />} label="生成记录" value={historyCountQuery.isLoading ? "—" : String(historyCountQuery.data || 0)} suffix="条" />
                         <AccountMetric icon={<Clock3 />} label="加入时间" value={user.createdAt ? dayjs(user.createdAt).format("YYYY.MM.DD") : "—"} />
                     </div>
@@ -1014,7 +1020,6 @@ function CreditsSection() {
 function BalanceSection() {
     const token = useUserStore((state) => state.token);
     const balanceCents = useUserStore((state) => state.user?.balanceCents || 0);
-    const personalCredits = useUserStore((state) => state.user?.credits || 0);
     const refreshUser = useUserStore((state) => state.refreshUser);
     const queryClient = useQueryClient();
     const { message, modal } = App.useApp();
@@ -1083,29 +1088,9 @@ function BalanceSection() {
 
     return (
         <Card>
-            <div className="flex flex-col gap-4 rounded-xl bg-muted px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-3">
-                    <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                        <WalletCards className="size-5" />
-                    </span>
-                    <div>
-                        <h2 className="text-base font-semibold">账户余额</h2>
-                        <p className="mt-0.5 text-xs text-muted-foreground">人民币资金余额，与算力点独立记账</p>
-                    </div>
-                </div>
-                <div className="flex items-center gap-8">
-                    <div className="sm:text-right">
-                        <div className="text-xs text-muted-foreground">当前余额</div>
-                        <div className="mt-1 text-3xl font-semibold tabular-nums">¥{formatYuan(balanceCents)}</div>
-                    </div>
-                    <div className="border-l border-border pl-8 sm:text-right">
-                        <div className="text-xs text-muted-foreground">个人算力</div>
-                        <div className="mt-1 inline-flex items-center gap-1.5 text-lg font-semibold tabular-nums">
-                            <CreditSymbol />
-                            {personalCredits.toLocaleString()}
-                        </div>
-                    </div>
-                </div>
+            <div className="border-b border-border pb-4">
+                <h2 className="text-lg font-semibold">账户余额</h2>
+                <p className="mt-1 text-sm text-muted-foreground">人民币资金余额，与算力点独立记账；当前余额与算力见上方工作台。</p>
             </div>
             {configQuery.isLoading ? (
                 <Skeleton active className="mt-5" />

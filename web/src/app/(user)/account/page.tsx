@@ -1148,8 +1148,8 @@ function BalanceSection() {
                                                 onClick={() => setPackageId(item.id)}
                                             >
                                                 <div className="text-sm font-medium">{item.name}</div>
-                                                <div className="mt-2 text-2xl font-semibold tabular-nums">¥{formatYuan(item.amountCents)}</div>
-                                                <div className="mt-1 text-xs text-muted-foreground">支付后原值到账</div>
+                                                <div className="mt-2 text-2xl font-semibold tabular-nums">到账 ¥{formatYuan(item.balanceCents)}</div>
+                                                <div className="mt-1 text-xs text-muted-foreground">实付 ¥{formatYuan(item.amountCents)}</div>
                                             </button>
                                         );
                                     })}
@@ -1165,7 +1165,7 @@ function BalanceSection() {
                             <div className="flex flex-col justify-between border-t border-border pt-5 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
                                 <div>
                                     <div className="text-xs text-muted-foreground">本次到账</div>
-                                    <div className="mt-2 text-3xl font-semibold tabular-nums">{selectedPackage ? `¥${formatYuan(selectedPackage.amountCents)}` : "—"}</div>
+                                    <div className="mt-2 text-3xl font-semibold tabular-nums">{selectedPackage ? `¥${formatYuan(selectedPackage.balanceCents)}` : "—"}</div>
                                     <div className="mt-2 text-sm text-muted-foreground">应付 ¥{selectedPackage ? formatYuan(selectedPackage.amountCents) : "—"}</div>
                                 </div>
                                 <Button type="primary" size="large" block icon={<CircleDollarSign className="size-4" />} loading={submitting} disabled={!selectedPackage || !method} onClick={() => void submit()}>
@@ -1196,7 +1196,7 @@ function PaymentOrderRow({ order }: { order: PaymentOrder }) {
                 <div className="mt-0.5 truncate text-xs text-muted-foreground">{order.orderNo}</div>
             </div>
             <span className="hidden text-muted-foreground sm:block">{dayjs(order.createdAt).format("MM-DD HH:mm")}</span>
-            <span className="hidden tabular-nums sm:block">¥{formatYuan(order.amountCents)}</span>
+            <span className="hidden tabular-nums sm:block">到账 ¥{formatYuan(order.balanceCents)}<span className="block text-xs text-muted-foreground">实付 ¥{formatYuan(order.amountCents)}</span></span>
             <Tag className="m-0" color={order.status === "paid" ? "green" : "gold"}>{order.status === "paid" ? "已到账" : "待支付"}</Tag>
         </div>
     );

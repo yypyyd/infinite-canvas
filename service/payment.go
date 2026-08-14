@@ -51,7 +51,7 @@ func CreatePaymentOrder(user model.AuthUser, packageID string, method model.Paym
 	timestamp := now()
 	order := model.PaymentOrder{
 		ID: newID("payment"), OrderNo: newID("pay"), UserID: user.ID, OrganizationID: user.OrganizationID,
-		PackageID: selected.ID, PackageName: selected.Name, Method: method, AmountCents: selected.AmountCents,
+		PackageID: selected.ID, PackageName: selected.Name, Method: method, AmountCents: selected.AmountCents, BalanceCents: selected.BalanceCents,
 		Status: model.PaymentOrderStatusPending, CreatedAt: timestamp, UpdatedAt: timestamp,
 	}
 	order, err = repository.CreatePaymentOrder(order)
@@ -145,10 +145,10 @@ func HandlePaymentNotification(values url.Values) (model.PaymentOrder, error) {
 		return model.PaymentOrder{}, err
 	}
 	amount, err := parsePaymentAmount(params["money"])
-	if err != nil || amount != order.AmountCents || params["type"] != string(order.Method) || strings.TrimSpace(params["trade_no"]) == "" {
+	if err != nil || amount != order.AmountCents || order.BalanceCents <= 0 || params["type"] != string(order.Method) || strings.TrimSpace(params["trade_no"]) == "" {
 		return model.PaymentOrder{}, errors.New("payment notification does not match order")
 	}
-	extra, _ := json.Marshal(map[string]any{"amountCents": order.AmountCents, "method": order.Method})
+	extra, _ := json.Marshal(map[string]any{"amountCents": order.AmountCents, "balanceCents": order.BalanceCents, "method": order.Method})
 	order, _, err = repository.SettlePaymentOrder(order.OrderNo, params["trade_no"], now(), model.BalanceLog{
 		ID: newID("balance"), Type: model.BalanceLogTypePaymentRecharge, Remark: "在线支付充值", Extra: string(extra),
 	})

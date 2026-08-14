@@ -647,7 +647,7 @@ function normalizePrivateSetting(setting: Partial<AdminSettings["private"]> = {}
             siteName: setting.payment?.siteName?.trim() || "道生画境",
             productName: setting.payment?.productName?.trim() || "余额充值",
             methods: (setting.payment?.methods || []).filter((item) => item === "alipay" || item === "wxpay" || item === "qqpay"),
-            packages: (setting.payment?.packages || []).map((item) => ({ id: item.id?.trim() || "", name: item.name?.trim() || "", amountCents: Math.max(0, Math.floor(Number(item.amountCents) || 0)) })).filter((item) => item.id && item.name),
+            packages: (setting.payment?.packages || []).map((item) => ({ id: item.id?.trim() || "", name: item.name?.trim() || "", amountCents: Math.max(0, Math.floor(Number(item.amountCents) || 0)), balanceCents: Math.max(0, Math.floor(Number(item.balanceCents) || 0)) })).filter((item) => item.id && item.name),
             creditsPerYuan: Math.max(0, Math.floor(Number(setting.payment?.creditsPerYuan) || 0)),
         },
         operationsAlerts: {

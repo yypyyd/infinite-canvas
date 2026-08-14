@@ -459,6 +459,7 @@ export type AdminPaymentPackage = {
     id: string;
     name: string;
     amountCents: number;
+    balanceCents: number;
 };
 
 export type AdminPaymentSetting = {

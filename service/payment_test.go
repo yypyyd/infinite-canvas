@@ -41,3 +41,14 @@ func TestNormalizePaymentSettingUsesSupportedDefaultMethods(t *testing.T) {
 		t.Fatalf("positive creditsPerYuan = %d; want 250", got)
 	}
 }
+
+func TestNormalizePaymentSettingRequiresPaymentAndBalanceAmounts(t *testing.T) {
+	setting := normalizePaymentSetting(model.PaymentSetting{Packages: []model.PaymentPackage{
+		{ID: "special", Name: "优惠充值", AmountCents: 9800, BalanceCents: 10000},
+		{ID: "missing-payment", Name: "缺支付金额", BalanceCents: 10000},
+		{ID: "missing-balance", Name: "缺到账余额", AmountCents: 9800},
+	}})
+	if len(setting.Packages) != 1 || setting.Packages[0].ID != "special" {
+		t.Fatalf("unexpected normalized packages: %#v", setting.Packages)
+	}
+}

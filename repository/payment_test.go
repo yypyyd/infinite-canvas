@@ -10,7 +10,7 @@ import (
 func TestSettlePaymentOrderKeepsBalanceSeparateFromCredits(t *testing.T) {
 	testDB := setupUserWorkspaceTestDB(t)
 	user := model.User{ID: "payment-user", Username: "payment-user", BalanceCents: 125, Credits: 777, Status: model.UserStatusActive, CreatedAt: workspaceTestNow, UpdatedAt: workspaceTestNow}
-	order := model.PaymentOrder{ID: "payment-order", OrderNo: "pay-order", UserID: user.ID, AmountCents: 1000, Status: model.PaymentOrderStatusPending, CreatedAt: workspaceTestNow, UpdatedAt: workspaceTestNow}
+	order := model.PaymentOrder{ID: "payment-order", OrderNo: "pay-order", UserID: user.ID, AmountCents: 9800, BalanceCents: 10000, Status: model.PaymentOrderStatusPending, CreatedAt: workspaceTestNow, UpdatedAt: workspaceTestNow}
 	if err := testDB.Create(&user).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -29,8 +29,15 @@ func TestSettlePaymentOrderKeepsBalanceSeparateFromCredits(t *testing.T) {
 	if err := testDB.First(&user, "id = ?", user.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if user.BalanceCents != 1125 || user.Credits != 777 {
+	if user.BalanceCents != 10125 || user.Credits != 777 {
 		t.Fatalf("unexpected balances: balanceCents=%d credits=%d", user.BalanceCents, user.Credits)
+	}
+	var balanceLog model.BalanceLog
+	if err := testDB.Where("user_id = ?", user.ID).First(&balanceLog).Error; err != nil {
+		t.Fatal(err)
+	}
+	if balanceLog.AmountCents != 10000 || balanceLog.BalanceCents != 10125 {
+		t.Fatalf("unexpected balance log: %#v", balanceLog)
 	}
 	var balanceLogs, creditLogs int64
 	if err := testDB.Model(&model.BalanceLog{}).Where("user_id = ?", user.ID).Count(&balanceLogs).Error; err != nil {

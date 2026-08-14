@@ -16,9 +16,10 @@ const (
 )
 
 type PaymentPackage struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	AmountCents int64  `json:"amountCents"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	AmountCents  int64  `json:"amountCents"`
+	BalanceCents int64  `json:"balanceCents"`
 }
 
 type PaymentSetting struct {
@@ -35,10 +36,10 @@ type PaymentSetting struct {
 }
 
 type PaymentConfig struct {
-	Enabled  bool             `json:"enabled"`
-	Methods  []PaymentMethod  `json:"methods"`
-	Packages []PaymentPackage `json:"packages"`
-	CreditsPerYuan int         `json:"creditsPerYuan"`
+	Enabled        bool             `json:"enabled"`
+	Methods        []PaymentMethod  `json:"methods"`
+	Packages       []PaymentPackage `json:"packages"`
+	CreditsPerYuan int              `json:"creditsPerYuan"`
 }
 
 type PaymentOrder struct {
@@ -50,6 +51,7 @@ type PaymentOrder struct {
 	PackageName    string             `json:"packageName"`
 	Method         PaymentMethod      `json:"method"`
 	AmountCents    int64              `json:"amountCents"`
+	BalanceCents   int64              `json:"balanceCents"`
 	Status         PaymentOrderStatus `json:"status" gorm:"index"`
 	TradeNo        *string            `json:"tradeNo,omitempty" gorm:"uniqueIndex"`
 	PaidAt         string             `json:"paidAt"`

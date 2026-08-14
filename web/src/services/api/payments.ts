@@ -7,6 +7,7 @@ export type PaymentPackage = {
     id: string;
     name: string;
     amountCents: number;
+    balanceCents: number;
 };
 
 export type PaymentConfig = {
@@ -31,6 +32,7 @@ export type PaymentOrder = {
     packageName: string;
     method: PaymentMethod;
     amountCents: number;
+    balanceCents: number;
     status: PaymentOrderStatus;
     tradeNo?: string;
     paidAt: string;

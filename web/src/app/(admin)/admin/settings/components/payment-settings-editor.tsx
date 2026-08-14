@@ -73,9 +73,9 @@ export function PaymentSettingsEditor() {
                             <Flex justify="space-between" align="center" gap={12}>
                                 <div>
                                     <Typography.Text strong>充值档位</Typography.Text>
-                                    <div className="mt-1 text-xs text-muted-foreground">支付金额将按原值计入账户余额</div>
+                                    <div className="mt-1 text-xs text-muted-foreground">支付金额用于易支付下单，到账余额用于站内入账</div>
                                 </div>
-                                <Button icon={<Plus className="size-4" />} onClick={() => add({ id: `package-${Date.now()}`, name: "", amountCents: 1000 })}>
+                                <Button icon={<Plus className="size-4" />} onClick={() => add({ id: `package-${Date.now()}`, name: "", amountCents: 1000, balanceCents: 1000 })}>
                                     添加档位
                                 </Button>
                             </Flex>
@@ -83,6 +83,7 @@ export function PaymentSettingsEditor() {
                                 rowKey="key"
                                 size="small"
                                 pagination={false}
+                                scroll={{ x: 700 }}
                                 dataSource={fields}
                                 locale={{ emptyText: "请添加至少一个充值档位" }}
                                 columns={[
@@ -100,10 +101,19 @@ export function PaymentSettingsEditor() {
                                         ),
                                     },
                                     {
-                                        title: "金额",
+                                        title: "支付金额",
                                         width: 180,
                                         render: (_, field) => (
                                             <Form.Item name={[field.name, "amountCents"]} noStyle>
+                                                <YuanInput />
+                                            </Form.Item>
+                                        ),
+                                    },
+                                    {
+                                        title: "到账余额",
+                                        width: 180,
+                                        render: (_, field) => (
+                                            <Form.Item name={[field.name, "balanceCents"]} noStyle>
                                                 <YuanInput />
                                             </Form.Item>
                                         ),

@@ -103,7 +103,7 @@ func SettlePaymentOrder(orderNo string, tradeNo string, paidAt string, log model
 			return nil
 		}
 		userUpdate := tx.Model(&model.User{}).Where("id = ?", order.UserID).Updates(map[string]any{
-			"balance_cents": gorm.Expr("balance_cents + ?", order.AmountCents), "updated_at": paidAt,
+			"balance_cents": gorm.Expr("balance_cents + ?", order.BalanceCents), "updated_at": paidAt,
 		})
 		if userUpdate.Error != nil {
 			return userUpdate.Error
@@ -118,7 +118,7 @@ func SettlePaymentOrder(orderNo string, tradeNo string, paidAt string, log model
 		log.UserID = order.UserID
 		log.OrganizationID = order.OrganizationID
 		log.RelatedID = order.ID
-		log.AmountCents = order.AmountCents
+		log.AmountCents = order.BalanceCents
 		log.BalanceCents = user.BalanceCents
 		log.CreatedAt = paidAt
 		if err := tx.Create(&log).Error; err != nil {

@@ -896,7 +896,7 @@ func normalizePaymentSetting(setting model.PaymentSetting) model.PaymentSetting 
 	for _, item := range setting.Packages {
 		item.ID = strings.TrimSpace(item.ID)
 		item.Name = strings.TrimSpace(item.Name)
-		if item.ID == "" || item.Name == "" || item.AmountCents <= 0 || seenPackages[item.ID] {
+		if item.ID == "" || item.Name == "" || item.AmountCents <= 0 || item.BalanceCents <= 0 || seenPackages[item.ID] {
 			continue
 		}
 		seenPackages[item.ID] = true

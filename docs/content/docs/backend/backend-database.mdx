@@ -370,7 +370,7 @@ description: 当前后端主要数据表与字段说明
 
 ### payment_orders
 
-易支付 V1 余额充值订单表。订单创建时固化用户、当前企业、充值档位、支付方式和人民币分值；支付成功后只增加人民币账户余额，不增加算力点。服务端同时校验回调签名、商户号、订单金额、支付方式和 `TRADE_SUCCESS` 状态，再在同一事务中把订单改为已支付、增加 `users.balance_cents` 并写入 `balance_logs`。订单状态条件更新和第三方流水号唯一索引共同保证异步通知与页面返回重复到达时不会重复入账。
+易支付 V1 余额充值订单表。订单创建时固化用户、当前企业、充值档位、支付方式、实付金额和到账余额；支付成功后只增加人民币账户余额，不增加算力点。服务端同时校验回调签名、商户号、实付金额、支付方式和 `TRADE_SUCCESS` 状态，再在同一事务中把订单改为已支付、按到账余额增加 `users.balance_cents` 并写入 `balance_logs`。订单状态条件更新和第三方流水号唯一索引共同保证异步通知与页面返回重复到达时不会重复入账。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
@@ -381,7 +381,8 @@ description: 当前后端主要数据表与字段说明
 | `package_id` | string | 创建时固化的充值档位标识 |
 | `package_name` | string | 创建时固化的档位名称 |
 | `method` | string | 支付方式：`alipay`、`wxpay`、`qqpay` |
-| `amount_cents` | number | 人民币金额，单位分 |
+| `amount_cents` | number | 提交给易支付并用于回调金额核对的实付金额，单位分 |
+| `balance_cents` | number | 支付成功后增加到账户人民币余额的金额，单位分 |
 | `status` | string | 状态：`pending`、`paid` |
 | `trade_no` | nullable string | 易支付平台流水号，非空时唯一 |
 | `paid_at` | string | 支付入账时间 |
@@ -398,11 +399,11 @@ description: 当前后端主要数据表与字段说明
 | `user_id` | string | 关联用户 ID |
 | `organization_id` | string | 创建支付订单时所在企业 ID，仅用于来源记录 |
 | `type` | string | 资金变动类型：`payment_recharge` 为支付充值，`credits_exchange` 为余额兑换算力时的人民币扣减 |
-| `amount_cents` | number | 本次人民币余额变动，单位分 |
+| `amount_cents` | number | 本次人民币余额实际变动，充值时记录订单到账余额而非易支付实付金额，单位分 |
 | `balance_cents` | number | 变动后的人民币账户余额，单位分 |
 | `related_id` | string | 充值时关联支付订单 ID；兑换时与对应 `credit_logs.related_id` 共用同一个兑换 ID |
 | `remark` | string | 备注 |
-| `extra` | json | 支付方式、订单金额或兑换比例等扩展信息 |
+| `extra` | json | 支付方式、实付金额、到账余额或兑换比例等扩展信息 |
 | `created_at` | string | 创建时间 |
 
 余额兑换只允许从人民币余额流向个人算力，不存在反向事务。请求金额必须是正整数元，后端按创建事务时读取的 `creditsPerYuan` 计算算力；余额不足时用户余额、算力和两类流水全部保持不变。

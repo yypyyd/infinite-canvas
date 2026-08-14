@@ -183,7 +183,7 @@ description: settings 表中 public 和 private 配置结构说明
     "productName": "余额充值",
     "methods": ["alipay", "wxpay"],
     "packages": [
-      { "id": "starter", "name": "10 元充值", "amountCents": 1000 }
+      { "id": "special-100", "name": "100 元余额", "amountCents": 9800, "balanceCents": 10000 }
     ],
     "creditsPerYuan": 100
   }
@@ -262,10 +262,10 @@ description: settings 表中 public 和 private 配置结构说明
 | `siteName` | string | 提交给易支付的网站名称 |
 | `productName` | string | 支付商品名称前缀 |
 | `methods` | string[] | 开放的支付方式，可选 `alipay`、`wxpay`、`qqpay` |
-| `packages` | object[] | 充值档位；每项包含稳定 `id`、名称 `name` 和人民币分值 `amountCents`，支付金额按原值进入账户余额 |
+| `packages` | object[] | 充值档位；每项包含稳定 `id`、名称 `name`、易支付实付金额 `amountCents` 和站内到账余额 `balanceCents`，两个金额都以人民币分为单位且必须大于 `0` |
 | `creditsPerYuan` | number | 每 1 元人民币余额可兑换的个人算力点数；正整数时自动开放兑换，`0` 或未配置时隐藏兑换入口，不设单独开关 |
 
-支付回调由同源后端 `/api/payments/notify` 和 `/api/payments/return` 接收。服务端按照易支付 V1 规则验签并核对订单后，把订单入账、人民币账户余额增加和 `payment_recharge` 资金流水写入同一事务；商户密钥只参与服务端签名与验签。账户余额保存在 `users.balance_cents` 并记录到 `balance_logs`，与算力点及 `credit_logs` 完全分开。
+支付回调由同源后端 `/api/payments/notify` 和 `/api/payments/return` 接收。服务端按照易支付 V1 规则验签，并使用订单固化的 `amountCents` 核对易支付实付金额；校验通过后按订单固化的 `balanceCents` 增加人民币账户余额，再把订单入账和 `payment_recharge` 资金流水写入同一事务。商户密钥只参与服务端签名与验签。账户余额保存在 `users.balance_cents` 并记录到 `balance_logs`，与算力点及 `credit_logs` 完全分开。
 
 余额兑换只接受正整数元金额，并按 `兑换元数 × creditsPerYuan` 精确增加个人算力。兑换时扣减人民币余额和增加个人算力在同一事务中完成，兑换后不可撤销；系统不提供算力兑换回人民币余额的接口或入口。此功能只由 `creditsPerYuan` 控制，与 `enabled` 在线充值开关相互独立。
 

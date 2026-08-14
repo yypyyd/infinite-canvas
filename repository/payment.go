@@ -76,20 +76,6 @@ func ListUserPaymentOrders(userID string, q model.Query) ([]model.PaymentOrder, 
 	return orders, total, err
 }
 
-func ListPendingPaymentOrders(createdAfter string, limit int) ([]model.PaymentOrder, error) {
-	db, err := DB()
-	if err != nil {
-		return nil, err
-	}
-	if limit <= 0 || limit > 100 {
-		limit = 100
-	}
-	var orders []model.PaymentOrder
-	err = db.Where("status = ? AND created_at >= ?", model.PaymentOrderStatusPending, createdAfter).
-		Order("created_at desc").Limit(limit).Find(&orders).Error
-	return orders, err
-}
-
 func SettlePaymentOrder(orderNo string, tradeNo string, paidAt string, log model.BalanceLog) (model.PaymentOrder, bool, error) {
 	db, err := DB()
 	if err != nil {

@@ -265,9 +265,7 @@ description: settings 表中 public 和 private 配置结构说明
 | `packages` | object[] | 充值档位；每项包含稳定 `id`、名称 `name`、易支付实付金额 `amountCents` 和站内到账余额 `balanceCents`，两个金额都以人民币分为单位且必须大于 `0` |
 | `creditsPerYuan` | number | 每 1 元人民币余额可兑换的个人算力点数；正整数时自动开放兑换，`0` 或未配置时隐藏兑换入口，不设单独开关 |
 
-支付回调由同源后端 `/api/payments/notify` 和 `/api/payments/return` 接收，同时兼容易支付使用 GET 或 POST 发送结果。服务端按照易支付 V1 规则验签，并使用订单固化的 `amountCents` 核对易支付实付金额；校验通过后按订单固化的 `balanceCents` 增加人民币账户余额，再把订单入账和 `payment_recharge` 资金流水写入同一事务。商户密钥只参与服务端签名与验签。账户余额保存在 `users.balance_cents` 并记录到 `balance_logs`，与算力点及 `credit_logs` 完全分开。
-
-为避免微信等渠道漏发回调后订单永久停留在待确认状态，服务端启动时会立即查询最近 72 小时的待确认订单，之后每 30 秒通过已配置 HTTPS 网关的 `/api/findorder` 主动对账；用户从支付页返回时也会立即查询本人对应订单。易支付当前实现使用 `type=2` 按商户订单号查询，与其文档文字标注相反，接入以真实接口行为为准。主动查询响应限制为 64 KiB，只有 `code=200`、`status=1`，且商户 ID、商户订单号、支付方式、实付金额和非空第三方流水号全部与站内固化订单一致时才复用同一结算事务入账；查询失败、未支付、未知状态或任一字段不匹配都保持待确认，不会超时判失败或发放余额。网关地址只能由管理员配置为不含凭据、查询参数和片段的 HTTPS 地址，订单查询路径与参数由服务端固定生成。
+支付回调由同源后端 `/api/payments/notify` 和 `/api/payments/return` 接收。服务端按照易支付 V1 规则验签，并使用订单固化的 `amountCents` 核对易支付实付金额；校验通过后按订单固化的 `balanceCents` 增加人民币账户余额，再把订单入账和 `payment_recharge` 资金流水写入同一事务。商户密钥只参与服务端签名与验签。账户余额保存在 `users.balance_cents` 并记录到 `balance_logs`，与算力点及 `credit_logs` 完全分开。
 
 余额兑换只接受正整数元金额，并按 `兑换元数 × creditsPerYuan` 精确增加个人算力。兑换时扣减人民币余额和增加个人算力在同一事务中完成，兑换后不可撤销；系统不提供算力兑换回人民币余额的接口或入口。此功能只由 `creditsPerYuan` 控制，与 `enabled` 在线充值开关相互独立。
 

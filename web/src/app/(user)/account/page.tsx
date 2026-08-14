@@ -14,7 +14,7 @@ import { useCopyText } from "@/hooks/use-copy-text";
 import { useOpenMedia } from "@/hooks/use-open-media";
 import { formatDuration } from "@/lib/image-utils";
 import { changePassword, createUserAPIKey, deleteUserAPIKey, fetchCreditLogs, fetchGenerationTasks, fetchUserAPIKeys, updateProfile as updateUserProfile, type CreditLog, type CreatedUserAPIKey, type GenerationTask, type UserAPIKey } from "@/services/api/auth";
-import { createPaymentOrder, exchangeBalanceForCredits, fetchPaymentConfig, fetchPaymentOrder, fetchPaymentOrders, type PaymentMethod, type PaymentOrder } from "@/services/api/payments";
+import { createPaymentOrder, exchangeBalanceForCredits, fetchPaymentConfig, fetchPaymentOrders, type PaymentMethod, type PaymentOrder } from "@/services/api/payments";
 import { countGenerationHistory, deleteGenerationHistory, GENERATION_HISTORY_CHANGED_EVENT, readGenerationHistory, resolveGenerationHistoryMedia, resolveGenerationHistoryPreview, type GenerationHistoryItem } from "@/services/generation-history";
 import { workspaceOwnerId } from "@/services/workspace-changes";
 import { useUserStore } from "@/stores/use-user-store";
@@ -111,7 +111,6 @@ function AccountContent() {
     const queryClient = useQueryClient();
     const { message } = App.useApp();
     const user = useUserStore((state) => state.user);
-    const token = useUserStore((state) => state.token);
     const isReady = useUserStore((state) => state.isReady);
     const refreshUser = useUserStore((state) => state.refreshUser);
     const handledPaymentResult = useRef("");
@@ -139,25 +138,14 @@ function AccountContent() {
     useEffect(() => {
         const result = searchParams.get("payment");
         if (!result) return;
-        const orderNo = searchParams.get("orderNo") || "";
-        const resultKey = `${result}:${orderNo}`;
+        const resultKey = `${result}:${searchParams.get("orderNo") || ""}`;
         if (handledPaymentResult.current === resultKey) return;
         handledPaymentResult.current = resultKey;
-        void (async () => {
-            let paid = false;
-            if (orderNo && token) {
-                try {
-                    paid = (await fetchPaymentOrder(token, orderNo)).status === "paid";
-                } catch {}
-            } else {
-                paid = result === "success";
-            }
-            if (paid) message.success("支付成功，余额已到账");
-            else message.info("支付结果确认中，系统会自动核对到账状态");
-            await Promise.all([refreshUser(), queryClient.invalidateQueries({ queryKey: ["payment-orders"] })]);
-            router.replace("/account?tab=balance", { scroll: false });
-        })();
-    }, [message, queryClient, refreshUser, router, searchParams, token]);
+        if (result === "success") message.success("支付成功，余额已到账");
+        else message.info("支付结果确认中，可稍后刷新订单状态");
+        void Promise.all([refreshUser(), queryClient.invalidateQueries({ queryKey: ["payment-orders"] })]);
+        router.replace("/account?tab=balance", { scroll: false });
+    }, [message, queryClient, refreshUser, router, searchParams]);
 
     if (!isReady || !user) return <AccountPageSkeleton />;
 
@@ -1040,13 +1028,7 @@ function BalanceSection() {
     const [method, setMethod] = useState<PaymentMethod | "">("");
     const [submitting, setSubmitting] = useState(false);
     const configQuery = useQuery({ queryKey: ["payment-config", token], queryFn: () => fetchPaymentConfig(token), enabled: Boolean(token) });
-    const ordersQuery = useQuery({
-        queryKey: ["payment-orders", token],
-        queryFn: () => fetchPaymentOrders(token, { pageSize: 5 }),
-        enabled: Boolean(token),
-        refetchInterval: (query) => query.state.data?.items.some((item) => item.status === "pending") ? 5000 : false,
-    });
-    const previousPaidOrders = useRef<string | null>(null);
+    const ordersQuery = useQuery({ queryKey: ["payment-orders", token], queryFn: () => fetchPaymentOrders(token, { pageSize: 5 }), enabled: Boolean(token) });
     const config = configQuery.data;
     const selectedPackage = config?.packages.find((item) => item.id === packageId);
     const maxExchangeYuan = Math.floor(balanceCents / 100);
@@ -1066,13 +1048,6 @@ function BalanceSection() {
         setPackageId((current) => (config.packages.some((item) => item.id === current) ? current : config.packages[0]?.id || ""));
         setMethod((current) => (config.methods.includes(current as PaymentMethod) ? current : config.methods[0] || ""));
     }, [config]);
-
-    useEffect(() => {
-        if (!ordersQuery.data) return;
-        const paidOrders = ordersQuery.data.items.filter((item) => item.status === "paid").map((item) => item.id).join(",");
-        if (previousPaidOrders.current !== null && previousPaidOrders.current !== paidOrders) void refreshUser();
-        previousPaidOrders.current = paidOrders;
-    }, [ordersQuery.data, refreshUser]);
 
     const submit = async () => {
         if (!token || !packageId || !method) return;
@@ -1248,7 +1223,7 @@ function PaymentOrderRow({ order }: { order: PaymentOrder }) {
             </div>
             <span className="hidden text-muted-foreground sm:block">{dayjs(order.createdAt).format("MM-DD HH:mm")}</span>
             <span className="hidden tabular-nums sm:block">到账 ¥{formatYuan(order.balanceCents)}<span className="block text-xs text-muted-foreground">实付 ¥{formatYuan(order.amountCents)}</span></span>
-            <Tag className="m-0" color={order.status === "paid" ? "green" : "gold"}>{order.status === "paid" ? "已到账" : "确认中"}</Tag>
+            <Tag className="m-0" color={order.status === "paid" ? "green" : "gold"}>{order.status === "paid" ? "已到账" : "待支付"}</Tag>
         </div>
     );
 }

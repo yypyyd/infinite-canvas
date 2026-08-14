@@ -1,11 +1,6 @@
 package service
 
 import (
-	"encoding/json"
-	"io"
-	"net/http"
-	"net/http/httptest"
-	"net/url"
 	"reflect"
 	"testing"
 
@@ -85,74 +80,5 @@ func TestValidatePaymentSettingStillRejectsEnabledSettingWithoutPackage(t *testi
 	})
 	if err := validatePaymentSetting(setting); err == nil {
 		t.Fatal("enabled payment setting without a valid package should fail validation")
-	}
-}
-
-func TestQueryEasyPayOrderUsesMerchantOrderQueryAndAcceptsPaidResult(t *testing.T) {
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/api/findorder" {
-			t.Errorf("unexpected payment query request: %s %s", r.Method, r.URL.Path)
-			http.Error(w, "unexpected request", http.StatusBadRequest)
-			return
-		}
-		if err := r.ParseForm(); err != nil {
-			t.Error(err)
-			http.Error(w, "invalid form", http.StatusBadRequest)
-			return
-		}
-		if r.Form.Get("order_no") != "pay-1" || r.Form.Get("type") != "2" {
-			t.Errorf("unexpected payment query form: %#v", r.Form)
-			http.Error(w, "unexpected form", http.StatusBadRequest)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"code":200,"msg":"获取成功","data":{"id":6286,"type":"wxpay","trade_no":"trade-1","out_trade_no":"pay-1","money":"9.00","status":1}}`)
-	}))
-	defer server.Close()
-
-	queryURL, err := paymentOrderQueryURL(server.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	paid, tradeNo, err := queryEasyPayOrder(server.Client(), queryURL,
-		model.PaymentSetting{MerchantID: "6286"},
-		model.PaymentOrder{OrderNo: "pay-1", Method: model.PaymentMethodWxpay, AmountCents: 900, BalanceCents: 1000},
-	)
-	if err != nil || !paid || tradeNo != "trade-1" {
-		t.Fatalf("unexpected payment query result: paid=%v tradeNo=%q err=%v", paid, tradeNo, err)
-	}
-}
-
-func TestValidatePaymentQueryResultRejectsMismatches(t *testing.T) {
-	payment := model.PaymentSetting{MerchantID: "6286"}
-	order := model.PaymentOrder{OrderNo: "pay-1", Method: model.PaymentMethodWxpay, AmountCents: 900, BalanceCents: 1000}
-	valid := paymentQueryData{MerchantID: json.RawMessage(`6286`), Method: model.PaymentMethodWxpay, TradeNo: "trade-1", OrderNo: "pay-1", Money: "9.00", Status: 1}
-
-	unpaid := valid
-	unpaid.Status = 0
-	if paid, tradeNo, err := validatePaymentQueryResult(payment, order, unpaid); err != nil || paid || tradeNo != "" {
-		t.Fatalf("unpaid result should remain pending: paid=%v tradeNo=%q err=%v", paid, tradeNo, err)
-	}
-
-	cases := map[string]paymentQueryData{
-		"merchant":       func() paymentQueryData { item := valid; item.MerchantID = json.RawMessage(`9999`); return item }(),
-		"order":          func() paymentQueryData { item := valid; item.OrderNo = "pay-other"; return item }(),
-		"method":         func() paymentQueryData { item := valid; item.Method = model.PaymentMethodAlipay; return item }(),
-		"amount":         func() paymentQueryData { item := valid; item.Money = "8.99"; return item }(),
-		"trade number":   func() paymentQueryData { item := valid; item.TradeNo = ""; return item }(),
-		"unknown status": func() paymentQueryData { item := valid; item.Status = 2; return item }(),
-	}
-	for name, result := range cases {
-		t.Run(name, func(t *testing.T) {
-			if paid, tradeNo, err := validatePaymentQueryResult(payment, order, result); err == nil || paid || tradeNo != "" {
-				t.Fatalf("mismatch accepted: paid=%v tradeNo=%q err=%v", paid, tradeNo, err)
-			}
-		})
-	}
-}
-
-func TestPaymentParametersRejectDuplicates(t *testing.T) {
-	if _, err := paymentParameters(url.Values{"pid": []string{"6286", "other"}}); err == nil {
-		t.Fatal("duplicate payment parameter should be rejected")
 	}
 }

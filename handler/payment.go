@@ -96,12 +96,7 @@ func ExchangeBalance(w http.ResponseWriter, r *http.Request) {
 
 func PaymentNotify(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	values, err := paymentCallbackValues(w, r)
-	if err != nil {
-		_, _ = w.Write([]byte("fail"))
-		return
-	}
-	if _, err := service.HandlePaymentNotification(values); err != nil {
+	if _, err := service.HandlePaymentNotification(r.URL.Query()); err != nil {
 		_, _ = w.Write([]byte("fail"))
 		return
 	}
@@ -110,9 +105,8 @@ func PaymentNotify(w http.ResponseWriter, r *http.Request) {
 
 func PaymentReturn(w http.ResponseWriter, r *http.Request) {
 	state := "pending"
-	values, _ := paymentCallbackValues(w, r)
-	orderNo := strings.TrimSpace(values.Get("out_trade_no"))
-	if order, err := service.HandlePaymentNotification(values); err == nil {
+	orderNo := strings.TrimSpace(r.URL.Query().Get("out_trade_no"))
+	if order, err := service.HandlePaymentNotification(r.URL.Query()); err == nil {
 		state = "success"
 		orderNo = order.OrderNo
 	}
@@ -121,14 +115,4 @@ func PaymentReturn(w http.ResponseWriter, r *http.Request) {
 		query.Set("orderNo", orderNo)
 	}
 	http.Redirect(w, r, "/account?"+query.Encode(), http.StatusFound)
-}
-
-func paymentCallbackValues(w http.ResponseWriter, r *http.Request) (url.Values, error) {
-	if r.Method == http.MethodPost {
-		r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
-	}
-	if err := r.ParseForm(); err != nil {
-		return nil, err
-	}
-	return r.Form, nil
 }

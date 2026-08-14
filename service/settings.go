@@ -925,7 +925,7 @@ func validatePaymentSetting(setting model.PaymentSetting) error {
 		return safeMessageError{message: "启用在线支付前请至少配置一种支付方式和一个充值档位"}
 	}
 	gateway, err := url.Parse(setting.GatewayURL)
-	if err != nil || gateway.Scheme != "https" || gateway.Host == "" || gateway.RawQuery != "" || gateway.Fragment != "" {
+	if err != nil || gateway.Scheme != "https" || gateway.Host == "" || gateway.User != nil || gateway.RawQuery != "" || gateway.Fragment != "" {
 		return safeMessageError{message: "易支付网关必须是有效的 HTTPS 地址"}
 	}
 	merchantID, err := strconv.ParseInt(setting.MerchantID, 10, 64)

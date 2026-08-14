@@ -19,5 +19,6 @@ func main() {
 	service.StartOrganizationEmailOutboxWorker()
 	service.StartUserFileMaintenanceWorker()
 	service.StartGenerationTaskMaintenanceWorker()
+	service.StartPaymentReconciliationWorker()
 	log.Fatal(router.New().Run(":" + config.Cfg.Port))
 }

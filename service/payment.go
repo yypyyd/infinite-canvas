@@ -82,6 +82,11 @@ func GetPaymentOrder(userID string, orderNo string) (model.PaymentOrder, error) 
 	if errors.Is(err, repository.ErrPaymentOrderNotFound) {
 		return model.PaymentOrder{}, safeMessageError{message: "支付订单不存在"}
 	}
+	if err == nil && order.Status == model.PaymentOrderStatusPending {
+		if reconciled, _, reconcileErr := reconcilePaymentOrder(order); reconcileErr == nil {
+			order = reconciled
+		}
+	}
 	return order, err
 }
 
@@ -128,7 +133,10 @@ func HandlePaymentNotification(values url.Values) (model.PaymentOrder, error) {
 		return model.PaymentOrder{}, err
 	}
 	payment := normalizePaymentSetting(settings.Private.Payment)
-	params := paymentParameters(values)
+	params, err := paymentParameters(values)
+	if err != nil {
+		return model.PaymentOrder{}, err
+	}
 	if payment.MerchantID == "" || payment.MerchantKey == "" || params["pid"] != payment.MerchantID || !strings.EqualFold(params["sign_type"], "MD5") {
 		return model.PaymentOrder{}, errors.New("invalid payment notification")
 	}
@@ -155,12 +163,15 @@ func HandlePaymentNotification(values url.Values) (model.PaymentOrder, error) {
 	return order, err
 }
 
-func paymentParameters(values url.Values) map[string]string {
+func paymentParameters(values url.Values) (map[string]string, error) {
 	params := make(map[string]string, len(values))
-	for key := range values {
-		params[key] = strings.TrimSpace(values.Get(key))
+	for key, items := range values {
+		if len(items) != 1 {
+			return nil, errors.New("duplicate payment parameter")
+		}
+		params[key] = strings.TrimSpace(items[0])
 	}
-	return params
+	return params, nil
 }
 
 func signPaymentParameters(params map[string]string, merchantKey string) string {

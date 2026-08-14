@@ -634,7 +634,7 @@ export default function CommercePage() {
                 {creditSummary?.warning ? <Alert className="mt-4" type="warning" showIcon message={`本月算力已达到预算预警线（${creditSummary.alertThreshold}%）`} /> : null}
                 <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
                     <span className="text-sm text-muted-foreground">
-                        我的个人余额：<span className="font-medium tabular-nums text-foreground">{(creditSummary?.personalBalance || 0).toLocaleString()} 点</span>
+                        我的个人算力：<span className="font-medium tabular-nums text-foreground">{(creditSummary?.personalBalance || 0).toLocaleString()} 点</span>
                     </span>
                     <Button
                         disabled={!creditSummary?.personalBalance}
@@ -643,7 +643,7 @@ export default function CommercePage() {
                             setCreditTransferOpen(true);
                         }}
                     >
-                        从个人余额转入
+                        从个人算力转入
                     </Button>
                 </div>
             </Card>
@@ -1273,7 +1273,7 @@ export default function CommercePage() {
                 }}
             >
                 <Form form={creditTransferForm} layout="vertical" requiredMark={false}>
-                    <Form.Item name="amount" label="转入额度" extra={`当前个人余额 ${(creditSummary?.personalBalance || 0).toLocaleString()} 点`} rules={[{ required: true }]}>
+                    <Form.Item name="amount" label="转入额度" extra={`当前个人算力 ${(creditSummary?.personalBalance || 0).toLocaleString()} 点`} rules={[{ required: true }]}>
                         <InputNumber className="w-full" min={1} max={Math.max(1, creditSummary?.personalBalance || 0)} precision={0} addonAfter="点" />
                     </Form.Item>
                 </Form>

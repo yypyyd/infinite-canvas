@@ -27,6 +27,7 @@ type User struct {
 	OrganizationID string  `json:"organizationId" gorm:"index"`
 	Role        UserRole   `json:"role"`
 	Group       string     `json:"group"`
+	BalanceCents   int64      `json:"balanceCents" gorm:"not null;default:0"`
 	Credits         int        `json:"credits"`
 	ReservedCredits int        `json:"-" gorm:"not null;default:0"`
 	AffCode         string     `json:"affCode" gorm:"uniqueIndex"`
@@ -58,6 +59,7 @@ type AuthUser struct {
 	OrganizationID string `json:"organizationId"`
 	Role        UserRole `json:"role"`
 	Group       string   `json:"group"`
+	BalanceCents int64   `json:"balanceCents"`
 	Credits     int      `json:"credits"`
 	EffectiveCredits int `json:"effectiveCredits"`
 	CreditMode OrganizationCreditMode `json:"creditMode"`
@@ -81,6 +83,7 @@ func PublicUser(user User) AuthUser {
 		OrganizationID: user.OrganizationID,
 		Role:        user.Role,
 		Group:       user.Group,
+		BalanceCents: user.BalanceCents,
 		Credits:     user.Credits,
 		EffectiveCredits: user.Credits,
 		CreditMode: OrganizationCreditModePersonal,
@@ -96,6 +99,7 @@ const (
 	CreditLogTypeAIConsume   CreditLogType = "ai_consume"
 	CreditLogTypeAIRefund    CreditLogType = "ai_refund"
 	CreditLogTypeRedeem      CreditLogType = "redeem_code"
+	CreditLogTypeBalanceExchange CreditLogType = "balance_exchange"
 	CreditLogTypeCheckIn     CreditLogType = "daily_check_in"
 	CreditLogTypeNewUser     CreditLogType = "new_user_reward"
 	CreditLogTypeOrganizationTransferOut CreditLogType = "organization_transfer_out"

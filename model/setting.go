@@ -180,6 +180,7 @@ type PrivateSetting struct {
 	Channels         []ModelChannel         `json:"channels"`
 	PromptSync       PromptSyncSetting      `json:"promptSync"`
 	Email            EmailSetting           `json:"email"`
+	Payment          PaymentSetting         `json:"payment"`
 	OperationsAlerts OperationsAlertSetting `json:"operationsAlerts"`
 }
 

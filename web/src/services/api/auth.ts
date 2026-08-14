@@ -11,6 +11,7 @@ export type AuthUser = {
     organizationId: string;
     role: UserRole;
     group: string;
+    balanceCents: number;
     credits: number;
     effectiveCredits: number;
     creditMode: "personal" | "shared";

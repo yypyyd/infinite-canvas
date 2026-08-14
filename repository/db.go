@@ -86,6 +86,8 @@ func DB() (*gorm.DB, error) {
 			&model.VideoProjectVersion{},
 			&model.EmailVerification{},
 			&model.CreditLog{},
+			&model.PaymentOrder{},
+			&model.BalanceLog{},
 			&model.CheckIn{},
 			&model.RedemptionCode{},
 			&model.GenerationTask{},

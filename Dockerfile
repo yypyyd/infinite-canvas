@@ -5,11 +5,9 @@ WORKDIR /app/web
 ARG NEXT_PUBLIC_DOC_URL=https://docs.canvas.best
 ARG NEXT_PUBLIC_REPOSITORY_URL=https://github.com/yypyyd/infinite-canvas
 ARG NEXT_PUBLIC_VERSION_URL=https://raw.githubusercontent.com/yypyyd/infinite-canvas/main/VERSION
-ARG NEXT_PUBLIC_CREDIT_PURCHASE_URL=https://pay.ldxp.cn/shop/ODLR2IW6
 ENV NEXT_PUBLIC_DOC_URL=${NEXT_PUBLIC_DOC_URL}
 ENV NEXT_PUBLIC_REPOSITORY_URL=${NEXT_PUBLIC_REPOSITORY_URL}
 ENV NEXT_PUBLIC_VERSION_URL=${NEXT_PUBLIC_VERSION_URL}
-ENV NEXT_PUBLIC_CREDIT_PURCHASE_URL=${NEXT_PUBLIC_CREDIT_PURCHASE_URL}
 COPY web/package.json web/bun.lock ./
 RUN --mount=type=cache,target=/root/.bun/install/cache bun install --frozen-lockfile --cache-dir=/root/.bun/install/cache
 COPY VERSION /app/VERSION

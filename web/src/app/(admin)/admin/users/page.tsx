@@ -105,6 +105,12 @@ export default function AdminUsersPage() {
             render: (_, item) => <Tag color={item.status === "ban" ? "red" : "green"}>{item.status === "ban" ? "禁用" : "正常"}</Tag>,
         },
         {
+            title: "账户余额",
+            dataIndex: "balanceCents",
+            width: 110,
+            render: (_, item) => <Typography.Text>¥{(item.balanceCents / 100).toFixed(2)}</Typography.Text>,
+        },
+        {
             title: "算力点",
             dataIndex: "credits",
             width: 100,

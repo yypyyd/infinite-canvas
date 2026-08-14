@@ -1,25 +1,26 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { App, Avatar, Button, Card, Checkbox, Descriptions, Empty, Form, Image as AntImage, Input, Modal, Pagination, Progress, Segmented, Select, Skeleton, Table, Tabs, Tag, Typography, type TableColumnsType } from "antd";
+import { App, Avatar, Button, Card, Checkbox, Descriptions, Empty, Form, Image as AntImage, Input, InputNumber, Modal, Pagination, Progress, Segmented, Select, Skeleton, Table, Tabs, Tag, Typography, type TableColumnsType } from "antd";
 import dayjs from "dayjs";
-import { CheckSquare, CircleUserRound, Clock3, Cloud, Code2, Coins, Copy, ExternalLink, Film, History, ImageIcon, KeyRound, ListChecks, LoaderCircle, PencilLine, Plus, ReceiptText, RefreshCw, Search, ShieldCheck, Trash2, WalletCards } from "lucide-react";
+import { CheckSquare, CircleDollarSign, CircleUserRound, Clock3, Cloud, Code2, Coins, Copy, ExternalLink, Film, History, ImageIcon, KeyRound, ListChecks, LoaderCircle, PencilLine, Plus, QrCode, ReceiptText, RefreshCw, Search, ShieldCheck, Smartphone, Trash2, WalletCards } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { CREDIT_PURCHASE_URL, CreditSymbol } from "@/constant/credits";
+import { CreditSymbol } from "@/constant/credits";
 import { DOCS_URL } from "@/constant/env";
 import { useCopyText } from "@/hooks/use-copy-text";
 import { useOpenMedia } from "@/hooks/use-open-media";
 import { formatDuration } from "@/lib/image-utils";
 import { changePassword, createUserAPIKey, deleteUserAPIKey, fetchCreditLogs, fetchGenerationTasks, fetchUserAPIKeys, updateProfile as updateUserProfile, type CreditLog, type CreatedUserAPIKey, type GenerationTask, type UserAPIKey } from "@/services/api/auth";
+import { createPaymentOrder, exchangeBalanceForCredits, fetchPaymentConfig, fetchPaymentOrders, type PaymentMethod, type PaymentOrder } from "@/services/api/payments";
 import { countGenerationHistory, deleteGenerationHistory, GENERATION_HISTORY_CHANGED_EVENT, readGenerationHistory, resolveGenerationHistoryMedia, resolveGenerationHistoryPreview, type GenerationHistoryItem } from "@/services/generation-history";
 import { workspaceOwnerId } from "@/services/workspace-changes";
 import { useUserStore } from "@/stores/use-user-store";
 import { useWorkspaceStatusStore } from "@/stores/use-workspace-status-store";
 
-type AccountTab = "profile" | "tasks" | "history" | "credits" | "api";
+type AccountTab = "profile" | "balance" | "tasks" | "history" | "credits" | "api";
 type ProfileFormValues = { displayName: string; avatarUrl: string };
 type PasswordFormValues = { currentPassword: string; newPassword: string; confirmPassword: string };
 type APIKeyFormValues = { name: string };
@@ -34,6 +35,15 @@ const accountTabs = [
             <span className="inline-flex items-center gap-2">
                 <CircleUserRound className="size-4" />
                 个人资料
+            </span>
+        ),
+    },
+    {
+        key: "balance",
+        label: (
+            <span className="inline-flex items-center gap-2">
+                <WalletCards className="size-4" />
+                账户余额
             </span>
         ),
     },
@@ -79,6 +89,7 @@ const creditTypeMeta: Record<string, { label: string; color?: string }> = {
     ai_consume: { label: "模型消费", color: "blue" },
     ai_refund: { label: "失败返还", color: "cyan" },
     redeem_code: { label: "兑换码充值", color: "green" },
+    balance_exchange: { label: "余额兑换", color: "green" },
     daily_check_in: { label: "每日签到", color: "gold" },
     new_user_reward: { label: "新用户赠送", color: "purple" },
     organization_transfer_out: { label: "转入企业", color: "orange" },
@@ -98,10 +109,13 @@ function AccountContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const queryClient = useQueryClient();
+    const { message } = App.useApp();
     const user = useUserStore((state) => state.user);
     const isReady = useUserStore((state) => state.isReady);
+    const refreshUser = useUserStore((state) => state.refreshUser);
+    const handledPaymentResult = useRef("");
     const requestedTab = searchParams.get("tab");
-    const activeTab: AccountTab = requestedTab === "tasks" || requestedTab === "history" || requestedTab === "credits" || requestedTab === "api" ? requestedTab : "profile";
+    const activeTab: AccountTab = requestedTab === "balance" || requestedTab === "tasks" || requestedTab === "history" || requestedTab === "credits" || requestedTab === "api" ? requestedTab : "profile";
     const accountHref = activeTab === "profile" ? "/account" : `/account?tab=${activeTab}`;
     const historyOwnerId = workspaceOwnerId(user?.id || "", user?.organizationId || "");
     const historyCountQuery = useQuery({
@@ -120,6 +134,18 @@ function AccountContent() {
         window.addEventListener(GENERATION_HISTORY_CHANGED_EVENT, refresh);
         return () => window.removeEventListener(GENERATION_HISTORY_CHANGED_EVENT, refresh);
     }, [historyOwnerId, queryClient]);
+
+    useEffect(() => {
+        const result = searchParams.get("payment");
+        if (!result) return;
+        const resultKey = `${result}:${searchParams.get("orderNo") || ""}`;
+        if (handledPaymentResult.current === resultKey) return;
+        handledPaymentResult.current = resultKey;
+        if (result === "success") message.success("支付成功，余额已到账");
+        else message.info("支付结果确认中，可稍后刷新订单状态");
+        void Promise.all([refreshUser(), queryClient.invalidateQueries({ queryKey: ["payment-orders"] })]);
+        router.replace("/account?tab=balance", { scroll: false });
+    }, [message, queryClient, refreshUser, router, searchParams]);
 
     if (!isReady || !user) return <AccountPageSkeleton />;
 
@@ -153,13 +179,12 @@ function AccountContent() {
                                 ) : null}
                             </div>
                         </div>
-                        {CREDIT_PURCHASE_URL ? (
-                            <Button type="primary" href={CREDIT_PURCHASE_URL} target="_blank" rel="noreferrer" icon={<WalletCards className="size-4" />}>
-                                购买算力
-                            </Button>
-                        ) : null}
+                        <Button type="primary" href="/account?tab=balance" icon={<WalletCards className="size-4" />}>
+                            充值余额
+                        </Button>
                     </div>
-                    <div className="relative grid grid-cols-1 border-t border-border sm:grid-cols-3 sm:divide-x sm:divide-border">
+                    <div className="relative grid grid-cols-1 border-t border-border md:grid-cols-4 md:divide-x md:divide-border">
+                        <AccountMetric icon={<CircleDollarSign />} label="账户余额" value={`¥${formatYuan(user.balanceCents)}`} />
                         <AccountMetric icon={<Coins />} label={user.creditMode === "shared" ? "企业共享算力" : "个人算力"} value={(user.effectiveCredits ?? user.credits).toLocaleString()} suffix="点" />
                         <AccountMetric icon={<History />} label="生成记录" value={historyCountQuery.isLoading ? "—" : String(historyCountQuery.data || 0)} suffix="条" />
                         <AccountMetric icon={<Clock3 />} label="加入时间" value={user.createdAt ? dayjs(user.createdAt).format("YYYY.MM.DD") : "—"} />
@@ -170,7 +195,7 @@ function AccountContent() {
                     <Tabs activeKey={activeTab} items={accountTabs} onChange={(key) => router.replace(key === "profile" ? "/account" : `/account?tab=${key}`, { scroll: false })} tabBarStyle={{ margin: 0 }} />
                 </div>
 
-                <div className="mt-5">{activeTab === "profile" ? <ProfileSection /> : activeTab === "tasks" ? <TaskSection /> : activeTab === "history" ? <HistorySection /> : activeTab === "credits" ? <CreditsSection /> : <APIKeySection key={user.organizationId} />}</div>
+                <div className="mt-5">{activeTab === "profile" ? <ProfileSection /> : activeTab === "balance" ? <BalanceSection /> : activeTab === "tasks" ? <TaskSection /> : activeTab === "history" ? <HistorySection /> : activeTab === "credits" ? <CreditsSection /> : <APIKeySection key={user.organizationId} />}</div>
             </div>
         </main>
     );
@@ -964,7 +989,7 @@ function CreditsSection() {
                 <span className="inline-flex items-center gap-1.5 font-semibold tabular-nums">
                     <CreditSymbol />
                     {credits.toLocaleString()}
-                    <span className="text-xs font-normal text-muted-foreground">个人余额</span>
+                    <span className="text-xs font-normal text-muted-foreground">个人算力</span>
                 </span>
             </div>
 
@@ -989,6 +1014,204 @@ function CreditsSection() {
             ) : null}
         </Card>
     );
+}
+
+function BalanceSection() {
+    const token = useUserStore((state) => state.token);
+    const balanceCents = useUserStore((state) => state.user?.balanceCents || 0);
+    const personalCredits = useUserStore((state) => state.user?.credits || 0);
+    const refreshUser = useUserStore((state) => state.refreshUser);
+    const queryClient = useQueryClient();
+    const { message, modal } = App.useApp();
+    const [packageId, setPackageId] = useState("");
+    const [exchangeYuan, setExchangeYuan] = useState<number | null>(1);
+    const [method, setMethod] = useState<PaymentMethod | "">("");
+    const [submitting, setSubmitting] = useState(false);
+    const configQuery = useQuery({ queryKey: ["payment-config", token], queryFn: () => fetchPaymentConfig(token), enabled: Boolean(token) });
+    const ordersQuery = useQuery({ queryKey: ["payment-orders", token], queryFn: () => fetchPaymentOrders(token, { pageSize: 5 }), enabled: Boolean(token) });
+    const config = configQuery.data;
+    const selectedPackage = config?.packages.find((item) => item.id === packageId);
+    const maxExchangeYuan = Math.floor(balanceCents / 100);
+    const exchangeAmountValid = typeof exchangeYuan === "number" && Number.isInteger(exchangeYuan) && exchangeYuan > 0 && exchangeYuan <= maxExchangeYuan;
+    const receivedCredits = typeof exchangeYuan === "number" && Number.isInteger(exchangeYuan) && exchangeYuan > 0 ? exchangeYuan * (config?.creditsPerYuan || 0) : 0;
+    const exchangeMutation = useMutation({
+        mutationFn: (amountCents: number) => exchangeBalanceForCredits(token, amountCents),
+        onSuccess: async (result) => {
+            await Promise.all([refreshUser(), queryClient.invalidateQueries({ queryKey: ["credit-logs"] })]);
+            message.success(`已兑换 ${result.receivedCredits.toLocaleString()} 点个人算力`);
+        },
+        onError: (error) => message.error(error instanceof Error ? error.message : "兑换失败"),
+    });
+
+    useEffect(() => {
+        if (!config) return;
+        setPackageId((current) => (config.packages.some((item) => item.id === current) ? current : config.packages[0]?.id || ""));
+        setMethod((current) => (config.methods.includes(current as PaymentMethod) ? current : config.methods[0] || ""));
+    }, [config]);
+
+    const submit = async () => {
+        if (!token || !packageId || !method) return;
+        setSubmitting(true);
+        try {
+            const submission = await createPaymentOrder(token, packageId, method);
+            const form = document.createElement("form");
+            form.method = "POST";
+            form.action = submission.submitUrl;
+            form.acceptCharset = "UTF-8";
+            for (const [name, value] of Object.entries(submission.params)) {
+                const input = document.createElement("input");
+                input.type = "hidden";
+                input.name = name;
+                input.value = value;
+                form.appendChild(input);
+            }
+            document.body.appendChild(form);
+            form.submit();
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "创建支付订单失败");
+            setSubmitting(false);
+        }
+    };
+
+    const confirmExchange = () => {
+        if (typeof exchangeYuan !== "number" || !exchangeAmountValid) return;
+        const amountCents = exchangeYuan * 100;
+        modal.confirm({
+            title: "确认兑换算力",
+            content: `将扣除余额 ¥${formatYuan(amountCents)}，增加 ${receivedCredits.toLocaleString()} 点个人算力。兑换后不可撤销。`,
+            okText: "确认兑换",
+            cancelText: "取消",
+            onOk: () => exchangeMutation.mutateAsync(amountCents),
+        });
+    };
+
+    return (
+        <Card>
+            <div className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                    <h2 className="text-lg font-semibold">账户余额</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">人民币资金余额，与算力点独立记账。</p>
+                </div>
+                <div className="text-3xl font-semibold tabular-nums">¥{formatYuan(balanceCents)}</div>
+            </div>
+            {configQuery.isLoading ? (
+                <Skeleton active className="mt-5" />
+            ) : (
+                <>
+                    {config && config.creditsPerYuan > 0 ? (
+                        <div className="grid gap-5 border-b border-border py-5 lg:grid-cols-[minmax(0,1fr)_280px]">
+                            <div className="min-w-0">
+                                <div className="text-sm font-medium">余额兑换算力</div>
+                                <div className="mt-1 text-xs text-muted-foreground">当前比例 ¥1 = {config.creditsPerYuan.toLocaleString()} 点，只能兑换为个人算力，不支持反向兑换。</div>
+                                <InputNumber
+                                    className="mt-4 !w-full"
+                                    min={1}
+                                    max={Math.max(1, maxExchangeYuan)}
+                                    precision={0}
+                                    addonBefore="兑换"
+                                    addonAfter="元"
+                                    value={exchangeYuan}
+                                    disabled={maxExchangeYuan < 1}
+                                    onChange={setExchangeYuan}
+                                />
+                                <div className="mt-2 text-xs text-muted-foreground">最多可兑换 {maxExchangeYuan.toLocaleString()} 元</div>
+                            </div>
+                            <div className="flex flex-col justify-between border-t border-border pt-5 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
+                                <div className="flex items-end justify-between gap-3 lg:block">
+                                    <div>
+                                        <div className="text-xs text-muted-foreground">兑换后增加</div>
+                                        <div className="mt-1 text-2xl font-semibold tabular-nums">{receivedCredits > 0 ? receivedCredits.toLocaleString() : "—"}<span className="ml-1 text-xs font-normal text-muted-foreground">点</span></div>
+                                    </div>
+                                    <div className="text-right text-xs text-muted-foreground lg:mt-2 lg:text-left">当前个人算力 {personalCredits.toLocaleString()} 点</div>
+                                </div>
+                                <Button type="primary" block icon={<Coins className="size-4" />} loading={exchangeMutation.isPending} disabled={!exchangeAmountValid} onClick={confirmExchange}>
+                                    {maxExchangeYuan < 1 ? "余额不足" : "兑换算力"}
+                                </Button>
+                            </div>
+                        </div>
+                    ) : null}
+                    {!config?.enabled ? (
+                        <Empty className="py-8" image={Empty.PRESENTED_IMAGE_SIMPLE} description={configQuery.isError ? "账户配置读取失败" : "在线充值暂未开放"} />
+                    ) : (
+                        <div className="grid gap-6 py-5 lg:grid-cols-[minmax(0,1fr)_280px]">
+                            <div className="min-w-0">
+                                <div className="mb-3 text-sm font-medium">选择充值档位</div>
+                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                                    {config.packages.map((item) => {
+                                        const selected = item.id === packageId;
+                                        return (
+                                            <button
+                                                key={item.id}
+                                                type="button"
+                                                aria-pressed={selected}
+                                                className={`min-h-24 rounded-lg border p-4 text-left transition ${selected ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-border hover:border-primary/50 hover:bg-muted/50"}`}
+                                                onClick={() => setPackageId(item.id)}
+                                            >
+                                                <div className="text-sm font-medium">{item.name}</div>
+                                                <div className="mt-2 text-2xl font-semibold tabular-nums">¥{formatYuan(item.amountCents)}</div>
+                                                <div className="mt-1 text-xs text-muted-foreground">支付后原值到账</div>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                                <div className="mb-3 mt-5 text-sm font-medium">支付方式</div>
+                                <Segmented
+                                    block
+                                    value={method}
+                                    onChange={(value) => setMethod(value as PaymentMethod)}
+                                    options={config.methods.map((value) => ({ value, label: <span className="inline-flex items-center gap-1.5">{paymentMethodIcon(value)}{paymentMethodLabel(value)}</span> }))}
+                                />
+                            </div>
+                            <div className="flex flex-col justify-between border-t border-border pt-5 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
+                                <div>
+                                    <div className="text-xs text-muted-foreground">本次到账</div>
+                                    <div className="mt-2 text-3xl font-semibold tabular-nums">{selectedPackage ? `¥${formatYuan(selectedPackage.amountCents)}` : "—"}</div>
+                                    <div className="mt-2 text-sm text-muted-foreground">应付 ¥{selectedPackage ? formatYuan(selectedPackage.amountCents) : "—"}</div>
+                                </div>
+                                <Button type="primary" size="large" block icon={<CircleDollarSign className="size-4" />} loading={submitting} disabled={!selectedPackage || !method} onClick={() => void submit()}>
+                                    前往支付
+                                </Button>
+                            </div>
+                        </div>
+                    )}
+                </>
+            )}
+            {ordersQuery.data?.items.length ? (
+                <div className="border-t border-border pt-4">
+                    <div className="mb-2 text-sm font-medium">最近充值订单</div>
+                    <div className="divide-y divide-border">
+                        {ordersQuery.data.items.map((order) => <PaymentOrderRow key={order.id} order={order} />)}
+                    </div>
+                </div>
+            ) : null}
+        </Card>
+    );
+}
+
+function PaymentOrderRow({ order }: { order: PaymentOrder }) {
+    return (
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-3 text-sm sm:grid-cols-[minmax(0,1fr)_130px_100px_auto]">
+            <div className="min-w-0">
+                <div className="truncate font-medium">{order.packageName}</div>
+                <div className="mt-0.5 truncate text-xs text-muted-foreground">{order.orderNo}</div>
+            </div>
+            <span className="hidden text-muted-foreground sm:block">{dayjs(order.createdAt).format("MM-DD HH:mm")}</span>
+            <span className="hidden tabular-nums sm:block">¥{formatYuan(order.amountCents)}</span>
+            <Tag className="m-0" color={order.status === "paid" ? "green" : "gold"}>{order.status === "paid" ? "已到账" : "待支付"}</Tag>
+        </div>
+    );
+}
+
+function paymentMethodLabel(method: PaymentMethod) {
+    return method === "alipay" ? "支付宝" : method === "wxpay" ? "微信支付" : "QQ 钱包";
+}
+
+function paymentMethodIcon(method: PaymentMethod) {
+    return method === "alipay" ? <QrCode className="size-4" /> : method === "wxpay" ? <Smartphone className="size-4" /> : <WalletCards className="size-4" />;
+}
+
+function formatYuan(cents: number) {
+    return (cents / 100).toFixed(2);
 }
 
 function CreditLogCard({ item }: { item: CreditLog }) {

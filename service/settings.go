@@ -8,6 +8,7 @@ import (
 	"math"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -101,6 +102,9 @@ func SaveSettings(settings model.Settings) (model.Settings, error) {
 	}
 	keepPrivateAPIKeys(&settings, normalizeSettings(saved))
 	if err := validateEmailSetting(settings.Private.Email); err != nil {
+		return model.Settings{}, err
+	}
+	if err := validatePaymentSetting(settings.Private.Payment); err != nil {
 		return model.Settings{}, err
 	}
 	result, err := repository.SaveSettings(settings, now())
@@ -849,11 +853,81 @@ func normalizePrivateSetting(setting model.PrivateSetting) model.PrivateSetting 
 	}
 	setting.PromptSync = normalizePromptSyncSetting(setting.PromptSync)
 	setting.Email = normalizeEmailSetting(setting.Email)
+	setting.Payment = normalizePaymentSetting(setting.Payment)
 	setting.OperationsAlerts = normalizeOperationsAlertSetting(setting.OperationsAlerts)
 	for i := range setting.Channels {
 		setting.Channels[i] = normalizeModelChannel(setting.Channels[i])
 	}
 	return setting
+}
+
+func normalizePaymentSetting(setting model.PaymentSetting) model.PaymentSetting {
+	setting.GatewayURL = strings.TrimRight(strings.TrimSpace(setting.GatewayURL), "/")
+	setting.MerchantID = strings.TrimSpace(setting.MerchantID)
+	setting.MerchantKey = strings.TrimSpace(setting.MerchantKey)
+	setting.SiteName = strings.TrimSpace(setting.SiteName)
+	setting.ProductName = strings.TrimSpace(setting.ProductName)
+	if setting.CreditsPerYuan < 0 {
+		setting.CreditsPerYuan = 0
+	}
+	if setting.GatewayURL == "" {
+		setting.GatewayURL = "https://www.ezfpy.cn"
+	}
+	if setting.SiteName == "" {
+		setting.SiteName = "道生画境"
+	}
+	if setting.ProductName == "" {
+		setting.ProductName = "余额充值"
+	}
+	if setting.Methods == nil {
+		setting.Methods = []model.PaymentMethod{model.PaymentMethodAlipay, model.PaymentMethodWxpay}
+	}
+	methods := make([]model.PaymentMethod, 0, len(setting.Methods))
+	seenMethods := map[model.PaymentMethod]bool{}
+	for _, method := range setting.Methods {
+		if (method == model.PaymentMethodAlipay || method == model.PaymentMethodWxpay || method == model.PaymentMethodQQPay) && !seenMethods[method] {
+			seenMethods[method] = true
+			methods = append(methods, method)
+		}
+	}
+	setting.Methods = methods
+	packages := make([]model.PaymentPackage, 0, len(setting.Packages))
+	seenPackages := map[string]bool{}
+	for _, item := range setting.Packages {
+		item.ID = strings.TrimSpace(item.ID)
+		item.Name = strings.TrimSpace(item.Name)
+		if item.ID == "" || item.Name == "" || item.AmountCents <= 0 || seenPackages[item.ID] {
+			continue
+		}
+		seenPackages[item.ID] = true
+		packages = append(packages, item)
+	}
+	setting.Packages = packages
+	return setting
+}
+
+func validatePaymentSetting(setting model.PaymentSetting) error {
+	if !setting.Enabled {
+		return nil
+	}
+	if setting.MerchantID == "" || setting.MerchantKey == "" {
+		return safeMessageError{message: "启用在线支付前请填写易支付商户 ID 和商户密钥"}
+	}
+	if len(setting.Methods) == 0 || len(setting.Packages) == 0 {
+		return safeMessageError{message: "启用在线支付前请至少配置一种支付方式和一个充值档位"}
+	}
+	gateway, err := url.Parse(setting.GatewayURL)
+	if err != nil || gateway.Scheme != "https" || gateway.Host == "" || gateway.RawQuery != "" || gateway.Fragment != "" {
+		return safeMessageError{message: "易支付网关必须是有效的 HTTPS 地址"}
+	}
+	merchantID, err := strconv.ParseInt(setting.MerchantID, 10, 64)
+	if err != nil || merchantID <= 0 {
+		return safeMessageError{message: "易支付商户 ID 必须是正整数"}
+	}
+	if _, err := paymentPublicBaseURL(); err != nil {
+		return err
+	}
+	return nil
 }
 
 func normalizeEmailSetting(setting model.EmailSetting) model.EmailSetting {
@@ -917,6 +991,8 @@ func hidePrivateAPIKeys(settings model.Settings) model.Settings {
 	}
 	settings.Private.Email.PasswordConfigured = settings.Private.Email.SMTPPassword != ""
 	settings.Private.Email.SMTPPassword = ""
+	settings.Private.Payment.MerchantKeyConfigured = settings.Private.Payment.MerchantKey != ""
+	settings.Private.Payment.MerchantKey = ""
 	return settings
 }
 
@@ -933,6 +1009,10 @@ func keepPrivateAPIKeys(settings *model.Settings, saved model.Settings) {
 		settings.Private.Email.SMTPPassword = saved.Private.Email.SMTPPassword
 	}
 	settings.Private.Email.PasswordConfigured = false
+	if settings.Private.Payment.MerchantKey == "" {
+		settings.Private.Payment.MerchantKey = saved.Private.Payment.MerchantKey
+	}
+	settings.Private.Payment.MerchantKeyConfigured = false
 }
 
 func findSavedChannel(channel model.ModelChannel, saved []model.ModelChannel, index int) (model.ModelChannel, bool) {

@@ -39,6 +39,8 @@ description: 当前后端主要数据表与字段说明
 - `video_project_versions`
 - `email_verifications`
 - `credit_logs`
+- `payment_orders`
+- `balance_logs`
 - `check_ins`
 - `generation_tasks`
 - `agent_sessions`
@@ -124,7 +126,7 @@ description: 当前后端主要数据表与字段说明
 
 ### users
 
-系统用户表。用户基础信息、角色和算力点余额放在该表中。
+系统用户表。用户基础信息、角色、人民币账户余额和算力点余额放在该表中；两种余额互不兑换、互不抵扣。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
@@ -138,6 +140,7 @@ description: 当前后端主要数据表与字段说明
 | `organization_id` | string | 新会话默认/最近使用的企业 ID，不作为业务请求的唯一租户上下文 |
 | `role` | string | 角色：`user`、`admin` |
 | `group` | string | 用户计费分组，默认 `default` |
+| `balance_cents` | number | 人民币账户余额，单位分，与算力点独立 |
 | `credits` | number | 算力点余额 |
 | `aff_code` | string | 用户自己的邀请码，唯一索引 |
 | `aff_count` | number | 已邀请用户数量，冗余统计字段 |
@@ -267,6 +270,7 @@ description: 当前后端主要数据表与字段说明
 | `channels` | object[] | 模型渠道配置列表 |
 | `promptSync` | object | GitHub 远程提示词定时同步配置 |
 | `email` | object | SMTP 私有配置；密码读取时脱敏，不会出现在公开设置接口 |
+| `payment` | object | 易支付 V1 私有配置、可用支付方式和充值档位；商户密钥读取时脱敏 |
 
 `channels` 每项字段：
 
@@ -298,6 +302,8 @@ description: 当前后端主要数据表与字段说明
 | `cron` | string | Cron 表达式，默认每 5 分钟 |
 
 后端请求模型时，先按对外模型名、操作和分辨率档筛选启用且能力相符的渠道，再按 `weight` 加权随机选择一个渠道；统一售价仍由公开 `pricingRules` 决定，渠道配置只影响路由和上游模型映射。
+
+`payment` 保存 `enabled`、`gatewayUrl`、`merchantId`、`merchantKey`、`siteName`、`productName`、`methods`、`packages` 和 `creditsPerYuan`。`methods` 支持 `alipay`、`wxpay`、`qqpay`；每个充值档位保存稳定 `id`、名称和人民币分值 `amountCents`，支付金额按原值进入账户余额。`creditsPerYuan` 是每 1 元人民币余额可兑换的个人算力点数，大于 `0` 时自动开放单向兑换，`0` 或未配置时关闭兑换。后台读取时只返回 `merchantKeyConfigured`，不返回商户密钥明文。
 
 ### email_verifications
 
@@ -332,7 +338,7 @@ description: 当前后端主要数据表与字段说明
 
 ### credit_logs
 
-个人与企业共享算力的统一变更流水表。当前记录后台调整、模型消费与返还、兑换码、签到、新用户赠送及个人余额转入企业共享池。
+个人与企业共享算力的统一变更流水表。当前记录后台调整、模型消费与返还、兑换码、人民币余额兑换、签到、新用户赠送及个人算力转入企业共享池。人民币账户余额金额只写入 `balance_logs`，不得写入本表。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
@@ -356,10 +362,50 @@ description: 当前后端主要数据表与字段说明
 | `ai_consume` | 调用后端模型接口消费 |
 | `ai_refund` | 后端模型接口调用失败返还 |
 | `redeem_code` | 兑换码充值 |
+| `balance_exchange` | 人民币账户余额兑换个人算力时的算力增加 |
 | `daily_check_in` | 每日签到奖励 |
 | `new_user_reward` | 新用户注册奖励 |
-| `organization_transfer_out` | 个人余额转入企业共享池的个人侧扣减 |
-| `organization_transfer_in` | 个人余额转入企业共享池的企业侧增加 |
+| `organization_transfer_out` | 个人算力转入企业共享池的个人侧扣减 |
+| `organization_transfer_in` | 个人算力转入企业共享池的企业侧增加 |
+
+### payment_orders
+
+易支付 V1 余额充值订单表。订单创建时固化用户、当前企业、充值档位、支付方式和人民币分值；支付成功后只增加人民币账户余额，不增加算力点。服务端同时校验回调签名、商户号、订单金额、支付方式和 `TRADE_SUCCESS` 状态，再在同一事务中把订单改为已支付、增加 `users.balance_cents` 并写入 `balance_logs`。订单状态条件更新和第三方流水号唯一索引共同保证异步通知与页面返回重复到达时不会重复入账。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 主键 |
+| `order_no` | string | 商户订单号，唯一索引 |
+| `user_id` | string | 发起充值的用户 ID |
+| `organization_id` | string | 创建订单时所在企业 ID，仅用于来源记录 |
+| `package_id` | string | 创建时固化的充值档位标识 |
+| `package_name` | string | 创建时固化的档位名称 |
+| `method` | string | 支付方式：`alipay`、`wxpay`、`qqpay` |
+| `amount_cents` | number | 人民币金额，单位分 |
+| `status` | string | 状态：`pending`、`paid` |
+| `trade_no` | nullable string | 易支付平台流水号，非空时唯一 |
+| `paid_at` | string | 支付入账时间 |
+| `created_at` | string | 创建时间 |
+| `updated_at` | string | 更新时间 |
+
+### balance_logs
+
+人民币账户余额的独立资金流水表。易支付订单成功时与订单状态和 `users.balance_cents` 在同一事务中写入；余额兑换算力时，本表记录人民币扣减，`credit_logs` 记录个人算力增加，两条流水和两侧余额在同一事务中提交。本表不把算力点记作人民币金额，`credit_logs` 也不把人民币金额记作算力。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 主键 |
+| `user_id` | string | 关联用户 ID |
+| `organization_id` | string | 创建支付订单时所在企业 ID，仅用于来源记录 |
+| `type` | string | 资金变动类型：`payment_recharge` 为支付充值，`credits_exchange` 为余额兑换算力时的人民币扣减 |
+| `amount_cents` | number | 本次人民币余额变动，单位分 |
+| `balance_cents` | number | 变动后的人民币账户余额，单位分 |
+| `related_id` | string | 充值时关联支付订单 ID；兑换时与对应 `credit_logs.related_id` 共用同一个兑换 ID |
+| `remark` | string | 备注 |
+| `extra` | json | 支付方式、订单金额或兑换比例等扩展信息 |
+| `created_at` | string | 创建时间 |
+
+余额兑换只允许从人民币余额流向个人算力，不存在反向事务。请求金额必须是正整数元，后端按创建事务时读取的 `creditsPerYuan` 计算算力；余额不足时用户余额、算力和两类流水全部保持不变。
 
 ### generation_tasks
 
@@ -390,7 +436,7 @@ description: 当前后端主要数据表与字段说明
 | `created_at` | string | 创建时间 |
 | `updated_at` | string | 更新时间 |
 
-创建任务时会按企业当时的 `credit_mode` 固化 `credit_source`。`generation_tasks`、个人或企业余额预扣和 `ai_consume` 流水在同一事务中提交，任一步失败都会整体回滚；共享模式同时检查企业余额与月度预算，消费流水的 `related_id` 保存任务 ID。客户端可通过 `Idempotency-Key` 提交稳定请求编号，同一企业、用户和请求编号只能创建一个任务，重复请求不会再次扣费。任务失败时，失败终态、原扣费来源余额返还和 `ai_refund` 流水同样在一个事务中提交，并只允许 `running` 任务进入失败终态，因此切换扣费模式或重复失败回调不会退错账户或重复退款。同月退款减少当月用量，跨月退款只增加共享余额。
+创建任务时会按企业当时的 `credit_mode` 固化 `credit_source`。`generation_tasks`、个人或企业算力预扣和 `ai_consume` 流水在同一事务中提交，任一步失败都会整体回滚；共享模式同时检查企业算力与月度预算，消费流水的 `related_id` 保存任务 ID。客户端可通过 `Idempotency-Key` 提交稳定请求编号，同一企业、用户和请求编号只能创建一个任务，重复请求不会再次扣费。任务失败时，失败终态、原扣费来源算力返还和 `ai_refund` 流水同样在一个事务中提交，并只允许 `running` 任务进入失败终态，因此切换扣费模式或重复失败回调不会退错算力账本或重复退款。同月退款减少当月用量，跨月退款只增加共享算力。
 
 图片和视频请求会在任务表中保存稳定请求编号、原渠道、上游任务 ID、可恢复响应和已归档文件编号。生成成功后由后端直接写入七牛，并以生成任务 ID 构造稳定文件编号；重复轮询和刷新恢复复用同一文件，不再要求浏览器下载后重新上传。浏览器刷新后从服务端工作区读取“生成中”记录，再按请求编号接管原任务；视频状态和内容查询固定使用任务创建时的渠道，明确失败时才进入失败终态，避免刷新后改选渠道、重复提交、重复扣费或丢失结果。恢复接口按当前企业和用户双重隔离，不返回渠道密钥；生成记录成功写入工作区后，前端确认消费恢复结果，服务端清空临时响应和文件编号并把文件引用交给正式生成记录。
 

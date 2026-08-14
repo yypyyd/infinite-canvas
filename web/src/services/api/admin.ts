@@ -18,6 +18,7 @@ export type AdminUser = {
     avatarUrl: string;
     role: "user" | "admin";
     group: string;
+    balanceCents: number;
     credits: number;
     affCode: string;
     affCount: number;
@@ -438,6 +439,7 @@ export type AdminPrivateSettings = {
         smtpSecurity: "ssl" | "starttls" | "none";
         passwordConfigured: boolean;
     };
+    payment: AdminPaymentSetting;
     operationsAlerts: {
         enabled: boolean;
         batchQueuedThreshold: number;
@@ -449,6 +451,27 @@ export type AdminPrivateSettings = {
         objectDeletionFailedThreshold: number;
         objectDeletionExpiredLeasesThreshold: number;
     };
+};
+
+export type AdminPaymentMethod = "alipay" | "wxpay" | "qqpay";
+
+export type AdminPaymentPackage = {
+    id: string;
+    name: string;
+    amountCents: number;
+};
+
+export type AdminPaymentSetting = {
+    enabled: boolean;
+    gatewayUrl: string;
+    merchantId: string;
+    merchantKey: string;
+    merchantKeyConfigured: boolean;
+    siteName: string;
+    productName: string;
+    methods: AdminPaymentMethod[];
+    packages: AdminPaymentPackage[];
+    creditsPerYuan: number;
 };
 
 export type AdminSettings = {

@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { App, Avatar, Button, Card, Checkbox, Descriptions, Empty, Form, Image as AntImage, Input, InputNumber, Modal, Pagination, Progress, Segmented, Select, Skeleton, Table, Tabs, Tag, Typography, type TableColumnsType } from "antd";
 import dayjs from "dayjs";
-import { CheckSquare, CircleDollarSign, CircleUserRound, Clock3, Cloud, Code2, Coins, Copy, ExternalLink, Film, History, ImageIcon, KeyRound, ListChecks, LoaderCircle, PencilLine, Plus, QrCode, ReceiptText, RefreshCw, Search, ShieldCheck, Smartphone, Trash2, WalletCards } from "lucide-react";
+import { ArrowRight, CheckSquare, CircleDollarSign, CircleUserRound, Clock3, Cloud, Code2, Coins, Copy, ExternalLink, Film, History, ImageIcon, KeyRound, ListChecks, LoaderCircle, PencilLine, Plus, QrCode, ReceiptText, RefreshCw, Search, ShieldCheck, Smartphone, Trash2, WalletCards } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -1087,44 +1087,60 @@ function BalanceSection() {
 
     return (
         <Card>
-            <div className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-end sm:justify-between">
-                <div>
-                    <h2 className="text-lg font-semibold">账户余额</h2>
-                    <p className="mt-1 text-sm text-muted-foreground">人民币资金余额，与算力点独立记账。</p>
+            <div className="flex flex-col gap-4 rounded-xl bg-muted px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-3">
+                    <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                        <WalletCards className="size-5" />
+                    </span>
+                    <div>
+                        <h2 className="text-base font-semibold">账户余额</h2>
+                        <p className="mt-0.5 text-xs text-muted-foreground">人民币资金余额，与算力点独立记账</p>
+                    </div>
                 </div>
-                <div className="text-3xl font-semibold tabular-nums">¥{formatYuan(balanceCents)}</div>
+                <div className="flex items-center gap-8">
+                    <div className="sm:text-right">
+                        <div className="text-xs text-muted-foreground">当前余额</div>
+                        <div className="mt-1 text-3xl font-semibold tabular-nums">¥{formatYuan(balanceCents)}</div>
+                    </div>
+                    <div className="border-l border-border pl-8 sm:text-right">
+                        <div className="text-xs text-muted-foreground">个人算力</div>
+                        <div className="mt-1 inline-flex items-center gap-1.5 text-lg font-semibold tabular-nums">
+                            <CreditSymbol />
+                            {personalCredits.toLocaleString()}
+                        </div>
+                    </div>
+                </div>
             </div>
             {configQuery.isLoading ? (
                 <Skeleton active className="mt-5" />
             ) : (
                 <>
                     {config && config.creditsPerYuan > 0 ? (
-                        <div className="grid gap-5 border-b border-border py-5 lg:grid-cols-[minmax(0,1fr)_280px]">
-                            <div className="min-w-0">
-                                <div className="text-sm font-medium">余额兑换算力</div>
-                                <div className="mt-1 text-xs text-muted-foreground">当前比例 ¥1 = {config.creditsPerYuan.toLocaleString()} 点，只能兑换为个人算力，不支持反向兑换。</div>
-                                <InputNumber
-                                    className="mt-4 !w-full"
-                                    min={1}
-                                    max={Math.max(1, maxExchangeYuan)}
-                                    precision={0}
-                                    addonBefore="兑换"
-                                    addonAfter="元"
-                                    value={exchangeYuan}
-                                    disabled={maxExchangeYuan < 1}
-                                    onChange={setExchangeYuan}
-                                />
-                                <div className="mt-2 text-xs text-muted-foreground">最多可兑换 {maxExchangeYuan.toLocaleString()} 元</div>
-                            </div>
-                            <div className="flex flex-col justify-between border-t border-border pt-5 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
-                                <div className="flex items-end justify-between gap-3 lg:block">
-                                    <div>
-                                        <div className="text-xs text-muted-foreground">兑换后增加</div>
-                                        <div className="mt-1 text-2xl font-semibold tabular-nums">{receivedCredits > 0 ? receivedCredits.toLocaleString() : "—"}<span className="ml-1 text-xs font-normal text-muted-foreground">点</span></div>
-                                    </div>
-                                    <div className="text-right text-xs text-muted-foreground lg:mt-2 lg:text-left">当前个人算力 {personalCredits.toLocaleString()} 点</div>
+                        <div className="mt-5 rounded-xl border border-border p-5">
+                            <div className="text-sm font-medium">余额兑换算力</div>
+                            <div className="mt-1 text-xs text-muted-foreground">当前比例 ¥1 = {config.creditsPerYuan.toLocaleString()} 点，只能兑换为个人算力，不支持反向兑换</div>
+                            <div className="mt-4 flex flex-col gap-4 lg:flex-row lg:items-center">
+                                <div className="w-full lg:w-64">
+                                    <InputNumber
+                                        className="!w-full"
+                                        min={1}
+                                        max={Math.max(1, maxExchangeYuan)}
+                                        precision={0}
+                                        addonBefore="兑换"
+                                        addonAfter="元"
+                                        value={exchangeYuan}
+                                        disabled={maxExchangeYuan < 1}
+                                        onChange={setExchangeYuan}
+                                    />
+                                    <div className="mt-2 text-xs text-muted-foreground">最多可兑换 {maxExchangeYuan.toLocaleString()} 元</div>
                                 </div>
-                                <Button type="primary" block icon={<Coins className="size-4" />} loading={exchangeMutation.isPending} disabled={!exchangeAmountValid} onClick={confirmExchange}>
+                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                    <ArrowRight className="size-4" />
+                                    <span>
+                                        可获得 <span className="text-lg font-semibold tabular-nums text-foreground">{receivedCredits > 0 ? receivedCredits.toLocaleString() : "—"}</span> 点
+                                    </span>
+                                </div>
+                                <Button className="lg:ml-auto" type="primary" icon={<Coins className="size-4" />} loading={exchangeMutation.isPending} disabled={!exchangeAmountValid} onClick={confirmExchange}>
                                     {maxExchangeYuan < 1 ? "余额不足" : "兑换算力"}
                                 </Button>
                             </div>
@@ -1133,42 +1149,52 @@ function BalanceSection() {
                     {!config?.enabled ? (
                         <Empty className="py-8" image={Empty.PRESENTED_IMAGE_SIMPLE} description={configQuery.isError ? "账户配置读取失败" : "在线充值暂未开放"} />
                     ) : (
-                        <div className="grid gap-6 py-5 lg:grid-cols-[minmax(0,1fr)_280px]">
+                        <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
                             <div className="min-w-0">
                                 <div className="mb-3 text-sm font-medium">选择充值档位</div>
-                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                                     {config.packages.map((item) => {
                                         const selected = item.id === packageId;
+                                        const discountCents = item.balanceCents - item.amountCents;
                                         return (
                                             <button
                                                 key={item.id}
                                                 type="button"
                                                 aria-pressed={selected}
-                                                className={`min-h-24 rounded-lg border p-4 text-left transition ${selected ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-border hover:border-primary/50 hover:bg-muted/50"}`}
+                                                className={`rounded-xl border p-4 text-left transition ${selected ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-border hover:border-primary/50 hover:bg-muted/50"}`}
                                                 onClick={() => setPackageId(item.id)}
                                             >
-                                                <div className="text-sm font-medium">{item.name}</div>
-                                                <div className="mt-2 text-2xl font-semibold tabular-nums">到账 ¥{formatYuan(item.balanceCents)}</div>
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <span className="truncate text-sm font-medium">{item.name}</span>
+                                                    {discountCents > 0 ? (
+                                                        <Tag className="m-0 shrink-0" color="gold">
+                                                            省 ¥{formatYuan(discountCents)}
+                                                        </Tag>
+                                                    ) : null}
+                                                </div>
+                                                <div className="mt-3 text-2xl font-semibold tabular-nums">¥{formatYuan(item.balanceCents)}</div>
                                                 <div className="mt-1 text-xs text-muted-foreground">实付 ¥{formatYuan(item.amountCents)}</div>
                                             </button>
                                         );
                                     })}
                                 </div>
-                                <div className="mb-3 mt-5 text-sm font-medium">支付方式</div>
+                            </div>
+                            <div className="flex flex-col rounded-xl border border-border p-5">
+                                <div className="text-sm font-medium">订单摘要</div>
+                                <div className="mt-4">
+                                    <div className="text-xs text-muted-foreground">本次到账</div>
+                                    <div className="mt-1 text-3xl font-semibold tabular-nums">{selectedPackage ? `¥${formatYuan(selectedPackage.balanceCents)}` : "—"}</div>
+                                    <div className="mt-1 text-sm text-muted-foreground">应付 ¥{selectedPackage ? formatYuan(selectedPackage.amountCents) : "—"}</div>
+                                </div>
+                                <div className="my-4 border-t border-border" />
+                                <div className="mb-2 text-xs text-muted-foreground">支付方式</div>
                                 <Segmented
                                     block
                                     value={method}
                                     onChange={(value) => setMethod(value as PaymentMethod)}
                                     options={config.methods.map((value) => ({ value, label: <span className="inline-flex items-center gap-1.5">{paymentMethodIcon(value)}{paymentMethodLabel(value)}</span> }))}
                                 />
-                            </div>
-                            <div className="flex flex-col justify-between border-t border-border pt-5 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
-                                <div>
-                                    <div className="text-xs text-muted-foreground">本次到账</div>
-                                    <div className="mt-2 text-3xl font-semibold tabular-nums">{selectedPackage ? `¥${formatYuan(selectedPackage.balanceCents)}` : "—"}</div>
-                                    <div className="mt-2 text-sm text-muted-foreground">应付 ¥{selectedPackage ? formatYuan(selectedPackage.amountCents) : "—"}</div>
-                                </div>
-                                <Button type="primary" size="large" block icon={<CircleDollarSign className="size-4" />} loading={submitting} disabled={!selectedPackage || !method} onClick={() => void submit()}>
+                                <Button className="mt-5" type="primary" size="large" block icon={<CircleDollarSign className="size-4" />} loading={submitting} disabled={!selectedPackage || !method} onClick={() => void submit()}>
                                     前往支付
                                 </Button>
                             </div>

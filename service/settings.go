@@ -87,7 +87,15 @@ func publicAPIModels(setting model.PublicModelChannelSetting) []model.PublicAPIM
 
 func AdminSettings() (model.Settings, error) {
 	settings, err := repository.GetSettings()
-	return hidePrivateAPIKeys(normalizeSettings(settings)), err
+	return hidePrivateAPIKeys(normalizeAdminSettings(settings)), err
+}
+
+func normalizeAdminSettings(settings model.Settings) model.Settings {
+	settings = normalizeSettings(settings)
+	if validatePaymentSetting(settings.Private.Payment) != nil {
+		settings.Private.Payment.Enabled = false
+	}
+	return settings
 }
 
 func SaveSettings(settings model.Settings) (model.Settings, error) {

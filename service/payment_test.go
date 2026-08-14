@@ -52,3 +52,33 @@ func TestNormalizePaymentSettingRequiresPaymentAndBalanceAmounts(t *testing.T) {
 		t.Fatalf("unexpected normalized packages: %#v", setting.Packages)
 	}
 }
+
+func TestNormalizeAdminSettingsDisablesInvalidEnabledPayment(t *testing.T) {
+	settings := normalizeAdminSettings(model.Settings{
+		Private: model.PrivateSetting{Payment: model.PaymentSetting{
+			Enabled:     true,
+			MerchantID:  "1",
+			MerchantKey: "merchant-secret",
+			Packages: []model.PaymentPackage{
+				{ID: "legacy", Name: "旧充值档位", AmountCents: 9800},
+			},
+		}},
+	})
+	if settings.Private.Payment.Enabled {
+		t.Fatal("invalid enabled payment setting should be disabled in admin response")
+	}
+}
+
+func TestValidatePaymentSettingStillRejectsEnabledSettingWithoutPackage(t *testing.T) {
+	setting := normalizePaymentSetting(model.PaymentSetting{
+		Enabled:     true,
+		MerchantID:  "1",
+		MerchantKey: "merchant-secret",
+		Packages: []model.PaymentPackage{
+			{ID: "legacy", Name: "旧充值档位", AmountCents: 9800},
+		},
+	})
+	if err := validatePaymentSetting(setting); err == nil {
+		t.Fatal("enabled payment setting without a valid package should fail validation")
+	}
+}

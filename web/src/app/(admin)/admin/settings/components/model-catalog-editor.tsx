@@ -2,7 +2,7 @@
 
 import { DeleteOutlined, EditOutlined, PlusOutlined, SyncOutlined } from "@ant-design/icons";
 import { App, AutoComplete, Button, Card, Col, Drawer, Empty, Flex, Form, Input, InputNumber, Row, Segmented, Select, Space, Switch, Table, Tag, Typography } from "antd";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type { AdminChannelModel, AdminManagedModel, AdminPricingRule } from "@/services/api/admin";
 import { allowedModelOperations, inferModelModality, inferModelOperations, normalizeModelOperations } from "../../model-capabilities";
@@ -34,6 +34,7 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
     const [form] = Form.useForm<AdminManagedModel>();
     const [keyword, setKeyword] = useState("");
     const [modality, setModality] = useState("all");
+    const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [editingModel, setEditingModel] = useState<string | null>(null);
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [draftRules, setDraftRules] = useState<AdminPricingRule[]>([]);
@@ -54,6 +55,10 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
         return models.filter((model) => (modality === "all" || model.modality === modality) && (!search || model.id.toLowerCase().includes(search) || model.name.toLowerCase().includes(search)));
     }, [keyword, modality, models]);
     const unconfiguredCount = models.filter((model) => !(rulesByModel.get(model.id) || []).some((rule) => rule.enabled && (model.modality === "image" || model.modality === "video" ? Boolean(rule.resolutionTier) : !rule.resolutionTier))).length;
+
+    useEffect(() => {
+        setSelectedIds((current) => current.filter((id) => models.some((model) => model.id === id)));
+    }, [models]);
 
     const updateModels = (next: AdminManagedModel[]) => onChange?.(normalizeModels(next));
     const openCreate = (modelID = "") => {
@@ -110,19 +115,60 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
             okText: "删除",
             okButtonProps: { danger: true },
             cancelText: "取消",
-            onOk: () => {
-                updateModels(models.filter((item) => item.id !== model.id));
-                onPricingRulesChange(pricingRules.filter((rule) => rule.model !== model.id));
-            },
+            onOk: () => deleteModels([model.id]),
+        });
+    };
+    const deleteModels = (ids: string[]) => {
+        const removed = new Set(ids);
+        updateModels(models.filter((item) => !removed.has(item.id)));
+        onPricingRulesChange(pricingRules.filter((rule) => !removed.has(rule.model)));
+    };
+    const removeSelectedModels = () => {
+        const deletable = selectedIds.filter((id) => !channelModelSet.has(id));
+        const blocked = selectedIds.length - deletable.length;
+        if (!deletable.length) {
+            message.info("选中模型仍由渠道提供，可停用；如需彻底移除，请先从渠道中删除");
+            return;
+        }
+        modal.confirm({
+            title: `删除选中的 ${deletable.length} 个模型？`,
+            content: blocked ? `模型信息和对应计费规则会一并移除；${blocked} 个仍由渠道提供的模型会被跳过。` : "模型信息和对应计费规则会一并移除。",
+            okText: "删除",
+            okButtonProps: { danger: true },
+            cancelText: "取消",
+            onOk: () => deleteModels(deletable),
         });
     };
     const syncChannelModels = () => {
-        const existing = new Set(models.map((model) => model.id));
-        const additions = channelModels.filter((item) => !existing.has(item.model)).map((item, index) => createModel(item.model, item.modality || inferModelModality(item.model), models.length + index, item));
-        const synced = models.map((model) => syncModelCapabilities(model, channelModelMap.get(model.id)));
-        const nextModels = [...synced, ...additions];
-        updateModels(nextModels);
-        message.success(additions.length ? `已同步模型能力，新增 ${additions.length} 个模型；价格需单独设置` : "渠道模型能力已同步");
+        const orphans = models.filter((model) => !channelModelSet.has(model.id));
+        const apply = (removeOrphans: boolean) => {
+            const kept = removeOrphans ? models.filter((model) => channelModelSet.has(model.id)) : models;
+            const existing = new Set(kept.map((model) => model.id));
+            const additions = channelModels.filter((item) => !existing.has(item.model)).map((item, index) => createModel(item.model, item.modality || inferModelModality(item.model), kept.length + index, item));
+            const synced = kept.map((model) => syncModelCapabilities(model, channelModelMap.get(model.id)));
+            updateModels([...synced, ...additions]);
+            if (removeOrphans) {
+                const removed = new Set(orphans.map((model) => model.id));
+                onPricingRulesChange(pricingRules.filter((rule) => !removed.has(rule.model)));
+            }
+            const parts = ["渠道模型能力已同步"];
+            if (additions.length) parts.push(`新增 ${additions.length} 个模型，价格需单独设置`);
+            if (removeOrphans) parts.push(`删除 ${orphans.length} 个已不在渠道中的模型`);
+            message.success(parts.join("；"));
+        };
+        if (!orphans.length) {
+            apply(false);
+            return;
+        }
+        modal.confirm({
+            title: `${orphans.length} 个模型已不在任何渠道中`,
+            content: `${orphans.slice(0, 8).map((model) => model.id).join("、")}${orphans.length > 8 ? ` 等 ${orphans.length} 个` : ""}。删除会一并移除其计费规则；手动添加且尚未接入渠道的模型也在其中，请选择保留。`,
+            okText: `删除 ${orphans.length} 个`,
+            okButtonProps: { danger: true },
+            cancelText: "保留",
+            onOk: () => apply(true),
+            onCancel: () => apply(false),
+        });
     };
     const setModelEnabled = (id: string, enabled: boolean) => updateModels(models.map((model) => (model.id === id ? { ...model, enabled } : model)));
     const setRuleField = <K extends keyof AdminPricingRule>(index: number, key: K, nextValue: AdminPricingRule[K]) =>
@@ -183,6 +229,11 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
                         <Tag>{models.length} 个模型</Tag>
                         <Tag color="success">{models.filter((model) => model.enabled).length} 个已开放</Tag>
                         {unconfiguredCount ? <Tag color="warning">{unconfiguredCount} 个待计费</Tag> : null}
+                        {selectedIds.length ? (
+                            <Button danger size="small" icon={<DeleteOutlined />} onClick={removeSelectedModels}>
+                                删除选中（{selectedIds.length}）
+                            </Button>
+                        ) : null}
                     </Space>
                     <Space wrap>
                         <Input.Search allowClear placeholder="搜索模型 ID 或名称" value={keyword} onChange={(event) => setKeyword(event.target.value)} style={{ width: 240 }} />
@@ -194,6 +245,7 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
                     size="small"
                     pagination={{ pageSize: 20, hideOnSinglePage: true }}
                     dataSource={filteredModels}
+                    rowSelection={{ selectedRowKeys: selectedIds, onChange: (keys) => setSelectedIds(keys.map(String)) }}
                     locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无模型，先从渠道同步或手动添加" /> }}
                     columns={[
                         {
@@ -208,19 +260,31 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
                                 </Flex>
                             ),
                         },
-                        { title: "类型", dataIndex: "modality", width: 90, render: (value: string) => <Tag color={modalityColor(value)}>{modalityLabel[value] || value}</Tag> },
-                        { title: "来源", width: 90, render: (_: unknown, model: AdminManagedModel) => <Tag bordered={false}>{channelModelSet.has(model.id) ? "渠道" : "手动"}</Tag> },
+                        {
+                            title: "类型",
+                            dataIndex: "modality",
+                            width: 96,
+                            render: (value: string, model: AdminManagedModel) => (
+                                <Flex vertical gap={4} align="flex-start">
+                                    <Tag color={modalityColor(value)} className="m-0">
+                                        {modalityLabel[value] || value}
+                                    </Tag>
+                                    <Typography.Text type="secondary" className="text-xs">
+                                        {channelModelSet.has(model.id) ? "渠道同步" : "手动添加"}
+                                    </Typography.Text>
+                                </Flex>
+                            ),
+                        },
                         {
                             title: "计费",
-                            width: 300,
+                            width: 280,
                             render: (_: unknown, model: AdminManagedModel) => <RuleSummary rules={rulesByModel.get(model.id) || []} />,
                         },
                         {
                             title: "能力",
-                            width: 220,
                             render: (_: unknown, model: AdminManagedModel) => (
                                 <Typography.Text type="secondary" className="text-xs">
-                                    {[capabilityLabel(model.operations), model.aspectRatios.join(" / "), model.resolutionTiers.join(" / "), model.durations.length ? `${model.durations.join(" / ")} 秒` : "", model.maxReferenceImages ? `参考图 ${model.maxReferenceImages}` : "", model.maxReferenceVideos ? `参考视频 ${model.maxReferenceVideos}` : "", model.maxReferenceAudios ? `参考音频 ${model.maxReferenceAudios}` : "", model.maxReferenceMedia ? `合计 ${model.maxReferenceMedia}` : "", model.supportsAudioOutput ? "音频输出" : ""].filter(Boolean).join(" · ")}
+                                    {capabilitySummary(model)}
                                 </Typography.Text>
                             ),
                         },
@@ -239,7 +303,7 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
                             ),
                         },
                     ]}
-                    scroll={{ x: 1040 }}
+                    scroll={{ x: 960 }}
                 />
             </Flex>
 
@@ -613,6 +677,22 @@ function defaultUnit(modality: string) {
 
 function capabilityLabel(operations: string[]) {
     return operations.map((operation) => operationLabel[operation] || operation).join(" + ");
+}
+
+function capabilitySummary(model: AdminManagedModel) {
+    return [
+        capabilityLabel(model.operations),
+        model.aspectRatios.length ? `比例 ${model.aspectRatios.length}` : "",
+        model.resolutionTiers.length ? model.resolutionTiers.map((item) => item.toUpperCase()).join("/") : "",
+        model.durations.length ? `${Math.min(...model.durations)}-${Math.max(...model.durations)} 秒` : "",
+        model.maxReferenceImages ? `参考图 ${model.maxReferenceImages}` : "",
+        model.maxReferenceVideos ? `参考视频 ${model.maxReferenceVideos}` : "",
+        model.maxReferenceAudios ? `参考音频 ${model.maxReferenceAudios}` : "",
+        model.maxReferenceMedia ? `合计 ${model.maxReferenceMedia}` : "",
+        model.supportsAudioOutput ? "音频输出" : "",
+    ]
+        .filter(Boolean)
+        .join(" · ");
 }
 
 function operationOptions(modality: string) {

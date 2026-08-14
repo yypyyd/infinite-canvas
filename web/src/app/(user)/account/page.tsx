@@ -179,13 +179,8 @@ function AccountContent() {
                                 ) : null}
                             </div>
                         </div>
-                        <Button type="primary" href="/account?tab=balance" icon={<WalletCards className="size-4" />}>
-                            充值余额
-                        </Button>
                     </div>
-                    <div className="relative grid grid-cols-1 border-t border-border md:grid-cols-4 md:divide-x md:divide-border">
-                        <AccountMetric icon={<CircleDollarSign />} label="账户余额" value={`¥${formatYuan(user.balanceCents)}`} />
-                        <AccountMetric icon={<Coins />} label={user.creditMode === "shared" ? "企业共享算力" : "个人算力"} value={(user.effectiveCredits ?? user.credits).toLocaleString()} suffix="点" />
+                    <div className="relative grid grid-cols-1 border-t border-border md:grid-cols-2 md:divide-x md:divide-border">
                         <AccountMetric icon={<History />} label="生成记录" value={historyCountQuery.isLoading ? "—" : String(historyCountQuery.data || 0)} suffix="条" />
                         <AccountMetric icon={<Clock3 />} label="加入时间" value={user.createdAt ? dayjs(user.createdAt).format("YYYY.MM.DD") : "—"} />
                     </div>
@@ -1027,8 +1022,9 @@ function BalanceSection() {
     const [exchangeYuan, setExchangeYuan] = useState<number | null>(1);
     const [method, setMethod] = useState<PaymentMethod | "">("");
     const [submitting, setSubmitting] = useState(false);
+    const [orderPage, setOrderPage] = useState(1);
     const configQuery = useQuery({ queryKey: ["payment-config", token], queryFn: () => fetchPaymentConfig(token), enabled: Boolean(token) });
-    const ordersQuery = useQuery({ queryKey: ["payment-orders", token], queryFn: () => fetchPaymentOrders(token, { pageSize: 5 }), enabled: Boolean(token) });
+    const ordersQuery = useQuery({ queryKey: ["payment-orders", token, orderPage], queryFn: () => fetchPaymentOrders(token, { page: orderPage, pageSize: 5 }), enabled: Boolean(token) });
     const config = configQuery.data;
     const selectedPackage = config?.packages.find((item) => item.id === packageId);
     const maxExchangeYuan = Math.floor(balanceCents / 100);
@@ -1184,19 +1180,28 @@ function BalanceSection() {
                                 <div className="mt-4">
                                     <div className="text-xs text-muted-foreground">本次到账</div>
                                     <div className="mt-1 text-3xl font-semibold tabular-nums">{selectedPackage ? `¥${formatYuan(selectedPackage.balanceCents)}` : "—"}</div>
-                                    <div className="mt-1 text-sm text-muted-foreground">应付 ¥{selectedPackage ? formatYuan(selectedPackage.amountCents) : "—"}</div>
+                                    <div className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
+                                        应付 ¥{selectedPackage ? formatYuan(selectedPackage.amountCents) : "—"}
+                                        {selectedPackage && selectedPackage.balanceCents > selectedPackage.amountCents ? (
+                                            <Tag className="m-0" color="gold">
+                                                省 ¥{formatYuan(selectedPackage.balanceCents - selectedPackage.amountCents)}
+                                            </Tag>
+                                        ) : null}
+                                    </div>
                                 </div>
-                                <div className="my-4 border-t border-border" />
-                                <div className="mb-2 text-xs text-muted-foreground">支付方式</div>
-                                <Segmented
-                                    block
-                                    value={method}
-                                    onChange={(value) => setMethod(value as PaymentMethod)}
-                                    options={config.methods.map((value) => ({ value, label: <span className="inline-flex items-center gap-1.5">{paymentMethodIcon(value)}{paymentMethodLabel(value)}</span> }))}
-                                />
-                                <Button className="mt-5" type="primary" size="large" block icon={<CircleDollarSign className="size-4" />} loading={submitting} disabled={!selectedPackage || !method} onClick={() => void submit()}>
-                                    前往支付
-                                </Button>
+                                <div className="mt-auto pt-4">
+                                    <div className="mb-4 border-t border-border" />
+                                    <div className="mb-2 text-xs text-muted-foreground">支付方式</div>
+                                    <Segmented
+                                        block
+                                        value={method}
+                                        onChange={(value) => setMethod(value as PaymentMethod)}
+                                        options={config.methods.map((value) => ({ value, label: <span className="inline-flex items-center gap-1.5">{paymentMethodIcon(value)}{paymentMethodLabel(value)}</span> }))}
+                                    />
+                                    <Button className="mt-4" type="primary" size="large" block icon={<CircleDollarSign className="size-4" />} loading={submitting} disabled={!selectedPackage || !method} onClick={() => void submit()}>
+                                        前往支付
+                                    </Button>
+                                </div>
                             </div>
                         </div>
                     )}
@@ -1204,10 +1209,18 @@ function BalanceSection() {
             )}
             {ordersQuery.data?.items.length ? (
                 <div className="border-t border-border pt-4">
-                    <div className="mb-2 text-sm font-medium">最近充值订单</div>
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                        <div className="text-sm font-medium">充值订单</div>
+                        <span className="text-xs text-muted-foreground">共 {ordersQuery.data.total} 笔</span>
+                    </div>
                     <div className="divide-y divide-border">
                         {ordersQuery.data.items.map((order) => <PaymentOrderRow key={order.id} order={order} />)}
                     </div>
+                    {ordersQuery.data.total > 5 ? (
+                        <div className="mt-3 flex justify-end">
+                            <Pagination size="small" current={orderPage} pageSize={5} total={ordersQuery.data.total} showSizeChanger={false} onChange={setOrderPage} />
+                        </div>
+                    ) : null}
                 </div>
             ) : null}
         </Card>

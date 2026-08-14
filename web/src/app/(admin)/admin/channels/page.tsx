@@ -314,7 +314,7 @@ export default function AdminChannelsPage() {
             <Drawer
                 title={editingChannelIndex === null ? "新增渠道" : "编辑渠道"}
                 open={isChannelDrawerOpen}
-                size={720}
+                width="min(1120px, calc(100vw - 32px))"
                 onClose={closeChannelDrawer}
                 extra={
                     <Space>
@@ -328,32 +328,32 @@ export default function AdminChannelsPage() {
             >
                 <Form form={channelForm} layout="vertical" requiredMark={false} initialValues={emptyChannel}>
                     <Row gutter={16}>
-                        <Col span={12}>
+                        <Col xs={24} md={9}>
                             <Form.Item name="name" label="渠道名称" rules={[{ required: true, message: "请输入渠道名称" }]}>
                                 <Input />
                             </Form.Item>
                         </Col>
-                        <Col span={12}>
+                        <Col xs={12} md={5}>
                             <Form.Item name="protocol" label="协议">
                                 <Select options={[{ label: "OpenAI", value: "openai" }]} />
                             </Form.Item>
                         </Col>
-                        <Col span={12}>
+                        <Col xs={12} md={5}>
                             <Form.Item name="weight" label="权重">
                                 <InputNumber min={1} step={1} className="!w-full" />
                             </Form.Item>
                         </Col>
-                        <Col span={12}>
+                        <Col xs={12} md={5}>
                             <Form.Item name="enabled" label="启用" valuePropName="checked">
                                 <Switch />
                             </Form.Item>
                         </Col>
-                        <Col span={24}>
+                        <Col xs={24} md={12}>
                             <Form.Item name="baseUrl" label="接口地址" rules={[{ required: true, message: "请输入接口地址" }]}>
                                 <Input />
                             </Form.Item>
                         </Col>
-                        <Col span={24}>
+                        <Col xs={24} md={12}>
                             <Form.Item name="apiKey" label="API Key" rules={editingChannelIndex === null ? [{ required: true, message: "请输入 API Key" }] : []}>
                                 <Input.Password placeholder={editingChannelIndex === null ? "" : "留空则沿用已保存的 API Key"} />
                             </Form.Item>
@@ -444,28 +444,27 @@ export default function AdminChannelsPage() {
                             </Button>
                         </Space>
                     </Flex>
-                    <div style={{ maxHeight: 420, overflowY: "auto", borderTop: "1px solid var(--ant-color-border-secondary)", paddingTop: 12 }}>
+                    <div style={{ maxHeight: 420, overflowY: "auto", borderTop: "1px solid var(--ant-color-border-secondary)", paddingTop: 8 }}>
                         {activeModelSelectModels.length ? (
-                            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", columnGap: 24, rowGap: 12 }}>
-                                {activeModelSelectModels.map((model) => (
-                                    <Checkbox
-                                        key={model}
-                                        checked={modelSelectSelected.includes(model)}
-                                        onChange={(event) => setModelSelectSelected((current) => (event.target.checked ? uniqueModels([...current, model]) : current.filter((item) => item !== model)))}
-                                    >
-                                        <Space size={6} wrap>
-                                            <Typography.Text style={{ wordBreak: "break-all" }}>{model}</Typography.Text>
-                                            {discoveredModels[model]?.modality ? <Tag bordered={false}>{discoveredModels[model].modality}</Tag> : null}
-                                            {discoveredModels[model]?.supportedRatios?.length ? <Tag bordered={false}>比例 {discoveredModels[model].supportedRatios.join(" / ")}</Tag> : null}
-                                            {discoveredModels[model]?.supportedDurations?.length ? <Tag bordered={false}>{discoveredModels[model].supportedDurations.join("/")} 秒</Tag> : null}
-                                            {discoveredModels[model]?.referenceCapabilityProvided ? <Tag bordered={false}>{discoveredModels[model].maxReferenceImages ? `参考图 ${discoveredModels[model].maxReferenceImages} 张` : "无参考图"}</Tag> : null}
-                                            {discoveredModels[model]?.referenceVideosProvided ? <Tag bordered={false}>参考视频 {discoveredModels[model].maxReferenceVideos} 个</Tag> : null}
-                                            {discoveredModels[model]?.referenceAudiosProvided ? <Tag bordered={false}>参考音频 {discoveredModels[model].maxReferenceAudios} 个</Tag> : null}
-                                            {discoveredModels[model]?.referenceMediaProvided ? <Tag bordered={false}>参考素材合计 {discoveredModels[model].maxReferenceMedia} 个</Tag> : null}
-                                            {discoveredModels[model]?.audioOutputProvided ? <Tag bordered={false}>{discoveredModels[model].supportsAudioOutput ? "支持生成音频" : "无音频输出"}</Tag> : null}
-                                        </Space>
-                                    </Checkbox>
-                                ))}
+                            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", columnGap: 24, rowGap: 2 }}>
+                                {activeModelSelectModels.map((model) => {
+                                    const checked = modelSelectSelected.includes(model);
+                                    const summary = discoveredSummary(discoveredModels[model]);
+                                    const toggle = () => setModelSelectSelected((current) => (checked ? current.filter((item) => item !== model) : uniqueModels([...current, model])));
+                                    return (
+                                        <div key={model} role="checkbox" aria-checked={checked} tabIndex={0} className="flex min-w-0 cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted/60" onClick={toggle} onKeyDown={(event) => (event.key === " " || event.key === "Enter" ? (event.preventDefault(), toggle()) : undefined)}>
+                                            <Checkbox checked={checked} onClick={(event) => event.stopPropagation()} onChange={toggle} />
+                                            <Typography.Text strong ellipsis={{ tooltip: model }} style={{ flex: 1, minWidth: 0 }}>
+                                                {model}
+                                            </Typography.Text>
+                                            {summary.length ? (
+                                                <Typography.Text type="secondary" ellipsis={{ tooltip: summary.join(" · ") }} style={{ flexShrink: 0, maxWidth: "55%", fontSize: 12 }}>
+                                                    {summary.join(" · ")}
+                                                </Typography.Text>
+                                            ) : null}
+                                        </div>
+                                    );
+                                })}
                             </div>
                         ) : (
                             <div style={{ padding: "48px 0", textAlign: "center" }}>
@@ -642,6 +641,21 @@ function modelSummary(models: string[]) {
     if (!models.length) return "未配置模型";
     const preview = models.slice(0, 3).join(", ");
     return models.length > 3 ? String(models.length) + " 个模型：" + preview + "..." : preview;
+}
+
+function discoveredSummary(item?: AdminDiscoveredModel) {
+    if (!item) return [];
+    const parts: string[] = [];
+    if (item.modality) parts.push(item.modality);
+    if (item.supportedRatios?.length) parts.push("比例 " + item.supportedRatios.length);
+    if (item.supportedResolutions?.length) parts.push(item.supportedResolutions.map((value) => value.toUpperCase()).join("/"));
+    if (item.supportedDurations?.length) parts.push(Math.min(...item.supportedDurations) + "-" + Math.max(...item.supportedDurations) + " 秒");
+    if (item.referenceCapabilityProvided && item.maxReferenceImages) parts.push("参考图 " + item.maxReferenceImages);
+    if (item.referenceVideosProvided && item.maxReferenceVideos) parts.push("参考视频 " + item.maxReferenceVideos);
+    if (item.referenceAudiosProvided && item.maxReferenceAudios) parts.push("参考音频 " + item.maxReferenceAudios);
+    if (item.referenceMediaProvided && item.maxReferenceMedia) parts.push("合计 " + item.maxReferenceMedia);
+    if (item.audioOutputProvided && item.supportsAudioOutput) parts.push("音频输出");
+    return parts;
 }
 
 function normalizeToken(value: string) {

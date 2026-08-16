@@ -76,6 +76,27 @@ func TestSelectVideoPricingRuleMatchesResolutionAndBillsBySeconds(t *testing.T) 
 	}
 }
 
+func TestSelectVideoPricingRule480pTenSecondsTotals100Credits(t *testing.T) {
+	request := normalizePricingRequest(PricingRequest{
+		Model:      "oreate-seedance-2.0-mini",
+		Modality:   "video",
+		Operation:  "generation",
+		Unit:       "second",
+		Resolution: "480p",
+		Quantity:   10,
+	})
+	rules := normalizePricingRules([]model.PricingRule{{
+		Model: "oreate-seedance-2.0-mini", Modality: "video", Operation: "generation", Unit: "second", ResolutionTier: "480p", Credits: 10, Enabled: true,
+	}})
+	rule, ok := selectPricingRule(rules, request)
+	if !ok {
+		t.Fatal("expected 480p pricing rule")
+	}
+	if credits := calculateRuleCredits(rule, request.Quantity, 1); credits != 100 {
+		t.Fatalf("credits = %d, want 100", credits)
+	}
+}
+
 func TestSelectPricingRuleDoesNotUseBlankResolutionFallback(t *testing.T) {
 	request := normalizePricingRequest(PricingRequest{Model: "video-model", Modality: "video", Operation: "generation", Unit: "second", Resolution: "1080p", Quantity: 6})
 	rules := normalizePricingRules([]model.PricingRule{{Model: "video-model", Modality: "video", Operation: "generation", Unit: "second", Credits: 1, Enabled: true}})

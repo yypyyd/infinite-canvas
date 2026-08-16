@@ -62,8 +62,9 @@ type PaymentOrder struct {
 type BalanceLogType string
 
 const (
-	BalanceLogTypePaymentRecharge BalanceLogType = "payment_recharge"
-	BalanceLogTypeCreditsExchange BalanceLogType = "credits_exchange"
+	BalanceLogTypePaymentRecharge    BalanceLogType = "payment_recharge"
+	BalanceLogTypeCreditsExchange    BalanceLogType = "credits_exchange"
+	BalanceLogTypeReferralCommission BalanceLogType = "referral_commission"
 )
 
 type BalanceLog struct {
@@ -77,6 +78,30 @@ type BalanceLog struct {
 	Remark         string         `json:"remark"`
 	Extra          string         `json:"extra" gorm:"type:text"`
 	CreatedAt      string         `json:"createdAt" gorm:"index"`
+}
+
+// ReferralCommission records a one-time commission credited for an invitee payment.
+type ReferralCommission struct {
+	ID              string `json:"id" gorm:"primaryKey"`
+	InviterID       string `json:"inviterId" gorm:"index"`
+	InviteeID       string `json:"inviteeId" gorm:"uniqueIndex"`
+	InviteeUsername string `json:"inviteeUsername" gorm:"->;-:migration"`
+	PaymentOrderID  string `json:"paymentOrderId" gorm:"uniqueIndex"`
+	OrderNo         string `json:"orderNo"`
+	BaseAmountCents int64  `json:"baseAmountCents"`
+	RatePercent     int    `json:"ratePercent"`
+	CommissionCents int64  `json:"commissionCents"`
+	CreatedAt       string `json:"createdAt" gorm:"index"`
+}
+
+type ReferralDashboard struct {
+	AffCode              string               `json:"affCode"`
+	InvitedCount         int                  `json:"invitedCount"`
+	TotalCommissionCents int64                `json:"totalCommissionCents"`
+	ReferralEnabled      bool                 `json:"referralEnabled"`
+	CommissionRate       int                  `json:"commissionRate"`
+	Items                []ReferralCommission `json:"items"`
+	Total                int                  `json:"total"`
 }
 
 type PaymentOrderList struct {

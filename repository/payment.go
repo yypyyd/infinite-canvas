@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/yypyyd/infinite-canvas/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -76,7 +77,7 @@ func ListUserPaymentOrders(userID string, q model.Query) ([]model.PaymentOrder, 
 	return orders, total, err
 }
 
-func SettlePaymentOrder(orderNo string, tradeNo string, paidAt string, log model.BalanceLog) (model.PaymentOrder, bool, error) {
+func SettlePaymentOrder(orderNo string, tradeNo string, paidAt string, log model.BalanceLog, commissions ...model.ReferralCommission) (model.PaymentOrder, bool, error) {
 	db, err := DB()
 	if err != nil {
 		return model.PaymentOrder{}, false, err
@@ -124,6 +125,52 @@ func SettlePaymentOrder(orderNo string, tradeNo string, paidAt string, log model
 		if err := tx.Create(&log).Error; err != nil {
 			return err
 		}
+		if len(commissions) > 0 && commissions[0].CommissionCents > 0 && commissions[0].InviterID != "" {
+			var paidOrderCount int64
+			if err := tx.Model(&model.PaymentOrder{}).Where("user_id = ? AND status = ?", order.UserID, model.PaymentOrderStatusPaid).Count(&paidOrderCount).Error; err != nil {
+				return err
+			}
+			if paidOrderCount == 1 {
+				commission := commissions[0]
+				var inviter model.User
+				inviterErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND status = ?", commission.InviterID, model.UserStatusActive).First(&inviter).Error
+				if inviterErr == nil {
+					if commission.ID == "" {
+						commission.ID = newRepositoryID("referral")
+					}
+					commission.PaymentOrderID = order.ID
+					commission.OrderNo = order.OrderNo
+					commission.CreatedAt = paidAt
+					created := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&commission)
+					if created.Error != nil {
+						return created.Error
+					}
+					if created.RowsAffected == 1 {
+						inviterUpdate := tx.Model(&model.User{}).Where("id = ? AND status = ?", commission.InviterID, model.UserStatusActive).Updates(map[string]any{
+							"balance_cents": gorm.Expr("balance_cents + ?", commission.CommissionCents), "updated_at": paidAt,
+						})
+						if inviterUpdate.Error != nil {
+							return inviterUpdate.Error
+						}
+						if inviterUpdate.RowsAffected != 1 {
+							return errors.New("referral inviter disappeared during settlement")
+						}
+						inviter.BalanceCents += commission.CommissionCents
+						commissionLog := model.BalanceLog{
+							ID: newRepositoryID("balance"), UserID: commission.InviterID, OrganizationID: inviter.OrganizationID,
+							Type: model.BalanceLogTypeReferralCommission, AmountCents: commission.CommissionCents,
+							BalanceCents: inviter.BalanceCents, RelatedID: commission.ID, Remark: "邀请返佣",
+							CreatedAt: paidAt,
+						}
+						if err := tx.Create(&commissionLog).Error; err != nil {
+							return err
+						}
+					}
+				} else if !errors.Is(inviterErr, gorm.ErrRecordNotFound) {
+					return inviterErr
+				}
+			}
+		}
 		order.Status = model.PaymentOrderStatusPaid
 		order.TradeNo = &tradeNo
 		order.PaidAt = paidAt
@@ -132,6 +179,10 @@ func SettlePaymentOrder(orderNo string, tradeNo string, paidAt string, log model
 		return nil
 	})
 	return order, settled, err
+}
+
+func newRepositoryID(prefix string) string {
+	return prefix + "-" + uuid.NewString()
 }
 
 func ExchangeUserBalanceForCredits(userID string, balanceCents int64, credits int, updatedAt string, balanceLog model.BalanceLog, creditLog model.CreditLog) (model.User, error) {

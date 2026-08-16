@@ -4,7 +4,7 @@ import { CheckCircleOutlined, DeleteOutlined, FormatPainterOutlined, PlusOutline
 import { json } from "@codemirror/lang-json";
 import { App, Button, Card, Col, Flex, Form, Input, InputNumber, Row, Segmented, Select, Space, Switch, Table, Tabs, Tag, Typography } from "antd";
 import dynamic from "next/dynamic";
-import { Activity, Boxes, Mail, Megaphone, RefreshCw, ShieldCheck, WalletCards } from "lucide-react";
+import { Activity, Boxes, HandCoins, Mail, Megaphone, RefreshCw, ShieldCheck, WalletCards } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { EditorView } from "@uiw/react-codemirror";
 
@@ -14,6 +14,7 @@ import { ModelCatalogEditor } from "./components/model-catalog-editor";
 import { AccessAndRegistrationSettingsEditor, OperationsAlertSettingsEditor, OperationSettingsEditor } from "./components/operation-settings-editor";
 import { EmailSettingsEditor } from "./components/email-settings-editor";
 import { PaymentSettingsEditor } from "./components/payment-settings-editor";
+import { ReferralSettingsEditor } from "./components/referral-settings-editor";
 import { inferModelModality, inferModelOperations, normalizeModelOperations } from "../model-capabilities";
 
 const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), { ssr: false });
@@ -54,6 +55,7 @@ const emptySettings: AdminSettings = {
         promptSync: { enabled: true, cron: "*/5 * * * *" },
         email: { smtpHost: "", smtpPort: 587, smtpUsername: "", smtpPassword: "", smtpFromEmail: "", smtpFromName: "道生画境", smtpSecurity: "starttls", passwordConfigured: false },
         payment: { enabled: false, gatewayUrl: "https://www.ezfpy.cn", merchantId: "", merchantKey: "", merchantKeyConfigured: false, siteName: "道生画境", productName: "余额充值", methods: ["alipay", "wxpay"], packages: [], creditsPerYuan: 0 },
+        referral: { enabled: false, commissionRate: 0 },
         operationsAlerts: {
             enabled: true,
             batchQueuedThreshold: 100,
@@ -68,7 +70,7 @@ const emptySettings: AdminSettings = {
     },
 };
 type SettingsTabKey = "public" | "private";
-type SettingsSectionKey = "models" | "access" | "operations" | "payment" | "monitoring" | "email" | "sync";
+type SettingsSectionKey = "models" | "access" | "operations" | "payment" | "referral" | "monitoring" | "email" | "sync";
 type EditorMode = "visual" | "json";
 
 const modelAspectRatioOptions = ["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "21:9"];
@@ -106,6 +108,15 @@ const settingsTabs = [
             <span className="inline-flex items-center gap-2">
                 <WalletCards className="size-4" />
                 支付充值
+            </span>
+        ),
+    },
+    {
+        key: "referral",
+        label: (
+            <span className="inline-flex items-center gap-2">
+                <HandCoins className="size-4" />
+                邀请返佣
             </span>
         ),
     },
@@ -154,7 +165,7 @@ export default function AdminSettingsPage() {
     const managedModels = Form.useWatch(["public", "modelChannel", "models"], form) || [];
     const publicModels = enabledManagedModelIds(managedModels).length ? enabledManagedModelIds(managedModels) : rawPublicModels;
     const channelModels = useMemo(() => collectChannelModels(channels), [channels]);
-    const activeTab: SettingsTabKey = activeSection === "payment" || activeSection === "monitoring" || activeSection === "email" || activeSection === "sync" ? "private" : "public";
+    const activeTab: SettingsTabKey = activeSection === "payment" || activeSection === "referral" || activeSection === "monitoring" || activeSection === "email" || activeSection === "sync" ? "private" : "public";
     const activeMode = editorMode[activeTab];
     const activeJsonText = jsonText[activeTab];
     const jsonError = activeMode === "json" ? getJsonError(activeJsonText) : "";
@@ -366,6 +377,8 @@ export default function AdminSettingsPage() {
                                 <OperationSettingsEditor />
                             ) : activeSection === "payment" ? (
                                 <PaymentSettingsEditor />
+                            ) : activeSection === "referral" ? (
+                                <ReferralSettingsEditor />
                             ) : activeSection === "monitoring" ? (
                                 <OperationsAlertSettingsEditor />
                             ) : activeSection === "email" ? (
@@ -649,6 +662,10 @@ function normalizePrivateSetting(setting: Partial<AdminSettings["private"]> = {}
             methods: (setting.payment?.methods || []).filter((item) => item === "alipay" || item === "wxpay" || item === "qqpay"),
             packages: (setting.payment?.packages || []).map((item) => ({ id: item.id?.trim() || "", name: item.name?.trim() || "", amountCents: Math.max(0, Math.floor(Number(item.amountCents) || 0)), balanceCents: Math.max(0, Math.floor(Number(item.balanceCents) || 0)) })).filter((item) => item.id && item.name),
             creditsPerYuan: Math.max(0, Math.floor(Number(setting.payment?.creditsPerYuan) || 0)),
+        },
+        referral: {
+            enabled: setting.referral?.enabled === true,
+            commissionRate: Math.min(100, Math.max(0, Math.floor(Number(setting.referral?.commissionRate) || 0))),
         },
         operationsAlerts: {
             enabled: setting.operationsAlerts?.enabled !== false,

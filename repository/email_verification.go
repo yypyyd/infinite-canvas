@@ -9,7 +9,7 @@ import (
 
 var ErrEmailVerificationUnavailable = errors.New("email verification is unavailable")
 
-func CreateVerifiedUserWithCreditLog(user model.User, organization model.Organization, membership model.OrganizationMember, audit model.OrganizationAuditLog, log *model.CreditLog, verificationID string, codeHash string, now string, maxAttempts int) (model.User, error) {
+func CreateVerifiedUserWithCreditLog(user model.User, organization model.Organization, membership model.OrganizationMember, audit model.OrganizationAuditLog, log *model.CreditLog, verificationID string, codeHash string, now string, maxAttempts int, inviterIDs ...string) (model.User, error) {
 	db, err := DB()
 	if err != nil {
 		return user, err
@@ -26,6 +26,15 @@ func CreateVerifiedUserWithCreditLog(user model.User, organization model.Organiz
 		}
 		if err := tx.Create(&user).Error; err != nil {
 			return err
+		}
+		if len(inviterIDs) > 0 && inviterIDs[0] != "" {
+			result := tx.Model(&model.User{}).Where("id = ? AND status = ?", inviterIDs[0], model.UserStatusActive).UpdateColumn("aff_count", gorm.Expr("aff_count + 1"))
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected != 1 {
+				return errors.New("inviter not found")
+			}
 		}
 		if err := tx.Create(&organization).Error; err != nil {
 			return err

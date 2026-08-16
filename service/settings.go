@@ -65,21 +65,21 @@ func publicAPIModels(setting model.PublicModelChannelSetting) []model.PublicAPIM
 			continue
 		}
 		result = append(result, model.PublicAPIModel{
-			ID:                 item.ID,
-			Object:             "model",
-			OwnedBy:            "infinite-canvas",
-			Name:               item.Name,
-			Modality:           item.Modality,
-			Operations:         item.Operations,
-			AspectRatios:       item.AspectRatios,
-			ResolutionTiers:    item.ResolutionTiers,
-			Durations:          item.Durations,
-			MaxReferenceImages: item.MaxReferenceImages,
-			MaxReferenceVideos: item.MaxReferenceVideos,
-			MaxReferenceAudios: item.MaxReferenceAudios,
-			MaxReferenceMedia:  item.MaxReferenceMedia,
+			ID:                  item.ID,
+			Object:              "model",
+			OwnedBy:             "infinite-canvas",
+			Name:                item.Name,
+			Modality:            item.Modality,
+			Operations:          item.Operations,
+			AspectRatios:        item.AspectRatios,
+			ResolutionTiers:     item.ResolutionTiers,
+			Durations:           item.Durations,
+			MaxReferenceImages:  item.MaxReferenceImages,
+			MaxReferenceVideos:  item.MaxReferenceVideos,
+			MaxReferenceAudios:  item.MaxReferenceAudios,
+			MaxReferenceMedia:   item.MaxReferenceMedia,
 			SupportsAudioOutput: item.SupportsAudioOutput,
-			ReferenceMode:      item.ReferenceMode,
+			ReferenceMode:       item.ReferenceMode,
 		})
 	}
 	return result
@@ -413,17 +413,17 @@ func normalizeModelDefinitions(items []model.ModelDefinition, availableModels []
 
 func mergeEnabledChannelCapabilities(items []model.ModelDefinition, channels []model.ModelChannel) []model.ModelDefinition {
 	type capabilities struct {
-		modality           string
-		operations         []string
-		aspectRatios       []string
-		resolutionTiers    []string
-		durations          []int
-		maxReferenceImages int
-		maxReferenceVideos int
-		maxReferenceAudios int
-		maxReferenceMedia  int
-		supportsAudioOutput bool
-		referenceMode      string
+		modality               string
+		operations             []string
+		aspectRatios           []string
+		resolutionTiers        []string
+		durations              []int
+		maxReferenceImages     int
+		maxReferenceVideos     int
+		maxReferenceAudios     int
+		maxReferenceMedia      int
+		supportsAudioOutput    bool
+		referenceMode          string
 		unrestrictedResolution bool
 	}
 
@@ -862,9 +862,23 @@ func normalizePrivateSetting(setting model.PrivateSetting) model.PrivateSetting 
 	setting.PromptSync = normalizePromptSyncSetting(setting.PromptSync)
 	setting.Email = normalizeEmailSetting(setting.Email)
 	setting.Payment = normalizePaymentSetting(setting.Payment)
+	setting.Referral = normalizeReferralSetting(setting.Referral)
 	setting.OperationsAlerts = normalizeOperationsAlertSetting(setting.OperationsAlerts)
 	for i := range setting.Channels {
 		setting.Channels[i] = normalizeModelChannel(setting.Channels[i])
+	}
+	return setting
+}
+
+func normalizeReferralSetting(setting model.ReferralSetting) model.ReferralSetting {
+	if setting.CommissionRate < 0 {
+		setting.CommissionRate = 0
+	}
+	if setting.CommissionRate > 100 {
+		setting.CommissionRate = 100
+	}
+	if setting.CommissionRate == 0 {
+		setting.Enabled = false
 	}
 	return setting
 }
@@ -1320,7 +1334,7 @@ func fetchAdminChannelModels(channel model.ModelChannel) ([]model.DiscoveredMode
 	}
 	var payload struct {
 		Object string `json:"object"`
-		Data []struct {
+		Data   []struct {
 			ID                   string            `json:"id"`
 			Kind                 string            `json:"kind"`
 			SupportedRatios      []string          `json:"supported_ratios"`

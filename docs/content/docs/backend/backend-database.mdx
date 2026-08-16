@@ -41,6 +41,7 @@ description: 当前后端主要数据表与字段说明
 - `credit_logs`
 - `payment_orders`
 - `balance_logs`
+- `referral_commissions`
 - `check_ins`
 - `generation_tasks`
 - `agent_sessions`
@@ -153,6 +154,24 @@ description: 当前后端主要数据表与字段说明
 | `extra` | json | 扩展信息 |
 | `created_at` | string | 创建时间 |
 | `updated_at` | string | 更新时间 |
+
+用户注册时可通过邀请码绑定一名邀请人；绑定关系只在注册事务中写入一次，`aff_count` 作为邀请数量冗余统计，实际列表以 `inviter_id` 查询为准。用户被邀请后的首笔充值成功时，返佣记录写入 `referral_commissions`，并与邀请人的 `balance_logs`、充值订单结算处于同一事务；后续充值和重复支付回调都不会再次返佣。
+
+### referral_commissions
+
+邀请返佣明细表。`invitee_id` 和 `payment_order_id` 都有唯一约束，保证每位被邀请用户最多只有一笔首充返佣，且同一支付订单不能重复返佣。返佣比例由私有系统设置控制，金额按首笔成功充值订单的实付金额计算并取整到分，直接增加邀请人的人民币余额，不增加算力点。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 主键 |
+| `inviter_id` | string | 邀请人用户 ID |
+| `invitee_id` | string | 被邀请用户 ID，唯一索引 |
+| `payment_order_id` | string | 对应支付订单 ID，唯一索引 |
+| `order_no` | string | 支付订单号 |
+| `base_amount_cents` | number | 返佣计算基数，订单实付金额（分） |
+| `rate_percent` | number | 结算时固化的返佣比例 |
+| `commission_cents` | number | 实际返佣金额（分） |
+| `created_at` | string | 返佣入账时间 |
 
 ### prompts
 
@@ -271,6 +290,7 @@ description: 当前后端主要数据表与字段说明
 | `promptSync` | object | GitHub 远程提示词定时同步配置 |
 | `email` | object | SMTP 私有配置；密码读取时脱敏，不会出现在公开设置接口 |
 | `payment` | object | 易支付 V1 私有配置、可用支付方式和充值档位；商户密钥读取时脱敏 |
+| `referral` | object | 邀请返佣开关和返佣比例 |
 
 `channels` 每项字段：
 
@@ -304,6 +324,8 @@ description: 当前后端主要数据表与字段说明
 后端请求模型时，先按对外模型名、操作和分辨率档筛选启用且能力相符的渠道，再按 `weight` 加权随机选择一个渠道；统一售价仍由公开 `pricingRules` 决定，渠道配置只影响路由和上游模型映射。
 
 `payment` 保存 `enabled`、`gatewayUrl`、`merchantId`、`merchantKey`、`siteName`、`productName`、`methods`、`packages` 和 `creditsPerYuan`。`methods` 支持 `alipay`、`wxpay`、`qqpay`；每个充值档位保存稳定 `id`、名称和人民币分值 `amountCents`，支付金额按原值进入账户余额。`creditsPerYuan` 是每 1 元人民币余额可兑换的个人算力点数，大于 `0` 时自动开放单向兑换，`0` 或未配置时关闭兑换。后台读取时只返回 `merchantKeyConfigured`，不返回商户密钥明文。
+
+`referral` 保存 `enabled` 和 `commissionRate`（0–100 的整数百分比）。关闭或比例为 0 时不发放返佣；开启后只按被邀请用户首笔成功充值订单的实付金额计算并固化比例，后续订单不再返佣。
 
 ### email_verifications
 
@@ -391,17 +413,17 @@ description: 当前后端主要数据表与字段说明
 
 ### balance_logs
 
-人民币账户余额的独立资金流水表。易支付订单成功时与订单状态和 `users.balance_cents` 在同一事务中写入；余额兑换算力时，本表记录人民币扣减，`credit_logs` 记录个人算力增加，两条流水和两侧余额在同一事务中提交。本表不把算力点记作人民币金额，`credit_logs` 也不把人民币金额记作算力。
+人民币账户余额的独立资金流水表。易支付订单成功时与订单状态和 `users.balance_cents` 在同一事务中写入；邀请返佣会与返佣明细和邀请人余额在同一事务中写入；余额兑换算力时，本表记录人民币扣减，`credit_logs` 记录个人算力增加，两条流水和两侧余额在同一事务中提交。本表不把算力点记作人民币金额，`credit_logs` 也不把人民币金额记作算力。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `id` | string | 主键 |
 | `user_id` | string | 关联用户 ID |
 | `organization_id` | string | 创建支付订单时所在企业 ID，仅用于来源记录 |
-| `type` | string | 资金变动类型：`payment_recharge` 为支付充值，`credits_exchange` 为余额兑换算力时的人民币扣减 |
-| `amount_cents` | number | 本次人民币余额实际变动，充值时记录订单到账余额而非易支付实付金额，单位分 |
+| `type` | string | 资金变动类型：`payment_recharge` 为支付充值，`referral_commission` 为邀请返佣，`credits_exchange` 为余额兑换算力时的人民币扣减 |
+| `amount_cents` | number | 本次人民币余额实际变动；充值时记录订单到账余额，返佣时记录佣金金额，单位分 |
 | `balance_cents` | number | 变动后的人民币账户余额，单位分 |
-| `related_id` | string | 充值时关联支付订单 ID；兑换时与对应 `credit_logs.related_id` 共用同一个兑换 ID |
+| `related_id` | string | 充值时关联支付订单 ID，返佣时关联返佣记录 ID；兑换时与对应 `credit_logs.related_id` 共用同一个兑换 ID |
 | `remark` | string | 备注 |
 | `extra` | json | 支付方式、实付金额、到账余额或兑换比例等扩展信息 |
 | `created_at` | string | 创建时间 |

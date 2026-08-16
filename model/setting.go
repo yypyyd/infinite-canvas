@@ -23,19 +23,19 @@ type ModelChannel struct {
 
 // ChannelModel stores one public model's upstream mapping and channel-specific capabilities.
 type ChannelModel struct {
-	Model              string   `json:"model"`
-	UpstreamModel      string   `json:"upstreamModel"`
-	Modality           string   `json:"modality"`
-	Operations         []string `json:"operations"`
-	AspectRatios       []string `json:"aspectRatios"`
-	ResolutionTiers    []string `json:"resolutionTiers"`
-	Durations          []int    `json:"durations"`
-	MaxReferenceImages int      `json:"maxReferenceImages"`
-	MaxReferenceVideos int      `json:"maxReferenceVideos"`
-	MaxReferenceAudios int      `json:"maxReferenceAudios"`
-	MaxReferenceMedia  int      `json:"maxReferenceMedia"`
-	SupportsAudioOutput bool    `json:"supportsAudioOutput"`
-	ReferenceMode      string   `json:"referenceMode"`
+	Model               string   `json:"model"`
+	UpstreamModel       string   `json:"upstreamModel"`
+	Modality            string   `json:"modality"`
+	Operations          []string `json:"operations"`
+	AspectRatios        []string `json:"aspectRatios"`
+	ResolutionTiers     []string `json:"resolutionTiers"`
+	Durations           []int    `json:"durations"`
+	MaxReferenceImages  int      `json:"maxReferenceImages"`
+	MaxReferenceVideos  int      `json:"maxReferenceVideos"`
+	MaxReferenceAudios  int      `json:"maxReferenceAudios"`
+	MaxReferenceMedia   int      `json:"maxReferenceMedia"`
+	SupportsAudioOutput bool     `json:"supportsAudioOutput"`
+	ReferenceMode       string   `json:"referenceMode"`
 }
 
 type DiscoveredModel struct {
@@ -60,42 +60,42 @@ type DiscoveredModel struct {
 
 // ModelDefinition stores public model management metadata.
 type ModelDefinition struct {
-	ID                 string   `json:"id"`
-	Name               string   `json:"name"`
-	Modality           string   `json:"modality"`
-	Operations         []string `json:"operations"`
-	Enabled            bool     `json:"enabled"`
-	Sort               int      `json:"sort"`
-	AspectRatios       []string `json:"aspectRatios"`
-	ResolutionTiers    []string `json:"resolutionTiers"`
-	Durations          []int    `json:"durations"`
-	MaxReferenceImages int      `json:"maxReferenceImages"`
-	MaxReferenceVideos int      `json:"maxReferenceVideos"`
-	MaxReferenceAudios int      `json:"maxReferenceAudios"`
-	MaxReferenceMedia  int      `json:"maxReferenceMedia"`
-	SupportsAudioOutput bool    `json:"supportsAudioOutput"`
-	ReferenceMode      string   `json:"referenceMode"`
-	Remark             string   `json:"remark"`
+	ID                  string   `json:"id"`
+	Name                string   `json:"name"`
+	Modality            string   `json:"modality"`
+	Operations          []string `json:"operations"`
+	Enabled             bool     `json:"enabled"`
+	Sort                int      `json:"sort"`
+	AspectRatios        []string `json:"aspectRatios"`
+	ResolutionTiers     []string `json:"resolutionTiers"`
+	Durations           []int    `json:"durations"`
+	MaxReferenceImages  int      `json:"maxReferenceImages"`
+	MaxReferenceVideos  int      `json:"maxReferenceVideos"`
+	MaxReferenceAudios  int      `json:"maxReferenceAudios"`
+	MaxReferenceMedia   int      `json:"maxReferenceMedia"`
+	SupportsAudioOutput bool     `json:"supportsAudioOutput"`
+	ReferenceMode       string   `json:"referenceMode"`
+	Remark              string   `json:"remark"`
 }
 
 // PublicAPIModel describes one non-text model exposed to API Key callers.
 type PublicAPIModel struct {
-	ID                 string   `json:"id"`
-	Object             string   `json:"object"`
-	Created            int64    `json:"created"`
-	OwnedBy            string   `json:"owned_by"`
-	Name               string   `json:"name"`
-	Modality           string   `json:"modality"`
-	Operations         []string `json:"operations"`
-	AspectRatios       []string `json:"aspectRatios"`
-	ResolutionTiers    []string `json:"resolutionTiers"`
-	Durations          []int    `json:"durations"`
-	MaxReferenceImages int      `json:"max_reference_images"`
-	MaxReferenceVideos int      `json:"max_reference_videos"`
-	MaxReferenceAudios int      `json:"max_reference_audios"`
-	MaxReferenceMedia  int      `json:"max_reference_media"`
-	SupportsAudioOutput bool    `json:"supports_audio_output"`
-	ReferenceMode      string   `json:"reference_mode"`
+	ID                  string   `json:"id"`
+	Object              string   `json:"object"`
+	Created             int64    `json:"created"`
+	OwnedBy             string   `json:"owned_by"`
+	Name                string   `json:"name"`
+	Modality            string   `json:"modality"`
+	Operations          []string `json:"operations"`
+	AspectRatios        []string `json:"aspectRatios"`
+	ResolutionTiers     []string `json:"resolutionTiers"`
+	Durations           []int    `json:"durations"`
+	MaxReferenceImages  int      `json:"max_reference_images"`
+	MaxReferenceVideos  int      `json:"max_reference_videos"`
+	MaxReferenceAudios  int      `json:"max_reference_audios"`
+	MaxReferenceMedia   int      `json:"max_reference_media"`
+	SupportsAudioOutput bool     `json:"supports_audio_output"`
+	ReferenceMode       string   `json:"reference_mode"`
 }
 
 type PublicAPIModelList struct {
@@ -121,16 +121,16 @@ type PricingRule struct {
 
 // PublicModelChannelSetting stores frontend-visible model channel settings.
 type PublicModelChannelSetting struct {
-	AvailableModels    []string            `json:"availableModels"`
-	Models             []ModelDefinition   `json:"models"`
-	PricingRules       []PricingRule       `json:"pricingRules"`
-	GroupRatios        map[string]float64  `json:"groupRatios"`
-	ModelAspectRatios  map[string][]string `json:"modelAspectRatios"`
-	DefaultModel       string              `json:"defaultModel"`
-	DefaultImageModel  string              `json:"defaultImageModel"`
-	DefaultVideoModel  string              `json:"defaultVideoModel"`
-	DefaultTextModel   string              `json:"defaultTextModel"`
-	SystemPrompt       string              `json:"systemPrompt"`
+	AvailableModels   []string            `json:"availableModels"`
+	Models            []ModelDefinition   `json:"models"`
+	PricingRules      []PricingRule       `json:"pricingRules"`
+	GroupRatios       map[string]float64  `json:"groupRatios"`
+	ModelAspectRatios map[string][]string `json:"modelAspectRatios"`
+	DefaultModel      string              `json:"defaultModel"`
+	DefaultImageModel string              `json:"defaultImageModel"`
+	DefaultVideoModel string              `json:"defaultVideoModel"`
+	DefaultTextModel  string              `json:"defaultTextModel"`
+	SystemPrompt      string              `json:"systemPrompt"`
 }
 
 // PublicSetting stores frontend-visible settings.
@@ -181,18 +181,19 @@ type PrivateSetting struct {
 	PromptSync       PromptSyncSetting      `json:"promptSync"`
 	Email            EmailSetting           `json:"email"`
 	Payment          PaymentSetting         `json:"payment"`
+	Referral         ReferralSetting        `json:"referral"`
 	OperationsAlerts OperationsAlertSetting `json:"operationsAlerts"`
 }
 
 type OperationsAlertSetting struct {
-	Enabled                             *bool  `json:"enabled"`
-	BatchQueuedThreshold                *int64 `json:"batchQueuedThreshold"`
-	BatchExpiredLeasesThreshold         *int64 `json:"batchExpiredLeasesThreshold"`
-	EmailPendingThreshold               *int64 `json:"emailPendingThreshold"`
-	EmailFailedThreshold                *int64 `json:"emailFailedThreshold"`
-	EmailExpiredLeasesThreshold         *int64 `json:"emailExpiredLeasesThreshold"`
-	ObjectDeletionPendingThreshold      *int64 `json:"objectDeletionPendingThreshold"`
-	ObjectDeletionFailedThreshold       *int64 `json:"objectDeletionFailedThreshold"`
+	Enabled                              *bool  `json:"enabled"`
+	BatchQueuedThreshold                 *int64 `json:"batchQueuedThreshold"`
+	BatchExpiredLeasesThreshold          *int64 `json:"batchExpiredLeasesThreshold"`
+	EmailPendingThreshold                *int64 `json:"emailPendingThreshold"`
+	EmailFailedThreshold                 *int64 `json:"emailFailedThreshold"`
+	EmailExpiredLeasesThreshold          *int64 `json:"emailExpiredLeasesThreshold"`
+	ObjectDeletionPendingThreshold       *int64 `json:"objectDeletionPendingThreshold"`
+	ObjectDeletionFailedThreshold        *int64 `json:"objectDeletionFailedThreshold"`
 	ObjectDeletionExpiredLeasesThreshold *int64 `json:"objectDeletionExpiredLeasesThreshold"`
 }
 
@@ -204,7 +205,7 @@ type EmailSetting struct {
 	SMTPFromEmail      string `json:"smtpFromEmail"`
 	SMTPFromName       string `json:"smtpFromName"`
 	SMTPSecurity       string `json:"smtpSecurity"`
-	PasswordConfigured bool  `json:"passwordConfigured"`
+	PasswordConfigured bool   `json:"passwordConfigured"`
 }
 
 type PromptSyncSetting struct {

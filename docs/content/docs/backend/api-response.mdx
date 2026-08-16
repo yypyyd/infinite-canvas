@@ -41,6 +41,12 @@ Authorization: Bearer ic_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 用户 API Key 只用于同源后端 `/api/v1/*` 路由，继续复用创建用户、绑定企业、后台模型渠道、用户组计价、企业扣费模式、企业额度和生成任务记录；调用方无需传 `X-Organization-ID`。若请求仍传入 `X-Organization-ID` 或 `organization` 查询参数，必须与 Key 绑定企业一致，否则服务端拒绝请求。Key 不能调用 `/api/auth/*`、`/api/admin/*`、`/api/commerce/*`、画布数据、用户资料或 Key 管理接口。
 
+## 邀请返佣
+
+登录用户可通过 `GET /api/referrals` 查看自己的邀请码、已邀请人数、累计返佣、当前返佣开关与比例，以及分页明细。返佣链接使用 `/login?ref=邀请码`，注册请求也可直接提交 `referralCode`；邀请码只在注册成功时绑定一次。
+
+返佣只在被邀请用户的首笔充值成功时按私有设置中的比例计算，基数为该订单实付金额，直接写入邀请人的人民币余额和 `balance_logs`。第二笔及后续充值不再返佣；首笔充值发生时规则关闭、比例为 0 或邀请人失效，也不会把资格顺延到后续订单。支付通知幂等处理，重复通知不会重复增加余额。返佣不修改算力点，也不提供提现接口。
+
 `GET /api/v1/models` 返回当前开放的图片、视频和音频模型，不返回文本模型。响应保持 OpenAI 模型列表的 `{ "object": "list", "data": [...] }` 结构，每项包含标准的 `id`、`object`、`created`、`owned_by`，并补充显示名称、类型、支持操作、宽高比、分辨率档和视频时长；接口使用与生成请求相同的 Bearer 鉴权：
 
 ```bash

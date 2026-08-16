@@ -86,6 +86,71 @@ func TestAdaptVividAIImageRequestUsesPixelTierForPortraitSize(t *testing.T) {
 	}
 }
 
+func TestAdaptAIRequestBodyUsesHuantu4KImageAdapter(t *testing.T) {
+	body, contentType := adaptAIRequestBody("https://api.huantu.xyz/v1", "image", "/images/generations", []byte(`{"model":"image","prompt":"test","size":"2480x3312","quality":"high"}`), "application/json")
+	if contentType != "application/json" {
+		t.Fatalf("content type = %q, want application/json", contentType)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["size"] != "3072x4096" {
+		t.Fatalf("size = %q, want 3072x4096", payload["size"])
+	}
+}
+
+func TestAdaptVividAIVideoRequestPreserves480p(t *testing.T) {
+	body, _ := adaptVividAIVideoRequestBody([]byte(`{"model":"oreate-seedance-2.0-mini","prompt":"test","seconds":"10","resolution":"480p","size":"640x480"}`), "application/json")
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["size"] != "640x480" {
+		t.Fatalf("size = %q, want 640x480", payload["size"])
+	}
+}
+
+func TestAdaptAIRequestBodyUsesVividAIVideoAdapter(t *testing.T) {
+	body, contentType := adaptAIRequestBody("https://vividai.run", "oreate-seedance-2.0-mini", "/videos", []byte(`{"model":"oreate-seedance-2.0-mini","prompt":"test","seconds":"10","resolution":"480p","size":"640x480"}`), "application/json")
+	if contentType != "application/json" {
+		t.Fatalf("content type = %q, want application/json", contentType)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["size"] != "640x480" {
+		t.Fatalf("size = %q, want 640x480", payload["size"])
+	}
+}
+
+func TestAdaptVividAIVideoMultipartPreserves480p(t *testing.T) {
+	var source strings.Builder
+	writer := multipart.NewWriter(&source)
+	_ = writer.WriteField("model", "oreate-seedance-2.0-mini")
+	_ = writer.WriteField("prompt", "test")
+	_ = writer.WriteField("seconds", "10")
+	_ = writer.WriteField("resolution", "480p")
+	_ = writer.WriteField("size", "640x480")
+	file, _ := writer.CreateFormFile("input_reference", "reference.png")
+	_, _ = file.Write([]byte("png"))
+	_ = writer.Close()
+
+	body, contentType, err := adaptVividAIVideoMultipartBody([]byte(source.String()), writer.FormDataContentType())
+	if err != nil {
+		t.Fatal(err)
+	}
+	form, err := readMultipartForm(body, contentType)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer form.RemoveAll()
+	if got := firstFormValue(form, "size"); got != "640x480" {
+		t.Fatalf("size = %q, want 640x480", got)
+	}
+}
+
 func TestAdaptVividAIImageMultipartPreservesReferenceContentType(t *testing.T) {
 	var source strings.Builder
 	writer := multipart.NewWriter(&source)

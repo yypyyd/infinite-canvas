@@ -347,6 +347,7 @@ func buildAIUpstreamRequest(r *http.Request, path string, body []byte, contentTy
 	if err != nil {
 		return nil, err
 	}
+	body, contentType = adaptAIRequestBody(selection.Channel.BaseURL, selection.Model.UpstreamModel, path, body, contentType)
 	request, err := http.NewRequest(http.MethodPost, service.BuildModelChannelURL(selection.Channel, path), bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -1258,7 +1259,12 @@ func adaptAIRequestBody(baseURL string, modelName string, path string, body []by
 }
 
 func isVividAI(baseURL string) bool {
-	return strings.Contains(strings.ToLower(baseURL), "vividai.run")
+	parsed, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	return host == "vividai.run" || strings.HasSuffix(host, ".vividai.run") || host == "api.huantu.xyz"
 }
 
 func adaptVividAIImageRequestBody(body []byte, contentType string) ([]byte, string) {
@@ -1490,15 +1496,15 @@ var vividAIImageSizes = map[string]map[string]string{
 }
 
 var vividAIVideoSizes = map[string]map[string]string{
-	"16:9": {"720p": "1280x720", "1080p": "1920x1080"},
-	"9:16": {"720p": "720x1280", "1080p": "1080x1920"},
-	"1:1":  {"720p": "720x720", "1080p": "1080x1080"},
-	"4:3":  {"720p": "960x720", "1080p": "1440x1080"},
-	"3:4":  {"720p": "720x960", "1080p": "1080x1440"},
-	"3:2":  {"720p": "1080x720", "1080p": "1620x1080"},
-	"2:3":  {"720p": "720x1080", "1080p": "1080x1620"},
-	"21:9": {"720p": "1680x720", "1080p": "2520x1080"},
-	"9:21": {"720p": "720x1680", "1080p": "1080x2520"},
+	"16:9": {"480p": "854x480", "720p": "1280x720", "1080p": "1920x1080"},
+	"9:16": {"480p": "480x854", "720p": "720x1280", "1080p": "1080x1920"},
+	"1:1":  {"480p": "480x480", "720p": "720x720", "1080p": "1080x1080"},
+	"4:3":  {"480p": "640x480", "720p": "960x720", "1080p": "1440x1080"},
+	"3:4":  {"480p": "480x640", "720p": "720x960", "1080p": "1080x1440"},
+	"3:2":  {"480p": "720x480", "720p": "1080x720", "1080p": "1620x1080"},
+	"2:3":  {"480p": "480x720", "720p": "720x1080", "1080p": "1080x1620"},
+	"21:9": {"480p": "1120x480", "720p": "1680x720", "1080p": "2520x1080"},
+	"9:21": {"480p": "480x1120", "720p": "720x1680", "1080p": "1080x2520"},
 }
 
 func vividAIImageSize(size string, tier string) string {
@@ -1553,8 +1559,8 @@ func vividAIVideoSize(modelName string, size string, resolution string) string {
 	} else {
 		ratio = nearestVividAIRatio(size, sizes)
 	}
-	tier := normalizeResolutionName(resolution)
-	if tier != "1080p" {
+	tier := normalizeVividAIVideoResolution(resolution)
+	if tier == "" {
 		width, height, ok := parseVividAIRatio(size)
 		if ok && math.Min(width, height) >= 1080 {
 			tier = "1080p"
@@ -1562,7 +1568,23 @@ func vividAIVideoSize(modelName string, size string, resolution string) string {
 			tier = "720p"
 		}
 	}
+	if _, ok := sizes[ratio][tier]; !ok {
+		tier = "720p"
+	}
 	return sizes[ratio][tier]
+}
+
+func normalizeVividAIVideoResolution(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "480", "480p", "low":
+		return "480p"
+	case "720", "720p":
+		return "720p"
+	case "1080", "1080p":
+		return "1080p"
+	default:
+		return ""
+	}
 }
 
 func nearestVividAIRatio(value string, sizes map[string]map[string]string) string {

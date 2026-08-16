@@ -56,6 +56,7 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
     body.append("model", model);
     body.append("prompt", prompt);
     body.append("seconds", String(duration));
+    body.append("resolution", resolution);
     body.append("size", videoOutputSize(resolution, ratio));
     body.append("generate_audio", String(capabilities.supportsAudioOutput && config.videoGenerateAudio === "true"));
     const [referenceFiles, videoFiles, audioFiles] = await Promise.all([

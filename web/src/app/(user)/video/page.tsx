@@ -13,7 +13,7 @@ import { VideoSettingsPanel, normalizeVideoResolutionValue, normalizeVideoSizeVa
 import { CreditSymbol, requestCreditQuote } from "@/constant/credits";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
-import { videoOutputSize } from "@/lib/video-format";
+import { resolveVideoPricingSettings, videoOutputSize } from "@/lib/video-format";
 import { useOpenMedia } from "@/hooks/use-open-media";
 import { videoReferenceCapabilities, videoReferenceLabel, VIDEO_REFERENCE_LIMITS } from "@/lib/video-reference";
 import { resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
@@ -111,6 +111,8 @@ export default function VideoPage() {
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
     const model = effectiveConfig.videoModel || effectiveConfig.model;
+    const modelDefinition = managedModels?.find((item) => item.id === model);
+    const videoSettings = resolveVideoPricingSettings(effectiveConfig, modelDefinition, model, pricingRules);
     const referenceCapabilities = videoReferenceCapabilities(model, managedModels);
     const imageReferenceLimit = referenceCapabilities.maxImages;
     const referenceAccept = [referenceCapabilities.image ? "image/*" : "", referenceCapabilities.video ? "video/mp4,video/quicktime" : "", referenceCapabilities.audio ? "audio/mpeg,audio/wav,audio/x-wav,.mp3,.wav" : ""].filter(Boolean).join(",");
@@ -123,9 +125,9 @@ export default function VideoPage() {
         modality: "video",
         operation: "generation",
         unit: "second",
-        count: effectiveConfig.videoSeconds,
-        size: effectiveConfig.size,
-        resolution: effectiveConfig.vquality,
+        count: videoSettings.seconds,
+        size: videoSettings.ratio,
+        resolution: videoSettings.resolution,
     });
 
     useEffect(() => {
@@ -232,6 +234,15 @@ export default function VideoPage() {
             message.error("剪切板里没有可读取的图片");
         }
     };
+    const handleVideoModelChange = (nextModel: string) => {
+        const nextDefinition = managedModels?.find((item) => item.id === nextModel);
+        const nextSettings = resolveVideoPricingSettings(effectiveConfig, nextDefinition, nextModel, pricingRules);
+        updateConfig("videoModel", nextModel);
+        updateConfig("size", nextSettings.ratio);
+        updateConfig("vquality", nextSettings.resolution);
+        updateConfig("videoSeconds", String(nextSettings.seconds));
+    };
+
     const generate = async () => {
         const snapshot = buildRequestSnapshot();
         if (!snapshot) return;
@@ -301,7 +312,7 @@ export default function VideoPage() {
         const effectiveVideoReferences = referenceCapabilities.video ? videoReferences.slice(0, Math.min(referenceCapabilities.maxVideos, remainingMedia)) : [];
         remainingMedia -= effectiveVideoReferences.length;
         const effectiveAudioReferences = referenceCapabilities.audio ? audioReferences.slice(0, Math.min(referenceCapabilities.maxAudios, remainingMedia)) : [];
-        return { text, config: buildVideoConfig(effectiveConfig, model), references: effectiveReferences, videoReferences: effectiveVideoReferences, audioReferences: effectiveAudioReferences };
+        return { text, config: buildVideoConfig(effectiveConfig, model, videoSettings), references: effectiveReferences, videoReferences: effectiveVideoReferences, audioReferences: effectiveAudioReferences };
     };
 
     const retryResult = () => {
@@ -537,7 +548,7 @@ export default function VideoPage() {
 
                             <div className="flex items-center justify-between rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm dark:border-neutral-800 dark:bg-neutral-900 sm:hidden">
                                 <span className="truncate text-neutral-500 dark:text-neutral-400">
-                                    {model} · {videoResolutionLabel(effectiveConfig.vquality)} · {videoSizeLabel(effectiveConfig.size)} · {normalizeVideoSeconds(effectiveConfig.videoSeconds)}s
+                                    {model} · {videoResolutionLabel(videoSettings.resolution)} · {videoSizeLabel(videoSettings.ratio)} · {videoSettings.seconds}s
                                 </span>
                                 <Button size="small" type="text" icon={<SlidersHorizontal className="size-4" />} onClick={() => setSettingsOpen(true)}>
                                     调整
@@ -545,7 +556,7 @@ export default function VideoPage() {
                             </div>
 
                             <div className="hidden gap-4 sm:grid sm:grid-cols-2">
-                                <GenerationSettings config={effectiveConfig} model={model} updateConfig={updateConfig} openConfigDialog={openConfigDialog} />
+                                <GenerationSettings config={effectiveConfig} model={model} updateConfig={updateConfig} onModelChange={handleVideoModelChange} openConfigDialog={openConfigDialog} />
                             </div>
                         </div>
 
@@ -618,7 +629,7 @@ export default function VideoPage() {
             </Drawer>
             <Drawer title="参数" placement="bottom" height="82vh" open={settingsOpen} onClose={() => setSettingsOpen(false)}>
                 <div className="grid grid-cols-2 gap-3 pb-4">
-                    <GenerationSettings config={effectiveConfig} model={model} updateConfig={updateConfig} openConfigDialog={openConfigDialog} />
+                    <GenerationSettings config={effectiveConfig} model={model} updateConfig={updateConfig} onModelChange={handleVideoModelChange} openConfigDialog={openConfigDialog} />
                 </div>
             </Drawer>
             <PromptSelectDialog open={promptDialogOpen} onOpenChange={setPromptDialogOpen} onSelect={setPrompt} />
@@ -630,14 +641,14 @@ export default function VideoPage() {
     );
 }
 
-function GenerationSettings({ config, model, updateConfig, openConfigDialog }: { config: AiConfig; model: string; updateConfig: UpdateAiConfig; openConfigDialog: (shouldPromptContinue?: boolean) => void }) {
+function GenerationSettings({ config, model, updateConfig, onModelChange, openConfigDialog }: { config: AiConfig; model: string; updateConfig: UpdateAiConfig; onModelChange: (model: string) => void; openConfigDialog: (shouldPromptContinue?: boolean) => void }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
 
     return (
         <>
             <label className="col-span-2 block min-w-0 sm:col-span-1">
                 <span className="mb-1.5 block text-sm font-semibold sm:mb-2 sm:text-base">模型</span>
-                <ModelPicker config={config} value={model} onChange={(value) => updateConfig("videoModel", value)} capability="video" fullWidth onMissingConfig={() => openConfigDialog(false)} />
+                <ModelPicker config={config} value={model} onChange={onModelChange} capability="video" fullWidth onMissingConfig={() => openConfigDialog(false)} />
             </label>
             <div className="col-span-2">
                 <VideoSettingsPanel config={config} onConfigChange={(key, value) => updateConfig(key, value)} theme={theme} showTitle={false} className="space-y-4" />
@@ -981,21 +992,15 @@ function buildLog({
     };
 }
 
-function buildVideoConfig(config: AiConfig, model: string): AiConfig {
+function buildVideoConfig(config: AiConfig, model: string, settings: { ratio: string; resolution: string; seconds: number }): AiConfig {
     return {
         ...config,
         model,
         videoModel: model,
-        size: normalizeVideoSize(config.size),
-        videoSeconds: normalizeVideoSeconds(config.videoSeconds),
-        vquality: normalizeResolution(config.vquality),
+        size: settings.ratio,
+        videoSeconds: String(settings.seconds),
+        vquality: settings.resolution,
     };
-}
-
-function normalizeVideoSeconds(value: string) {
-    if (String(value).trim() === "-1") return "-1";
-    const seconds = Math.floor(Number(value) || 6);
-    return String(Math.max(1, Math.min(20, seconds)));
 }
 
 function normalizeVideoSize(value: string) {

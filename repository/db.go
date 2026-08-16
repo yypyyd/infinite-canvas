@@ -9,12 +9,12 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/yypyyd/infinite-canvas/config"
-	"github.com/yypyyd/infinite-canvas/model"
 	"github.com/glebarez/sqlite"
 	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/yypyyd/infinite-canvas/config"
+	"github.com/yypyyd/infinite-canvas/model"
 	gormmysql "gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -88,6 +88,7 @@ func DB() (*gorm.DB, error) {
 			&model.CreditLog{},
 			&model.PaymentOrder{},
 			&model.BalanceLog{},
+			&model.ReferralCommission{},
 			&model.CheckIn{},
 			&model.RedemptionCode{},
 			&model.GenerationTask{},
@@ -270,7 +271,9 @@ func isPostgresError(err error, code string) bool {
 }
 
 func isDuplicateKeyError(err error) bool {
-	if errors.Is(err, gorm.ErrDuplicatedKey) || isMySQLError(err, 1062) || isPostgresError(err, "23505") { return true }
+	if errors.Is(err, gorm.ErrDuplicatedKey) || isMySQLError(err, 1062) || isPostgresError(err, "23505") {
+		return true
+	}
 	message := strings.ToLower(err.Error())
 	return strings.Contains(message, "unique constraint failed") || strings.Contains(message, "constraint failed: unique")
 }

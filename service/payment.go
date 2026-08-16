@@ -149,9 +149,27 @@ func HandlePaymentNotification(values url.Values) (model.PaymentOrder, error) {
 		return model.PaymentOrder{}, errors.New("payment notification does not match order")
 	}
 	extra, _ := json.Marshal(map[string]any{"amountCents": order.AmountCents, "balanceCents": order.BalanceCents, "method": order.Method})
-	order, _, err = repository.SettlePaymentOrder(order.OrderNo, params["trade_no"], now(), model.BalanceLog{
+	paidAt := now()
+	var commission model.ReferralCommission
+	referral := normalizeReferralSetting(settings.Private.Referral)
+	if referral.Enabled && referral.CommissionRate > 0 {
+		invitee, inviteeOK, inviteeErr := repository.GetUserByID(order.UserID)
+		if inviteeErr != nil {
+			return model.PaymentOrder{}, inviteeErr
+		}
+		if inviteeOK && invitee.InviterID != "" && invitee.InviterID != invitee.ID {
+			commissionCents := order.AmountCents * int64(referral.CommissionRate) / 100
+			if commissionCents > 0 {
+				commission = model.ReferralCommission{
+					ID: newID("referral"), InviterID: invitee.InviterID, InviteeID: invitee.ID,
+					BaseAmountCents: order.AmountCents, RatePercent: referral.CommissionRate, CommissionCents: commissionCents,
+				}
+			}
+		}
+	}
+	order, _, err = repository.SettlePaymentOrder(order.OrderNo, params["trade_no"], paidAt, model.BalanceLog{
 		ID: newID("balance"), Type: model.BalanceLogTypePaymentRecharge, Remark: "在线支付充值", Extra: string(extra),
-	})
+	}, commission)
 	return order, err
 }
 

@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { App, Avatar, Button, Card, Checkbox, Descriptions, Empty, Form, Image as AntImage, Input, InputNumber, Modal, Pagination, Progress, Segmented, Select, Skeleton, Table, Tabs, Tag, Typography, type TableColumnsType } from "antd";
 import dayjs from "dayjs";
-import { ArrowRight, CheckSquare, CircleDollarSign, CircleUserRound, Clock3, Cloud, Code2, Coins, Copy, ExternalLink, Film, History, ImageIcon, KeyRound, ListChecks, LoaderCircle, PencilLine, Plus, QrCode, ReceiptText, RefreshCw, Search, ShieldCheck, Smartphone, Trash2, WalletCards } from "lucide-react";
+import { ArrowRight, CheckSquare, CircleDollarSign, CircleUserRound, Clock3, Cloud, Code2, Coins, Copy, ExternalLink, Film, HandCoins, History, ImageIcon, KeyRound, ListChecks, LoaderCircle, PencilLine, Plus, QrCode, ReceiptText, RefreshCw, Search, ShieldCheck, Smartphone, Trash2, WalletCards } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -15,12 +15,13 @@ import { useOpenMedia } from "@/hooks/use-open-media";
 import { formatDuration } from "@/lib/image-utils";
 import { changePassword, createUserAPIKey, deleteUserAPIKey, fetchCreditLogs, fetchGenerationTasks, fetchUserAPIKeys, updateProfile as updateUserProfile, type CreditLog, type CreatedUserAPIKey, type GenerationTask, type UserAPIKey } from "@/services/api/auth";
 import { createPaymentOrder, exchangeBalanceForCredits, fetchPaymentConfig, fetchPaymentOrders, type PaymentMethod, type PaymentOrder } from "@/services/api/payments";
+import { fetchReferralDashboard } from "@/services/api/referrals";
 import { countGenerationHistory, deleteGenerationHistory, GENERATION_HISTORY_CHANGED_EVENT, readGenerationHistory, resolveGenerationHistoryMedia, resolveGenerationHistoryPreview, type GenerationHistoryItem } from "@/services/generation-history";
 import { workspaceOwnerId } from "@/services/workspace-changes";
 import { useUserStore } from "@/stores/use-user-store";
 import { useWorkspaceStatusStore } from "@/stores/use-workspace-status-store";
 
-type AccountTab = "profile" | "balance" | "tasks" | "history" | "credits" | "api";
+type AccountTab = "profile" | "balance" | "tasks" | "history" | "credits" | "referrals" | "api";
 type ProfileFormValues = { displayName: string; avatarUrl: string };
 type PasswordFormValues = { currentPassword: string; newPassword: string; confirmPassword: string };
 type APIKeyFormValues = { name: string };
@@ -75,6 +76,15 @@ const accountTabs = [
         ),
     },
     {
+        key: "referrals",
+        label: (
+            <span className="inline-flex items-center gap-2">
+                <HandCoins className="size-4" />
+                邀请返佣
+            </span>
+        ),
+    },
+    {
         key: "api",
         label: (
             <span className="inline-flex items-center gap-2">
@@ -115,7 +125,7 @@ function AccountContent() {
     const refreshUser = useUserStore((state) => state.refreshUser);
     const handledPaymentResult = useRef("");
     const requestedTab = searchParams.get("tab");
-    const activeTab: AccountTab = requestedTab === "balance" || requestedTab === "tasks" || requestedTab === "history" || requestedTab === "credits" || requestedTab === "api" ? requestedTab : "profile";
+    const activeTab: AccountTab = requestedTab === "balance" || requestedTab === "tasks" || requestedTab === "history" || requestedTab === "credits" || requestedTab === "referrals" || requestedTab === "api" ? requestedTab : "profile";
     const accountHref = activeTab === "profile" ? "/account" : `/account?tab=${activeTab}`;
     const historyOwnerId = workspaceOwnerId(user?.id || "", user?.organizationId || "");
     const historyCountQuery = useQuery({
@@ -196,7 +206,7 @@ function AccountContent() {
                     <Tabs activeKey={activeTab} items={accountTabs} onChange={(key) => router.replace(key === "profile" ? "/account" : `/account?tab=${key}`, { scroll: false })} tabBarStyle={{ margin: 0 }} />
                 </div>
 
-                <div className="mt-5">{activeTab === "profile" ? <ProfileSection /> : activeTab === "balance" ? <BalanceSection /> : activeTab === "tasks" ? <TaskSection /> : activeTab === "history" ? <HistorySection /> : activeTab === "credits" ? <CreditsSection /> : <APIKeySection key={user.organizationId} />}</div>
+                <div className="mt-5">{activeTab === "profile" ? <ProfileSection /> : activeTab === "balance" ? <BalanceSection /> : activeTab === "tasks" ? <TaskSection /> : activeTab === "history" ? <HistorySection /> : activeTab === "credits" ? <CreditsSection /> : activeTab === "referrals" ? <ReferralSection /> : <APIKeySection key={user.organizationId} />}</div>
             </div>
         </main>
     );
@@ -1208,6 +1218,82 @@ function BalanceSection() {
                     ) : null}
                 </div>
             ) : null}
+        </Card>
+    );
+}
+
+function ReferralSection() {
+    const token = useUserStore((state) => state.token);
+    const copyText = useCopyText();
+    const [page, setPage] = useState(1);
+    const [origin, setOrigin] = useState("");
+    const query = useQuery({ queryKey: ["referrals", token, page], queryFn: () => fetchReferralDashboard(token, { page, pageSize: 8 }), enabled: Boolean(token) });
+    const dashboard = query.data;
+    useEffect(() => setOrigin(window.location.origin), []);
+    const inviteURL = dashboard?.affCode && origin ? `${origin}/login?ref=${encodeURIComponent(dashboard.affCode)}` : "";
+
+    return (
+        <Card>
+            <div className="border-b border-border pb-4">
+                <h2 className="text-lg font-semibold">邀请返佣</h2>
+                <p className="mt-1 text-sm text-muted-foreground">分享专属邀请链接，好友注册并完成首次充值后，返佣会自动到账你的人民币余额；后续充值不再返佣。</p>
+            </div>
+            {query.isLoading ? <Skeleton active className="mt-5" /> : query.isError ? <Empty className="py-10" image={Empty.PRESENTED_IMAGE_SIMPLE} description="邀请数据读取失败" /> : (
+                <>
+                    <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                        <div className="rounded-xl border border-border p-4">
+                            <div className="text-xs text-muted-foreground">已邀请用户</div>
+                            <div className="mt-2 text-2xl font-semibold tabular-nums">{dashboard?.invitedCount || 0}</div>
+                        </div>
+                        <div className="rounded-xl border border-border p-4">
+                            <div className="text-xs text-muted-foreground">累计返佣</div>
+                            <div className="mt-2 text-2xl font-semibold tabular-nums">¥{formatYuan(dashboard?.totalCommissionCents || 0)}</div>
+                        </div>
+                        <div className="rounded-xl border border-border p-4">
+                            <div className="text-xs text-muted-foreground">我的邀请码</div>
+                            <div className="mt-2 font-mono text-xl font-semibold tracking-[0.12em]">{dashboard?.affCode || "—"}</div>
+                        </div>
+                        <div className="rounded-xl border border-border p-4">
+                            <div className="text-xs text-muted-foreground">当前首充返佣比例</div>
+                            <div className="mt-2 text-2xl font-semibold tabular-nums">{dashboard?.referralEnabled ? `${dashboard.commissionRate}%` : "暂未开启"}</div>
+                        </div>
+                    </div>
+                    <div className="mt-5 rounded-xl border border-primary/30 bg-primary/5 p-4">
+                        <div className="text-sm font-medium">邀请链接</div>
+                        <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+                            <Input readOnly value={inviteURL} placeholder="邀请链接生成中" />
+                            <Button className="shrink-0" type="primary" icon={<Copy className="size-4" />} disabled={!inviteURL} onClick={() => copyText(inviteURL, "邀请链接已复制")}>
+                                复制链接
+                            </Button>
+                        </div>
+                    </div>
+                    <div className="mt-6">
+                        <div className="mb-3 flex items-center justify-between gap-3">
+                            <div className="text-sm font-medium">返佣明细</div>
+                            <span className="text-xs text-muted-foreground">共 {dashboard?.total || 0} 笔</span>
+                        </div>
+                        {dashboard?.items.length ? (
+                            <>
+                                <Table
+                                    rowKey="id"
+                                    size="small"
+                                    pagination={false}
+                                    dataSource={dashboard.items}
+                                    scroll={{ x: 640 }}
+                                    columns={[
+                                        { title: "邀请用户", dataIndex: "inviteeUsername", render: (value: string) => value || "已注销用户" },
+                                        { title: "订单", dataIndex: "orderNo", render: (value: string) => <span className="font-mono text-xs">{value}</span> },
+                                        { title: "计算基数", dataIndex: "baseAmountCents", align: "right", render: (value: number) => `¥${formatYuan(value)}` },
+                                        { title: "返佣", dataIndex: "commissionCents", align: "right", render: (value: number) => <span className="font-medium text-green-600">+¥{formatYuan(value)}</span> },
+                                        { title: "时间", dataIndex: "createdAt", render: (value: string) => dayjs(value).format("YYYY-MM-DD HH:mm") },
+                                    ]}
+                                />
+                                {dashboard.total > 8 ? <div className="mt-4 flex justify-end"><Pagination current={page} pageSize={8} total={dashboard.total} showSizeChanger={false} onChange={setPage} /></div> : null}
+                            </>
+                        ) : <Empty className="py-8" image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂时没有返佣记录" />}
+                    </div>
+                </>
+            )}
         </Card>
     );
 }

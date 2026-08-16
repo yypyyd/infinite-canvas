@@ -88,6 +88,15 @@ func GetUserByEmail(email string) (model.User, bool, error) {
 	return findUser(db, "email_key = ? OR LOWER(email) = ?", email, email)
 }
 
+// GetUserByAffCode returns the active owner of an invitation code.
+func GetUserByAffCode(affCode string) (model.User, bool, error) {
+	db, err := DB()
+	if err != nil {
+		return model.User{}, false, err
+	}
+	return findUser(db, "aff_code = ? AND status = ?", affCode, model.UserStatusActive)
+}
+
 // CreateUserWithCreditLog 原子创建注册用户及其初始额度流水。
 func CreateUserWithCreditLog(user model.User, log *model.CreditLog) (model.User, error) {
 	db, err := DB()

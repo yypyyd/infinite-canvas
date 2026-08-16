@@ -32,6 +32,7 @@ export type LoginPayload = {
 export type RegisterPayload = LoginPayload & {
     email: string;
     code: string;
+    referralCode?: string;
 };
 
 export type CheckInStatus = {

@@ -1,3 +1,5 @@
+import type { PricingRule } from "@/constant/credits";
+
 export const defaultVideoRatios = ["16:9", "9:16"];
 export const defaultVideoResolutions = ["720p"];
 export const defaultVideoDurations = [6, 10];
@@ -23,6 +25,21 @@ export function resolveVideoSettings(config: { size: string; vquality: string; v
         ratio: ratios.includes(normalizedRatio) ? normalizedRatio : ratios[0],
         resolution: resolutions.includes(normalizedResolution) ? normalizedResolution : resolutions[0],
         seconds: durations.includes(duration) ? duration : durations[0],
+    };
+}
+
+export function resolveVideoPricingSettings(
+    config: { size: string; vquality: string; videoSeconds: string },
+    definition: VideoModelDefinition | undefined,
+    model: string,
+    pricingRules?: PricingRule[],
+) {
+    const settings = resolveVideoSettings(config, definition);
+    const resolutions = definition && pricingRules ? settings.resolutions.filter((item) => hasVideoPricingTier(pricingRules, model, item)) : settings.resolutions;
+    return {
+        ...settings,
+        resolutions,
+        resolution: resolutions.includes(settings.resolution) ? settings.resolution : resolutions[0] || settings.resolution,
     };
 }
 
@@ -66,4 +83,17 @@ function even(value: number) {
 function greatestCommonDivisor(a: number, b: number) {
     while (b) [a, b] = [b, a % b];
     return Math.max(1, a);
+}
+
+function hasVideoPricingTier(rules: PricingRule[], model: string, resolution: string) {
+    return rules.some(
+        (rule) =>
+            rule.enabled !== false &&
+            rule.model === model &&
+            rule.modality === "video" &&
+            rule.operation === "generation" &&
+            rule.unit === "second" &&
+            rule.resolutionTier &&
+            normalizeVideoResolution(rule.resolutionTier) === normalizeVideoResolution(resolution),
+    );
 }

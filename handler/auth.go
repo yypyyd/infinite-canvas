@@ -17,10 +17,11 @@ type loginRequest struct {
 }
 
 type registerRequest struct {
-	Username string `json:"username"`
-	Email    string `json:"email"`
-	Code     string `json:"code"`
-	Password string `json:"password"`
+	Username     string `json:"username"`
+	Email        string `json:"email"`
+	Code         string `json:"code"`
+	Password     string `json:"password"`
+	ReferralCode string `json:"referralCode"`
 }
 
 type sendEmailCodeRequest struct {
@@ -55,7 +56,7 @@ type changePasswordRequest struct {
 func Register(w http.ResponseWriter, r *http.Request) {
 	var request registerRequest
 	_ = json.NewDecoder(r.Body).Decode(&request)
-	session, err := service.Register(request.Username, request.Email, request.Code, request.Password)
+	session, err := service.Register(request.Username, request.Email, request.Code, request.Password, request.ReferralCode)
 	if err != nil {
 		FailError(w, err)
 		return
@@ -163,7 +164,10 @@ func UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	updated.OrganizationID = user.OrganizationID
 	updated, err = service.ApplyEffectiveCredits(updated)
-	if err != nil { FailError(w, err); return }
+	if err != nil {
+		FailError(w, err)
+		return
+	}
 	OK(w, updated)
 }
 

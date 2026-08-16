@@ -440,6 +440,7 @@ export type AdminPrivateSettings = {
         passwordConfigured: boolean;
     };
     payment: AdminPaymentSetting;
+    referral: AdminReferralSetting;
     operationsAlerts: {
         enabled: boolean;
         batchQueuedThreshold: number;
@@ -473,6 +474,11 @@ export type AdminPaymentSetting = {
     methods: AdminPaymentMethod[];
     packages: AdminPaymentPackage[];
     creditsPerYuan: number;
+};
+
+export type AdminReferralSetting = {
+    enabled: boolean;
+    commissionRate: number;
 };
 
 export type AdminSettings = {

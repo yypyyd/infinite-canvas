@@ -7,11 +7,11 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"github.com/yypyyd/infinite-canvas/config"
 	"github.com/yypyyd/infinite-canvas/model"
 	"github.com/yypyyd/infinite-canvas/repository"
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -49,7 +49,7 @@ func EnsureDefaultAdmin() error {
 	return err
 }
 
-func Register(username string, email string, code string, password string) (model.AuthSession, error) {
+func Register(username string, email string, code string, password string, referralCodes ...string) (model.AuthSession, error) {
 	settings, err := repository.GetSettings()
 	if err != nil {
 		return model.AuthSession{}, err
@@ -108,6 +108,21 @@ func Register(username string, email string, code string, password string) (mode
 	}
 	createdAt := now()
 	emailKey := email
+	referralCode := ""
+	if len(referralCodes) > 0 {
+		referralCode = strings.ToUpper(strings.TrimSpace(referralCodes[0]))
+	}
+	inviterID := ""
+	if referralCode != "" {
+		inviter, inviterOK, inviterErr := repository.GetUserByAffCode(referralCode)
+		if inviterErr != nil {
+			return model.AuthSession{}, inviterErr
+		}
+		if !inviterOK {
+			return model.AuthSession{}, safeMessageError{message: "邀请码无效"}
+		}
+		inviterID = inviter.ID
+	}
 	user, err := createRegisteredUser(model.User{
 		ID:        newID("user"),
 		Username:  username,
@@ -118,9 +133,10 @@ func Register(username string, email string, code string, password string) (mode
 		Group:     "default",
 		AffCode:   newAffCode(),
 		Status:    model.UserStatusActive,
+		InviterID: inviterID,
 		CreatedAt: createdAt,
 		UpdatedAt: createdAt,
-	}, normalizedSettings, verificationID, codeHash)
+	}, normalizedSettings, verificationID, codeHash, inviterID)
 	if err != nil {
 		if errors.Is(err, repository.ErrEmailVerificationUnavailable) {
 			return model.AuthSession{}, safeMessageError{message: "邮箱验证码无效或已过期"}
@@ -130,7 +146,7 @@ func Register(username string, email string, code string, password string) (mode
 	return newSession(user)
 }
 
-func createRegisteredUser(user model.User, settings model.Settings, verificationID string, codeHash string) (model.User, error) {
+func createRegisteredUser(user model.User, settings model.Settings, verificationID string, codeHash string, inviterIDs ...string) (model.User, error) {
 	reward := 0
 	if settings.Public.Auth.NewUserReward {
 		reward = settings.Public.Auth.NewUserRewardCredits
@@ -139,13 +155,15 @@ func createRegisteredUser(user model.User, settings model.Settings, verification
 	organizationID := newID("org")
 	memberID := newID("member")
 	organizationName := strings.TrimSpace(user.DisplayName)
-	if organizationName == "" { organizationName = user.Username }
+	if organizationName == "" {
+		organizationName = user.Username
+	}
 	user.OrganizationID = organizationID
 	organization := model.Organization{ID: organizationID, Name: organizationName + "的企业", Slug: organizationID, Status: "active", Version: 1, CreatedBy: user.ID, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt}
 	membership := model.OrganizationMember{ID: memberID, OrganizationID: organizationID, UserID: user.ID, Role: model.OrganizationRoleOwner, Version: 1, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt}
 	audit := newAuditLog(user.ID, organizationID, "organization.create", "organization", organizationID, organization.Name, user.CreatedAt)
 	if reward <= 0 {
-		return repository.CreateVerifiedUserWithCreditLog(user, organization, membership, audit, nil, verificationID, codeHash, now(), emailMaxAttempts)
+		return repository.CreateVerifiedUserWithCreditLog(user, organization, membership, audit, nil, verificationID, codeHash, now(), emailMaxAttempts, inviterIDs...)
 	}
 	log := &model.CreditLog{
 		ID:        newID("credit"),
@@ -155,7 +173,7 @@ func createRegisteredUser(user model.User, settings model.Settings, verification
 		Remark:    "新用户注册奖励",
 		CreatedAt: user.CreatedAt,
 	}
-	return repository.CreateVerifiedUserWithCreditLog(user, organization, membership, audit, log, verificationID, codeHash, now(), emailMaxAttempts)
+	return repository.CreateVerifiedUserWithCreditLog(user, organization, membership, audit, log, verificationID, codeHash, now(), emailMaxAttempts, inviterIDs...)
 }
 
 func Login(identifier string, password string) (model.AuthSession, error) {
@@ -224,8 +242,12 @@ func CurrentAuthUser(tokenText string) (model.AuthUser, bool) {
 
 func ApplyEffectiveCredits(user model.AuthUser) (model.AuthUser, error) {
 	organization, ok, err := repository.GetOrganization(user.OrganizationID)
-	if err != nil { return user, err }
-	if !ok { return user, safeMessageError{message: "企业不存在或已停用"} }
+	if err != nil {
+		return user, err
+	}
+	if !ok {
+		return user, safeMessageError{message: "企业不存在或已停用"}
+	}
 	return applyOrganizationCredits(user, organization), nil
 }
 
@@ -303,7 +325,9 @@ func SaveUser(user model.User, password string) (model.User, error) {
 			user.EmailKey = saved.EmailKey
 		}
 		user.AvatarURL = saved.AvatarURL
+		user.BalanceCents = saved.BalanceCents
 		user.Credits = saved.Credits
+		user.ReservedCredits = saved.ReservedCredits
 		user.Extra = saved.Extra
 		if requestGroup == "" {
 			user.Group = saved.Group
@@ -314,6 +338,8 @@ func SaveUser(user model.User, password string) (model.User, error) {
 		if user.AffCode == "" {
 			user.AffCode = newAffCode()
 		}
+		user.AffCount = saved.AffCount
+		user.InviterID = saved.InviterID
 		if user.LinuxDoID == "" {
 			user.LinuxDoID = saved.LinuxDoID
 		}
@@ -527,4 +553,3 @@ func normalizeUserGroup(group string) string {
 	}
 	return group
 }
-

@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Check, Download, Images, Pencil, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button, Input } from "antd";
 
-import { resolveMediaUrl } from "@/services/file-storage";
+import { workspaceImageUrl } from "@/services/api/workspace";
 import { cn } from "@/lib/utils";
 import { CanvasNodeType } from "../types";
 import { useCanvasStore, type CanvasProject } from "../stores/use-canvas-store";
@@ -13,30 +13,14 @@ import { useCanvasUiStore } from "../stores/use-canvas-ui-store";
 import { exportCanvasProjects } from "../utils/canvas-export";
 
 function useProjectCovers(project: CanvasProject) {
-    const [covers, setCovers] = useState<string[]>([]);
-    const joined = useMemo(
+    return useMemo(
         () =>
             project.nodes
                 .filter((node) => node.type === CanvasNodeType.Image && node.metadata?.storageKey)
                 .slice(0, 4)
-                .map((node) => node.metadata!.storageKey!)
-                .join(","),
+                .map((node) => workspaceImageUrl(node.metadata!.storageKey!, "thumb")),
         [project.nodes],
     );
-    useEffect(() => {
-        let alive = true;
-        if (!joined) {
-            setCovers([]);
-            return;
-        }
-        void Promise.all(joined.split(",").map((key) => resolveMediaUrl(key))).then((urls) => {
-            if (alive) setCovers(urls.filter(Boolean));
-        });
-        return () => {
-            alive = false;
-        };
-    }, [joined]);
-    return covers;
 }
 
 export function CanvasProjectCard({ project, featured = false }: { project: CanvasProject; featured?: boolean }) {
@@ -71,7 +55,7 @@ export function CanvasProjectCard({ project, featured = false }: { project: Canv
                 {covers.length ? (
                     <div className={cn("grid h-full gap-px", covers.length > 1 && "grid-cols-2", covers.length > 2 && "grid-rows-2")}>
                         {covers.map((url) => (
-                            <img key={url} src={url} alt="" className="size-full object-cover" />
+                            <img key={url} src={url} alt="" loading={featured ? "eager" : "lazy"} decoding="async" className="size-full object-cover" />
                         ))}
                     </div>
                 ) : (

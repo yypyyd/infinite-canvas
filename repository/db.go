@@ -21,18 +21,8 @@ import (
 )
 
 var promptCategories = []model.PromptCategory{
-	{Category: "awesome-seedance", Name: "Awesome Seedance 2.0", Description: "ZeroLu 整理的 Seedance 2.0 视频提示词与镜头案例", GithubURL: "https://github.com/ZeroLu/awesome-seedance", Remote: true},
-	{Category: "system", Name: "系统", Description: "系统提示词分类"},
 	{Category: "jeremy-product-photography", Name: "商品摄影灵感 · CC0", Description: "JeremyGDM 整理的商品主图、细节、场景、食品与营销海报提示词", GithubURL: "https://github.com/JeremyGDM/awesome-ai-product-photography-prompts", Remote: true},
 	{Category: "joesai-commercial-prompts", Name: "商业商品图 · GPT Image 2", Description: "JoeSai 整理的 MIT 商业商品图、行业视觉与电商转化提示词", GithubURL: "https://github.com/JoeSai/awesome-gpt-image-2-commercial-prompts", Remote: true},
-	{Category: "shoplive-ecommerce-video", Name: "电商视频 · Veo 3.1", Description: "Shoplive 整理的 MIT 商品展示、口播广告与服饰短视频提示词", GithubURL: "https://github.com/shaozheng0503/Shoplive", Remote: true},
-	{Category: "gpt-image-2-prompts", Name: "GPT Image 2 Prompts", Description: "GPT Image 2 案例提示词分类（已切换到可用源）", GithubURL: "https://github.com/freestylefly/awesome-gpt-image-2", Remote: true},
-	{Category: "awesome-gpt-image", Name: "Awesome GPT Image", Description: "ZeroLu 的中文 GPT Image 提示词分类", GithubURL: "https://github.com/ZeroLu/awesome-gpt-image", Remote: true},
-	{Category: "awesome-gpt4o-image-prompts", Name: "Awesome GPT4o Image Prompts", Description: "ImgEdify 的 GPT-4o 图像提示词分类", GithubURL: "https://github.com/ImgEdify/Awesome-GPT4o-Image-Prompts", Remote: true},
-	{Category: "youmind-gpt-image-2", Name: "YouMind GPT Image 2", Description: "YouMind OpenLab 的 GPT Image 2 中文提示词分类", GithubURL: "https://github.com/YouMind-OpenLab/awesome-gpt-image-2", Remote: true},
-	{Category: "youmind-nano-banana-pro", Name: "YouMind Nano Banana Pro", Description: "YouMind OpenLab 的 Nano Banana Pro 中文提示词分类", GithubURL: "https://github.com/YouMind-OpenLab/awesome-nano-banana-pro-prompts", Remote: true},
-	{Category: "davidwu-gpt-image2-prompts", Name: "awesome-gpt-image2-prompts", Description: "davidwuw0811-boop 整理的 GPT Image 2 提示词分类", GithubURL: "https://github.com/davidwuw0811-boop/awesome-gpt-image2-prompts", Remote: true},
-	{Category: "wuyoscar-gpt-image2-skill", Name: "GPT Image 2 Skill Gallery", Description: "Wuyoscar 整理的 GPT Image 2 分类图库与可复用提示词", GithubURL: "https://github.com/wuyoscar/GPT-Image2-Skill", Remote: true},
 }
 
 var (
@@ -120,6 +110,9 @@ func DB() (*gorm.DB, error) {
 		}
 		if dbErr == nil {
 			dbErr = backfillLegacyOrganizationData(db)
+		}
+		if dbErr == nil {
+			dbErr = deleteOtherPromptCategories(db)
 		}
 	})
 	return db, dbErr

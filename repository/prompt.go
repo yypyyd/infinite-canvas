@@ -29,6 +29,14 @@ func ListPromptCategories() ([]model.PromptCategory, error) {
 	return PromptCategories(), nil
 }
 
+func deleteOtherPromptCategories(db *gorm.DB) error {
+	categories := make([]string, 0, len(promptCategories))
+	for _, item := range promptCategories {
+		categories = append(categories, item.Category)
+	}
+	return db.Where("category NOT IN ?", categories).Delete(&model.Prompt{}).Error
+}
+
 // ListPrompts 按查询条件返回提示词分页列表。
 func ListPrompts(q model.Query) ([]model.Prompt, int64, error) {
 	db, err := DB()

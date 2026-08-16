@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import dynamic from "next/dynamic";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 
 import { useConfigStore } from "@/stores/use-config-store";
@@ -17,6 +17,8 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
     const userId = useUserStore((state) => state.user?.id || "");
     const loadPublicSettings = useConfigStore((state) => state.loadPublicSettings);
     const isLoginPage = pathname === "/login" || pathname === "/admin/login";
+    const needsWorkspaceSync = shouldSyncWorkspace(pathname);
+    const [workspaceActivated, setWorkspaceActivated] = useState(needsWorkspaceSync);
 
     useEffect(() => {
         void loadPublicSettings();
@@ -26,11 +28,21 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
         if (!isLoginPage) void hydrateUser();
     }, [hydrateUser, isLoginPage]);
 
+    useEffect(() => {
+        if (needsWorkspaceSync) setWorkspaceActivated(true);
+    }, [needsWorkspaceSync]);
+
     return (
         <>
-            {userId ? <WorkspaceProvider /> : null}
+            {userId && (workspaceActivated || needsWorkspaceSync) ? <WorkspaceProvider /> : null}
             <UserPreferencesProvider />
             {children}
         </>
+    );
+}
+
+function shouldSyncWorkspace(pathname: string) {
+    return ["/account", "/asset-library", "/assets", "/canvas", "/commerce", "/image", "/prompts", "/video"].some(
+        (path) => pathname === path || pathname.startsWith(`${path}/`),
     );
 }

@@ -10,17 +10,27 @@ import { ClientRootInit } from "@/components/layout/client-root-init";
 import { getAntThemeConfig } from "@/lib/app-theme";
 import { useThemeStore, type ThemeName } from "@/stores/use-theme-store";
 
-const queryClient = new QueryClient({
-    defaultOptions: {
-        queries: {
-            staleTime: 30_000,
-            retry: false,
-            refetchOnWindowFocus: false,
+function createQueryClient() {
+    return new QueryClient({
+        defaultOptions: {
+            queries: {
+                staleTime: 30_000,
+                retry: false,
+                refetchOnWindowFocus: false,
+            },
         },
-    },
-});
+    });
+}
+
+let browserQueryClient: QueryClient | undefined;
+
+function getQueryClient() {
+    if (typeof window === "undefined") return createQueryClient();
+    return (browserQueryClient ??= createQueryClient());
+}
 
 export function AppProviders({ children, initialTheme }: { children: ReactNode; initialTheme: ThemeName }) {
+    const [queryClient] = useState(getQueryClient);
     const storeTheme = useThemeStore((state) => state.theme);
     const [themeInitialized, setThemeInitialized] = useState(false);
     const theme = themeInitialized ? storeTheme : initialTheme;

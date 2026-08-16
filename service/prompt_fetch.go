@@ -26,7 +26,6 @@ const (
 	wuyoscarGptImage2RawBase        = "https://raw.githubusercontent.com/wuyoscar/GPT-Image2-Skill/main"
 	jeremyProductPhotographyRawBase = "https://raw.githubusercontent.com/JeremyGDM/awesome-ai-product-photography-prompts/master"
 	joesaiCommercialPromptsRawBase  = "https://raw.githubusercontent.com/JoeSai/awesome-gpt-image-2-commercial-prompts/main"
-	shopliveEcommerceVideoRawBase   = "https://raw.githubusercontent.com/shaozheng0503/Shoplive/main"
 )
 
 var jeremyProductPhotographyFiles = []string{"prompts/product-photography.md", "prompts/food-and-drink.md", "prompts/poster-design.md"}
@@ -103,8 +102,6 @@ func buildPromptCategory(category string) ([]model.Prompt, error) {
 		return buildJeremyProductPhotographyPrompts()
 	case "joesai-commercial-prompts":
 		return buildJoeSaiCommercialPrompts()
-	case "shoplive-ecommerce-video":
-		return buildShopliveEcommerceVideoPrompts()
 	case "gpt-image-2-prompts":
 		return buildFreestyleGptImage2Prompts()
 	case "awesome-gpt-image":
@@ -219,34 +216,6 @@ func buildJoeSaiCommercialPrompts() ([]model.Prompt, error) {
 	return items, nil
 }
 
-func buildShopliveEcommerceVideoPrompts() ([]model.Prompt, error) {
-	markdown, err := fetchText(shopliveEcommerceVideoRawBase, "Veo3.1_电商提示词包.md")
-	if err != nil {
-		return nil, err
-	}
-	items := []model.Prompt{}
-	for _, block := range splitBeforeHeading(markdown, "### ") {
-		heading := strings.TrimSpace(firstMatch(block, `(?m)^###\s+(.+)$`))
-		if isShopliveNonPromptHeading(heading) {
-			continue
-		}
-		prompt := firstMarkdownCodeBlock(block)
-		if heading == "" || prompt == "" {
-			continue
-		}
-		title := strings.TrimSpace(regexp.MustCompile(`^\d+[.)]\s*`).ReplaceAllString(heading, ""))
-		tags := []string{"商品视频", "电商广告", "veo3.1"}
-		if strings.Contains(title, "口播") {
-			tags = append(tags, "口播")
-		}
-		items = append(items, model.Prompt{ID: "shoplive-ecommerce-video-" + leftPad(len(items)+1), Title: title, Prompt: prompt, Tags: tags})
-	}
-	if len(items) == 0 {
-		return nil, errors.New("Shoplive 电商视频提示词包未找到提示词")
-	}
-	return items, nil
-}
-
 func extractJoeSaiPrompt(markdown string) string {
 	for _, heading := range []string{"提示词（中文）", "Prompt (EN)"} {
 		section := firstMatch(markdown, "(?s)(?:^|\\n)##\\s+"+regexp.QuoteMeta(heading)+"\\s*\\r?\\n(.*?)(?:\\r?\\n##\\s+|$)")
@@ -266,16 +235,6 @@ func firstImage(images []string) string {
 		return ""
 	}
 	return images[0]
-}
-
-func isShopliveNonPromptHeading(value string) bool {
-	lower := strings.ToLower(strings.TrimSpace(value))
-	for _, token := range []string{"官方规则", "推荐参数", "api 请求", "快速调参", "失败重试", "一键替换", "可直接复用", "小技巧"} {
-		if strings.Contains(lower, token) {
-			return true
-		}
-	}
-	return false
 }
 
 func buildGptImage2Prompts() ([]model.Prompt, error) {

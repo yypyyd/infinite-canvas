@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent as ReactChangeEvent, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
+import dynamic from "next/dynamic";
 import { useParams, useRouter } from "next/navigation";
 import { Home, ImageIcon, Images, List, Menu, MessageSquare, Music2, Plus, Redo2, Save, Settings2, Trash2, Undo2, Upload, Video } from "lucide-react";
 import { saveAs } from "file-saver";
@@ -34,25 +35,22 @@ import { NODE_DEFAULT_SIZE, getNodeSpec } from "../constants";
 import { ActiveConnectionPath, ConnectionPath } from "../components/canvas-connections";
 import { CanvasConfigComposer } from "../components/canvas-config-composer";
 import { CanvasConfigNodePanel } from "../components/canvas-config-node-panel";
-import { CanvasCommercePackagePanel } from "../components/canvas-commerce-package-panel";
-import { CanvasVideoCreativePanel, type VideoCreativeRequest } from "../components/canvas-video-creative-panel";
+import type { VideoCreativeRequest } from "../components/canvas-video-creative-panel";
 import { buildCommercePackageBlueprint, type CommercePackageRequest } from "../components/canvas-commerce-package";
-import { CanvasAssistantPanel } from "../components/canvas-assistant-panel";
 import { CanvasNodeContextMenu } from "../components/canvas-context-menu";
-import { CanvasNodeAngleDialog, type CanvasImageAngleParams } from "../components/canvas-node-angle-dialog";
-import { CanvasNodeCropDialog, type CanvasImageCropRect } from "../components/canvas-node-crop-dialog";
-import { CanvasNodeMaskEditDialog, type CanvasImageMaskEditPayload } from "../components/canvas-node-mask-edit-dialog";
-import { CanvasNodeSplitDialog, type CanvasImageSplitParams } from "../components/canvas-node-split-dialog";
-import { CanvasNodeUpscaleDialog, type CanvasImageUpscaleParams } from "../components/canvas-node-upscale-dialog";
+import type { CanvasImageAngleParams } from "../components/canvas-node-angle-dialog";
+import type { CanvasImageCropRect } from "../components/canvas-node-crop-dialog";
+import type { CanvasImageMaskEditPayload } from "../components/canvas-node-mask-edit-dialog";
+import type { CanvasImageSplitParams } from "../components/canvas-node-split-dialog";
+import type { CanvasImageUpscaleParams } from "../components/canvas-node-upscale-dialog";
 import { buildNodeChatMessages, buildNodeGenerationContext, buildNodeGenerationInputs, filterNodeGenerationInputs, hydrateNodeGenerationContext, type NodeGenerationInput, type NodeReferenceCapabilities } from "../components/canvas-node-generation";
 import { CanvasNodeHoverToolbar, CanvasNodeInfoModal } from "../components/canvas-node-hover-toolbar";
 import { InfiniteCanvas } from "../components/infinite-canvas";
 import { Minimap } from "../components/canvas-mini-map";
 import { CanvasNode } from "../components/canvas-node";
 import { CanvasNodePromptPanel, type CanvasNodeGenerationMode } from "../components/canvas-node-prompt-panel";
-import { CanvasPromptEditorModal } from "../components/canvas-prompt-editor-modal";
+import type { AssetPickerTab, InsertAssetPayload } from "../components/asset-picker-modal";
 import { CanvasToolbar } from "../components/canvas-toolbar";
-import { AssetPickerModal, type AssetPickerTab, type InsertAssetPayload } from "../components/asset-picker-modal";
 import { CanvasZoomControls } from "../components/canvas-zoom-controls";
 import { CANVAS_PROJECTS_REPLACED_EVENT, useCanvasStore, type CanvasProject } from "../stores/use-canvas-store";
 import { buildCanvasResourceReferences, buildNodeMentionReferenceMap, type CanvasResourceReference } from "../utils/canvas-resource-references";
@@ -74,6 +72,17 @@ import {
 } from "../types";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio } from "@/types/media";
+
+const CanvasAssistantPanel = dynamic(() => import("../components/canvas-assistant-panel").then((module) => module.CanvasAssistantPanel), { ssr: false });
+const CanvasCommercePackagePanel = dynamic(() => import("../components/canvas-commerce-package-panel").then((module) => module.CanvasCommercePackagePanel), { ssr: false });
+const CanvasVideoCreativePanel = dynamic(() => import("../components/canvas-video-creative-panel").then((module) => module.CanvasVideoCreativePanel), { ssr: false });
+const CanvasNodeAngleDialog = dynamic(() => import("../components/canvas-node-angle-dialog").then((module) => module.CanvasNodeAngleDialog), { ssr: false });
+const CanvasNodeCropDialog = dynamic(() => import("../components/canvas-node-crop-dialog").then((module) => module.CanvasNodeCropDialog), { ssr: false });
+const CanvasNodeMaskEditDialog = dynamic(() => import("../components/canvas-node-mask-edit-dialog").then((module) => module.CanvasNodeMaskEditDialog), { ssr: false });
+const CanvasNodeSplitDialog = dynamic(() => import("../components/canvas-node-split-dialog").then((module) => module.CanvasNodeSplitDialog), { ssr: false });
+const CanvasNodeUpscaleDialog = dynamic(() => import("../components/canvas-node-upscale-dialog").then((module) => module.CanvasNodeUpscaleDialog), { ssr: false });
+const CanvasPromptEditorModal = dynamic(() => import("../components/canvas-prompt-editor-modal").then((module) => module.CanvasPromptEditorModal), { ssr: false });
+const AssetPickerModal = dynamic(() => import("../components/asset-picker-modal").then((module) => module.AssetPickerModal), { ssr: false });
 
 type CanvasClipboard = {
     nodes: CanvasNodeData[];
@@ -3636,21 +3645,25 @@ function InfiniteCanvasPage() {
                     onOpenCommercePackage={() => setCommercePackageOpen(true)}
                 />
 
-                <CanvasCommercePackagePanel
-                    open={commercePackageOpen}
-                    selectedImageCount={nodes.filter((node) => selectedNodeIds.has(node.id) && node.type === CanvasNodeType.Image && node.metadata?.content).length}
-                    onClose={() => setCommercePackageOpen(false)}
-                    onCreate={createCommercePackage}
-                />
+                {commercePackageOpen ? (
+                    <CanvasCommercePackagePanel
+                        open
+                        selectedImageCount={nodes.filter((node) => selectedNodeIds.has(node.id) && node.type === CanvasNodeType.Image && node.metadata?.content).length}
+                        onClose={() => setCommercePackageOpen(false)}
+                        onCreate={createCommercePackage}
+                    />
+                ) : null}
 
-                <CanvasVideoCreativePanel
-                    key={videoCreativeTarget ? `${videoCreativeTarget.nodeId}:${videoCreativeTarget.mode}` : "video-creative"}
-                    open={Boolean(videoCreativeTarget)}
-                    defaultMode={videoCreativeTarget?.mode || "analysis"}
-                    sourceVideo={videoCreativeSource}
-                    onClose={() => setVideoCreativeTarget(null)}
-                    onRun={runVideoCreativeWorkflow}
-                />
+                {videoCreativeTarget ? (
+                    <CanvasVideoCreativePanel
+                        key={`${videoCreativeTarget.nodeId}:${videoCreativeTarget.mode}`}
+                        open
+                        defaultMode={videoCreativeTarget.mode}
+                        sourceVideo={videoCreativeSource}
+                        onClose={() => setVideoCreativeTarget(null)}
+                        onRun={runVideoCreativeWorkflow}
+                    />
+                ) : null}
 
                 {isMiniMapOpen ? <Minimap nodes={displayNodes} viewport={viewport} viewportSize={size} onViewportChange={setViewport} /> : null}
 
@@ -3692,23 +3705,22 @@ function InfiniteCanvasPage() {
 
                 <CanvasNodeInfoModal node={infoNode} open={Boolean(infoNode)} onClose={() => setInfoNodeId(null)} />
 
-                <CanvasPromptEditorModal
-                    node={promptEditorNode}
-                    open={Boolean(promptEditorNode)}
-                    references={promptEditorNode ? mentionReferencesByNodeId.get(promptEditorNode.id) || EMPTY_MENTION_REFERENCES : EMPTY_MENTION_REFERENCES}
-                    onChange={(value) => {
-                        if (promptEditorNode) handleNodePromptChange(promptEditorNode.id, value);
-                    }}
-                    onGenerate={() => {
-                        if (!promptEditorNode) return;
-                        const mode: CanvasNodeGenerationMode = promptEditorNode.type === CanvasNodeType.Text ? "text" : promptEditorNode.type === CanvasNodeType.Video ? "video" : promptEditorNode.type === CanvasNodeType.Audio ? "audio" : "image";
-                        const prompt = promptEditorNode.metadata?.promptDraft || "";
-                        handleNodePromptChange(promptEditorNode.id, "");
-                        void handleGenerateNode(promptEditorNode.id, mode, prompt);
-                        setPromptEditorNodeId(null);
-                    }}
-                    onClose={() => setPromptEditorNodeId(null)}
-                />
+                {promptEditorNode ? (
+                    <CanvasPromptEditorModal
+                        node={promptEditorNode}
+                        open
+                        references={mentionReferencesByNodeId.get(promptEditorNode.id) || EMPTY_MENTION_REFERENCES}
+                        onChange={(value) => handleNodePromptChange(promptEditorNode.id, value)}
+                        onGenerate={() => {
+                            const mode: CanvasNodeGenerationMode = promptEditorNode.type === CanvasNodeType.Text ? "text" : promptEditorNode.type === CanvasNodeType.Video ? "video" : promptEditorNode.type === CanvasNodeType.Audio ? "audio" : "image";
+                            const prompt = promptEditorNode.metadata?.promptDraft || "";
+                            handleNodePromptChange(promptEditorNode.id, "");
+                            void handleGenerateNode(promptEditorNode.id, mode, prompt);
+                            setPromptEditorNodeId(null);
+                        }}
+                        onClose={() => setPromptEditorNodeId(null)}
+                    />
+                ) : null}
 
                 {cropNode?.metadata?.content ? <CanvasNodeCropDialog dataUrl={cropNode.metadata.content} open={Boolean(cropNode)} onClose={() => setCropNodeId(null)} onConfirm={(crop) => void cropImageNode(cropNode!, crop)} /> : null}
 
@@ -3757,7 +3769,7 @@ function InfiniteCanvasPage() {
                     <p className="text-sm opacity-60">这会删除当前画布上的所有节点和连线。</p>
                 </Modal>
 
-                <AssetPickerModal open={assetPickerOpen} defaultTab={assetPickerTab} onInsert={handleAssetInsert} onClose={() => setAssetPickerOpen(false)} />
+                {assetPickerOpen ? <AssetPickerModal open defaultTab={assetPickerTab} onInsert={handleAssetInsert} onClose={() => setAssetPickerOpen(false)} /> : null}
             </section>
             {assistantMounted ? (
                 <CanvasAssistantPanel

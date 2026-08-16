@@ -15,16 +15,21 @@ import (
 )
 
 const (
-	gptImage2RawBase             = "https://raw.githubusercontent.com/EvoLinkAI/awesome-gpt-image-2-API-and-Prompts/main"
-	awesomeGptImageRawBase       = "https://raw.githubusercontent.com/ZeroLu/awesome-gpt-image/main"
-	awesomeGpt4oImagePromptsBase = "https://raw.githubusercontent.com/ImgEdify/Awesome-GPT4o-Image-Prompts/main"
-	youMindGptImage2RawBase      = "https://raw.githubusercontent.com/YouMind-OpenLab/awesome-gpt-image-2/main"
-	youMindNanoBananaProRawBase  = "https://raw.githubusercontent.com/YouMind-OpenLab/awesome-nano-banana-pro-prompts/main"
-	davidWuGptImage2RawBase      = "https://raw.githubusercontent.com/davidwuw0811-boop/awesome-gpt-image2-prompts/main"
-	freestyleGptImage2RawBase    = "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main"
-	seedanceRawBase              = "https://raw.githubusercontent.com/ZeroLu/awesome-seedance/main"
-	wuyoscarGptImage2RawBase     = "https://raw.githubusercontent.com/wuyoscar/GPT-Image2-Skill/main"
+	gptImage2RawBase                = "https://raw.githubusercontent.com/EvoLinkAI/awesome-gpt-image-2-API-and-Prompts/main"
+	awesomeGptImageRawBase          = "https://raw.githubusercontent.com/ZeroLu/awesome-gpt-image/main"
+	awesomeGpt4oImagePromptsBase    = "https://raw.githubusercontent.com/ImgEdify/Awesome-GPT4o-Image-Prompts/main"
+	youMindGptImage2RawBase         = "https://raw.githubusercontent.com/YouMind-OpenLab/awesome-gpt-image-2/main"
+	youMindNanoBananaProRawBase     = "https://raw.githubusercontent.com/YouMind-OpenLab/awesome-nano-banana-pro-prompts/main"
+	davidWuGptImage2RawBase         = "https://raw.githubusercontent.com/davidwuw0811-boop/awesome-gpt-image2-prompts/main"
+	freestyleGptImage2RawBase       = "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main"
+	seedanceRawBase                 = "https://raw.githubusercontent.com/ZeroLu/awesome-seedance/main"
+	wuyoscarGptImage2RawBase        = "https://raw.githubusercontent.com/wuyoscar/GPT-Image2-Skill/main"
+	jeremyProductPhotographyRawBase = "https://raw.githubusercontent.com/JeremyGDM/awesome-ai-product-photography-prompts/master"
+	joesaiCommercialPromptsRawBase  = "https://raw.githubusercontent.com/JoeSai/awesome-gpt-image-2-commercial-prompts/main"
+	shopliveEcommerceVideoRawBase   = "https://raw.githubusercontent.com/shaozheng0503/Shoplive/main"
 )
+
+var jeremyProductPhotographyFiles = []string{"prompts/product-photography.md", "prompts/food-and-drink.md", "prompts/poster-design.md"}
 
 var gptImage2CaseFiles = []string{"README.md", "cases/ad-creative.md", "cases/character.md", "cases/comparison.md", "cases/ecommerce.md", "cases/portrait.md", "cases/poster.md", "cases/ui.md"}
 
@@ -65,6 +70,16 @@ type freestyleGptImage2Data struct {
 	} `json:"cases"`
 }
 
+type joesaiCommercialPrompt struct {
+	Slug         string `json:"slug"`
+	Category     string `json:"category"`
+	Title        string `json:"title"`
+	TitleZH      string `json:"title_zh"`
+	UseCase      string `json:"use_case"`
+	AssetType    string `json:"asset_type"`
+	ExampleImage string `json:"example_image"`
+}
+
 func SyncPromptCategory(category string) ([]model.PromptCategory, error) {
 	for _, item := range repository.PromptCategories() {
 		if item.Category != category {
@@ -84,6 +99,12 @@ func SyncPromptCategory(category string) ([]model.PromptCategory, error) {
 
 func buildPromptCategory(category string) ([]model.Prompt, error) {
 	switch category {
+	case "jeremy-product-photography":
+		return buildJeremyProductPhotographyPrompts()
+	case "joesai-commercial-prompts":
+		return buildJoeSaiCommercialPrompts()
+	case "shoplive-ecommerce-video":
+		return buildShopliveEcommerceVideoPrompts()
 	case "gpt-image-2-prompts":
 		return buildFreestyleGptImage2Prompts()
 	case "awesome-gpt-image":
@@ -119,6 +140,142 @@ func fetchText(baseURL, file string) (string, error) {
 	}
 	data, err := io.ReadAll(response.Body)
 	return string(data), err
+}
+
+func buildJeremyProductPhotographyPrompts() ([]model.Prompt, error) {
+	items := []model.Prompt{}
+	for _, file := range jeremyProductPhotographyFiles {
+		markdown, err := fetchText(jeremyProductPhotographyRawBase, file)
+		if err != nil {
+			continue
+		}
+		fileTag := "商品摄影"
+		if strings.Contains(file, "food") {
+			fileTag = "食品饮料"
+		} else if strings.Contains(file, "poster") {
+			fileTag = "营销海报"
+		}
+		for _, block := range splitBeforeHeading(markdown, "## ") {
+			heading := strings.TrimSpace(firstMatch(block, `(?m)^##\s+(.+)$`))
+			prompt := firstMarkdownCodeBlock(block)
+			if heading == "" || prompt == "" || strings.HasPrefix(heading, "[") {
+				continue
+			}
+			title := strings.TrimSpace(regexp.MustCompile(`^\d+\.\s*`).ReplaceAllString(heading, ""))
+			images := extractMarkdownImages(jeremyProductPhotographyRawBase, block)
+			tags := []string{"商品", fileTag}
+			if strings.Contains(file, "product") {
+				tags = append(tags, "主图", "场景图")
+			}
+			items = append(items, model.Prompt{ID: "jeremy-product-photography-" + leftPad(len(items)+1), Title: title, CoverURL: firstImage(images), Prompt: prompt, Tags: tags, Preview: markdownPreview(images)})
+		}
+	}
+	if len(items) == 0 {
+		return nil, errors.New("商品摄影灵感库未找到提示词")
+	}
+	return items, nil
+}
+
+func buildJoeSaiCommercialPrompts() ([]model.Prompt, error) {
+	raw, err := fetchText(joesaiCommercialPromptsRawBase, "data/prompts.json")
+	if err != nil {
+		return nil, err
+	}
+	data := []joesaiCommercialPrompt{}
+	if err := json.Unmarshal([]byte(raw), &data); err != nil {
+		return nil, err
+	}
+	items := []model.Prompt{}
+	for _, item := range data {
+		if strings.TrimSpace(item.Slug) == "" || strings.TrimSpace(item.Category) == "" {
+			continue
+		}
+		markdown, err := fetchText(joesaiCommercialPromptsRawBase, "prompts/"+item.Category+"/"+item.Slug+".md")
+		if err != nil {
+			continue
+		}
+		title := strings.TrimSpace(item.TitleZH)
+		if title == "" {
+			title = strings.TrimSpace(item.Title)
+		}
+		prompt := extractJoeSaiPrompt(markdown)
+		if title == "" || prompt == "" {
+			continue
+		}
+		image := absoluteImage(joesaiCommercialPromptsRawBase, item.ExampleImage)
+		tags := []string{"商品", "电商", strings.ToLower(strings.TrimSpace(item.Category))}
+		if item.AssetType != "" {
+			tags = append(tags, strings.ToLower(strings.TrimSpace(item.AssetType)))
+		}
+		preview := strings.TrimSpace(strings.Join([]string{item.UseCase, item.AssetType}, " · "))
+		if image != "" {
+			preview = strings.TrimSpace(preview + "\n\n" + markdownPreview([]string{image}))
+		}
+		items = append(items, model.Prompt{ID: "joesai-commercial-prompts-" + item.Slug, Title: title, CoverURL: image, Prompt: prompt, Tags: tags, Preview: preview})
+	}
+	if len(items) == 0 {
+		return nil, errors.New("商业商品图提示词库未找到提示词")
+	}
+	return items, nil
+}
+
+func buildShopliveEcommerceVideoPrompts() ([]model.Prompt, error) {
+	markdown, err := fetchText(shopliveEcommerceVideoRawBase, "Veo3.1_电商提示词包.md")
+	if err != nil {
+		return nil, err
+	}
+	items := []model.Prompt{}
+	for _, block := range splitBeforeHeading(markdown, "### ") {
+		heading := strings.TrimSpace(firstMatch(block, `(?m)^###\s+(.+)$`))
+		if isShopliveNonPromptHeading(heading) {
+			continue
+		}
+		prompt := firstMarkdownCodeBlock(block)
+		if heading == "" || prompt == "" {
+			continue
+		}
+		title := strings.TrimSpace(regexp.MustCompile(`^\d+[.)]\s*`).ReplaceAllString(heading, ""))
+		tags := []string{"商品视频", "电商广告", "veo3.1"}
+		if strings.Contains(title, "口播") {
+			tags = append(tags, "口播")
+		}
+		items = append(items, model.Prompt{ID: "shoplive-ecommerce-video-" + leftPad(len(items)+1), Title: title, Prompt: prompt, Tags: tags})
+	}
+	if len(items) == 0 {
+		return nil, errors.New("Shoplive 电商视频提示词包未找到提示词")
+	}
+	return items, nil
+}
+
+func extractJoeSaiPrompt(markdown string) string {
+	for _, heading := range []string{"提示词（中文）", "Prompt (EN)"} {
+		section := firstMatch(markdown, "(?s)(?:^|\\n)##\\s+"+regexp.QuoteMeta(heading)+"\\s*\\r?\\n(.*?)(?:\\r?\\n##\\s+|$)")
+		if prompt := firstMarkdownCodeBlock(section); prompt != "" {
+			return prompt
+		}
+	}
+	return firstMarkdownCodeBlock(markdown)
+}
+
+func firstMarkdownCodeBlock(value string) string {
+	return strings.TrimSpace(firstMatch(value, "(?s)```[^\\r\\n]*\\r?\\n(.*?)\\r?\\n```"))
+}
+
+func firstImage(images []string) string {
+	if len(images) == 0 {
+		return ""
+	}
+	return images[0]
+}
+
+func isShopliveNonPromptHeading(value string) bool {
+	lower := strings.ToLower(strings.TrimSpace(value))
+	for _, token := range []string{"官方规则", "推荐参数", "api 请求", "快速调参", "失败重试", "一键替换", "可直接复用", "小技巧"} {
+		if strings.Contains(lower, token) {
+			return true
+		}
+	}
+	return false
 }
 
 func buildGptImage2Prompts() ([]model.Prompt, error) {

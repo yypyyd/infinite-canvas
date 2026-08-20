@@ -109,6 +109,9 @@ func TestAdaptVividAIVideoRequestPreserves480p(t *testing.T) {
 	if payload["size"] != "640x480" {
 		t.Fatalf("size = %q, want 640x480", payload["size"])
 	}
+	if payload["resolution"] != "480p" {
+		t.Fatalf("resolution = %q, want 480p", payload["resolution"])
+	}
 }
 
 func TestAdaptAIRequestBodyUsesVividAIVideoAdapter(t *testing.T) {
@@ -122,6 +125,9 @@ func TestAdaptAIRequestBodyUsesVividAIVideoAdapter(t *testing.T) {
 	}
 	if payload["size"] != "640x480" {
 		t.Fatalf("size = %q, want 640x480", payload["size"])
+	}
+	if payload["resolution"] != "480p" {
+		t.Fatalf("resolution = %q, want 480p", payload["resolution"])
 	}
 }
 
@@ -148,6 +154,9 @@ func TestAdaptVividAIVideoMultipartPreserves480p(t *testing.T) {
 	defer form.RemoveAll()
 	if got := firstFormValue(form, "size"); got != "640x480" {
 		t.Fatalf("size = %q, want 640x480", got)
+	}
+	if got := firstFormValue(form, "resolution"); got != "480p" {
+		t.Fatalf("resolution = %q, want 480p", got)
 	}
 }
 

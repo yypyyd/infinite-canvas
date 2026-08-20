@@ -20,6 +20,7 @@ import { resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/
 import { nanoid } from "nanoid";
 import { getDataUrlByteSize, normalizeImageCount, readImageMeta } from "@/lib/image-utils";
 import { supportsImageQuality, supportsImageReferences, type ImageModelDefinition } from "@/lib/image-model-capabilities";
+import type { VideoModelDefinition, VideoPricingRule } from "@/lib/video-format";
 import { videoReferenceCapabilities } from "@/lib/video-reference";
 import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
@@ -54,6 +55,7 @@ import { CanvasToolbar } from "../components/canvas-toolbar";
 import { CanvasZoomControls } from "../components/canvas-zoom-controls";
 import { CANVAS_PROJECTS_REPLACED_EVENT, useCanvasStore, type CanvasProject } from "../stores/use-canvas-store";
 import { buildCanvasResourceReferences, buildNodeMentionReferenceMap, type CanvasResourceReference } from "../utils/canvas-resource-references";
+import { resolveCanvasVideoConfig } from "../utils/canvas-video-config";
 import {
     CanvasNodeType,
     type CanvasAssistantImage,
@@ -301,6 +303,7 @@ function InfiniteCanvasPage() {
     const config = useConfigStore((state) => state.config);
     const effectiveConfig = useEffectiveConfig();
     const managedModels = useConfigStore((state) => state.publicSettings?.modelChannel.models);
+    const pricingRules = useConfigStore((state) => state.publicSettings?.modelChannel.pricingRules);
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const addAsset = useAssetStore((state) => state.addAsset);
@@ -2344,7 +2347,7 @@ function InfiniteCanvasPage() {
     const handleGenerateNode = useCallback(
         async (nodeId: string, mode: CanvasNodeGenerationMode, prompt: string) => {
             const sourceNode = nodesRef.current.find((node) => node.id === nodeId);
-            const generationConfig = normalizeGenerationConfig(buildGenerationConfig(effectiveConfig, sourceNode, mode), mode);
+            const generationConfig = normalizeGenerationConfig(buildGenerationConfig(effectiveConfig, sourceNode, mode), mode, managedModels, pricingRules);
             const referenceCapabilities = nodeReferenceCapabilities(mode, generationConfig.model, managedModels);
             if (!isAiConfigReady(generationConfig, generationConfig.model)) {
                 openConfigDialog(true);
@@ -2733,7 +2736,7 @@ function InfiniteCanvasPage() {
                 clearRunningNodeId(nodeId);
             }
         },
-        [clearRunningNodeId, effectiveConfig, finishGenerationRequest, finishImageGenerationRecord, finishVideoGenerationRecord, managedModels, openConfigDialog, startGenerationRequest, startImageGenerationRecord, startVideoGenerationRecord],
+        [clearRunningNodeId, effectiveConfig, finishGenerationRequest, finishImageGenerationRecord, finishVideoGenerationRecord, managedModels, openConfigDialog, pricingRules, startGenerationRequest, startImageGenerationRecord, startVideoGenerationRecord],
     );
 
     const createCommercePackage = useCallback(
@@ -2912,6 +2915,8 @@ function InfiniteCanvasPage() {
                       }
                     : { ...buildGenerationConfig(effectiveConfig, sourceNode, retryMode), count: "1" },
                 retryMode,
+                managedModels,
+                pricingRules,
             );
             const referenceCapabilities = nodeReferenceCapabilities(retryMode, generationConfig.model, managedModels);
             if (!isAiConfigReady(generationConfig, generationConfig.model)) {
@@ -3052,7 +3057,7 @@ function InfiniteCanvasPage() {
                 clearRunningNodeId(node.id);
             }
         },
-        [clearRunningNodeId, effectiveConfig, finishGenerationRequest, finishImageGenerationRecord, finishVideoGenerationRecord, managedModels, message, openConfigDialog, startGenerationRequest, startImageGenerationRecord, startVideoGenerationRecord],
+        [clearRunningNodeId, effectiveConfig, finishGenerationRequest, finishImageGenerationRecord, finishVideoGenerationRecord, managedModels, message, openConfigDialog, pricingRules, startGenerationRequest, startImageGenerationRecord, startVideoGenerationRecord],
     );
 
     const generateImageFromTextNode = useCallback(
@@ -4190,7 +4195,8 @@ function nodeReferenceCapabilities(mode: CanvasNodeGenerationMode, model: string
     return { image: false, video: false, audio: false };
 }
 
-function normalizeGenerationConfig(config: AiConfig, mode: CanvasNodeGenerationMode) {
+function normalizeGenerationConfig(config: AiConfig, mode: CanvasNodeGenerationMode, models?: VideoModelDefinition[], pricingRules?: VideoPricingRule[]) {
+    if (mode === "video") return resolveCanvasVideoConfig(config, models, pricingRules);
     return mode === "image" && !supportsImageQuality(config.model) ? { ...config, quality: "auto" } : config;
 }
 

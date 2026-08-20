@@ -1362,7 +1362,7 @@ func adaptVividAIVideoMultipartBody(body []byte, contentType string) ([]byte, st
 	}
 	var buffer bytes.Buffer
 	writer := multipart.NewWriter(&buffer)
-	for _, key := range []string{"model", "prompt", "seconds", "size"} {
+	for _, key := range []string{"model", "prompt", "seconds", "size", "resolution"} {
 		if value := strings.TrimSpace(fmt.Sprint(fields[key])); value != "" && value != "<nil>" {
 			_ = writer.WriteField(key, value)
 		}
@@ -1399,6 +1399,9 @@ func vividAIVideoPayload(modelName string, prompt string, seconds string, size s
 	}
 	if size = vividAIVideoSize(modelName, size, resolution); size != "" {
 		result["size"] = size
+	}
+	if resolution = normalizeVividAIVideoResolution(resolution); resolution != "" {
+		result["resolution"] = resolution
 	}
 	return result
 }

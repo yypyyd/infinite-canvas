@@ -11,6 +11,8 @@ export type VideoModelDefinition = {
     durations?: number[];
 };
 
+export type VideoPricingRule = Pick<PricingRule, "model" | "modality" | "operation" | "unit" | "resolutionTier" | "enabled">;
+
 export function resolveVideoSettings(config: { size: string; vquality: string; videoSeconds: string }, definition?: VideoModelDefinition) {
     const ratios = definition?.aspectRatios?.length ? definition.aspectRatios : defaultVideoRatios;
     const resolutions = definition?.resolutionTiers?.length ? definition.resolutionTiers : defaultVideoResolutions;
@@ -32,7 +34,7 @@ export function resolveVideoPricingSettings(
     config: { size: string; vquality: string; videoSeconds: string },
     definition: VideoModelDefinition | undefined,
     model: string,
-    pricingRules?: PricingRule[],
+    pricingRules?: VideoPricingRule[],
 ) {
     const settings = resolveVideoSettings(config, definition);
     const resolutions = definition && pricingRules ? settings.resolutions.filter((item) => hasVideoPricingTier(pricingRules, model, item)) : settings.resolutions;
@@ -85,7 +87,7 @@ function greatestCommonDivisor(a: number, b: number) {
     return Math.max(1, a);
 }
 
-function hasVideoPricingTier(rules: PricingRule[], model: string, resolution: string) {
+function hasVideoPricingTier(rules: VideoPricingRule[], model: string, resolution: string) {
     return rules.some(
         (rule) =>
             rule.enabled !== false &&

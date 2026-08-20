@@ -47,7 +47,7 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const mode = defaultMode(node.type);
     const baseConfig = buildNodeConfig(globalConfig, node, mode);
-    const config = mode === "video" ? resolveCanvasVideoConfig(baseConfig, managedModels) : baseConfig;
+    const config = mode === "video" ? resolveCanvasVideoConfig(baseConfig, managedModels, pricingRules) : baseConfig;
     const imageSupportsReferences = supportsImageReferences(config.model, managedModels);
     const referenceCapabilities = mode === "video" ? videoReferenceCapabilities(config.model, managedModels) : { image: mode === "text" || (mode === "image" && imageSupportsReferences), video: false, audio: false };
     const visibleMentionReferences = mentionReferences.filter(
@@ -127,7 +127,7 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
                         </>
                     ) : mode === "video" ? (
                         <>
-                            <ModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, canvasVideoModelPatch(config, model, managedModels))} capability="video" onMissingConfig={() => openConfigDialog(true)} />
+                            <ModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, canvasVideoModelPatch(config, model, managedModels, pricingRules))} capability="video" onMissingConfig={() => openConfigDialog(true)} />
                             <CanvasVideoSettingsPopover config={config} buttonClassName="!h-10 !max-w-[170px] !justify-start !rounded-full !px-3" onConfigChange={(key, value) => onConfigChange(node.id, videoConfigPatch(key, value))} />
                         </>
                     ) : mode === "audio" ? (

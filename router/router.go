@@ -161,6 +161,9 @@ func New() *gin.Engine {
 	v1.POST("/agent/runs/:id/cancel", func(c *gin.Context) {
 		handler.CancelAgentRun(c.Writer, c.Request, c.Param("id"))
 	})
+	v1.POST("/agent/runs/:id/tool-reverts", func(c *gin.Context) {
+		handler.RevertAgentTool(c.Writer, c.Request, c.Param("id"))
+	})
 	v1.GET("/videos/:id", func(c *gin.Context) {
 		handler.AIVideo(c.Writer, c.Request, c.Param("id"))
 	})

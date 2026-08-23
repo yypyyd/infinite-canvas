@@ -24,6 +24,7 @@ type CanvasNodeProps = {
     isFocusRelated: boolean;
     isConnectionTarget: boolean;
     isConnecting: boolean;
+    isHighlighted?: boolean;
     editRequestNonce?: number;
     showPanel: boolean;
     showImageInfo: boolean;
@@ -81,6 +82,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     isFocusRelated,
     isConnectionTarget,
     isConnecting,
+    isHighlighted = false,
     editRequestNonce = 0,
     showPanel,
     showImageInfo,
@@ -119,6 +121,14 @@ export const CanvasNode = React.memo(function CanvasNode({
     const isBatchChild = data.type === CanvasNodeType.Image && Boolean(data.metadata?.batchRootId);
     const isActive = isConnectionTarget || isSelected || isFocusRelated;
     const imageBorderColor = isActive ? selectionBlue : isRelated && !isBatchChild ? theme.node.muted : "transparent";
+    const highlightBorder = isHighlighted ? theme.node.activeStroke : isActive ? selectionBlue : isRelated ? theme.node.muted : theme.node.stroke;
+    const highlightShadow = isHighlighted
+        ? `0 0 0 2px ${theme.node.activeStroke}66`
+        : isActive
+          ? `0 0 0 1px ${selectionBlue}55`
+          : isRelated && !isBatchChild
+            ? `0 0 0 1px ${theme.node.muted}55, 0 18px 48px rgba(0,0,0,.14)`
+            : undefined;
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const longPressRef = useRef<{ timer: ReturnType<typeof setTimeout> | null; pointerId: number; x: number; y: number }>({ timer: null, pointerId: -1, x: 0, y: 0 });
     const resizeRef = useRef({
@@ -321,8 +331,8 @@ export const CanvasNode = React.memo(function CanvasNode({
                 className="relative h-full w-full overflow-visible rounded-3xl border-2"
                 style={{
                     background: hasImageContent || hasVideoContent ? "transparent" : theme.node.fill,
-                    borderColor: hasImageContent ? imageBorderColor : isActive ? selectionBlue : isRelated ? theme.node.muted : theme.node.stroke,
-                    boxShadow: isActive ? `0 0 0 1px ${selectionBlue}55` : isRelated && !isBatchChild ? `0 0 0 1px ${theme.node.muted}55, 0 18px 48px rgba(0,0,0,.14)` : undefined,
+                    borderColor: hasImageContent && !isHighlighted ? imageBorderColor : highlightBorder,
+                    boxShadow: highlightShadow,
                 }}
                 onMouseDown={(event) => onMouseDown(event, data.id)}
                 onDoubleClick={(event) => {

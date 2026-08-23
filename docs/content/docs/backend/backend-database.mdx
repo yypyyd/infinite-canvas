@@ -87,7 +87,7 @@ description: 当前后端主要数据表与字段说明
 
 ### agent_sessions / agent_messages / agent_runs / agent_steps / agent_events
 
-画布 Agent 的持久执行骨架。`agent_sessions` 按企业、用户和画布项目保存会话；`agent_messages` 保存有序消息；`agent_runs` 保存对应用户消息编号、`running`、`waiting_confirmation`、`waiting_tool` 与完成、失败、取消状态，并在隐藏 `context` 中固化本轮授权选区；`agent_steps` 保存 completion/tool 输入输出、工具调用编号、确认决定，以及模型步骤和画布工具的执行租约；`agent_events` 保存可恢复 SSE 事件。所有访问同时校验 `organization_id + user_id`。客户端会预分配会话与运行编号并先随画布保存，服务端对同编号同请求进行幂等重放、对冲突请求明确拒绝；Completion Step 由数据库原子认领，Tool Step 使用 90 秒租约并由执行页面每 30 秒续租，避免多实例或多标签页重复规划、生成、扣费和修改画布，执行页面失联后仍可接管。当前开放图片/视频生成、节点排列、文本插入、节点删除和文本覆盖；删除与覆盖只有持久化批准后才转入 `waiting_tool`，拒绝则记录未执行 observation。媒体结果只保存节点编号和私有 `storageKey`，不保存二进制或签名 URL。`waiting_tool` 超过 15 分钟会定时或惰性回收，`waiting_confirmation` 则保持等待用户明确决定。
+画布 Agent 的持久执行骨架。`agent_sessions` 按企业、用户和画布项目保存会话；`agent_messages` 保存有序消息；`agent_runs` 保存对应用户消息编号、`running`、`waiting_confirmation`、`waiting_tool` 与完成、失败、取消状态，并在隐藏 `context` 中固化本轮授权选区；`agent_steps` 保存 completion/tool 输入输出、工具调用编号、确认决定，以及模型步骤和画布工具的执行租约；`agent_events` 保存可恢复 SSE 事件。所有访问同时校验 `organization_id + user_id`。客户端会预分配会话与运行编号并先随画布保存，服务端对同编号同请求进行幂等重放、对冲突请求明确拒绝；Completion Step 由数据库原子认领，Tool Step 使用 90 秒租约并由执行页面每 30 秒续租，避免多实例或多标签页重复规划、生成、扣费和修改画布，执行页面失联后仍可接管。当前开放图片/视频生成、节点排列、文本插入、节点删除和文本覆盖；删除与覆盖只有持久化批准后才转入 `waiting_tool`，拒绝则记录未执行 observation。画布历史撤销 Agent 工具副作用时会幂等追加 `tool.reverted` 事件；仍在执行或等待后续工具的 Run 同时转为 `cancelled`，避免模型继续基于已回滚结果规划。媒体结果只保存节点编号和私有 `storageKey`，不保存二进制或签名 URL。`waiting_tool` 超过 15 分钟会定时或惰性回收，`waiting_confirmation` 则保持等待用户明确决定。
 
 ### organizations / organization_members
 

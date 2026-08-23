@@ -52,26 +52,42 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
     const resolution = supportedValue(definition?.resolutionTiers, normalizeVideoResolution(config.vquality), defaultVideoResolutions[0]);
     const duration = supportedNumber(definition?.durations, Number(config.videoSeconds), defaultVideoDurations[0]);
 
-    const body = new FormData();
-    body.append("model", model);
-    body.append("prompt", prompt);
-    body.append("seconds", String(duration));
-    body.append("resolution", resolution);
-    body.append("size", videoOutputSize(resolution, ratio));
-    body.append("generate_audio", String(capabilities.supportsAudioOutput && config.videoGenerateAudio === "true"));
-    const [referenceFiles, videoFiles, audioFiles] = await Promise.all([
-        Promise.all(references.map(async (reference) => dataUrlToFile({ ...reference, dataUrl: await imageToDataUrl(reference) }))),
-        Promise.all(videoReferences.map((reference) => mediaReferenceToFile(reference))),
-        Promise.all(audioReferences.map((reference) => mediaReferenceToFile(reference))),
-    ]);
-    validateReferenceFiles(referenceFiles, videoFiles, audioFiles);
-    referenceFiles.forEach((reference) => body.append("input_reference", reference));
-    videoFiles.forEach((reference) => body.append("reference_videos", reference));
-    audioFiles.forEach((reference) => body.append("reference_audios", reference));
-
     const requestId = options?.idempotencyKey || crypto.randomUUID();
     try {
-        const created = unwrapVideoResponse((await axios.post<ApiVideoResponse>("/api/v1/videos", body, { headers: aiHeaders(requestId), signal: options?.signal })).data);
+        const hasStorageKey = <T extends { storageKey?: string }>(reference: T): reference is T & { storageKey: string } => Boolean(reference.storageKey);
+        const canUseStorageReferences = references.every(hasStorageKey) && videoReferences.every(hasStorageKey) && audioReferences.every(hasStorageKey);
+        let created: VideoResponse;
+        if (canUseStorageReferences) {
+            created = unwrapVideoResponse((await axios.post<ApiVideoResponse>("/api/v1/videos", {
+                model,
+                prompt,
+                seconds: String(duration),
+                resolution,
+                size: videoOutputSize(resolution, ratio),
+                generate_audio: capabilities.supportsAudioOutput && config.videoGenerateAudio === "true",
+                input_reference_storage_keys: references.map((reference) => reference.storageKey),
+                reference_videos_storage_keys: videoReferences.map((reference) => reference.storageKey),
+                reference_audios_storage_keys: audioReferences.map((reference) => reference.storageKey),
+            }, { headers: aiHeaders(requestId), signal: options?.signal })).data);
+        } else {
+            const body = new FormData();
+            body.append("model", model);
+            body.append("prompt", prompt);
+            body.append("seconds", String(duration));
+            body.append("resolution", resolution);
+            body.append("size", videoOutputSize(resolution, ratio));
+            body.append("generate_audio", String(capabilities.supportsAudioOutput && config.videoGenerateAudio === "true"));
+            const [referenceFiles, videoFiles, audioFiles] = await Promise.all([
+                Promise.all(references.map(async (reference) => dataUrlToFile({ ...reference, dataUrl: await imageToDataUrl(reference) }))),
+                Promise.all(videoReferences.map((reference) => mediaReferenceToFile(reference))),
+                Promise.all(audioReferences.map((reference) => mediaReferenceToFile(reference))),
+            ]);
+            validateReferenceFiles(referenceFiles, videoFiles, audioFiles);
+            referenceFiles.forEach((reference) => body.append("input_reference", reference));
+            videoFiles.forEach((reference) => body.append("reference_videos", reference));
+            audioFiles.forEach((reference) => body.append("reference_audios", reference));
+            created = unwrapVideoResponse((await axios.post<ApiVideoResponse>("/api/v1/videos", body, { headers: aiHeaders(requestId), signal: options?.signal })).data);
+        }
         if (!created.id) throw new Error("视频接口没有返回任务 ID");
         return await completeVideoGeneration(model, created.id, requestId, options?.signal);
     } catch (error) {

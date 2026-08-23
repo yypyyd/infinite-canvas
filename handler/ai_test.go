@@ -1,15 +1,128 @@
 package handler
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"mime/multipart"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/textproto"
+	"os"
 	"strings"
 	"testing"
+
+	"github.com/yypyyd/infinite-canvas/service"
 )
+
+func TestReadJSONAIRequestStorageReferences(t *testing.T) {
+	meta := readJSONAIRequest([]byte(`{"model":"video-model","prompt":"make it move","seconds":"10","input_reference_storage_keys":[" image:one ",null],"reference_videos_storage_keys":["video-reference:a","video-reference:b"],"reference_audios_storage_keys":"audio-reference:c"}`))
+	if meta.ModelName != "video-model" || meta.Duration != 10 || meta.ReferenceImages != 1 || meta.ReferenceVideos != 2 || meta.ReferenceAudios != 1 {
+		t.Fatalf("unexpected metadata: %+v", meta)
+	}
+	if len(meta.InputReferenceStorageKeys) != 1 || meta.InputReferenceStorageKeys[0] != "image:one" {
+		t.Fatalf("input storage keys = %#v", meta.InputReferenceStorageKeys)
+	}
+	if got := readStringField(meta.Payload, "prompt"); got != "make it move" {
+		t.Fatalf("prompt = %q", got)
+	}
+	if !hasStorageReferences(meta) {
+		t.Fatal("expected storage references")
+	}
+	if !canBuildStorageReferenceRequest(meta) {
+		t.Fatal("expected storage-only request")
+	}
+	meta.Payload["reference_videos"] = []any{"legacy"}
+	if canBuildStorageReferenceRequest(meta) {
+		t.Fatal("expected mixed legacy request to use multipart path")
+	}
+}
+
+func TestValidateStorageMediaSize(t *testing.T) {
+	var total int64
+	media := service.UserWorkspaceMedia{Size: 45 << 20}
+	if err := validateStorageMediaSize("reference_videos", media, &total); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateStorageMediaSize("reference_videos", media, &total); err != nil {
+		t.Fatal(err)
+	}
+	if total != 90<<20 {
+		t.Fatalf("total = %d, want %d", total, 90<<20)
+	}
+	if err := validateStorageMediaSize("reference_videos", service.UserWorkspaceMedia{Size: 201 << 20}, &total); err == nil {
+		t.Fatal("expected per-video size error")
+	}
+	total = maxVideoReferenceRequestBytes - (1 << 20)
+	if err := validateStorageMediaSize("reference_videos", service.UserWorkspaceMedia{Size: 2 << 20}, &total); err == nil {
+		t.Fatal("expected total size error")
+	}
+}
+
+func TestAppendStorageMultipartFileStreamsAndChecksSize(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "video/mp4")
+		_, _ = io.WriteString(w, "hello")
+	}))
+	t.Cleanup(server.Close)
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	media := service.UserWorkspaceMedia{MimeType: "video/mp4", Size: 5, URL: server.URL}
+	if err := appendStorageMultipartFile(context.Background(), writer, "reference_videos", "video-reference:test", media); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reader := multipart.NewReader(&body, writer.Boundary())
+	part, err := reader.NextPart()
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := io.ReadAll(part)
+	if err != nil || string(content) != "hello" {
+		t.Fatalf("content = %q, err=%v", content, err)
+	}
+	if part.FormName() != "reference_videos" || part.FileName() != "video-reference:test" {
+		t.Fatalf("part = name %q filename %q", part.FormName(), part.FileName())
+	}
+}
+
+func TestStorageRequestCanReopenBodyForRetry(t *testing.T) {
+	temporary, err := os.CreateTemp(t.TempDir(), "video-request-*.multipart")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := temporary.Name()
+	if _, err := temporary.WriteString("payload"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := temporary.Seek(0, io.SeekStart); err != nil {
+		t.Fatal(err)
+	}
+	request, err := http.NewRequest(http.MethodPost, "http://example.test/videos", temporary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.GetBody = func() (io.ReadCloser, error) { return os.Open(path) }
+	first, err := io.ReadAll(request.Body)
+	if err != nil || string(first) != "payload" {
+		t.Fatalf("first body = %q, err=%v", first, err)
+	}
+	_ = request.Body.Close()
+	request.Body, err = request.GetBody()
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := io.ReadAll(request.Body)
+	if err != nil || string(second) != "payload" {
+		t.Fatalf("retry body = %q, err=%v", second, err)
+	}
+	_ = request.Body.Close()
+}
 
 func TestAIUpstreamErrorDetail(t *testing.T) {
 	got := aiUpstreamErrorDetail([]byte(`{"error":{"code":"InvalidParameter","message":"reference video fps is invalid"}}`))

@@ -29,14 +29,34 @@ export type AgentRun = {
     completedAt?: string;
 };
 
+export type AgentCanvasNode = {
+    id: string;
+    type: string;
+    title: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    content?: string;
+    prompt?: string;
+    references?: string[];
+    storageKey?: string;
+};
+
+export type AgentCanvasConnection = {
+    from: string;
+    to: string;
+};
+
 export type AgentCanvasContext = {
     selectedNodeIds: string[];
-    nodes: { id: string; type: string; title: string; x: number; y: number; width: number; height: number }[];
+    nodes: AgentCanvasNode[];
+    connections: AgentCanvasConnection[];
 };
 
 export type AgentToolArguments =
     | { summary: string; steps: string[] }
-    | { prompt: string; count: number }
+    | { prompt: string; count: number; referenceNodeIds?: string[] }
     | { prompt: string; duration: number; imageNodeId?: string }
     | { nodeIds: string[]; mode: "horizontal" | "vertical" | "grid"; gap: number }
     | { text: string; placement: "center" | "right_of_selection"; sourceNodeIds?: string[] }
@@ -49,14 +69,16 @@ export type AgentEvent = {
     id: string;
     runId: string;
     sequence: number;
-    type: "run.started" | "plan.created" | "message.delta" | "tool.confirmation_required" | "tool.call" | "tool.completed" | "run.completed" | "run.failed" | "run.cancelled";
+    type: "run.started" | "plan.created" | "message.delta" | "tool.confirmation_required" | "tool.call" | "tool.completed" | "tool.reverted" | "run.completed" | "run.failed" | "run.cancelled";
     data: {
         content?: string;
         error?: string;
         status?: "success" | "failed" | "rejected";
+        reason?: "tool_reverted";
         callId?: string;
         name?: AgentToolName;
         arguments?: AgentToolArguments;
+        meta?: { needsClaim?: boolean };
     };
     createdAt: string;
 };
@@ -93,6 +115,10 @@ export function getAgentRun(runId: string) {
 
 export function cancelAgentRun(runId: string) {
     return apiPost<AgentRun>(`/api/v1/agent/runs/${runId}/cancel`);
+}
+
+export function revertAgentTool(runId: string, callId: string) {
+    return apiPost<AgentRun>(`/api/v1/agent/runs/${runId}/tool-reverts`, { callId });
 }
 
 export function getAgentToolResultReceipt(runId: string, callId: string) {

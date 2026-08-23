@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	mysqldriver "github.com/go-sql-driver/mysql"
@@ -30,6 +31,16 @@ var (
 	dbOnce sync.Once
 	dbErr  error
 )
+
+func transactionWithSQLiteRetry(db *gorm.DB, fn func(*gorm.DB) error) error {
+	for attempt := 0; ; attempt++ {
+		err := db.Transaction(fn)
+		if err == nil || !strings.Contains(strings.ToLower(err.Error()), "sqlite") || (!strings.Contains(strings.ToLower(err.Error()), "busy") && !strings.Contains(strings.ToLower(err.Error()), "locked")) || attempt >= 5 {
+			return err
+		}
+		time.Sleep(time.Duration(attempt+1) * 400 * time.Millisecond)
+	}
+}
 
 // DB 初始化并返回全局数据库连接。
 func DB() (*gorm.DB, error) {

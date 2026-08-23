@@ -35,6 +35,7 @@ const (
 	AgentEventToolConfirmationRequired AgentEventType = "tool.confirmation_required"
 	AgentEventToolCall             AgentEventType = "tool.call"
 	AgentEventToolCompleted AgentEventType = "tool.completed"
+	AgentEventToolReverted  AgentEventType = "tool.reverted"
 	AgentEventRunCompleted  AgentEventType = "run.completed"
 	AgentEventRunFailed     AgentEventType = "run.failed"
 	AgentEventRunCancelled  AgentEventType = "run.cancelled"

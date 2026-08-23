@@ -11,6 +11,7 @@ import (
 var (
 	ErrAgentToolResultConflict = errors.New("agent tool result conflicts with saved result")
 	ErrAgentToolExecutionClaimed = errors.New("agent tool execution already claimed")
+	ErrAgentToolNotRevertible = errors.New("agent tool cannot be reverted")
 )
 
 func CreateAgentSession(session model.AgentSession) (model.AgentSession, error) {
@@ -21,7 +22,7 @@ func CreateAgentSession(session model.AgentSession) (model.AgentSession, error) 
 		if existing.ProjectID != session.ProjectID || existing.Profile != session.Profile || existing.Title != session.Title { return session, ErrAgentToolResultConflict }
 		return existing, nil
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) { return session, err }
-	err = db.Transaction(func(tx *gorm.DB) error { return tx.Create(&session).Error })
+	err = transactionWithSQLiteRetry(db, func(tx *gorm.DB) error { return tx.Create(&session).Error })
 	if err != nil {
 		if lookupErr := db.Where("organization_id = ? AND user_id = ? AND id = ?", session.OrganizationID, session.UserID, session.ID).First(&existing).Error; lookupErr == nil {
 			if existing.ProjectID != session.ProjectID || existing.Profile != session.Profile || existing.Title != session.Title { return session, ErrAgentToolResultConflict }
@@ -57,7 +58,7 @@ func CreateAgentRun(message model.AgentMessage, run model.AgentRun, step model.A
 	} else if found {
 		return existingMessage, existingRun, nil
 	}
-	err = db.Transaction(func(tx *gorm.DB) error {
+	err = transactionWithSQLiteRetry(db, func(tx *gorm.DB) error {
 		var session model.AgentSession
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("organization_id = ? AND user_id = ? AND id = ? AND status = ?", run.OrganizationID, run.UserID, run.SessionID, model.AgentSessionStatusActive).First(&session).Error; err != nil { return err }
 		var sequence int64
@@ -106,7 +107,7 @@ func ListRecentAgentMessages(organizationID, userID, sessionID string, limit int
 func CompleteAgentRun(organizationID, userID, runID, messageID, deltaEventID, completedEventID, content, deltaPayload, timestamp string) error {
 	db, err := DB()
 	if err != nil { return err }
-	return db.Transaction(func(tx *gorm.DB) error {
+	return transactionWithSQLiteRetry(db, func(tx *gorm.DB) error {
 		run, err := lockRunningAgentRun(tx, organizationID, userID, runID)
 		if err != nil { return err }
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("organization_id = ? AND user_id = ? AND id = ?", organizationID, userID, run.SessionID).First(&model.AgentSession{}).Error; err != nil { return err }
@@ -127,7 +128,7 @@ func CompleteAgentRun(organizationID, userID, runID, messageID, deltaEventID, co
 func WaitAgentRunForTool(organizationID, userID, runID, completionOutput string, toolStep model.AgentStep, timestamp string, events ...model.AgentEvent) error {
 	db, err := DB()
 	if err != nil { return err }
-	return db.Transaction(func(tx *gorm.DB) error {
+	return transactionWithSQLiteRetry(db, func(tx *gorm.DB) error {
 		run, err := lockRunningAgentRun(tx, organizationID, userID, runID)
 		if err != nil { return err }
 		result := tx.Model(&model.AgentStep{}).Where("organization_id = ? AND user_id = ? AND run_id = ? AND type = ? AND status = ?", organizationID, userID, runID, model.AgentStepTypeCompletion, model.AgentStepStatusRunning).Updates(map[string]any{"status": model.AgentStepStatusCompleted, "output": completionOutput, "error": "", "completed_at": timestamp, "updated_at": timestamp})
@@ -147,7 +148,7 @@ func WaitAgentRunForTool(organizationID, userID, runID, completionOutput string,
 func WaitAgentRunForConfirmation(organizationID, userID, runID, completionOutput string, toolStep model.AgentStep, event model.AgentEvent, timestamp string) error {
 	db, err := DB()
 	if err != nil { return err }
-	return db.Transaction(func(tx *gorm.DB) error {
+	return transactionWithSQLiteRetry(db, func(tx *gorm.DB) error {
 		run, err := lockRunningAgentRun(tx, organizationID, userID, runID)
 		if err != nil { return err }
 		result := tx.Model(&model.AgentStep{}).Where("organization_id = ? AND user_id = ? AND run_id = ? AND type = ? AND status = ?", organizationID, userID, runID, model.AgentStepTypeCompletion, model.AgentStepStatusRunning).Updates(map[string]any{"status": model.AgentStepStatusCompleted, "output": completionOutput, "error": "", "completed_at": timestamp, "updated_at": timestamp})
@@ -168,7 +169,7 @@ func ConfirmAgentTool(organizationID, userID, runID, callID, decision, rejectedO
 	var run model.AgentRun
 	var toolStep model.AgentStep
 	approved, resume := false, false
-	err = db.Transaction(func(tx *gorm.DB) error {
+	err = transactionWithSQLiteRetry(db, func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("organization_id = ? AND user_id = ? AND id = ?", organizationID, userID, runID).First(&run).Error; err != nil { return err }
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("organization_id = ? AND user_id = ? AND run_id = ? AND tool_call_id = ? AND type = ?", organizationID, userID, runID, callID, model.AgentStepTypeTool).First(&toolStep).Error; err != nil { return err }
 		if run.Status != model.AgentRunStatusWaitingConfirmation {
@@ -210,7 +211,7 @@ func SubmitAgentToolResult(organizationID, userID, runID, callID, executionToken
 	var run model.AgentRun
 	var toolStep model.AgentStep
 	resume := false
-	err = db.Transaction(func(tx *gorm.DB) error {
+	err = transactionWithSQLiteRetry(db, func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("organization_id = ? AND user_id = ? AND id = ?", organizationID, userID, runID).First(&run).Error; err != nil { return err }
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("organization_id = ? AND user_id = ? AND run_id = ? AND tool_call_id = ? AND type = ?", organizationID, userID, runID, callID, model.AgentStepTypeTool).First(&toolStep).Error; err != nil { return err }
 		if toolStep.Status != model.AgentStepStatusRunning {
@@ -251,7 +252,7 @@ func ExpireRunningAgentRun(organizationID, userID, runID, eventID, message, payl
 	if err != nil { return model.AgentRun{}, false, err }
 	var run model.AgentRun
 	expired := false
-	err = db.Transaction(func(tx *gorm.DB) error {
+	err = transactionWithSQLiteRetry(db, func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("organization_id = ? AND user_id = ? AND id = ?", organizationID, userID, runID).First(&run).Error; err != nil { return err }
 		if run.Status != model.AgentRunStatusRunning || run.UpdatedAt > deadline { return nil }
 		result := tx.Model(&model.AgentRun{}).Where("organization_id = ? AND user_id = ? AND id = ? AND status = ? AND updated_at <= ?", organizationID, userID, runID, model.AgentRunStatusRunning, deadline).Updates(map[string]any{"status": model.AgentRunStatusFailed, "error": message, "completed_at": timestamp, "updated_at": timestamp})
@@ -271,7 +272,7 @@ func ExpireWaitingAgentRun(organizationID, userID, runID, eventID, message, payl
 	if err != nil { return model.AgentRun{}, false, err }
 	var run model.AgentRun
 	expired := false
-	err = db.Transaction(func(tx *gorm.DB) error {
+	err = transactionWithSQLiteRetry(db, func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("organization_id = ? AND user_id = ? AND id = ?", organizationID, userID, runID).First(&run).Error; err != nil { return err }
 		if run.Status != model.AgentRunStatusWaitingTool || run.UpdatedAt > deadline { return nil }
 		result := tx.Model(&model.AgentRun{}).Where("organization_id = ? AND user_id = ? AND id = ? AND status = ? AND updated_at <= ?", organizationID, userID, runID, model.AgentRunStatusWaitingTool, deadline).Updates(map[string]any{"status": model.AgentRunStatusFailed, "error": message, "completed_at": timestamp, "updated_at": timestamp})
@@ -295,7 +296,7 @@ func CancelAgentRun(organizationID, userID, runID, eventID, timestamp string) (m
 	if err != nil { return model.AgentRun{}, false, err }
 	var run model.AgentRun
 	cancelled := false
-	err = db.Transaction(func(tx *gorm.DB) error {
+	err = transactionWithSQLiteRetry(db, func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("organization_id = ? AND user_id = ? AND id = ?", organizationID, userID, runID).First(&run).Error; err != nil { return err }
 		if run.Status != model.AgentRunStatusRunning && run.Status != model.AgentRunStatusWaitingConfirmation && run.Status != model.AgentRunStatusWaitingTool { return nil }
 		result := tx.Model(&model.AgentRun{}).Where("organization_id = ? AND user_id = ? AND id = ? AND status IN ?", organizationID, userID, runID, []model.AgentRunStatus{model.AgentRunStatusRunning, model.AgentRunStatusWaitingConfirmation, model.AgentRunStatusWaitingTool}).Updates(map[string]any{"status": model.AgentRunStatusCancelled, "completed_at": timestamp, "updated_at": timestamp})
@@ -308,6 +309,31 @@ func CancelAgentRun(organizationID, userID, runID, eventID, timestamp string) (m
 		return nil
 	})
 	return run, cancelled, err
+}
+
+func RevertAgentTool(organizationID, userID, runID, callID, timestamp string, revertedEvent, cancelledEvent model.AgentEvent) (model.AgentRun, error) {
+	db, err := DB()
+	if err != nil { return model.AgentRun{}, err }
+	var run model.AgentRun
+	err = transactionWithSQLiteRetry(db, func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("organization_id = ? AND user_id = ? AND id = ?", organizationID, userID, runID).First(&run).Error; err != nil { return err }
+		var toolStep model.AgentStep
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("organization_id = ? AND user_id = ? AND run_id = ? AND tool_call_id = ? AND type = ?", organizationID, userID, runID, callID, model.AgentStepTypeTool).First(&toolStep).Error; err != nil { return err }
+		if toolStep.Confirmation == "rejected" || (toolStep.Status != model.AgentStepStatusRunning && toolStep.Status != model.AgentStepStatusCompleted) { return ErrAgentToolNotRevertible }
+		var eventCount int64
+		if err := tx.Model(&model.AgentEvent{}).Where("organization_id = ? AND user_id = ? AND run_id = ? AND type = ? AND payload = ?", organizationID, userID, runID, model.AgentEventToolReverted, revertedEvent.Payload).Count(&eventCount).Error; err != nil { return err }
+		if eventCount > 0 { return nil }
+		if err := appendAgentEvent(tx, run, revertedEvent); err != nil { return err }
+		if run.Terminal() { return nil }
+		result := tx.Model(&model.AgentRun{}).Where("organization_id = ? AND user_id = ? AND id = ? AND status IN ?", organizationID, userID, runID, []model.AgentRunStatus{model.AgentRunStatusRunning, model.AgentRunStatusWaitingConfirmation, model.AgentRunStatusWaitingTool}).Updates(map[string]any{"status": model.AgentRunStatusCancelled, "completed_at": timestamp, "updated_at": timestamp})
+		if result.Error != nil { return result.Error }
+		if result.RowsAffected != 1 { return gorm.ErrRecordNotFound }
+		if err := tx.Model(&model.AgentStep{}).Where("organization_id = ? AND user_id = ? AND run_id = ? AND status = ?", organizationID, userID, runID, model.AgentStepStatusRunning).Updates(map[string]any{"status": model.AgentStepStatusCancelled, "completed_at": timestamp, "updated_at": timestamp}).Error; err != nil { return err }
+		if err := appendAgentEvent(tx, run, cancelledEvent); err != nil { return err }
+		run.Status, run.CompletedAt, run.UpdatedAt = model.AgentRunStatusCancelled, timestamp, timestamp
+		return nil
+	})
+	return run, err
 }
 
 func GetAgentRun(organizationID, userID, runID string) (model.AgentRun, error) {
@@ -378,7 +404,7 @@ func ListAgentEvents(organizationID, userID, runID string, after int64, limit in
 func finishAgentRun(organizationID, userID, runID, eventID, message, payload, timestamp string, runStatus model.AgentRunStatus, stepStatus model.AgentStepStatus, eventType model.AgentEventType) error {
 	db, err := DB()
 	if err != nil { return err }
-	return db.Transaction(func(tx *gorm.DB) error {
+	return transactionWithSQLiteRetry(db, func(tx *gorm.DB) error {
 		run, err := lockRunningAgentRun(tx, organizationID, userID, runID)
 		if errors.Is(err, gorm.ErrRecordNotFound) { return nil }
 		if err != nil { return err }

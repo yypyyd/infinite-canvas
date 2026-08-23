@@ -25,7 +25,7 @@ import { videoReferenceCapabilities } from "@/lib/video-reference";
 import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { flushActiveWorkspaceChanges, isWorkspaceVersionConflictError } from "@/components/layout/workspace-provider";
-import type { AgentToolName, AgentToolResult } from "@/services/api/agent";
+import { revertAgentTool, type AgentToolName, type AgentToolResult } from "@/services/api/agent";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -57,6 +57,7 @@ import { CANVAS_PROJECTS_REPLACED_EVENT, useCanvasStore, type CanvasProject } fr
 import { buildCanvasResourceReferences, buildNodeMentionReferenceMap, type CanvasResourceReference } from "../utils/canvas-resource-references";
 import { resolveCanvasVideoConfig } from "../utils/canvas-video-config";
 import {
+    CANVAS_AGENT_RUN_REVERTED_EVENT,
     CanvasNodeType,
     type CanvasAssistantImage,
     type CanvasAssistantSession,
@@ -108,6 +109,7 @@ type CanvasHistoryEntry = Pick<CanvasClipboard, "nodes" | "connections"> & {
     activeChatId: string | null;
     backgroundMode: CanvasBackgroundMode;
     showImageInfo: boolean;
+    agentToolCalls?: { runId: string; callId: string }[];
 };
 
 type CanvasSaveSnapshot = Pick<CanvasProject, "nodes" | "connections" | "chatSessions" | "activeChatId" | "backgroundMode" | "showImageInfo" | "viewport">;
@@ -276,6 +278,7 @@ function InfiniteCanvasPage() {
     const clipboardRef = useRef<CanvasClipboard | null>(null);
     const historyRef = useRef<{ past: CanvasHistoryEntry[]; future: CanvasHistoryEntry[] }>({ past: [], future: [] });
     const lastHistoryRef = useRef<CanvasHistoryEntry | null>(null);
+    const pendingAgentHistoryRef = useRef(new Map<string, { runId: string; callId: string }>());
     const lastSavedProjectRef = useRef<CanvasSaveSnapshot | null>(null);
     const historyCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const canvasSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -299,6 +302,9 @@ function InfiniteCanvasPage() {
         startY: 0,
         initialSelectedNodes: [],
     });
+    const markAssistantHistory = useCallback((runId: string, callId: string) => {
+        pendingAgentHistoryRef.current.set(`${runId}:${callId}`, { runId, callId });
+    }, []);
 
     const config = useConfigStore((state) => state.config);
     const effectiveConfig = useEffectiveConfig();
@@ -357,6 +363,7 @@ function InfiniteCanvasPage() {
     const [superResolveNodeId, setSuperResolveNodeId] = useState<string | null>(null);
     const [angleNodeId, setAngleNodeId] = useState<string | null>(null);
     const [previewNodeId, setPreviewNodeId] = useState<string | null>(null);
+    const [highlightedNodeIds, setHighlightedNodeIds] = useState<Set<string>>(new Set());
     const [assistantCollapsed, setAssistantCollapsed] = useState(true);
     const [assistantMounted, setAssistantMounted] = useState(false);
     const [titleEditing, setTitleEditing] = useState(false);
@@ -380,6 +387,8 @@ function InfiniteCanvasPage() {
     const pendingConnectionCreateRef = useRef(pendingConnectionCreate);
     const generationRequestsRef = useRef(new Map<string, CanvasGenerationRequest>());
     const hasUnsavedChangesRef = useRef(false);
+    const highlightedNodeIdsRef = useRef(new Set<string>());
+    const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const startImageGenerationRecord = useCallback(
         async (prompt: string, generationConfig: AiConfig, imageCount: number) => {
@@ -627,6 +636,7 @@ function InfiniteCanvasPage() {
         setHasUnsavedChanges(false);
         setViewport(project.viewport);
         historyRef.current = { past: [], future: [] };
+        pendingAgentHistoryRef.current.clear();
         if (historyCommitTimerRef.current) {
             clearTimeout(historyCommitTimerRef.current);
             historyCommitTimerRef.current = null;
@@ -717,7 +727,9 @@ function InfiniteCanvasPage() {
 
         if (historyCommitTimerRef.current) clearTimeout(historyCommitTimerRef.current);
         historyCommitTimerRef.current = setTimeout(() => {
-            const current = createHistoryEntry();
+            const agentToolCalls = [...pendingAgentHistoryRef.current.values()];
+            pendingAgentHistoryRef.current.clear();
+            const current = { ...createHistoryEntry(), ...(agentToolCalls.length ? { agentToolCalls } : {}) };
             const last = lastHistoryRef.current;
             if (!last) return;
             historyRef.current.past = [...historyRef.current.past.slice(-49), last];
@@ -1294,6 +1306,7 @@ function InfiniteCanvasPage() {
             clearTimeout(historyCommitTimerRef.current);
             historyCommitTimerRef.current = null;
         }
+        pendingAgentHistoryRef.current.clear();
         applyingHistoryRef.current = true;
         setNodes(entry.nodes);
         setConnections(entry.connections);
@@ -1311,13 +1324,39 @@ function InfiniteCanvasPage() {
         });
     }, []);
 
+    const syncRevertedAgentTools = useCallback(
+        (current: CanvasHistoryEntry, previous: CanvasHistoryEntry) => {
+            if ((current.nodes === previous.nodes && current.connections === previous.connections) || !current.agentToolCalls?.length) return;
+            const toolCalls = current.agentToolCalls;
+            void Promise.allSettled(toolCalls.map(({ runId, callId }) => revertAgentTool(runId, callId))).then((results) => {
+                results.forEach((result, index) => {
+                    if (result.status === "fulfilled") window.dispatchEvent(new CustomEvent(CANVAS_AGENT_RUN_REVERTED_EVENT, { detail: { runId: toolCalls[index].runId } }));
+                });
+                if (results.some((result) => result.status === "rejected")) void message.error("画布已撤销，但助手状态同步失败");
+            });
+        },
+        [message],
+    );
+
     const undoCanvas = useCallback(() => {
+        if (historyCommitTimerRef.current && pendingAgentHistoryRef.current.size) {
+            clearTimeout(historyCommitTimerRef.current);
+            historyCommitTimerRef.current = null;
+            const previous = lastHistoryRef.current;
+            if (!previous) return;
+            const current = { ...createHistoryEntry(), agentToolCalls: [...pendingAgentHistoryRef.current.values()] };
+            historyRef.current.future = [current];
+            applyHistory(previous);
+            syncRevertedAgentTools(current, previous);
+            return;
+        }
         const previous = historyRef.current.past.pop();
         const current = lastHistoryRef.current;
         if (!previous || !current) return;
         historyRef.current.future.push(current);
         applyHistory(previous);
-    }, [applyHistory]);
+        syncRevertedAgentTools(current, previous);
+    }, [applyHistory, createHistoryEntry, syncRevertedAgentTools]);
 
     const redoCanvas = useCallback(() => {
         const next = historyRef.current.future.pop();
@@ -3160,6 +3199,8 @@ function InfiniteCanvasPage() {
                 }),
             );
             const nextConnections = [...connectionsRef.current, ...createdConnections];
+            const agentImage = images.find((image) => image.agentRunId && image.agentToolCallId);
+            if (agentImage?.agentRunId && agentImage.agentToolCallId) markAssistantHistory(agentImage.agentRunId, agentImage.agentToolCallId);
             nodesRef.current = nextNodes;
             connectionsRef.current = nextConnections;
             setNodes(nextNodes);
@@ -3169,7 +3210,7 @@ function InfiniteCanvasPage() {
             if (created[0]) setDialogNodeId(created[0].id);
             return created.map((node, index) => ({ nodeId: node.id, storageKey: stored[index].storedImage.storageKey }));
         },
-        [screenToCanvas, size.height, size.width],
+        [markAssistantHistory, screenToCanvas, size.height, size.width],
     );
 
     const insertAssistantVideo = useCallback(
@@ -3199,6 +3240,7 @@ function InfiniteCanvasPage() {
                 return [{ id: nanoid(), ...connection }];
             });
             const nextConnections = [...connectionsRef.current, ...createdConnections];
+            markAssistantHistory(video.agentRunId, video.agentToolCallId);
             nodesRef.current = nextNodes;
             connectionsRef.current = nextConnections;
             setNodes(nextNodes);
@@ -3208,17 +3250,19 @@ function InfiniteCanvasPage() {
             setDialogNodeId(node.id);
             return { nodeId: node.id, storageKey: video.storageKey };
         },
-        [screenToCanvas, size.height, size.width],
+        [markAssistantHistory, screenToCanvas, size.height, size.width],
     );
 
     const arrangeAssistantNodes = useCallback(
-        (nodeIds: string[], mode: "horizontal" | "vertical" | "grid", gap: number, agentMeta: { runId: string; authorizedNodeIds: string[] }) => {
+        (nodeIds: string[], mode: "horizontal" | "vertical" | "grid", gap: number, agentMeta?: { runId: string; callId: string; authorizedNodeIds: string[] }) => {
             const requested = new Set(nodeIds);
             const targets = nodeIds.map((id) => nodesRef.current.find((node) => node.id === id));
             if (targets.some((node) => !node)) throw new Error("待排列节点已不存在");
             if (targets.some((node) => node?.metadata?.isBatchRoot || node?.metadata?.batchRootId)) throw new Error("批次节点暂不支持自动排列");
-            const authorized = new Set([...agentMeta.authorizedNodeIds, ...selectedNodeIdsRef.current, ...nodesRef.current.filter((node) => node.metadata?.agentRunId === agentMeta.runId).map((node) => node.id)]);
-            if (nodeIds.some((id) => !authorized.has(id))) throw new Error("只能排列本轮授权或新生成的节点");
+            if (agentMeta) {
+                const authorized = new Set([...agentMeta.authorizedNodeIds, ...selectedNodeIdsRef.current, ...nodesRef.current.filter((node) => node.metadata?.agentRunId === agentMeta.runId).map((node) => node.id)]);
+                if (nodeIds.some((id) => !authorized.has(id))) throw new Error("只能排列本轮授权或新生成的节点");
+            }
 
             const resolved = targets as CanvasNodeData[];
             const originX = Math.min(...resolved.map((node) => node.position.x));
@@ -3240,13 +3284,14 @@ function InfiniteCanvasPage() {
             });
             const positionById = new Map(positions.map((position) => [position.nodeId, position]));
             const nextNodes = nodesRef.current.map((node) => (requested.has(node.id) ? { ...node, position: { x: positionById.get(node.id)!.x, y: positionById.get(node.id)!.y } } : node));
+            if (agentMeta) markAssistantHistory(agentMeta.runId, agentMeta.callId);
             nodesRef.current = nextNodes;
             setNodes(nextNodes);
             setSelectedNodeIds(new Set(nodeIds));
             setSelectedConnectionId(null);
             return positions;
         },
-        [],
+        [markAssistantHistory],
     );
 
     const restoreAssistantToolResult = useCallback((runId: string, callId: string) => useCanvasStore.getState().openProject(projectId)?.agentToolReceipts?.[`${runId}:${callId}`]?.result, [projectId]);
@@ -3302,6 +3347,7 @@ function InfiniteCanvasPage() {
 
             const project = useCanvasStore.getState().openProject(projectId);
             if (!project) throw new Error("当前画布项目不存在");
+            markAssistantHistory(runId, callId);
             nodesRef.current = nextNodes;
             connectionsRef.current = nextConnections;
             setNodes(nextNodes);
@@ -3314,7 +3360,7 @@ function InfiniteCanvasPage() {
             await flushActiveWorkspaceChanges();
             return result;
         },
-        [projectId, updateProject],
+        [markAssistantHistory, projectId, updateProject],
     );
 
     const insertAssistantText = useCallback(
@@ -3340,6 +3386,7 @@ function InfiniteCanvasPage() {
                 return [{ id: nanoid(), ...connection }];
             });
             const nextConnections = [...connectionsRef.current, ...createdConnections];
+            if (agentMeta) markAssistantHistory(agentMeta.runId, agentMeta.callId);
             nodesRef.current = nextNodes;
             connectionsRef.current = nextConnections;
             setNodes(nextNodes);
@@ -3348,8 +3395,39 @@ function InfiniteCanvasPage() {
             setSelectedConnectionId(null);
             return node.id;
         },
-        [screenToCanvas, selectedNodeIds, size.height, size.width],
+        [markAssistantHistory, screenToCanvas, selectedNodeIds, size.height, size.width],
     );
+
+    const flashAssistantNodes = useCallback((nodeIds: string[]) => {
+        highlightedNodeIdsRef.current = new Set(nodeIds);
+        setHighlightedNodeIds(highlightedNodeIdsRef.current);
+        if (highlightTimerRef.current) window.clearTimeout(highlightTimerRef.current);
+        highlightTimerRef.current = setTimeout(() => {
+            highlightedNodeIdsRef.current = new Set();
+            setHighlightedNodeIds(new Set());
+            highlightTimerRef.current = null;
+        }, 1200);
+    }, []);
+
+    useEffect(() => {
+        return () => {
+            if (highlightTimerRef.current) window.clearTimeout(highlightTimerRef.current);
+        };
+    }, []);
+
+    const tidyCanvasNodes = useCallback(() => {
+        const eligibleNodes = nodesRef.current.filter((node) => !node.metadata?.isBatchRoot && !node.metadata?.batchRootId);
+        const selectedNodes = eligibleNodes.filter((node) => selectedNodeIdsRef.current.has(node.id));
+        const targets = selectedNodes.length >= 2 ? selectedNodes : eligibleNodes;
+        if (targets.length < 2) {
+            void message.info("至少需要两个节点才能整理画布");
+            return;
+        }
+        const nodeIds = targets.map((node) => node.id);
+        arrangeAssistantNodes(nodeIds, targets.length > 4 ? "grid" : "horizontal", 40);
+        flashAssistantNodes(nodeIds);
+        void message.success(selectedNodes.length >= 2 ? "已整理选中节点" : "已整理画布");
+    }, [arrangeAssistantNodes, flashAssistantNodes, message]);
 
     const handleAssetInsert = useCallback(
         (payload: InsertAssetPayload) => {
@@ -3541,6 +3619,7 @@ function InfiniteCanvasPage() {
                             isFocusRelated={activeNodeId === node.id}
                             isConnectionTarget={connectionTargetNodeId === node.id}
                             isConnecting={Boolean(connectingParams)}
+                            isHighlighted={highlightedNodeIds.has(node.id)}
                             editRequestNonce={editingNodeId === node.id ? editRequestNonce : 0}
                             showPanel={dialogNodeId === node.id && !selectionBox}
                             batchCount={batchChildCountById.get(node.id) || 0}
@@ -3631,6 +3710,7 @@ function InfiniteCanvasPage() {
                     onAddConfig={() => createNode(CanvasNodeType.Config)}
                     onUndo={undoCanvas}
                     onRedo={redoCanvas}
+                    onTidy={tidyCanvasNodes}
                     onUpload={() => handleUploadRequest()}
                     onDelete={() => deleteNodes(new Set(selectedNodeIds))}
                     onClear={() => setClearConfirmOpen(true)}
@@ -3775,31 +3855,33 @@ function InfiniteCanvasPage() {
                 </Modal>
 
                 {assetPickerOpen ? <AssetPickerModal open defaultTab={assetPickerTab} onInsert={handleAssetInsert} onClose={() => setAssetPickerOpen(false)} /> : null}
+                {assistantMounted ? (
+                    <CanvasAssistantPanel
+                        projectId={projectId}
+                        nodes={nodes}
+                        connections={connections}
+                        selectedNodeIds={selectedNodeIds}
+                        sessions={chatSessions}
+                        activeSessionId={activeChatId}
+                        onSelectNodeIds={setSelectedNodeIds}
+                        onSessionsChange={handleAssistantSessionsChange}
+                        onPersistSessions={persistAssistantSessions}
+                        onInsertImage={insertAssistantImage}
+                        onInsertImages={insertAssistantImages}
+                        onInsertVideo={insertAssistantVideo}
+                        onArrangeNodes={arrangeAssistantNodes}
+                        onInsertText={insertAssistantText}
+                        onPersistToolResult={persistAssistantToolResult}
+                        onApplyDestructiveTool={applyDestructiveAssistantTool}
+                        onRestoreToolResult={restoreAssistantToolResult}
+                        onFlashAssistantNodes={flashAssistantNodes}
+                        onPasteImage={pasteAssistantImage}
+                        collapsed={assistantCollapsed}
+                        onCollapseStart={() => setAssistantCollapsed(true)}
+                        onCollapse={() => undefined}
+                    />
+                ) : null}
             </section>
-            {assistantMounted ? (
-                <CanvasAssistantPanel
-                    projectId={projectId}
-                    nodes={nodes}
-                    selectedNodeIds={selectedNodeIds}
-                    sessions={chatSessions}
-                    activeSessionId={activeChatId}
-                    onSelectNodeIds={setSelectedNodeIds}
-                    onSessionsChange={handleAssistantSessionsChange}
-                    onPersistSessions={persistAssistantSessions}
-                    onInsertImage={insertAssistantImage}
-                    onInsertImages={insertAssistantImages}
-                    onInsertVideo={insertAssistantVideo}
-                    onArrangeNodes={arrangeAssistantNodes}
-                    onInsertText={insertAssistantText}
-                    onPersistToolResult={persistAssistantToolResult}
-                    onApplyDestructiveTool={applyDestructiveAssistantTool}
-                    onRestoreToolResult={restoreAssistantToolResult}
-                    onPasteImage={pasteAssistantImage}
-                    collapsed={assistantCollapsed}
-                    onCollapseStart={() => setAssistantCollapsed(true)}
-                    onCollapse={() => undefined}
-                />
-            ) : null}
         </main>
     );
 }
@@ -3960,7 +4042,7 @@ function CanvasTopBar({
                                 icon={<MessageSquare className="size-4" />}
                                 onClick={onExpandAssistant}
                             >
-                                助手
+                                指挥中心
                             </Button>
                         </>
                     ) : null}

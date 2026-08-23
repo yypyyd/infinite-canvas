@@ -134,6 +134,22 @@ func CancelAgentRun(w http.ResponseWriter, r *http.Request, runID string) {
 	OK(w, run)
 }
 
+func RevertAgentTool(w http.ResponseWriter, r *http.Request, runID string) {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok {
+		Fail(w, "未登录或权限不足")
+		return
+	}
+	var request service.RevertAgentToolRequest
+	if !decodeAgentJSON(w, r, &request) { return }
+	run, err := service.RevertAgentTool(user, runID, request)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, run)
+}
+
 func AgentRunEvents(w http.ResponseWriter, r *http.Request, runID string) {
 	user, ok := service.UserFromContext(r.Context())
 	if !ok {

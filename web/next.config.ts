@@ -19,6 +19,10 @@ export default function nextConfig(phase: string): NextConfig {
         typescript: {
             ignoreBuildErrors: true,
         },
+        experimental: {
+            // Keep the legacy multipart path usable while clients roll over to storage-key JSON.
+            proxyClientMaxBodySize: "350mb",
+        },
         env: {
             NEXT_PUBLIC_APP_VERSION: localVersion,
             NEXT_PUBLIC_APP_RELEASES: JSON.stringify(releases),

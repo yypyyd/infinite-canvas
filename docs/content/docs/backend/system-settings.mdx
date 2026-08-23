@@ -228,7 +228,7 @@ description: settings 表中 public 和 private 配置结构说明
 | `supportsAudioOutput` | boolean | 是否接受 `generate_audio=true` 的视频生成请求 |
 | `referenceMode` | string | 参考模式：`frame`、`asset` 或 `none` |
 
-后端调用模型时，会先按对外模型名、类型、操作、请求规格、三类参考素材数量、参考素材合计数量和音频输出要求筛选已启用且密钥完整的渠道，再在能力相符的渠道中按 `weight` 加权随机选择。用户价格始终读取公开模型的 `pricingRules`，不会因随机命中不同上游渠道而变化；请求发送前会把 `model` 替换为所选渠道的 `upstreamModel`。视频 multipart 请求使用 `input_reference`、`reference_videos`、`reference_audios` 和 `generate_audio` 字段，图片、视频、音频单文件分别限制为 20MiB、200MiB、50MiB，整体请求限制为 320MiB。
+后端调用模型时，会先按对外模型名、类型、操作、请求规格、三类参考素材数量、参考素材合计数量和音频输出要求筛选已启用且密钥完整的渠道，再在能力相符的渠道中按 `weight` 加权随机选择。用户价格始终读取公开模型的 `pricingRules`，不会因随机命中不同上游渠道而变化；请求发送前会把 `model` 替换为所选渠道的 `upstreamModel`。视频 multipart 请求使用 `input_reference`、`reference_videos`、`reference_audios` 和 `generate_audio` 字段；用户端对已上传到工作区的引用提交对应 `storageKey` JSON，服务端校验企业归属后流式组装同样的 multipart。图片、视频、音频单文件分别限制为 20MiB、200MiB、50MiB，整体引用限制为 320MiB。
 
 `promptSync` 字段：
 

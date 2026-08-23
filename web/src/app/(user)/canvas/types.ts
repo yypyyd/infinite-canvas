@@ -1,3 +1,5 @@
+export const CANVAS_AGENT_RUN_REVERTED_EVENT = "canvas-agent-run-reverted";
+
 export type Position = {
     x: number;
     y: number;
@@ -121,6 +123,7 @@ export type CanvasAssistantConfirmation = {
     name: "canvas.delete" | "canvas.update_text";
     arguments: { nodeIds: string[] } | { nodeId: string; text: string };
     status: "pending" | "approving" | "rejected" | "approved" | "failed";
+    agentRunId?: string;
 };
 
 export type CanvasAssistantMessage = {

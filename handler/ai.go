@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,8 @@ import (
 	"net/http"
 	"net/textproto"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -39,6 +42,15 @@ var videoGenerationCache = struct {
 	sync.Mutex
 	items map[string]cachedVideoGeneration
 }{items: map[string]cachedVideoGeneration{}}
+
+var workspaceMediaHTTPClient = &http.Client{Timeout: 15 * time.Minute}
+
+const (
+	maxVideoReferenceRequestBytes = 320 << 20
+	maxVideoReferenceImageBytes   = 20 << 20
+	maxVideoReferenceVideoBytes   = 200 << 20
+	maxVideoReferenceAudioBytes   = 50 << 20
+)
 
 func AIImagesGenerations(w http.ResponseWriter, r *http.Request) {
 	proxyAIRequest(w, r, "/images/generations")
@@ -118,13 +130,17 @@ func proxyAIGetRequest(w http.ResponseWriter, r *http.Request, path string) {
 	if generationTask != nil && len(generationTask.StorageKeys) > 0 {
 		if strings.HasSuffix(path, "/content") {
 			if user, ok := service.UserFromContext(r.Context()); ok && proxyArchivedGenerationContent(w, r, user, generationTask.StorageKeys[0]) {
-				if finishErr := service.FinishGenerationTask(*generationTask, model.GenerationTaskStatusSuccess, ""); finishErr != nil { log.Printf("AI video task finish failed: task=%s err=%v", generationTask.ID, finishErr) }
+				if finishErr := service.FinishGenerationTask(*generationTask, model.GenerationTaskStatusSuccess, ""); finishErr != nil {
+					log.Printf("AI video task finish failed: task=%s err=%v", generationTask.ID, finishErr)
+				}
 				return
 			}
 		} else if archivedBody := attachVideoStorage([]byte(generationTask.ResultJSON), generationTask.StorageKeys[0], "", 0); videoGenerationsStatusPayload(archivedBody) == "completed" {
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			_, _ = w.Write(archivedBody)
-			if finishErr := service.FinishGenerationTask(*generationTask, model.GenerationTaskStatusSuccess, ""); finishErr != nil { log.Printf("AI video task finish failed: task=%s err=%v", generationTask.ID, finishErr) }
+			if finishErr := service.FinishGenerationTask(*generationTask, model.GenerationTaskStatusSuccess, ""); finishErr != nil {
+				log.Printf("AI video task finish failed: task=%s err=%v", generationTask.ID, finishErr)
+			}
 			return
 		}
 	}
@@ -220,7 +236,14 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		FailError(w, err)
 		return
 	}
-	request, err := buildAIUpstreamRequest(r, path, body, contentType, selection, "")
+	cleanup := func() {}
+	var request *http.Request
+	if path == "/videos" && canBuildStorageReferenceRequest(requestMeta) {
+		request, cleanup, err = buildAIUpstreamStorageRequest(r.Context(), r, user, requestMeta, selection, "")
+	} else {
+		request, err = buildAIUpstreamRequest(r, path, body, contentType, selection, "")
+	}
+	defer cleanup()
 	if err != nil {
 		log.Printf("AI proxy build request failed: model=%s channel=%s err=%v", requestMeta.ModelName, selection.Channel.Name, err)
 		Fail(w, "AI 接口请求失败")
@@ -363,6 +386,182 @@ func buildAIUpstreamRequest(r *http.Request, path string, body []byte, contentTy
 		request.Header.Set("Idempotency-Key", idempotencyKey)
 	}
 	return request, nil
+}
+
+func hasStorageReferences(request aiRequestMeta) bool {
+	return len(request.InputReferenceStorageKeys)+len(request.ReferenceVideoStorageKeys)+len(request.ReferenceAudioStorageKeys) > 0
+}
+
+func canBuildStorageReferenceRequest(request aiRequestMeta) bool {
+	if !hasStorageReferences(request) {
+		return false
+	}
+	for _, key := range []string{"reference_images", "reference_images[]", "input_reference", "input_reference[]", "reference_videos", "reference_videos[]", "reference_audios", "reference_audios[]"} {
+		if _, exists := request.Payload[key]; exists {
+			return false
+		}
+	}
+	return true
+}
+
+func buildAIUpstreamStorageRequest(ctx context.Context, r *http.Request, user model.AuthUser, meta aiRequestMeta, selection service.ModelChannelSelection, idempotencyKey string) (*http.Request, func(), error) {
+	temporary, err := os.CreateTemp("", "ai-video-request-*.multipart")
+	if err != nil {
+		return nil, func() {}, err
+	}
+	cleanup := func() {
+		_ = temporary.Close()
+		_ = os.Remove(temporary.Name())
+	}
+	writer := multipart.NewWriter(temporary)
+	contentType := writer.FormDataContentType()
+	fields := map[string]string{
+		"model":          selection.Model.UpstreamModel,
+		"prompt":         readStringField(meta.Payload, "prompt"),
+		"seconds":        strconv.Itoa(meta.Duration),
+		"resolution":     meta.Resolution,
+		"size":           meta.Size,
+		"generate_audio": strconv.FormatBool(meta.GenerateAudio),
+	}
+	if isVividAI(selection.Channel.BaseURL) {
+		adapted := vividAIVideoPayload(selection.Model.UpstreamModel, fields["prompt"], fields["seconds"], fields["size"], fields["resolution"], hasStorageReferences(meta))
+		fields = map[string]string{}
+		for key, value := range adapted {
+			if text := strings.TrimSpace(fmt.Sprint(value)); text != "" && text != "<nil>" {
+				fields[key] = text
+			}
+		}
+		fields["generate_audio"] = strconv.FormatBool(meta.GenerateAudio)
+	}
+	for key, value := range fields {
+		if err := writer.WriteField(key, value); err != nil {
+			cleanup()
+			return nil, func() {}, err
+		}
+	}
+	var totalMediaBytes int64
+	appendFiles := func(field string, keys []string) error {
+		for _, storageKey := range keys {
+			media, resolveErr := service.ResolveUserWorkspaceMedia(user, storageKey)
+			if resolveErr != nil {
+				return resolveErr
+			}
+			if err := validateStorageMediaSize(field, media, &totalMediaBytes); err != nil {
+				return err
+			}
+			if err := appendStorageMultipartFile(ctx, writer, field, storageKey, media); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := appendFiles("input_reference", meta.InputReferenceStorageKeys); err != nil {
+		cleanup()
+		return nil, func() {}, err
+	}
+	if err := appendFiles("reference_videos", meta.ReferenceVideoStorageKeys); err != nil {
+		cleanup()
+		return nil, func() {}, err
+	}
+	if err := appendFiles("reference_audios", meta.ReferenceAudioStorageKeys); err != nil {
+		cleanup()
+		return nil, func() {}, err
+	}
+	if err := writer.Close(); err != nil {
+		cleanup()
+		return nil, func() {}, err
+	}
+	if err := temporary.Sync(); err != nil {
+		cleanup()
+		return nil, func() {}, err
+	}
+	if _, err := temporary.Seek(0, io.SeekStart); err != nil {
+		cleanup()
+		return nil, func() {}, err
+	}
+	fileInfo, err := temporary.Stat()
+	if err != nil {
+		cleanup()
+		return nil, func() {}, err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, service.BuildModelChannelURL(selection.Channel, "/videos"), temporary)
+	if err != nil {
+		cleanup()
+		return nil, func() {}, err
+	}
+	request.ContentLength = fileInfo.Size()
+	temporaryPath := temporary.Name()
+	request.GetBody = func() (io.ReadCloser, error) {
+		return os.Open(temporaryPath)
+	}
+	request.Header.Set("Authorization", "Bearer "+selection.Channel.APIKey)
+	request.Header.Set("Content-Type", contentType)
+	if requestID := strings.TrimSpace(r.Header.Get("X-Request-ID")); requestID != "" {
+		request.Header.Set("X-Request-ID", requestID)
+	}
+	if idempotencyKey != "" {
+		request.Header.Set("Idempotency-Key", idempotencyKey)
+	}
+	return request, cleanup, nil
+}
+
+func validateStorageMediaSize(field string, media service.UserWorkspaceMedia, total *int64) error {
+	if media.Size <= 0 {
+		return errors.New("参考素材大小无效")
+	}
+	limit := int64(maxVideoReferenceRequestBytes)
+	switch field {
+	case "input_reference":
+		limit = maxVideoReferenceImageBytes
+	case "reference_videos":
+		limit = maxVideoReferenceVideoBytes
+	case "reference_audios":
+		limit = maxVideoReferenceAudioBytes
+	}
+	if media.Size > limit {
+		return fmt.Errorf("参考素材超过大小限制（最大 %d MB）", limit>>20)
+	}
+	if *total > maxVideoReferenceRequestBytes-media.Size {
+		return fmt.Errorf("参考素材总大小不能超过 %d MB", maxVideoReferenceRequestBytes>>20)
+	}
+	*total += media.Size
+	return nil
+}
+
+func appendStorageMultipartFile(ctx context.Context, writer *multipart.Writer, field, storageKey string, media service.UserWorkspaceMedia) error {
+	partHeader := make(textproto.MIMEHeader)
+	partHeader.Set("Content-Disposition", mime.FormatMediaType("form-data", map[string]string{"name": field, "filename": filepath.Base(storageKey)}))
+	partHeader.Set("Content-Type", media.MimeType)
+	target, err := writer.CreatePart(partHeader)
+	if err != nil {
+		return err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, media.URL, nil)
+	if err != nil {
+		return err
+	}
+	response, err := workspaceMediaHTTPClient.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return fmt.Errorf("参考素材下载失败（HTTP %d）", response.StatusCode)
+	}
+	written, err := io.CopyN(target, response.Body, media.Size)
+	if err != nil {
+		return err
+	}
+	if written != media.Size {
+		return errors.New("参考素材大小校验失败")
+	}
+	var extra [1]byte
+	if count, err := response.Body.Read(extra[:]); err != nil && !errors.Is(err, io.EOF) {
+		return err
+	} else if count > 0 {
+		return errors.New("参考素材大小超过记录值")
+	}
+	return nil
 }
 
 func shouldFailoverAIImageRequest(path string, response *http.Response, body []byte, err error, timeoutRecoveryUnsupported bool) bool {
@@ -927,18 +1126,22 @@ func cacheVideoGeneration(body []byte, mimeType string) string {
 }
 
 type aiRequestMeta struct {
-	ModelName       string
-	ResponseFormat  string
-	Count           int
-	Size            string
-	Quality         string
-	Resolution      string
-	ResolutionTier  string
-	Duration        int
-	ReferenceImages int
-	ReferenceVideos int
-	ReferenceAudios int
-	GenerateAudio   bool
+	ModelName                 string
+	ResponseFormat            string
+	Count                     int
+	Size                      string
+	Quality                   string
+	Resolution                string
+	ResolutionTier            string
+	Duration                  int
+	ReferenceImages           int
+	ReferenceVideos           int
+	ReferenceAudios           int
+	GenerateAudio             bool
+	Payload                   map[string]any
+	InputReferenceStorageKeys []string
+	ReferenceVideoStorageKeys []string
+	ReferenceAudioStorageKeys []string
 }
 
 func readAIRequest(r *http.Request) ([]byte, string, aiRequestMeta, error) {
@@ -1062,20 +1265,56 @@ func readMultipartAIRequest(body []byte, contentType string) aiRequestMeta {
 func readJSONAIRequest(body []byte) aiRequestMeta {
 	var payload map[string]any
 	_ = json.Unmarshal(body, &payload)
+	inputReferences := stringSliceField(payload, "input_reference_storage_keys")
+	videoReferences := stringSliceField(payload, "reference_videos_storage_keys")
+	audioReferences := stringSliceField(payload, "reference_audios_storage_keys")
 	return aiRequestMeta{
-		ModelName:       readStringField(payload, "model"),
-		ResponseFormat:  readStringField(payload, "response_format"),
-		Count:           readIntField(payload, 1, "n"),
-		Size:            readStringField(payload, "size", "ratio"),
-		Quality:         readStringField(payload, "quality"),
-		Resolution:      readStringField(payload, "resolution", "resolution_name", "vquality"),
-		ResolutionTier:  readStringField(payload, "resolutionTier"),
-		Duration:        readIntField(payload, 1, "duration", "seconds", "videoSeconds"),
-		ReferenceImages: referenceImageCount(firstAnyValue(payload, "reference_images", "input_reference", "input_reference[]")),
-		ReferenceVideos: referenceImageCount(firstAnyValue(payload, "reference_videos", "reference_videos[]")),
-		ReferenceAudios: referenceImageCount(firstAnyValue(payload, "reference_audios", "reference_audios[]")),
-		GenerateAudio:   readBoolField(payload, "generate_audio", "generateAudio"),
+		ModelName:                 readStringField(payload, "model"),
+		ResponseFormat:            readStringField(payload, "response_format"),
+		Count:                     readIntField(payload, 1, "n"),
+		Size:                      readStringField(payload, "size", "ratio"),
+		Quality:                   readStringField(payload, "quality"),
+		Resolution:                readStringField(payload, "resolution", "resolution_name", "vquality"),
+		ResolutionTier:            readStringField(payload, "resolutionTier"),
+		Duration:                  readIntField(payload, 1, "duration", "seconds", "videoSeconds"),
+		ReferenceImages:           referenceImageCount(firstAnyValue(payload, "reference_images", "input_reference", "input_reference[]")) + len(inputReferences),
+		ReferenceVideos:           referenceImageCount(firstAnyValue(payload, "reference_videos", "reference_videos[]")) + len(videoReferences),
+		ReferenceAudios:           referenceImageCount(firstAnyValue(payload, "reference_audios", "reference_audios[]")) + len(audioReferences),
+		GenerateAudio:             readBoolField(payload, "generate_audio", "generateAudio"),
+		Payload:                   payload,
+		InputReferenceStorageKeys: inputReferences,
+		ReferenceVideoStorageKeys: videoReferences,
+		ReferenceAudioStorageKeys: audioReferences,
 	}
+}
+
+func stringSliceField(payload map[string]any, key string) []string {
+	value, ok := payload[key]
+	if !ok {
+		return nil
+	}
+	result := []string{}
+	switch typed := value.(type) {
+	case []any:
+		for _, item := range typed {
+			if text, ok := item.(string); ok {
+				if value := strings.TrimSpace(text); value != "" {
+					result = append(result, value)
+				}
+			}
+		}
+	case []string:
+		for _, item := range typed {
+			if value := strings.TrimSpace(item); value != "" {
+				result = append(result, value)
+			}
+		}
+	case string:
+		if value := strings.TrimSpace(typed); value != "" {
+			result = append(result, value)
+		}
+	}
+	return result
 }
 
 func referenceImageCount(value any) int {

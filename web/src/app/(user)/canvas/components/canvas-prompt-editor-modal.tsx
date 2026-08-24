@@ -9,7 +9,7 @@ import { CanvasResourceMentionTextarea } from "./canvas-resource-mention-textare
 import type { CanvasResourceReference } from "../utils/canvas-resource-references";
 import { CanvasNodeType, type CanvasNodeData } from "../types";
 
-export function CanvasPromptEditorModal({ node, open, references, onChange, onGenerate, onClose }: { node: CanvasNodeData | null; open: boolean; references: CanvasResourceReference[]; onChange: (value: string) => void; onGenerate: () => void; onClose: () => void }) {
+export function CanvasPromptEditorModal({ node, open, references, onReferenceSelect, onChange, onGenerate, onClose }: { node: CanvasNodeData | null; open: boolean; references: CanvasResourceReference[]; onReferenceSelect?: (reference: CanvasResourceReference) => void; onChange: (value: string) => void; onGenerate: () => void; onClose: () => void }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const prompt = node?.metadata?.promptDraft || "";
     return (
@@ -27,6 +27,7 @@ export function CanvasPromptEditorModal({ node, open, references, onChange, onGe
                         autoFocus
                         value={prompt}
                         references={references.filter((reference) => reference.active)}
+                        onReferenceSelect={onReferenceSelect}
                         onChange={onChange}
                         onSubmit={onGenerate}
                         className="thin-scrollbar min-h-[280px] max-h-[52vh] w-full resize-none overflow-y-auto rounded-xl border px-4 py-3 text-sm leading-6 outline-none"

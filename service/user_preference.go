@@ -9,7 +9,7 @@ import (
 
 const maxUserPreferencesBytes = 64 << 10
 
-var userPreferenceKeys = map[string]bool{"theme": true, "aiConfig": true, "imageQuickTools": true}
+var userPreferenceKeys = map[string]bool{"theme": true, "aiConfig": true, "imageQuickTools": true, "agentSettings": true}
 var aiPreferenceKeys = map[string]bool{
 	"model": true, "imageModel": true, "videoModel": true, "textModel": true, "audioModel": true,
 	"audioVoice": true, "audioFormat": true, "audioSpeed": true, "audioInstructions": true,
@@ -57,7 +57,10 @@ func validUserPreferenceValue(key string, raw json.RawMessage) bool {
 	if key == "aiConfig" {
 		return validAIConfigPreferences(raw)
 	}
-	return validImageQuickToolsPreferences(raw)
+	if key == "imageQuickTools" {
+		return validImageQuickToolsPreferences(raw)
+	}
+	return validAgentSettingsPreferences(raw)
 }
 
 func validAIConfigPreferences(raw json.RawMessage) bool {
@@ -94,6 +97,23 @@ func validImageQuickToolsPreferences(raw json.RawMessage) bool {
 		if json.Unmarshal(item, &ids) != nil || len(ids) > 64 {
 			return false
 		}
+	}
+	return true
+}
+
+func validAgentSettingsPreferences(raw json.RawMessage) bool {
+	var value map[string]json.RawMessage
+	if json.Unmarshal(raw, &value) != nil || len(value) < 1 || len(value) > 2 {
+		return false
+	}
+	var configured bool
+	if json.Unmarshal(value["configured"], &configured) != nil { return false }
+	for key := range value {
+		if key != "configured" && key != "autonomy" { return false }
+	}
+	if rawAutonomy, exists := value["autonomy"]; exists {
+		var autonomy string
+		if json.Unmarshal(rawAutonomy, &autonomy) != nil || (autonomy != agentAutonomyCautious && autonomy != agentAutonomyStandard && autonomy != agentAutonomyAutonomous) { return false }
 	}
 	return true
 }

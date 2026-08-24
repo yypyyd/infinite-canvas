@@ -29,6 +29,7 @@ import { revertAgentTool, type AgentToolName, type AgentToolResult } from "@/ser
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { useThemeStore } from "@/stores/use-theme-store";
+import { useWorkspaceStatusStore } from "@/stores/use-workspace-status-store";
 import { cropDataUrl, splitDataUrl, upscaleDataUrl } from "../utils/canvas-image-data";
 import { fitNodeSize, nodeSizeFromRatio } from "../utils/canvas-node-size";
 import { App, Button, Dropdown, Modal, Switch } from "antd";
@@ -54,7 +55,7 @@ import type { AssetPickerTab, InsertAssetPayload } from "../components/asset-pic
 import { CanvasToolbar } from "../components/canvas-toolbar";
 import { CanvasZoomControls } from "../components/canvas-zoom-controls";
 import { CANVAS_PROJECTS_REPLACED_EVENT, useCanvasStore, type CanvasProject } from "../stores/use-canvas-store";
-import { buildCanvasResourceReferences, buildNodeMentionReferenceMap, type CanvasResourceReference } from "../utils/canvas-resource-references";
+import { buildCanvasMentionReferences, buildCanvasResourceReferences, buildNodeMentionReferenceMap, type CanvasResourceReference } from "../utils/canvas-resource-references";
 import { resolveCanvasVideoConfig } from "../utils/canvas-video-config";
 import {
     CANVAS_AGENT_RUN_REVERTED_EVENT,
@@ -321,6 +322,7 @@ function InfiniteCanvasPage() {
     const renameProject = useCanvasStore((state) => state.renameProject);
     const deleteProjects = useCanvasStore((state) => state.deleteProjects);
     const currentProject = useCanvasStore((state) => state.projects.find((project) => project.id === projectId));
+    const workspaceStatus = useWorkspaceStatusStore((state) => state.status);
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const [nodes, setNodes] = useState<CanvasNodeData[]>([]);
     const [connections, setConnections] = useState<CanvasConnection[]>([]);
@@ -366,6 +368,7 @@ function InfiniteCanvasPage() {
     const [highlightedNodeIds, setHighlightedNodeIds] = useState<Set<string>>(new Set());
     const [assistantCollapsed, setAssistantCollapsed] = useState(true);
     const [assistantMounted, setAssistantMounted] = useState(false);
+    const [isAgentFollowing, setIsAgentFollowing] = useState(false);
     const [titleEditing, setTitleEditing] = useState(false);
     const [titleDraft, setTitleDraft] = useState("");
     const [historyState, setHistoryState] = useState({ canUndo: false, canRedo: false });
@@ -389,6 +392,10 @@ function InfiniteCanvasPage() {
     const hasUnsavedChangesRef = useRef(false);
     const highlightedNodeIdsRef = useRef(new Set<string>());
     const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const viewportAnimationRef = useRef<number | null>(null);
+    const followedAgentRunRef = useRef<string | null>(null);
+    const agentFollowSuppressedRef = useRef(false);
+    const openedProjectIdRef = useRef<string | null>(null);
 
     const startImageGenerationRecord = useCallback(
         async (prompt: string, generationConfig: AiConfig, imageCount: number) => {
@@ -621,7 +628,7 @@ function InfiniteCanvasPage() {
         const hadInterruptedGeneration = project.nodes.some((node) => node.metadata?.status === NODE_STATUS_LOADING);
         const [restoredNodes, restoredSessions] = await Promise.all([
             restoreInterruptedCanvasMedia(project.nodes, readCanvasImageGenerationResults(historyOwnerId, projectId), readCanvasVideoGenerationResults(historyOwnerId, projectId)).then(hydrateCanvasImages),
-            hydrateAssistantImages(project.chatSessions || []),
+            hydrateAssistantMedia(project.chatSessions || []),
         ]);
         if (restoreRequest !== restoreRequestRef.current) return;
         if (preserveLocalChanges && (generationRequestsRef.current.size || hasUnsavedChangesRef.current || lastSavedProjectRef.current !== savedProject)) return;
@@ -690,16 +697,18 @@ function InfiniteCanvasPage() {
     }, [generationRequestsRef, hasUnsavedChangesRef, historyOwnerId, projectId]);
 
     useEffect(() => {
-        if (!hydrated) return;
+        if (!hydrated || openedProjectIdRef.current === projectId) return;
         setProjectLoaded(false);
         const project = openProject(projectId);
         if (!project) {
+            if (workspaceStatus === "idle" || workspaceStatus === "syncing") return;
             router.replace("/canvas");
             return;
         }
 
+        openedProjectIdRef.current = projectId;
         void restoreProjectState(project);
-    }, [hydrated, openProject, projectId, restoreProjectState, router]);
+    }, [currentProject?.id, hydrated, openProject, projectId, restoreProjectState, router, workspaceStatus]);
 
     useEffect(() => {
         const handleProjectsReplaced = () => {
@@ -1040,6 +1049,7 @@ function InfiniteCanvasPage() {
     }, [connections, effectiveConfig, managedModels, nodes]);
     const resourceContextNodeId = dialogNodeId || activeNodeId;
     const canvasResourceReferences = useMemo(() => buildCanvasResourceReferences(nodes, connections, resourceContextNodeId), [connections, nodes, resourceContextNodeId]);
+    const canvasMentionReferences = useMemo(() => buildCanvasMentionReferences(nodes), [nodes]);
     const resourceReferenceByNodeId = useMemo(() => new Map(canvasResourceReferences.map((reference) => [reference.nodeId, reference])), [canvasResourceReferences]);
     const mentionReferencesByNodeId = useMemo(() => {
         return buildNodeMentionReferenceMap(
@@ -1263,14 +1273,35 @@ function InfiniteCanvasPage() {
         return true;
     }, [getCanvasCenter]);
 
-    const resetViewport = useCallback(() => {
-        setViewport({ x: size.width / 2, y: size.height / 2, k: 1 });
-        setContextMenu(null);
-    }, [size.height, size.width]);
+    const stopAgentFollowing = useCallback(() => {
+        if (viewportAnimationRef.current !== null) cancelAnimationFrame(viewportAnimationRef.current);
+        viewportAnimationRef.current = null;
+        if (followedAgentRunRef.current) agentFollowSuppressedRef.current = true;
+        setIsAgentFollowing(false);
+    }, []);
 
-    const focusCanvasNodes = useCallback(
+    const animateViewportTo = useCallback((target: ViewportTransform) => {
+        if (viewportAnimationRef.current !== null) cancelAnimationFrame(viewportAnimationRef.current);
+        const start = viewportRef.current;
+        const startedAt = performance.now();
+        const tick = (timestamp: number) => {
+            const progress = Math.min(1, (timestamp - startedAt) / 320);
+            const eased = 1 - Math.pow(1 - progress, 3);
+            const next = {
+                x: start.x + (target.x - start.x) * eased,
+                y: start.y + (target.y - start.y) * eased,
+                k: start.k + (target.k - start.k) * eased,
+            };
+            viewportRef.current = next;
+            setViewport(next);
+            viewportAnimationRef.current = progress < 1 ? requestAnimationFrame(tick) : null;
+        };
+        viewportAnimationRef.current = requestAnimationFrame(tick);
+    }, []);
+
+    const viewportForNodes = useCallback(
         (targets: CanvasNodeData[]) => {
-            if (!targets.length) return;
+            if (!targets.length) return null;
             const rect = containerRef.current?.getBoundingClientRect();
             const viewportWidth = rect?.width || size.width;
             const viewportHeight = rect?.height || size.height;
@@ -1278,18 +1309,58 @@ function InfiniteCanvasPage() {
             const top = Math.min(...targets.map((node) => node.position.y));
             const right = Math.max(...targets.map((node) => node.position.x + node.width));
             const bottom = Math.max(...targets.map((node) => node.position.y + node.height));
-            const contentWidth = Math.max(1, right - left);
-            const contentHeight = Math.max(1, bottom - top);
             const padding = Math.min(96, viewportWidth * 0.08, viewportHeight * 0.08);
-            const scale = Math.min(1, Math.max(0.2, Math.min((viewportWidth - padding * 2) / contentWidth, (viewportHeight - padding * 2) / contentHeight)));
-            setViewport({ x: viewportWidth / 2 - ((left + right) / 2) * scale, y: viewportHeight / 2 - ((top + bottom) / 2) * scale, k: scale });
-            setContextMenu(null);
+            const scale = Math.min(1, Math.max(0.2, Math.min((viewportWidth - padding * 2) / Math.max(1, right - left), (viewportHeight - padding * 2) / Math.max(1, bottom - top))));
+            return { x: viewportWidth / 2 - ((left + right) / 2) * scale, y: viewportHeight / 2 - ((top + bottom) / 2) * scale, k: scale };
         },
         [size.height, size.width],
     );
 
+    const resetViewport = useCallback(() => {
+        stopAgentFollowing();
+        setViewport({ x: size.width / 2, y: size.height / 2, k: 1 });
+        setContextMenu(null);
+    }, [size.height, size.width, stopAgentFollowing]);
+
+    const focusCanvasNodes = useCallback(
+        (targets: CanvasNodeData[]) => {
+            const next = viewportForNodes(targets);
+            if (!next) return;
+            stopAgentFollowing();
+            setViewport(next);
+            setContextMenu(null);
+        },
+        [stopAgentFollowing, viewportForNodes],
+    );
+
+    const focusAssistantNodes = useCallback(
+        (targets: CanvasNodeData[], following: boolean, agentRunId?: string) => {
+            const next = viewportForNodes(targets);
+            if (!next) return;
+            if (following && agentRunId && followedAgentRunRef.current !== agentRunId) {
+                followedAgentRunRef.current = agentRunId;
+                agentFollowSuppressedRef.current = false;
+            }
+            if (following && agentFollowSuppressedRef.current) return;
+            if (!following) stopAgentFollowing();
+            setIsAgentFollowing(following);
+            animateViewportTo(next);
+            setContextMenu(null);
+        },
+        [animateViewportTo, stopAgentFollowing, viewportForNodes],
+    );
+
+    const locateAssistantNode = useCallback(
+        (nodeId: string) => {
+            const node = nodesRef.current.find((item) => item.id === nodeId);
+            if (node) focusAssistantNodes([node], false);
+        },
+        [focusAssistantNodes],
+    );
+
     const setZoomScale = useCallback(
         (scale: number) => {
+            stopAgentFollowing();
             const nextScale = Math.min(Math.max(scale, 0.05), 5);
             setViewport((prev) => ({
                 x: size.width / 2 - ((size.width / 2 - prev.x) / prev.k) * nextScale,
@@ -1298,8 +1369,19 @@ function InfiniteCanvasPage() {
             }));
             setContextMenu(null);
         },
-        [size.height, size.width],
+        [size.height, size.width, stopAgentFollowing],
     );
+
+    useEffect(() => {
+        const handleEscape = (event: KeyboardEvent) => {
+            if (event.key === "Escape") stopAgentFollowing();
+        };
+        window.addEventListener("keydown", handleEscape);
+        return () => {
+            window.removeEventListener("keydown", handleEscape);
+            if (viewportAnimationRef.current !== null) cancelAnimationFrame(viewportAnimationRef.current);
+        };
+    }, [stopAgentFollowing]);
 
     const applyHistory = useCallback((entry: CanvasHistoryEntry) => {
         if (historyCommitTimerRef.current) {
@@ -3208,9 +3290,10 @@ function InfiniteCanvasPage() {
             setSelectedNodeIds(new Set(created.map((node) => node.id)));
             setSelectedConnectionId(null);
             if (created[0]) setDialogNodeId(created[0].id);
+            focusAssistantNodes(created, true, agentImage?.agentRunId);
             return created.map((node, index) => ({ nodeId: node.id, storageKey: stored[index].storedImage.storageKey }));
         },
-        [markAssistantHistory, screenToCanvas, size.height, size.width],
+        [focusAssistantNodes, markAssistantHistory, screenToCanvas, size.height, size.width],
     );
 
     const insertAssistantVideo = useCallback(
@@ -3248,9 +3331,10 @@ function InfiniteCanvasPage() {
             setSelectedNodeIds(new Set([node.id]));
             setSelectedConnectionId(null);
             setDialogNodeId(node.id);
+            focusAssistantNodes([node], true, video.agentRunId);
             return { nodeId: node.id, storageKey: video.storageKey };
         },
-        [markAssistantHistory, screenToCanvas, size.height, size.width],
+        [focusAssistantNodes, markAssistantHistory, screenToCanvas, size.height, size.width],
     );
 
     const arrangeAssistantNodes = useCallback(
@@ -3393,9 +3477,10 @@ function InfiniteCanvasPage() {
             setConnections(nextConnections);
             setSelectedNodeIds(new Set([node.id]));
             setSelectedConnectionId(null);
+            if (agentMeta) focusAssistantNodes([node], true, agentMeta.runId);
             return node.id;
         },
-        [markAssistantHistory, screenToCanvas, selectedNodeIds, size.height, size.width],
+        [focusAssistantNodes, markAssistantHistory, screenToCanvas, selectedNodeIds, size.height, size.width],
     );
 
     const flashAssistantNodes = useCallback((nodeIds: string[]) => {
@@ -3460,9 +3545,11 @@ function InfiniteCanvasPage() {
     );
 
     const handleViewportChange = useCallback((next: ViewportTransform) => {
+        stopAgentFollowing();
+        viewportRef.current = next;
         setViewport(next);
         setContextMenu(null);
-    }, []);
+    }, [stopAgentFollowing]);
 
     const handleNodeHoverStart = useCallback(
         (nodeId: string) => {
@@ -3503,7 +3590,8 @@ function InfiniteCanvasPage() {
                 <CanvasNodePromptPanel
                     node={panelNode}
                     isRunning={runningNodeId === panelNode.id}
-                    mentionReferences={mentionReferencesByNodeId.get(panelNode.id) || EMPTY_MENTION_REFERENCES}
+                    mentionReferences={canvasMentionReferences.filter((reference) => reference.nodeId !== panelNode.id)}
+                    onMentionReference={(reference) => connectNodes({ nodeId: reference.nodeId, handleType: "source" }, panelNode.id)}
                     onPromptChange={handleNodePromptChange}
                     onConfigChange={handleConfigNodeChange}
                     onGenerate={handleGenerateNode}
@@ -3516,7 +3604,7 @@ function InfiniteCanvasPage() {
                     }}
                 />
             ),
-        [configInputsById, confirmStopGeneration, handleConfigNodeChange, handleGenerateNode, handleNodePromptChange, mentionReferencesByNodeId, promptEditorNodeId, runningNodeId],
+        [canvasMentionReferences, configInputsById, confirmStopGeneration, connectNodes, handleConfigNodeChange, handleGenerateNode, handleNodePromptChange, promptEditorNodeId, runningNodeId],
     );
 
     const renderCanvasConfigNode = useCallback(
@@ -3667,6 +3755,12 @@ function InfiniteCanvasPage() {
                     {pendingNodeCreate ? <ConnectionCreateMenu pending={pendingNodeCreate} title="在此创建节点" onCreate={createPendingNode} onClose={() => setPendingNodeCreate(null)} /> : null}
                 </InfiniteCanvas>
 
+                {isAgentFollowing ? (
+                    <button type="button" className="absolute left-1/2 top-20 z-30 -translate-x-1/2 text-xs" style={{ color: theme.node.muted }} onClick={stopAgentFollowing}>
+                        正在跟随 · ESC 退出
+                    </button>
+                ) : null}
+
                 <CanvasNodeHoverToolbar
                     node={isNodeDragging || isNodeResizing || nodeImageSettingsOpen ? null : toolbarNode}
                     canEditImage={supportsImageReferences(toolbarNode?.metadata?.model || effectiveConfig.imageModel || effectiveConfig.model, managedModels)}
@@ -3750,7 +3844,7 @@ function InfiniteCanvasPage() {
                     />
                 ) : null}
 
-                {isMiniMapOpen ? <Minimap nodes={displayNodes} viewport={viewport} viewportSize={size} onViewportChange={setViewport} /> : null}
+                {isMiniMapOpen ? <Minimap nodes={displayNodes} viewport={viewport} viewportSize={size} onViewportChange={handleViewportChange} /> : null}
 
                 <CanvasZoomControls scale={viewport.k} onScaleChange={setZoomScale} onReset={resetViewport} isMiniMapOpen={isMiniMapOpen} onToggleMiniMap={() => setIsMiniMapOpen((value) => !value)} />
 
@@ -3794,7 +3888,8 @@ function InfiniteCanvasPage() {
                     <CanvasPromptEditorModal
                         node={promptEditorNode}
                         open
-                        references={mentionReferencesByNodeId.get(promptEditorNode.id) || EMPTY_MENTION_REFERENCES}
+                        references={canvasMentionReferences.filter((reference) => reference.nodeId !== promptEditorNode.id)}
+                        onReferenceSelect={(reference) => connectNodes({ nodeId: reference.nodeId, handleType: "source" }, promptEditorNode.id)}
                         onChange={(value) => handleNodePromptChange(promptEditorNode.id, value)}
                         onGenerate={() => {
                             const mode: CanvasNodeGenerationMode = promptEditorNode.type === CanvasNodeType.Text ? "text" : promptEditorNode.type === CanvasNodeType.Video ? "video" : promptEditorNode.type === CanvasNodeType.Audio ? "audio" : "image";
@@ -3875,6 +3970,7 @@ function InfiniteCanvasPage() {
                         onApplyDestructiveTool={applyDestructiveAssistantTool}
                         onRestoreToolResult={restoreAssistantToolResult}
                         onFlashAssistantNodes={flashAssistantNodes}
+                        onLocateNode={locateAssistantNode}
                         onPasteImage={pasteAssistantImage}
                         collapsed={assistantCollapsed}
                         onCollapseStart={() => setAssistantCollapsed(true)}
@@ -4184,7 +4280,7 @@ async function hydrateCanvasImages(nodes: CanvasNodeData[]) {
     );
 }
 
-async function hydrateAssistantImages(sessions: CanvasAssistantSession[]) {
+async function hydrateAssistantMedia(sessions: CanvasAssistantSession[]) {
     const hydrateItem = async <T extends { dataUrl?: string; storageKey?: string }>(item: T) => {
         if (item.storageKey) return { ...item, dataUrl: await resolveImageUrl(item.storageKey, item.dataUrl) };
         if (item.dataUrl?.startsWith("data:image/")) {
@@ -4201,6 +4297,7 @@ async function hydrateAssistantImages(sessions: CanvasAssistantSession[]) {
                     ...message,
                     references: await Promise.all((message.references || []).map(hydrateItem)),
                     images: await Promise.all((message.images || []).map(hydrateItem)),
+                    videos: await Promise.all((message.videos || []).map(async (video) => ({ ...video, url: await resolveMediaUrl(video.storageKey, video.url) }))),
                 })),
             ),
         })),

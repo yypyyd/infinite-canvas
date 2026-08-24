@@ -1,36 +1,43 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { ArrowUp, History, Lightbulb, LoaderCircle, PanelRightClose, Plus, RotateCcw, Settings2, Sparkles, Trash2, X } from "lucide-react";
-import { Button, Modal, Tooltip } from "antd";
+import { ArrowUp, Bot, Check, History, Lightbulb, LoaderCircle, LocateFixed, MessageCircleQuestion, PanelRightClose, Plus, RotateCcw, Settings2, Sparkles, Trash2, Video, X } from "lucide-react";
+import { Button, Input, Modal, Switch, Tooltip } from "antd";
 import { motion } from "motion/react";
 
-import { ImageGenerationPending } from "@/components/image-generation-pending";
 import { flushActiveWorkspaceChanges } from "@/components/layout/workspace-provider";
+import { getAgentSettingsPreference, updateAgentSettingsPreference, USER_PREFERENCES_APPLIED_EVENT, type AgentAutonomy, type AgentSettingsPreference } from "@/lib/user-preferences";
 import { useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { nanoid } from "nanoid";
 import { cn } from "@/lib/utils";
-import { requestEdit, requestGeneration } from "@/services/api/image";
-import { requestVideoGeneration, storeGeneratedVideo } from "@/services/api/video";
+import { requestEdit, requestGeneration, requestImageQuestion, type ChatCompletionMessage } from "@/services/api/image";
+import { extractVideoKeyFrames, requestVideoGeneration, storeGeneratedVideo } from "@/services/api/video";
 import { saveCanvasImageGenerationRecord, saveCanvasVideoGenerationRecord } from "@/services/generation-history";
 import { workspaceOwnerId } from "@/services/workspace-changes";
-import { cancelAgentRun, claimAgentToolExecution, confirmAgentTool, createAgentSession, getAgentRun, getAgentToolResultReceipt, streamAgentRun, submitAgentMessage, submitAgentToolResult, type AgentEvent, type AgentToolResult } from "@/services/api/agent";
-import type { UploadedFile } from "@/services/file-storage";
-import { imageToDataUrl, storeGeneratedImage } from "@/services/image-storage";
+import { cancelAgentRun, claimAgentToolExecution, confirmAgentTool, createAgentSession, getAgentRun, getAgentToolResultReceipt, streamAgentRun, submitAgentMessage, submitAgentToolResult, type AgentEvent, type AgentToolArguments, type AgentToolInspection, type AgentToolName, type AgentToolResult } from "@/services/api/agent";
+import { resolveMediaUrl, type UploadedFile } from "@/services/file-storage";
+import { imageToDataUrl, resolveImageVariantUrl, storeGeneratedImage } from "@/services/image-storage";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { imageReferenceLabel } from "@/lib/image-reference-prompt";
 import { normalizeImageCount } from "@/lib/image-utils";
 import { supportsImageQuality, supportsImageReferences } from "@/lib/image-model-capabilities";
 import type { ReferenceImage } from "@/types/image";
 import { CanvasPromptLibrary } from "./canvas-prompt-library";
-import { CANVAS_AGENT_RUN_REVERTED_EVENT, CanvasNodeType, type CanvasAssistantImage, type CanvasAssistantMessage, type CanvasAssistantReference, type CanvasAssistantSession, type CanvasAssistantVideo, type CanvasConnection, type CanvasNodeData } from "../types";
+import { CanvasResourceMentionTextarea } from "./canvas-resource-mention-textarea";
+import { CANVAS_AGENT_RUN_REVERTED_EVENT, CanvasNodeType, type CanvasAssistantImage, type CanvasAssistantMessage, type CanvasAssistantReference, type CanvasAssistantSession, type CanvasAssistantStage, type CanvasAssistantVideo, type CanvasConnection, type CanvasNodeData } from "../types";
+import { buildCanvasMentionReferences, type CanvasResourceReference } from "../utils/canvas-resource-references";
 
 type AssistantMode = "ask" | "image";
 const PANEL_MOTION_MS = 500;
 const PANEL_MOTION_SECONDS = PANEL_MOTION_MS / 1000;
 const completedToolResults = new Map<string, AgentToolResult>();
+const AGENT_AUTONOMY_OPTIONS: { value: AgentAutonomy; label: string; description: string }[] = [
+    { value: "cautious", label: "谨慎", description: "关键创意信息不明确时先询问" },
+    { value: "standard", label: "标准", description: "自动采用安全默认值，主体缺失才询问" },
+    { value: "autonomous", label: "自主", description: "持续验证结果，失败时调整并重试一次" },
+];
 
 type CanvasAssistantPanelProps = {
     projectId: string;
@@ -51,6 +58,7 @@ type CanvasAssistantPanelProps = {
     onApplyDestructiveTool: (runId: string, callId: string, name: "canvas.delete" | "canvas.update_text", argumentsValue: { nodeIds: string[] } | { nodeId: string; text: string }) => Promise<AgentToolResult>;
     onRestoreToolResult: (runId: string, callId: string) => AgentToolResult | undefined;
     onFlashAssistantNodes: (nodeIds: string[]) => void;
+    onLocateNode: (nodeId: string) => void;
     onPasteImage: (file: File) => void;
     collapsed: boolean;
     onCollapseStart: () => void;
@@ -76,6 +84,7 @@ export function CanvasAssistantPanel({
     onApplyDestructiveTool,
     onRestoreToolResult,
     onFlashAssistantNodes,
+    onLocateNode,
     onPasteImage,
     collapsed,
     onCollapseStart,
@@ -98,7 +107,10 @@ export function CanvasAssistantPanel({
     const [resizing, setResizing] = useState(false);
     const [isMobile, setIsMobile] = useState(false);
     const [removedReferenceIds, setRemovedReferenceIds] = useState<Set<string>>(new Set());
-    const [agentExecutionConfirmed, setAgentExecutionConfirmed] = useState(false);
+    const [agentSettings, setAgentSettings] = useState<AgentSettingsPreference | null>(() => getAgentSettingsPreference());
+    const [agentAutonomy, setAgentAutonomy] = useState<AgentAutonomy>(() => getAgentSettingsPreference()?.autonomy || "standard");
+    const [agentExecutionConsent, setAgentExecutionConsent] = useState(true);
+    const [agentSettingsOpen, setAgentSettingsOpen] = useState(false);
     const [pendingAgentPrompt, setPendingAgentPrompt] = useState<string | null>(null);
     const [localSessions, setLocalSessions] = useState<CanvasAssistantSession[]>(() => (sessions.length ? sessions : [createSession()]));
     const [localActiveSessionId, setLocalActiveSessionId] = useState<string | null>(activeSessionId);
@@ -113,13 +125,24 @@ export function CanvasAssistantPanel({
     const checkedRecoveryRuns = useRef(new Set<string>());
     const toolExecutorToken = useRef(crypto.randomUUID());
     const localSessionsRef = useRef(localSessions);
+    const localActiveSessionIdRef = useRef(localActiveSessionId);
+    const publishedSessionsRef = useRef<Array<{ sessions: CanvasAssistantSession[]; activeId: string | null }>>([]);
     const nodesRef = useRef(nodes);
     const selectedNodeIdsRef = useRef(selectedNodeIds);
+    const previousMentionReferencesRef = useRef<CanvasResourceReference[]>([]);
     const composerInputRef = useRef<HTMLTextAreaElement>(null);
 
-    useEffect(() => {
-        localSessionsRef.current = localSessions;
-    }, [localSessions]);
+    const replaceLocalSessions = useCallback(
+        (nextSessions: CanvasAssistantSession[], nextActiveId: string | null) => {
+            localSessionsRef.current = nextSessions;
+            localActiveSessionIdRef.current = nextActiveId;
+            publishedSessionsRef.current.push({ sessions: nextSessions, activeId: nextActiveId });
+            setLocalSessions(nextSessions);
+            setLocalActiveSessionId(nextActiveId);
+            onSessionsChange(nextSessions, nextActiveId);
+        },
+        [onSessionsChange],
+    );
 
     useEffect(() => {
         nodesRef.current = nodes;
@@ -142,6 +165,16 @@ export function CanvasAssistantPanel({
     }, [collapsed]);
 
     useEffect(() => {
+        const loadAgentSettings = () => {
+            const settings = getAgentSettingsPreference();
+            setAgentSettings(settings);
+            setAgentAutonomy(settings?.autonomy || "standard");
+        };
+        window.addEventListener(USER_PREFERENCES_APPLIED_EVENT, loadAgentSettings);
+        return () => window.removeEventListener(USER_PREFERENCES_APPLIED_EVENT, loadAgentSettings);
+    }, []);
+
+    useEffect(() => {
         const media = window.matchMedia("(max-width: 639px)");
         const update = () => setIsMobile(media.matches);
         update();
@@ -151,24 +184,28 @@ export function CanvasAssistantPanel({
 
     useEffect(() => {
         if (!sessions.length) return;
+        const publishedIndex = publishedSessionsRef.current.findIndex((published) => published.sessions === sessions && published.activeId === activeSessionId);
+        if (publishedIndex >= 0) {
+            publishedSessionsRef.current.splice(0, publishedIndex + 1);
+            return;
+        }
+        publishedSessionsRef.current = [];
         localSessionsRef.current = sessions;
+        localActiveSessionIdRef.current = activeSessionId;
         setLocalSessions(sessions);
         setLocalActiveSessionId(activeSessionId);
     }, [activeSessionId, sessions]);
-
-    useEffect(() => {
-        onSessionsChange(localSessions, localActiveSessionId);
-    }, [localActiveSessionId, localSessions, onSessionsChange]);
 
     const safeSessions = localSessions.length ? localSessions : [createSession()];
     const activeSession = useMemo(() => safeSessions.find((session) => session.id === localActiveSessionId) || safeSessions[0] || null, [localActiveSessionId, safeSessions]);
     const historySessions = safeSessions.filter((session) => session.messages.length > 0);
     const messages = activeSession?.messages || [];
     const hasMessages = messages.length > 0;
-    const runningPlanMessage = useMemo(() => [...messages].reverse().find((message) => message.role === "assistant" && message.plan && (message.isLoading || message.runId)), [messages]);
     const selectedNodeKey = useMemo(() => Array.from(selectedNodeIds).sort().join(","), [selectedNodeIds]);
     const allSelectedReferences = useMemo(() => buildAssistantReferences(nodes, selectedNodeIds), [nodes, selectedNodeIds]);
     const selectedReferences = useMemo(() => allSelectedReferences.filter((item) => !removedReferenceIds.has(item.id)), [allSelectedReferences, removedReferenceIds]);
+    const mentionReferences = useMemo(() => buildCanvasMentionReferences(nodes), [nodes]);
+    const selectedReferenceIds = useMemo(() => new Set(selectedReferences.map((item) => item.id)), [selectedReferences]);
     const suggestions = useMemo(() => buildCanvasSuggestions(nodes, connections), [connections, nodes]);
     const canvasSummary = useMemo(
         () => ({
@@ -185,24 +222,45 @@ export function CanvasAssistantPanel({
         setRemovedReferenceIds(new Set());
     }, [selectedNodeKey]);
 
+    useEffect(() => {
+        setPrompt((current) => syncAssistantReferenceLabels(current, mentionReferences, selectedReferenceIds, previousMentionReferencesRef.current));
+        previousMentionReferencesRef.current = mentionReferences;
+    }, [mentionReferences, selectedReferenceIds]);
+
     const fillPrompt = useCallback((text: string) => {
-        setPrompt(text);
+        setPrompt(syncAssistantReferenceLabels(text, mentionReferences, selectedReferenceIds));
         requestAnimationFrame(() => composerInputRef.current?.focus());
-    }, []);
+    }, [mentionReferences, selectedReferenceIds]);
 
     const removeSelectedReference = useCallback(
         (id: string) => {
             setRemovedReferenceIds((current) => new Set(current).add(id));
-            onSelectNodeIds(new Set(Array.from(selectedNodeIdsRef.current).filter((nodeId) => nodeId !== id)));
+            const nextSelected = new Set(Array.from(selectedNodeIdsRef.current).filter((nodeId) => nodeId !== id));
+            selectedNodeIdsRef.current = nextSelected;
+            onSelectNodeIds(nextSelected);
+        },
+        [onSelectNodeIds],
+    );
+
+    const addMentionReference = useCallback(
+        (reference: CanvasResourceReference) => {
+            const nextSelected = new Set(selectedNodeIdsRef.current).add(reference.nodeId);
+            selectedNodeIdsRef.current = nextSelected;
+            setRemovedReferenceIds((current) => {
+                if (!current.has(reference.nodeId)) return current;
+                const next = new Set(current);
+                next.delete(reference.nodeId);
+                return next;
+            });
+            onSelectNodeIds(nextSelected);
         },
         [onSelectNodeIds],
     );
 
     const updateSession = useCallback((sessionId: string, updater: (session: CanvasAssistantSession) => CanvasAssistantSession) => {
         const nextSessions = localSessionsRef.current.map((session) => (session.id === sessionId ? updater(session) : session));
-        localSessionsRef.current = nextSessions;
-        setLocalSessions(nextSessions);
-    }, []);
+        replaceLocalSessions(nextSessions, localActiveSessionIdRef.current);
+    }, [replaceLocalSessions]);
 
     const appendMessage = useCallback(
         (sessionId: string, message: CanvasAssistantMessage) => {
@@ -221,6 +279,17 @@ export function CanvasAssistantPanel({
             updateSession(sessionId, (session) => ({
                 ...session,
                 messages: session.messages.map((message) => (message.id === messageId ? { ...message, ...patch } : message)),
+                updatedAt: new Date().toISOString(),
+            }));
+        },
+        [updateSession],
+    );
+
+    const updateMessageWith = useCallback(
+        (sessionId: string, messageId: string, updater: (message: CanvasAssistantMessage) => CanvasAssistantMessage) => {
+            updateSession(sessionId, (session) => ({
+                ...session,
+                messages: session.messages.map((message) => (message.id === messageId ? updater(message) : message)),
                 updatedAt: new Date().toISOString(),
             }));
         },
@@ -268,40 +337,35 @@ export function CanvasAssistantPanel({
                       }
                     : session,
             );
-            localSessionsRef.current = nextSessions;
-            setLocalSessions(nextSessions);
+            replaceLocalSessions(nextSessions, activeId);
             void onPersistSessions(nextSessions, activeId).catch(() => {});
         },
-        [onPersistSessions],
+        [onPersistSessions, replaceLocalSessions],
     );
 
     const startChatSession = () => {
         if (activeSession && activeSession.messages.length === 0) {
-            setLocalActiveSessionId(activeSession.id);
+            replaceLocalSessions(localSessionsRef.current, activeSession.id);
             return;
         }
         const session = createSession();
-        setLocalSessions((prev) => [session, ...prev]);
-        setLocalActiveSessionId(session.id);
+        replaceLocalSessions([session, ...localSessionsRef.current], session.id);
     };
 
     const removeSessions = (ids: string[]) => {
         const next = safeSessions.filter((session) => !ids.includes(session.id));
         if (!next.length) {
             const session = createSession();
-            setLocalSessions([session]);
-            setLocalActiveSessionId(session.id);
+            replaceLocalSessions([session], session.id);
         } else {
-            setLocalSessions(next);
-            setLocalActiveSessionId(localActiveSessionId && ids.includes(localActiveSessionId) ? next[0].id : localActiveSessionId);
+            replaceLocalSessions(next, localActiveSessionId && ids.includes(localActiveSessionId) ? next[0].id : localActiveSessionId);
         }
         setCheckedChatIds((prev) => prev.filter((id) => !ids.includes(id)));
     };
 
     const clearSessions = () => {
         const session = createSession();
-        setLocalSessions([session]);
-        setLocalActiveSessionId(session.id);
+        replaceLocalSessions([session], session.id);
         setCheckedChatIds([]);
     };
 
@@ -313,40 +377,62 @@ export function CanvasAssistantPanel({
             checkedRecoveryRuns.current.add(runId);
             refreshRunningState();
             try {
-                await streamAgentRun(
+                try {
+                    await streamAgentRun(
                     runId,
                     async (event) => {
-                        const advanceEvent = (patch: Partial<CanvasAssistantMessage> = {}) => updateMessage(sessionId, assistantMessageId, { ...patch, lastEventSequence: event.sequence });
+                        const advanceEvent = (patch: Partial<CanvasAssistantMessage> = {}) =>
+                            updateMessageWith(sessionId, assistantMessageId, (message) => ({ ...message, ...patch, lastEventSequence: event.sequence }));
+                        const advanceStages = (updater: (stages: CanvasAssistantStage[]) => CanvasAssistantStage[], patch: Partial<CanvasAssistantMessage> = {}) =>
+                            updateMessageWith(sessionId, assistantMessageId, (message) => ({ ...message, ...patch, stages: updater(message.stages || []), lastEventSequence: event.sequence }));
                         if (event.type === "message.delta") {
-                            advanceEvent({ text: event.data.content || "", isLoading: false });
+                            advanceEvent({ text: event.data.content || "", isLoading: true });
                             return;
                         }
-                        if (event.type === "plan.created" && event.data.arguments && "summary" in event.data.arguments && "steps" in event.data.arguments) {
-                            advanceEvent({ text: "正在按计划执行", plan: { summary: event.data.arguments.summary, steps: event.data.arguments.steps }, isLoading: true });
+                        if (event.type === "plan.created" && event.data.callId && event.data.arguments && "summary" in event.data.arguments && "steps" in event.data.arguments) {
+                            const stage = assistantStageForTool("canvas.plan", event.data.callId, event.data.arguments);
+                            advanceStages((stages) => (stage ? upsertAssistantStage(stages, stage) : stages), { isLoading: true });
                             return;
                         }
                         if (event.type === "run.completed") {
-                            advanceEvent({ isLoading: false, runId: undefined });
+                            advanceStages(finishPendingAssistantStages, { isLoading: false, runId: undefined });
                             return;
                         }
                         if (event.type === "run.failed") {
-                            advanceEvent({ text: event.data.error || "助手请求失败", isLoading: false, runId: undefined });
+                            advanceStages(failPendingAssistantStages, { text: event.data.error || "助手请求失败", isLoading: false, runId: undefined });
                             return;
                         }
                         if (event.type === "run.cancelled") {
                             const interrupted = interruptedOperations.current.delete(runId);
-                            advanceEvent({ text: event.data.reason === "tool_reverted" ? "画布操作已撤销" : interrupted ? "已被新消息打断" : "已取消", confirmation: undefined, isLoading: false, runId: undefined });
+                            advanceStages(failPendingAssistantStages, { text: event.data.reason === "tool_reverted" ? "画布操作已撤销" : interrupted ? "已被新消息打断" : "已取消", confirmation: undefined, isLoading: false, runId: undefined });
                             return;
                         }
                         if (event.type === "tool.reverted") {
-                            advanceEvent({ text: "画布操作已撤销", confirmation: undefined, isLoading: false, runId: undefined });
+                            advanceStages(failPendingAssistantStages, { text: "画布操作已撤销", confirmation: undefined, isLoading: false, runId: undefined });
                             return;
                         }
                         if (event.type === "tool.confirmation_required" && event.data.callId && event.data.arguments) {
+                            if (event.data.name === "agent.ask_user" && "question" in event.data.arguments && "options" in event.data.arguments) {
+                                const callId = event.data.callId;
+                                const question = event.data.arguments.question;
+                                const options = event.data.arguments.options;
+                                advanceStages(
+                                    (stages) =>
+                                        upsertAssistantStage(finishAgentObserveStages(stages), {
+                                            callId,
+                                            kind: "ask",
+                                            label: "等待你的回答",
+                                            status: "pending",
+                                            ask: { runId, callId, question, options, status: "pending" },
+                                        }),
+                                    { text: "", isLoading: false },
+                                );
+                                return;
+                            }
                             if (event.data.name === "canvas.delete" && "nodeIds" in event.data.arguments && !("mode" in event.data.arguments)) {
                                 onFlashAssistantNodes(event.data.arguments.nodeIds);
-                                advanceEvent({
-                                    text: `请求删除 ${event.data.arguments.nodeIds.length} 个节点`,
+                                const stage = assistantStageForTool("canvas.delete", event.data.callId, event.data.arguments);
+                                advanceStages((stages) => (stage ? upsertAssistantStage(finishAgentObserveStages(stages), { ...stage, label: "等待确认删除" }) : stages), {
                                     confirmation: { runId, callId: event.data.callId, name: "canvas.delete", arguments: { nodeIds: event.data.arguments.nodeIds }, status: "pending", agentRunId: runId },
                                     isLoading: false,
                                 });
@@ -354,16 +440,28 @@ export function CanvasAssistantPanel({
                             }
                             if (event.data.name === "canvas.update_text" && "nodeId" in event.data.arguments && "text" in event.data.arguments) {
                                 onFlashAssistantNodes([event.data.arguments.nodeId]);
-                                advanceEvent({
-                                    text: `请求修改文本节点 ${event.data.arguments.nodeId}`,
+                                const stage = assistantStageForTool("canvas.update_text", event.data.callId, event.data.arguments);
+                                advanceStages((stages) => (stage ? upsertAssistantStage(finishAgentObserveStages(stages), { ...stage, label: "等待确认修改文本" }) : stages), {
                                     confirmation: { runId, callId: event.data.callId, name: "canvas.update_text", arguments: { nodeId: event.data.arguments.nodeId, text: event.data.arguments.text }, status: "pending", agentRunId: runId },
                                     isLoading: false,
                                 });
                                 return;
                             }
+							if ((event.data.name === "agent.remember" || event.data.name === "agent.forget") && "key" in event.data.arguments) {
+								const memoryArguments = event.data.arguments as Extract<AgentToolArguments, { key: string }>;
+								const stage = assistantStageForTool(event.data.name, event.data.callId, memoryArguments);
+								advanceStages((stages) => (stage ? upsertAssistantStage(finishAgentObserveStages(stages), { ...stage, label: event.data.name === "agent.remember" ? "等待确认记忆" : "等待确认遗忘" }) : stages), {
+									confirmation: { runId, callId: event.data.callId, name: event.data.name, arguments: memoryArguments, status: "pending", agentRunId: runId },
+									isLoading: false,
+								});
+								return;
+							}
                         }
                         if (event.type === "tool.completed" && event.data.callId) {
-                            advanceEvent({ confirmation: undefined, isLoading: event.data.status !== "rejected" });
+                            advanceStages((stages) => appendAgentObserveStage(finishAssistantStage(stages, event.data.callId!, event.data.status === "failed" ? "failed" : "done", event.data.output?.answer, event.data.status === "rejected", event.data.output?.inspection), event.data.callId!, event.data.status === "failed"), {
+                                confirmation: undefined,
+                                isLoading: true,
+                            });
                             return;
                         }
                         if (event.type !== "tool.call" || !event.data.name || !event.data.callId || !event.data.arguments) {
@@ -376,10 +474,18 @@ export function CanvasAssistantPanel({
                         if (handledToolCalls.current.has(toolKey)) return;
                         const toolName = event.data.name;
                         const toolArguments = event.data.arguments;
+                        const pendingStage = assistantStageForTool(toolName, callId, toolArguments);
+                        if (pendingStage) updateMessageWith(sessionId, assistantMessageId, (message) => ({ ...message, stages: upsertAssistantStage(finishAgentObserveStages(message.stages || []), pendingStage), isLoading: true }));
+                        const completeToolEvent = (result: AgentToolResult) =>
+                            updateMessageWith(sessionId, assistantMessageId, (message) => ({
+                                ...applyAssistantToolResult(message, runId, callId, toolName, toolArguments, result, nodesRef.current),
+                                stages: finishAssistantStage(message.stages || [], callId, result.status === "failed" ? "failed" : "done", undefined, false, result.status === "success" ? result.inspection : undefined),
+                                lastEventSequence: event.sequence,
+                            }));
                         const serverReceipt = await getAgentToolResultReceipt(runId, callId);
                         if (serverReceipt.status === "completed" && serverReceipt.result) {
                             completedToolResults.set(toolKey, serverReceipt.result);
-                            advanceEvent();
+                            completeToolEvent(serverReceipt.result);
                             return;
                         }
                         if (serverReceipt.status !== "pending") {
@@ -393,7 +499,7 @@ export function CanvasAssistantPanel({
                             completedToolResults.set(toolKey, persistedResult);
                             await claimAgentToolExecution(runId, callId, toolExecutorToken.current);
                             await submitAgentToolResult(runId, toolExecutorToken.current, persistedResult);
-                            advanceEvent();
+                            completeToolEvent(persistedResult);
                             return;
                         }
                         handledToolCalls.current.add(toolKey);
@@ -422,12 +528,16 @@ export function CanvasAssistantPanel({
                             | { kind: "video"; id: string; prompt: string; config: AiConfig; startedAt: number }
                             | undefined;
                         try {
-                            if (toolName === "canvas.plan" && "summary" in toolArguments && "steps" in toolArguments) {
+                            if (toolName === "agent.remember" && "content" in toolArguments && "key" in toolArguments) {
+								await claimAgentToolExecution(runId, callId, toolExecutorToken.current);
+								result = { callId, status: "success", memory: { key: toolArguments.key, scope: toolArguments.scope, status: "active" } };
+							} else if (toolName === "agent.forget" && "key" in toolArguments) {
+								await claimAgentToolExecution(runId, callId, toolExecutorToken.current);
+								result = { callId, status: "success", memory: { key: toolArguments.key, scope: toolArguments.scope, status: "forgotten" } };
+							} else if (toolName === "canvas.plan" && "summary" in toolArguments && "steps" in toolArguments) {
                                 const plan = { summary: toolArguments.summary, steps: toolArguments.steps };
-                                updateMessage(sessionId, assistantMessageId, { text: "正在按计划执行", plan, isLoading: true });
                                 result = { callId, status: "success", plan };
                             } else if (toolName === "image.generate" && "count" in toolArguments) {
-                                updateMessage(sessionId, assistantMessageId, { text: "正在调用生图工具", isLoading: true });
                                 const imageModel = effectiveConfig.imageModel || effectiveConfig.model;
                                 const toolConfig: AiConfig = { ...effectiveConfig, model: imageModel, count: String(toolArguments.count), quality: supportsImageQuality(imageModel) ? effectiveConfig.quality : "auto" };
                                 if (!isAiConfigReady(toolConfig, imageModel)) throw new Error("请先配置可用的图片模型");
@@ -485,10 +595,22 @@ export function CanvasAssistantPanel({
                                 await claimAgentToolExecution(runId, callId, toolExecutorToken.current);
                                 const inserted = await onInsertImages(canvasImages);
                                 const storageFailCount = generated.length - stored.length;
-                                updateMessage(sessionId, assistantMessageId, { text: storageFailCount ? `已插入 ${inserted.length} 张图片，另有 ${storageFailCount} 张保存失败，正在整理结果` : `已生成并插入 ${inserted.length} 张图片，正在整理结果`, images: canvasImages, isLoading: true });
+                                updateMessageWith(sessionId, assistantMessageId, (message) => ({
+                                    ...message,
+                                    images: mergeAssistantImages(message.images || [], canvasImages.map((image, index) => ({ ...image, nodeId: inserted[index]?.nodeId })), callId),
+                                    stages: finishAssistantStage(message.stages || [], callId, "done"),
+                                    text: storageFailCount ? `已插入 ${inserted.length} 张图片，另有 ${storageFailCount} 张保存失败。` : message.text,
+                                    isLoading: true,
+                                }));
                                 result = { callId, status: "success", images: inserted };
+                            } else if (toolName === "image.inspect" && "criteria" in toolArguments && "nodeIds" in toolArguments) {
+                                const inspectionModel = effectiveConfig.textModel || effectiveConfig.model;
+                                const inspectionConfig = { ...effectiveConfig, model: inspectionModel, systemPrompt: "" };
+                                const inspection = isAiConfigReady(inspectionConfig, inspectionModel)
+                                    ? await inspectAgentImages(inspectionConfig, nodesRef.current, toolArguments.nodeIds, toolArguments.criteria, `agent-inspect:${runId}:${callId}`, toolAbortController.signal)
+                                    : unavailableAgentInspection("未配置可用的视觉理解模型");
+                                result = { callId, status: "success", inspection };
                             } else if (toolName === "video.generate" && "duration" in toolArguments) {
-                                updateMessage(sessionId, assistantMessageId, { text: "正在生成视频", isLoading: true });
                                 const videoModel = effectiveConfig.videoModel || effectiveConfig.model;
                                 const toolConfig: AiConfig = { ...effectiveConfig, model: videoModel, videoSeconds: String(toolArguments.duration) };
                                 if (!isAiConfigReady(toolConfig, videoModel)) throw new Error("请先配置可用的视频模型");
@@ -526,28 +648,32 @@ export function CanvasAssistantPanel({
                                 await flushActiveWorkspaceChanges().catch(() => {});
                                 generationRecord = undefined;
                                 await claimAgentToolExecution(runId, callId, toolExecutorToken.current);
-                                const video = await onInsertVideo({ ...stored, prompt: toolArguments.prompt, agentRunId: runId, agentToolCallId: callId, sourceNodeIds: toolArguments.imageNodeId ? [toolArguments.imageNodeId] : refs.map((item) => item.id) });
-                                updateMessage(sessionId, assistantMessageId, { text: "已生成并插入视频，正在整理结果", isLoading: true });
+                                const canvasVideo = { ...stored, prompt: toolArguments.prompt, agentRunId: runId, agentToolCallId: callId, sourceNodeIds: toolArguments.imageNodeId ? [toolArguments.imageNodeId] : refs.map((item) => item.id) };
+                                const video = await onInsertVideo(canvasVideo);
+                                updateMessageWith(sessionId, assistantMessageId, (message) => ({ ...message, videos: mergeAssistantVideos(message.videos || [], [{ ...canvasVideo, nodeId: video.nodeId }], callId), stages: finishAssistantStage(message.stages || [], callId, "done"), isLoading: true }));
                                 result = { callId, status: "success", video };
+                            } else if (toolName === "video.inspect" && "criteria" in toolArguments && "nodeId" in toolArguments) {
+                                const inspectionModel = effectiveConfig.textModel || effectiveConfig.model;
+                                const inspectionConfig = { ...effectiveConfig, model: inspectionModel, systemPrompt: "" };
+                                const inspection = isAiConfigReady(inspectionConfig, inspectionModel)
+                                    ? await inspectAgentVideo(inspectionConfig, nodesRef.current, toolArguments.nodeId, toolArguments.criteria, `agent-inspect:${runId}:${callId}`, toolAbortController.signal)
+                                    : unavailableAgentInspection("未配置可用的视觉理解模型");
+                                result = { callId, status: "success", inspection };
                             } else if (toolName === "canvas.arrange" && "nodeIds" in toolArguments && "mode" in toolArguments) {
-                                updateMessage(sessionId, assistantMessageId, { text: "正在排列选中节点", isLoading: true });
                                 onFlashAssistantNodes(toolArguments.nodeIds);
                                 await claimAgentToolExecution(runId, callId, toolExecutorToken.current);
                                 const positions = onArrangeNodes(toolArguments.nodeIds, toolArguments.mode, toolArguments.gap, { runId, callId, authorizedNodeIds });
                                 result = { callId, status: "success", nodeIds: toolArguments.nodeIds, positions };
                             } else if (toolName === "canvas.add_text" && "placement" in toolArguments) {
-                                updateMessage(sessionId, assistantMessageId, { text: "正在插入文本节点", isLoading: true });
                                 await claimAgentToolExecution(runId, callId, toolExecutorToken.current);
                                 const nodeId = onInsertText(toolArguments.text, toolArguments.placement, { runId, callId, sourceNodeIds: toolArguments.sourceNodeIds?.length ? toolArguments.sourceNodeIds : refs.map((item) => item.id) });
                                 result = { callId, status: "success", nodeId, placement: toolArguments.placement };
                             } else if (toolName === "canvas.delete" && "nodeIds" in toolArguments && !("mode" in toolArguments)) {
                                 if (toolArguments.nodeIds.some((id) => !selectedNodeIdsRef.current.has(id) || !nodesRef.current.some((node) => node.id === id))) throw new Error("只能删除当前仍选中的节点");
-                                updateMessage(sessionId, assistantMessageId, { text: "正在删除已授权节点", isLoading: true });
                                 await claimAgentToolExecution(runId, callId, toolExecutorToken.current);
                                 result = await onApplyDestructiveTool(runId, callId, toolName, { nodeIds: toolArguments.nodeIds });
                             } else if (toolName === "canvas.update_text" && "nodeId" in toolArguments && "text" in toolArguments) {
                                 if (!selectedNodeIdsRef.current.has(toolArguments.nodeId) || !nodesRef.current.some((node) => node.id === toolArguments.nodeId && node.type === CanvasNodeType.Text)) throw new Error("只能修改当前仍选中的文本节点");
-                                updateMessage(sessionId, assistantMessageId, { text: "正在更新文本节点", isLoading: true });
                                 await claimAgentToolExecution(runId, callId, toolExecutorToken.current);
                                 result = await onApplyDestructiveTool(runId, callId, toolName, { nodeId: toolArguments.nodeId, text: toolArguments.text });
                             } else {
@@ -601,6 +727,7 @@ export function CanvasAssistantPanel({
                             }
                             const errorMessage = error instanceof Error ? error.message : "工具执行失败";
                             const failedResult: AgentToolResult = { callId, status: "failed", error: errorMessage };
+                            updateMessageWith(sessionId, assistantMessageId, (message) => ({ ...message, stages: finishAssistantStage(message.stages || [], callId, "failed") }));
                             await submitAgentToolResult(runId, toolExecutorToken.current, failedResult);
                             completedToolResults.set(toolKey, failedResult);
                             handledToolCalls.current.delete(toolKey);
@@ -624,11 +751,16 @@ export function CanvasAssistantPanel({
                             releaseToolRequest();
                         }
                         handledToolCalls.current.delete(toolKey);
-                        advanceEvent();
+                        completeToolEvent(result);
                     },
                     undefined,
                     after,
-                );
+                    );
+                } catch (error) {
+                    const run = await getAgentRun(runId).catch(() => null);
+                    if (run?.status !== "waiting_confirmation") throw error;
+                    updateMessageWith(sessionId, assistantMessageId, (message) => ({ ...message, isLoading: false }));
+                }
             } finally {
                 inFlightRuns.current.delete(runId);
                 revertedOperations.current.delete(runId);
@@ -637,7 +769,7 @@ export function CanvasAssistantPanel({
                 refreshRunningState();
             }
         },
-        [effectiveConfig, historyOwnerId, isAiConfigReady, managedModels, onApplyDestructiveTool, onArrangeNodes, onFlashAssistantNodes, onInsertImages, onInsertText, onInsertVideo, onPersistToolResult, onRestoreToolResult, projectId, refreshRunningState, updateMessage],
+        [effectiveConfig, historyOwnerId, isAiConfigReady, managedModels, onApplyDestructiveTool, onArrangeNodes, onFlashAssistantNodes, onInsertImages, onInsertText, onInsertVideo, onPersistToolResult, onRestoreToolResult, projectId, refreshRunningState, updateMessageWith],
     );
 
     useEffect(() => {
@@ -651,7 +783,7 @@ export function CanvasAssistantPanel({
                         const userMessage = session.messages.slice(0, messageIndex).findLast((item) => item.role === "user");
                         const recoveryAfter = run.status === "completed" || run.status === "failed" || run.status === "cancelled" ? message.lastEventSequence || 0 : Math.max(0, (message.lastEventSequence || 0) - 1);
                         if (run.status === "waiting_tool" || run.status === "waiting_confirmation" || run.status === "running") {
-                            updateMessage(session.id, message.id, { text: "正在恢复助手操作", isLoading: true });
+                            updateMessage(session.id, message.id, { isLoading: true });
                         }
                         void followAgentRun(runId, session.id, message.id, userMessage?.references || [], userMessage?.authorizedNodeIds || userMessage?.references?.map((item) => item.id) || [], recoveryAfter).catch((error) => {
                             checkedRecoveryRuns.current.delete(runId);
@@ -682,8 +814,7 @@ export function CanvasAssistantPanel({
 
         const session = activeSession || createSession();
         if (!activeSession) {
-            setLocalSessions([session]);
-            setLocalActiveSessionId(session.id);
+            replaceLocalSessions([session], session.id);
         }
 
         const refs = nextMode === "image" && !supportsImageReferences(activeModel, managedModels) ? [] : savedReferences || selectedReferences;
@@ -691,8 +822,15 @@ export function CanvasAssistantPanel({
         const userMessage: CanvasAssistantMessage = { id: nanoid(), role: "user", mode: nextMode, text, references: refs, authorizedNodeIds: nodes.map((node) => node.id) };
         const assistantId = nanoid();
         appendMessage(session.id, userMessage);
-        appendMessage(session.id, { id: assistantId, role: "assistant", mode: nextMode, text: nextMode === "image" ? "正在生成图片" : "正在理解画布", isLoading: true });
-        setPrompt("");
+        appendMessage(session.id, {
+            id: assistantId,
+            role: "assistant",
+            mode: nextMode,
+            text: "",
+            isLoading: true,
+            stages: nextMode === "image" ? [{ kind: "image", label: "图片生成中", status: "pending" }] : undefined,
+        });
+        setPrompt(syncAssistantReferenceLabels("", mentionReferences, selectedReferenceIds));
         setIsRunning(true);
         let generationRecordId = "";
         let generationStartedAt = 0;
@@ -709,7 +847,16 @@ export function CanvasAssistantPanel({
                         } else if (directCommand.kind === "add_text") {
                             onInsertText(directCommand.text, "right_of_selection");
                         }
-                        updateMessage(session.id, assistantId, { text: directCommand.message, isLoading: false });
+                        updateMessage(session.id, assistantId, {
+                            text: directCommand.message,
+                            stages:
+                                directCommand.kind === "arrange"
+                                    ? [{ kind: "arrange", label: "节点已排列", status: "done", nodeIds: directCommand.nodeIds }]
+                                    : directCommand.kind === "add_text"
+                                      ? [{ kind: "text", label: "文本已添加", status: "done" }]
+                                      : undefined,
+                            isLoading: false,
+                        });
                     } catch (error) {
                         updateMessage(session.id, assistantId, { text: error instanceof Error ? error.message : "画布操作失败", isLoading: false });
                     }
@@ -758,6 +905,7 @@ export function CanvasAssistantPanel({
                 updateMessage(session.id, assistantId, {
                     text: storageFailCount ? `生成了 ${images.length} 张图片，其中 ${storageFailCount} 张保存失败` : `生成了 ${storedImages.length} 张图片`,
                     images: storedImages.map(({ generated: image, stored }) => ({ id: image.id, dataUrl: stored.url, storageKey: stored.storageKey, prompt: text })),
+                    stages: [{ kind: "image", label: "图片已生成", status: "done", imageCount: storedImages.length }],
                     isLoading: false,
                 });
                 return;
@@ -767,15 +915,15 @@ export function CanvasAssistantPanel({
             if (!agentSessionId) {
                 agentSessionId = `agent-session-${crypto.randomUUID()}`;
                 const nextSessions = localSessionsRef.current.map((current) => (current.id === session.id ? { ...current, agentSessionId } : current));
-                localSessionsRef.current = nextSessions;
-                setLocalSessions(nextSessions);
-                void onPersistSessions(nextSessions, localActiveSessionId || session.id).catch(() => {});
+                replaceLocalSessions(nextSessions, localActiveSessionIdRef.current || session.id);
+                void onPersistSessions(nextSessions, localActiveSessionIdRef.current || session.id).catch(() => {});
                 await createAgentSession(projectId, session.title === "新对话" ? text.slice(0, 18) : session.title, agentSessionId);
             }
             agentRunId = `agent-run-${crypto.randomUUID()}`;
             activeRuns.current.set(session.id, { runId: agentRunId, assistantMessageId: assistantId });
-            persistMessagePatch(session.id, assistantId, { runId: agentRunId, lastEventSequence: 0 }, localActiveSessionId || session.id);
+            persistMessagePatch(session.id, assistantId, { runId: agentRunId, lastEventSequence: 0 }, localActiveSessionIdRef.current || session.id);
             const submission = await submitAgentMessage(agentSessionId, agentRunId, text, activeModel, {
+                autonomy: getAgentSettingsPreference()?.autonomy || "standard",
                 selectedNodeIds: Array.from(contextNodeIds),
                 nodes: nodes.map((node) => ({
                     id: node.id,
@@ -810,7 +958,12 @@ export function CanvasAssistantPanel({
                 await flushActiveWorkspaceChanges().catch(() => {});
             }
             const interrupted = interruptedOperations.current.delete(assistantId) || Boolean(agentRunId && interruptedOperations.current.delete(agentRunId));
-            updateMessage(session.id, assistantId, { text: interrupted ? "已被新消息打断" : error instanceof Error ? error.message : "操作失败", isLoading: false });
+            updateMessageWith(session.id, assistantId, (message) => ({
+                ...message,
+                text: interrupted ? "已被新消息打断" : error instanceof Error ? error.message : "操作失败",
+                stages: failPendingAssistantStages(message.stages || []),
+                isLoading: false,
+            }));
         } finally {
             if (imageRequestController && activeImageRequests.current.get(session.id)?.controller === imageRequestController) activeImageRequests.current.delete(session.id);
             if (activeRuns.current.get(session.id)?.assistantMessageId === assistantId) activeRuns.current.delete(session.id);
@@ -833,13 +986,31 @@ export function CanvasAssistantPanel({
 
     const submit = async () => {
         const text = prompt.trim();
-        if (!text || isSubmittingMessage.current) return;
-        const contextNodeIds = new Set(selectedReferences.map((item) => item.id));
-        if (!agentExecutionConfirmed && !tryDirectCanvasCommand(text, nodes, contextNodeIds)) {
+        if (!hasAssistantPromptText(text, mentionReferences) || isSubmittingMessage.current) return;
+        if (!agentSettings?.configured) {
+            setAgentExecutionConsent(true);
+            setAgentAutonomy("standard");
             setPendingAgentPrompt(text);
+            setAgentSettingsOpen(true);
             return;
         }
         await executePrompt(text);
+    };
+
+    const resumeConfirmedRun = (message: CanvasAssistantMessage, runId: string) => {
+        const session = localSessionsRef.current.find((candidate) => candidate.messages.some((candidateMessage) => candidateMessage.id === message.id));
+        if (!session) return;
+        const messageIndex = session.messages.findIndex((candidate) => candidate.id === message.id);
+        const currentMessage = session.messages[messageIndex] || message;
+        const userMessage = session.messages.slice(0, messageIndex).findLast((candidate) => candidate.role === "user");
+        void followAgentRun(
+            runId,
+            session.id,
+            message.id,
+            userMessage?.references || [],
+            userMessage?.authorizedNodeIds || userMessage?.references?.map((item) => item.id) || [],
+            currentMessage.lastEventSequence || 0,
+        ).catch((error) => updateMessage(session.id, message.id, { text: error instanceof Error ? error.message : "操作失败", isLoading: false }));
     };
 
     const decideConfirmation = async (message: CanvasAssistantMessage, decision: "approved" | "rejected") => {
@@ -847,11 +1018,29 @@ export function CanvasAssistantPanel({
         if (!confirmation || confirmation.status !== "pending") return;
         updateMessage(activeSession?.id || "", message.id, { confirmation: { ...confirmation, status: "approving" } });
         try {
-            if (decision === "approved") onFlashAssistantNodes("nodeIds" in confirmation.arguments ? confirmation.arguments.nodeIds : [confirmation.arguments.nodeId]);
+			if (decision === "approved" && (confirmation.name === "canvas.delete" || confirmation.name === "canvas.update_text")) onFlashAssistantNodes("nodeIds" in confirmation.arguments ? confirmation.arguments.nodeIds : [confirmation.arguments.nodeId]);
             await confirmAgentTool(confirmation.runId, confirmation.callId, decision);
             updateMessage(activeSession?.id || "", message.id, { confirmation: { ...confirmation, status: decision === "approved" ? "approved" : "rejected" } });
+            resumeConfirmedRun(message, confirmation.runId);
         } catch {
             updateMessage(activeSession?.id || "", message.id, { confirmation: { ...confirmation, status: "failed" } });
+        }
+    };
+
+    const answerAskUser = async (message: CanvasAssistantMessage, stage: CanvasAssistantStage, decision: "approved" | "rejected", answer = "") => {
+        if (!stage.ask || (stage.ask.status !== "pending" && stage.ask.status !== "failed")) return;
+        const ask = stage.ask;
+        updateMessageWith(activeSession?.id || "", message.id, (current) => ({ ...current, stages: updateAskStage(current.stages || [], ask.callId, { status: "answering" }) }));
+        try {
+            await confirmAgentTool(ask.runId, ask.callId, decision, answer.trim() || undefined);
+            updateMessageWith(activeSession?.id || "", message.id, (current) => ({
+                ...current,
+                stages: updateAskStage(current.stages || [], ask.callId, { answer: answer.trim(), status: decision === "approved" ? "answered" : "skipped" }),
+                isLoading: true,
+            }));
+            resumeConfirmedRun(message, ask.runId);
+        } catch {
+            updateMessageWith(activeSession?.id || "", message.id, (current) => ({ ...current, stages: updateAskStage(current.stages || [], ask.callId, { status: "failed" }) }));
         }
     };
 
@@ -947,7 +1136,22 @@ export function CanvasAssistantPanel({
                                 }}
                             />
                         </Tooltip>
-                        <Tooltip title="配置">
+                        <Tooltip title={`Agent 模式 · ${agentAutonomyLabel(agentSettings?.autonomy || "standard")}`}>
+                            <Button
+                                type="text"
+                                shape="circle"
+                                className="!h-8 !w-8 !min-w-8"
+                                style={iconButtonStyle}
+                                icon={<Bot className="size-4" />}
+                                onClick={() => {
+                                    setAgentAutonomy(agentSettings?.autonomy || "standard");
+                                    setAgentExecutionConsent(true);
+                                    setPendingAgentPrompt(null);
+                                    setAgentSettingsOpen(true);
+                                }}
+                            />
+                        </Tooltip>
+                        <Tooltip title="模型配置">
                             <Button type="text" shape="circle" className="!h-8 !w-8 !min-w-8" style={iconButtonStyle} icon={<Settings2 className="size-4" />} onClick={() => openConfigDialog(false)} />
                         </Tooltip>
                         <Tooltip title="收起指挥中心">
@@ -964,7 +1168,7 @@ export function CanvasAssistantPanel({
                             checkedIds={checkedChatIds.filter((id) => historySessions.some((session) => session.id === id))}
                             onToggleChecked={(id, checked) => setCheckedChatIds((prev) => (checked ? [...new Set([...prev, id])] : prev.filter((item) => item !== id)))}
                             onOpen={(id) => {
-                                setLocalActiveSessionId(id);
+                                replaceLocalSessions(localSessionsRef.current, id);
                                 setView("chat");
                             }}
                             onDelete={(id) => setDeleteChatIds([id])}
@@ -972,8 +1176,7 @@ export function CanvasAssistantPanel({
                     ) : messages.length ? (
                         <>
                             {!isRunning && suggestions.length ? <AssistantSuggestions suggestions={suggestions} onApply={fillPrompt} /> : null}
-                            {runningPlanMessage?.plan ? <AssistantTaskProgress plan={runningPlanMessage.plan} /> : null}
-                            <AssistantMessages messages={messages} onRetry={retryMessage} onInsertImage={onInsertImage} onInsertText={onInsertText} onConfirm={decideConfirmation} />
+                            <AssistantMessages messages={messages} onRetry={retryMessage} onInsertImage={onInsertImage} onInsertText={onInsertText} onConfirm={decideConfirmation} onAnswer={answerAskUser} onLocateNode={onLocateNode} />
                         </>
                     ) : (
                         <AssistantEmptyState canvasSummary={canvasSummary} suggestions={suggestions} onApply={fillPrompt} />
@@ -986,37 +1189,86 @@ export function CanvasAssistantPanel({
                         isRunning={isRunning}
                         inputRef={composerInputRef}
                         references={selectedReferences}
+                        mentionReferences={mentionReferences}
                         onPromptChange={setPrompt}
                         onSubmit={submit}
-                        onRemoveReference={removeSelectedReference}
+                        onMentionReference={addMentionReference}
+                        onRemoveMentionReference={(reference) => removeSelectedReference(reference.nodeId)}
                         onPasteImage={onPasteImage}
                     />
                 ) : null}
 
                 <Modal
-                    title="确认 Agent 执行"
-                    open={pendingAgentPrompt !== null}
+                    title="Agent 设置"
+                    open={agentSettingsOpen}
                     centered
-                    onCancel={() => setPendingAgentPrompt(null)}
+                    onCancel={() => {
+                        setAgentSettingsOpen(false);
+                        setPendingAgentPrompt(null);
+                    }}
                     footer={
                         <>
-                            <Button onClick={() => setPendingAgentPrompt(null)}>取消</Button>
                             <Button
-                                type="primary"
                                 onClick={() => {
-                                    const text = pendingAgentPrompt;
-                                    if (!text) return;
-                                    setAgentExecutionConfirmed(true);
+                                    setAgentSettingsOpen(false);
                                     setPendingAgentPrompt(null);
-                                    void executePrompt(text);
                                 }}
                             >
-                                允许并发送
+                                取消
+                            </Button>
+                            <Button
+                                type="primary"
+                                disabled={pendingAgentPrompt !== null && !agentExecutionConsent}
+                                onClick={() => {
+                                    const text = pendingAgentPrompt;
+                                    const settings: AgentSettingsPreference = { configured: true, autonomy: agentAutonomy };
+                                    setAgentSettings(settings);
+                                    updateAgentSettingsPreference(settings);
+                                    setAgentSettingsOpen(false);
+                                    setPendingAgentPrompt(null);
+                                    if (text) void executePrompt(text);
+                                }}
+                            >
+                                {pendingAgentPrompt ? "确认并继续" : "保存"}
                             </Button>
                         </>
                     }
                 >
-                    <p className="text-sm leading-6 opacity-70">Agent 可能生成图片或视频并消耗算力，实际费用以执行的模型和数量为准。</p>
+                    <div className="space-y-4">
+                        <p className="text-sm leading-6 opacity-70">选择 Agent 自己判断和持续执行的程度。删除节点、覆盖文本与长期记忆仍会单独请求确认。</p>
+                        <div className="space-y-2">
+                            {AGENT_AUTONOMY_OPTIONS.map((option) => {
+                                const active = agentAutonomy === option.value;
+                                return (
+                                    <button
+                                        key={option.value}
+                                        type="button"
+                                        aria-pressed={active}
+                                        className="flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors"
+                                        style={{ borderColor: active ? theme.node.activeStroke : theme.node.stroke, background: active ? theme.toolbar.activeBg : theme.node.fill }}
+                                        onClick={() => setAgentAutonomy(option.value)}
+                                    >
+                                        <span className="flex size-5 shrink-0 items-center justify-center rounded-full border" style={{ borderColor: active ? theme.node.activeStroke : theme.node.stroke }}>
+                                            {active ? <Check className="size-3" /> : null}
+                                        </span>
+                                        <span className="min-w-0">
+                                            <span className="block text-sm font-medium">{option.label}</span>
+                                            <span className="mt-0.5 block text-xs leading-5 opacity-60">{option.description}</span>
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        {pendingAgentPrompt !== null ? (
+                            <div className="flex items-center justify-between gap-4 rounded-lg border p-3" style={{ borderColor: theme.node.stroke, background: theme.node.fill }}>
+                                <div className="min-w-0">
+                                    <div className="text-sm font-medium">允许自动执行非破坏性操作</div>
+                                    <div className="mt-1 text-xs leading-5 opacity-60">生成媒体、添加内容与排列节点可能消耗算力。</div>
+                                </div>
+                                <Switch checked={agentExecutionConsent} onChange={setAgentExecutionConsent} aria-label="允许 Agent 自动执行非破坏性操作" />
+                            </div>
+                        ) : null}
+                    </div>
                 </Modal>
 
                 <Modal
@@ -1052,56 +1304,55 @@ function AssistantComposer({
     isRunning,
     inputRef,
     references,
+    mentionReferences,
     onPromptChange,
     onSubmit,
-    onRemoveReference,
+    onMentionReference,
+    onRemoveMentionReference,
     onPasteImage,
 }: {
     prompt: string;
     isRunning: boolean;
     inputRef: RefObject<HTMLTextAreaElement | null>;
     references: CanvasAssistantReference[];
+    mentionReferences: CanvasResourceReference[];
     onPromptChange: (prompt: string) => void;
     onSubmit: () => void;
-    onRemoveReference: (id: string) => void;
+    onMentionReference: (reference: CanvasResourceReference) => void;
+    onRemoveMentionReference: (reference: CanvasResourceReference) => void;
     onPasteImage: (file: File) => void;
 }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const hasPromptText = hasAssistantPromptText(prompt, mentionReferences);
 
     return (
         <div className="px-2 pb-2" onWheelCapture={(event) => event.stopPropagation()}>
             <div className="rounded-[28px] border px-3 pb-3 pt-3 shadow-lg" style={{ background: theme.toolbar.panel, borderColor: theme.node.stroke }}>
-                {references.length ? (
-                    <div className="thin-scrollbar mb-2 flex max-w-full gap-2 overflow-x-auto px-1 pb-1">
-                        {references.map((item, index) => (
-                            <AssistantReferenceChip key={item.id} item={item} label={assistantImageReferenceLabel(references, index)} onRemove={() => onRemoveReference(item.id)} />
-                        ))}
-                    </div>
-                ) : null}
-                <textarea
-                    ref={inputRef}
-                    value={prompt}
-                    onChange={(event) => onPromptChange(event.target.value)}
-                    onPaste={(event) => {
-                        const file = Array.from(event.clipboardData.files).find((item) => item.type.startsWith("image/"));
-                        if (!file) return;
-                        event.preventDefault();
-                        onPasteImage(file);
-                    }}
-                    onKeyDown={(event) => {
-                        if (event.key !== "Enter" || event.ctrlKey || event.metaKey || event.shiftKey) return;
-                        event.preventDefault();
-                        void onSubmit();
-                    }}
-                    className="thin-scrollbar h-20 w-full resize-none border-0 bg-transparent px-1 py-1 text-sm leading-5 outline-none placeholder:text-neutral-400"
-                    style={{ color: theme.node.text }}
-                    placeholder={references.length ? "描述目标，已选节点会作为参考" : "描述你想在画布上完成的目标"}
-                />
+                <div className="h-20">
+                    <CanvasResourceMentionTextarea
+                        ref={inputRef}
+                        value={prompt}
+                        references={mentionReferences}
+                        onReferenceSelect={onMentionReference}
+                        onReferenceRemove={onRemoveMentionReference}
+                        onChange={onPromptChange}
+                        onSubmit={onSubmit}
+                        onPaste={(event) => {
+                            const file = Array.from(event.clipboardData.files).find((item) => item.type.startsWith("image/"));
+                            if (!file) return;
+                            event.preventDefault();
+                            onPasteImage(file);
+                        }}
+                        className="thin-scrollbar h-full w-full resize-none border-0 bg-transparent px-1 py-1 text-sm leading-5 outline-none placeholder:text-neutral-400"
+                        style={{ color: theme.node.text }}
+                        placeholder={references.length ? "描述目标，或输入 @ 引用其他节点" : "描述目标，输入 @ 引用画布节点"}
+                    />
+                </div>
                 <div className="mt-2 flex items-center justify-between gap-2">
                     <div className="canvas-composer-tools flex min-w-0 flex-1 items-center gap-1">
-                        <CanvasPromptLibrary onSelect={onPromptChange} />
+                        <CanvasPromptLibrary onSelect={(text) => onPromptChange(syncAssistantReferenceLabels(text, mentionReferences, new Set(references.map((item) => item.id))))} />
                     </div>
-                    <Button type="primary" className="!h-10 !min-w-16 shrink-0 !rounded-full !px-3" disabled={!prompt.trim()} onClick={() => void onSubmit()} aria-label={isRunning ? "发送并打断当前任务" : "发送"}>
+                    <Button type="primary" className="!h-10 !min-w-16 shrink-0 !rounded-full !px-3" disabled={!hasPromptText} onClick={() => void onSubmit()} aria-label={isRunning ? "发送并打断当前任务" : "发送"}>
                         <span className="flex items-center gap-1.5">
                             {isRunning ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
                             <ArrowUp className="size-4" />
@@ -1131,113 +1382,209 @@ function AssistantMessages({
     onInsertImage,
     onInsertText,
     onConfirm,
+    onAnswer,
+    onLocateNode,
 }: {
     messages: CanvasAssistantMessage[];
     onRetry: (message: CanvasAssistantMessage) => void;
     onInsertImage: (image: CanvasAssistantImage) => void;
     onInsertText: (text: string) => void;
     onConfirm: (message: CanvasAssistantMessage, decision: "approved" | "rejected") => void;
+    onAnswer: (message: CanvasAssistantMessage, stage: CanvasAssistantStage, decision: "approved" | "rejected", answer?: string) => void;
+    onLocateNode: (nodeId: string) => void;
 }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
 
     return (
         <>
-            {messages.map((message) => (
-                <div key={message.id} className={cn("flex flex-col gap-2", message.role === "user" ? "items-end" : "items-start")}>
-                    <div
-                        className="max-w-[88%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm leading-6"
-                        style={message.role === "user" ? { background: theme.toolbar.activeBg, color: theme.toolbar.activeText } : { background: theme.node.fill, color: theme.node.text }}
-                    >
-                        {message.role === "assistant" ? (
-                            <div className="mb-1 flex items-center gap-1.5 text-xs opacity-60">
-                                <Sparkles className="size-3.5" />
-                                指挥中心
+            {messages.map((message) => {
+                const waitingForAnswer = message.stages?.some((stage) => stage.ask?.status === "pending" || stage.ask?.status === "answering" || stage.ask?.status === "failed");
+                const waitingForConfirmation = message.confirmation && ["pending", "approving", "failed"].includes(message.confirmation.status);
+                const displayText = message.role === "assistant" && message.text.trim().toLowerCase() === "network error" && message.stages?.some((stage) => stage.kind === "ask") ? "" : message.text;
+                return (
+                    <div key={message.id} className={cn("flex flex-col gap-2", message.role === "user" ? "items-end" : "items-start")}>
+                        {message.role === "user" || displayText ? (
+                            <div
+                                className="max-w-[88%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm leading-6"
+                                style={message.role === "user" ? { background: theme.toolbar.activeBg, color: theme.toolbar.activeText } : { background: theme.node.fill, color: theme.node.text }}
+                            >
+                                {message.role === "assistant" ? (
+                                    <div className="mb-1 flex items-center gap-1.5 text-xs opacity-60">
+                                        <Sparkles className="size-3.5" />
+                                        指挥中心
+                                    </div>
+                                ) : null}
+                                {displayText}
                             </div>
                         ) : null}
-                        {message.text}
-                    </div>
-                    {message.references?.length ? <MessageReferences message={message} /> : null}
-                    {message.plan ? (
-                        <div className="w-[250px] border-l-2 py-1 pl-3" style={{ borderColor: theme.node.activeStroke, color: theme.node.text }}>
-                            <div className="text-xs font-medium">{message.plan.summary}</div>
-                            <div className="mt-2 space-y-1.5">
-                                {message.plan.steps.map((step, index) => (
-                                    <div key={`${index}-${step}`} className="flex gap-2 text-xs leading-5" style={{ color: theme.node.muted }}>
-                                        <span className="tabular-nums opacity-60">{index + 1}</span>
-                                        <span>{step}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    ) : null}
-                    {message.confirmation ? (
-                        <div className="w-[250px] rounded-xl border p-3" style={{ background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.text }}>
-                            <div className="text-xs font-medium">需要你的确认</div>
-                            <div className="mt-1 text-xs opacity-60">
-                                {message.confirmation.name === "canvas.delete" ? `删除 ${"nodeIds" in message.confirmation.arguments ? message.confirmation.arguments.nodeIds.length : 0} 个节点` : "覆盖所选文本节点内容"}
-                            </div>
-                            {message.confirmation.status === "pending" || message.confirmation.status === "approving" || message.confirmation.status === "failed" ? (
-                                <div className="mt-3 flex gap-2">
-                                    <Button
-                                        size="small"
-                                        danger={message.confirmation.name === "canvas.delete"}
-                                        type="primary"
-                                        loading={message.confirmation.status === "approving"}
-                                        onClick={() => onConfirm({ ...message, confirmation: { ...message.confirmation!, status: "pending" } }, "approved")}
-                                    >
-                                        允许执行
-                                    </Button>
-                                    <Button size="small" disabled={message.confirmation.status === "approving"} onClick={() => onConfirm({ ...message, confirmation: { ...message.confirmation!, status: "pending" } }, "rejected")}>
-                                        拒绝
-                                    </Button>
+                        {message.references?.length ? <MessageReferences message={message} /> : null}
+                        {message.stages?.length ? <AssistantStages message={message} onAnswer={onAnswer} /> : message.isLoading ? <AssistantStatusCapsule label={message.mode === "image" ? "图片生成中" : "正在理解需求"} status="pending" /> : null}
+                        {message.confirmation ? (
+                            <div className="w-[280px] max-w-full rounded-lg border p-3" style={{ background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.text }}>
+                                <div className="text-xs font-medium">需要你的确认</div>
+                                <div className="mt-1 text-xs opacity-60">
+                                    {message.confirmation.name === "canvas.delete"
+                                        ? `删除 ${"nodeIds" in message.confirmation.arguments ? message.confirmation.arguments.nodeIds.length : 0} 个节点`
+                                        : message.confirmation.name === "canvas.update_text"
+                                          ? "覆盖所选文本节点内容"
+                                          : message.confirmation.name === "agent.remember"
+                                            ? `保存长期记忆“${"key" in message.confirmation.arguments ? message.confirmation.arguments.key : ""}”`
+                                            : `遗忘长期记忆“${"key" in message.confirmation.arguments ? message.confirmation.arguments.key : ""}”`}
                                 </div>
-                            ) : (
-                                <div className="mt-2 text-xs opacity-60">{message.confirmation.status === "approved" ? "已允许执行" : "已拒绝，未执行"}</div>
-                            )}
-                        </div>
-                    ) : null}
-                    {message.isLoading ? <ImageGenerationPending compact label={message.mode === "image" ? "正在生成图片" : message.plan ? "正在执行计划" : "正在回答"} className="w-[250px] rounded-2xl border" /> : null}
-                    {message.role === "assistant" && !message.isLoading ? (
-                        <div className="flex gap-1">
-                            <Button shape="circle" size="small" style={{ borderColor: theme.node.stroke }} icon={<RotateCcw className="size-3.5" />} onClick={() => onRetry(message)} title="重试" />
-                            {!message.images?.length ? <Button shape="circle" size="small" style={{ borderColor: theme.node.stroke }} icon={<Plus className="size-3.5" />} onClick={() => onInsertText(message.text)} title="插入画布" /> : null}
-                        </div>
-                    ) : null}
-                    {message.images?.map((image) => (
-                        <div key={image.id} className="w-[250px] overflow-hidden rounded-2xl border" style={{ background: theme.node.panel, borderColor: theme.node.stroke }}>
-                            <img src={image.dataUrl} alt="" className="aspect-square w-full object-cover" />
-                            <Button
-                                type="text"
-                                className="!h-8 !w-full !rounded-none"
-                                style={{ borderTop: `1px solid ${theme.node.stroke}`, color: theme.node.text }}
-                                icon={<Plus className="size-3.5" />}
-                                onClick={() => onInsertImage(image)}
-                                title="插入画布"
-                            />
-                        </div>
-                    ))}
-                </div>
-            ))}
+                                {message.confirmation.status === "pending" || message.confirmation.status === "approving" || message.confirmation.status === "failed" ? (
+                                    <div className="mt-3 flex gap-2">
+                                        <Button
+                                            size="small"
+                                            danger={message.confirmation.name === "canvas.delete" || message.confirmation.name === "agent.forget"}
+                                            type="primary"
+                                            loading={message.confirmation.status === "approving"}
+                                            onClick={() => onConfirm({ ...message, confirmation: { ...message.confirmation!, status: "pending" } }, "approved")}
+                                        >
+                                            允许执行
+                                        </Button>
+                                        <Button size="small" disabled={message.confirmation.status === "approving"} onClick={() => onConfirm({ ...message, confirmation: { ...message.confirmation!, status: "pending" } }, "rejected")}>
+                                            拒绝
+                                        </Button>
+                                    </div>
+                                ) : (
+                                    <div className="mt-2 text-xs opacity-60">{message.confirmation.status === "approved" ? "已允许执行" : "已拒绝，未执行"}</div>
+                                )}
+                            </div>
+                        ) : null}
+                        {message.images?.map((image) => <AssistantImageResult key={image.id} image={image} onInsert={() => onInsertImage(image)} onLocateNode={onLocateNode} />)}
+                        {message.videos?.map((video) => <AssistantVideoResult key={`${video.agentToolCallId}:${video.nodeId || video.storageKey}`} video={video} onLocateNode={onLocateNode} />)}
+                        {message.role === "assistant" && !message.isLoading && !waitingForAnswer && !waitingForConfirmation ? (
+                            <div className="flex gap-1">
+                                <Button shape="circle" size="small" style={{ borderColor: theme.node.stroke }} icon={<RotateCcw className="size-3.5" />} onClick={() => onRetry(message)} title="重试" />
+                                {!message.images?.length && !message.videos?.length && displayText ? <Button shape="circle" size="small" style={{ borderColor: theme.node.stroke }} icon={<Plus className="size-3.5" />} onClick={() => onInsertText(displayText)} title="插入画布" /> : null}
+                            </div>
+                        ) : null}
+                    </div>
+                );
+            })}
         </>
     );
 }
 
-function AssistantTaskProgress({ plan }: { plan: { summary: string; steps: string[] } }) {
+function AssistantStages({ message, onAnswer }: { message: CanvasAssistantMessage; onAnswer: (message: CanvasAssistantMessage, stage: CanvasAssistantStage, decision: "approved" | "rejected", answer?: string) => void }) {
+    return (
+        <div className="flex w-[280px] max-w-full flex-col items-start gap-2">
+            {message.stages?.map((stage, index) =>
+                stage.kind === "ask" && stage.ask ? (
+                    <AssistantAskStage key={stage.callId || index} message={message} stage={stage} onAnswer={onAnswer} />
+                ) : stage.kind === "inspect" && stage.inspection ? (
+                    <AssistantInspectionStage key={stage.callId || index} stage={stage} />
+                ) : (
+                    <AssistantStatusCapsule key={stage.callId || `${stage.kind}-${index}`} label={stage.label} status={stage.status} />
+                ),
+            )}
+        </div>
+    );
+}
+
+function AssistantInspectionStage({ stage }: { stage: CanvasAssistantStage }) {
+    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const inspection = stage.inspection!;
+    return (
+        <div className="w-full rounded-lg border px-3 py-2.5 text-xs" style={{ background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.text }}>
+            <div className="flex items-center gap-1.5" style={{ color: inspection.status === "needs_revision" ? theme.node.text : theme.node.muted }}>
+                {inspection.status === "unavailable" ? <X className="size-3.5 shrink-0" /> : inspection.status === "needs_revision" ? <Lightbulb className="size-3.5 shrink-0" /> : <Check className="size-3.5 shrink-0" />}
+                <span className="font-medium">{stage.label}</span>
+            </div>
+            <p className="mt-1.5 leading-5" style={{ color: theme.node.muted }}>{inspection.summary}</p>
+            {inspection.issues.length ? (
+                <ul className="mt-1.5 space-y-1 pl-4" style={{ color: theme.node.muted }}>
+                    {inspection.issues.map((issue, index) => <li key={`${index}-${issue}`} className="list-disc leading-4">{issue}</li>)}
+                </ul>
+            ) : null}
+        </div>
+    );
+}
+
+function AssistantStatusCapsule({ label, status }: { label: string; status: CanvasAssistantStage["status"] }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     return (
-        <div className="rounded-xl border p-3" style={{ background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.text }}>
-            <div className="flex items-center gap-1.5 text-xs font-medium" style={{ color: theme.node.muted }}>
-                <LoaderCircle className="size-3.5 animate-spin" />
-                任务进行中
+        <div className="inline-flex min-h-7 max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs" style={{ background: theme.node.panel, borderColor: theme.node.stroke, color: status === "failed" ? "#ef4444" : theme.node.muted }}>
+            {status === "pending" ? <LoaderCircle className="size-3.5 shrink-0 animate-spin" /> : status === "done" ? <Check className="size-3.5 shrink-0" /> : <X className="size-3.5 shrink-0" />}
+            <span className="min-w-0 truncate">{label}</span>
+        </div>
+    );
+}
+
+function AssistantAskStage({ message, stage, onAnswer }: { message: CanvasAssistantMessage; stage: CanvasAssistantStage; onAnswer: (message: CanvasAssistantMessage, stage: CanvasAssistantStage, decision: "approved" | "rejected", answer?: string) => void }) {
+    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const ask = stage.ask!;
+    const [answer, setAnswer] = useState(ask.answer || "");
+    if (ask.status === "answered" || ask.status === "skipped") {
+        return <AssistantStatusCapsule label={ask.status === "skipped" ? "已询问 · 已忽略" : `已询问 · ${ask.answer || "已回答"}`} status="done" />;
+    }
+    return (
+        <div className="w-full rounded-lg border p-3" style={{ background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.text }}>
+            <div className="flex items-start gap-2">
+                <MessageCircleQuestion className="mt-0.5 size-4 shrink-0" style={{ color: theme.node.muted }} />
+                <div className="min-w-0 text-sm font-medium leading-5">{ask.question}</div>
             </div>
-            <div className="mt-1.5 text-sm font-medium">{plan.summary}</div>
-            <div className="mt-2 space-y-1.5">
-                {plan.steps.map((step, index) => (
-                    <div key={`${index}-${step}`} className="flex items-center gap-2 text-xs leading-5" style={{ color: theme.node.muted }}>
-                        <span className="size-1.5 shrink-0 rounded-full" style={{ background: index === 0 ? theme.node.activeStroke : theme.node.stroke }} />
-                        <span className="min-w-0 truncate">{step}</span>
-                    </div>
+            <div className="mt-3 space-y-2">
+                {ask.options.map((option, index) => (
+                    <button
+                        key={option}
+                        type="button"
+                        className="flex min-h-9 w-full items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors"
+                        style={{ borderColor: answer === option ? theme.node.activeStroke : theme.node.stroke, background: answer === option ? theme.toolbar.activeBg : "transparent", color: theme.node.text }}
+                        disabled={ask.status === "answering"}
+                        onClick={() => setAnswer(option)}
+                    >
+                        <span className="flex size-5 shrink-0 items-center justify-center rounded-full border text-[11px] tabular-nums" style={{ borderColor: theme.node.stroke }}>
+                            {index + 1}
+                        </span>
+                        <span>{option}</span>
+                    </button>
                 ))}
+            </div>
+            <Input className="mt-3" value={answer} maxLength={2000} disabled={ask.status === "answering"} placeholder="输入其他回答" onChange={(event) => setAnswer(event.target.value)} onPressEnter={() => answer.trim() && onAnswer(message, stage, "approved", answer)} />
+            {ask.status === "failed" ? <div className="mt-2 text-xs text-red-500">提交失败，请重试</div> : null}
+            <div className="mt-3 flex justify-end gap-2">
+                <Button size="small" disabled={ask.status === "answering"} onClick={() => onAnswer(message, stage, "rejected")}>
+                    忽略
+                </Button>
+                <Button size="small" type="primary" loading={ask.status === "answering"} disabled={!answer.trim()} onClick={() => onAnswer(message, stage, "approved", answer)}>
+                    提交
+                </Button>
+            </div>
+        </div>
+    );
+}
+
+function AssistantImageResult({ image, onInsert, onLocateNode }: { image: CanvasAssistantImage; onInsert: () => void; onLocateNode: (nodeId: string) => void }) {
+    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    return (
+        <div className="grid w-[280px] max-w-full grid-cols-[56px_minmax(0,1fr)] items-center gap-2 rounded-lg border p-2" style={{ background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.text }}>
+            <img src={image.dataUrl} alt={image.prompt || "生成作品"} className="aspect-square size-14 rounded-md object-cover" />
+            <div className="min-w-0">
+                <div className="line-clamp-2 text-xs font-medium leading-5">{image.prompt || "生成作品"}</div>
+                <Button type="text" size="small" className="!-ml-2 !mt-0.5 !h-7 !px-2" icon={image.nodeId ? <LocateFixed className="size-3.5" /> : <Plus className="size-3.5" />} onClick={() => (image.nodeId ? onLocateNode(image.nodeId) : onInsert())}>
+                    {image.nodeId ? "在画布中定位" : "插入画布"}
+                </Button>
+            </div>
+        </div>
+    );
+}
+
+function AssistantVideoResult({ video, onLocateNode }: { video: CanvasAssistantVideo & { nodeId?: string }; onLocateNode: (nodeId: string) => void }) {
+    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    return (
+        <div className="grid w-[280px] max-w-full grid-cols-[56px_minmax(0,1fr)] items-center gap-2 rounded-lg border p-2" style={{ background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.text }}>
+            <div className="relative size-14 overflow-hidden rounded-md" style={{ background: theme.node.fill }}>
+                <video src={video.url} muted preload="metadata" className="size-full object-cover" />
+                <Video className="absolute left-1/2 top-1/2 size-4 -translate-x-1/2 -translate-y-1/2" />
+            </div>
+            <div className="min-w-0">
+                <div className="line-clamp-2 text-xs font-medium leading-5">{video.prompt || "生成视频"}</div>
+                {video.nodeId ? (
+                    <Button type="text" size="small" className="!-ml-2 !mt-0.5 !h-7 !px-2" icon={<LocateFixed className="size-3.5" />} onClick={() => onLocateNode(video.nodeId!)}>
+                        在画布中定位
+                    </Button>
+                ) : null}
             </div>
         </div>
     );
@@ -1388,6 +1735,70 @@ function nodeToReference(node: CanvasNodeData): CanvasAssistantReference | null 
     return { id: node.id, type: node.type, title: node.title };
 }
 
+async function inspectAgentImages(config: AiConfig, nodes: CanvasNodeData[], nodeIds: string[], criteria: string, idempotencyKey: string, signal: AbortSignal): Promise<AgentToolInspection> {
+    const nodeById = new Map(nodes.map((node) => [node.id, node]));
+    const references = nodeIds.flatMap((nodeId) => {
+        const node = nodeById.get(nodeId);
+        const reference = node?.type === CanvasNodeType.Image ? nodeToReference(node) : null;
+        return reference ? [reference] : [];
+    });
+    if (references.length !== nodeIds.length) return unavailableAgentInspection("待验收图片已不在当前画布中");
+
+    try {
+        const imageUrls = await Promise.all(references.map((reference) => imageToDataUrl({ dataUrl: resolveImageVariantUrl(reference.storageKey, reference.dataUrl || "", "preview") })));
+        if (imageUrls.some((url) => !url)) return unavailableAgentInspection("待验收图片暂时无法读取");
+        return requestAgentVisualInspection(config, criteria, `附带的 ${imageUrls.length} 张图片`, imageUrls, idempotencyKey, signal);
+    } catch (error) {
+        if (signal.aborted) throw error;
+        return unavailableAgentInspection("视觉模型调用或结果解析失败");
+    }
+}
+
+async function inspectAgentVideo(config: AiConfig, nodes: CanvasNodeData[], nodeId: string, criteria: string, idempotencyKey: string, signal: AbortSignal): Promise<AgentToolInspection> {
+    const node = nodes.find((item) => item.id === nodeId && item.type === CanvasNodeType.Video);
+    if (!node) return unavailableAgentInspection("待验收视频已不在当前画布中");
+    try {
+        const sourceUrl = await resolveMediaUrl(node.metadata?.storageKey, node.metadata?.content || "");
+        if (!sourceUrl) return unavailableAgentInspection("待验收视频暂时无法读取");
+        const frames = await extractVideoKeyFrames(sourceUrl, 6, signal);
+        return requestAgentVisualInspection(config, criteria, `按时间顺序提取的 ${frames.length} 张视频关键帧`, frames, idempotencyKey, signal);
+    } catch (error) {
+        if (signal.aborted) throw error;
+        return unavailableAgentInspection("视频关键帧提取、视觉模型调用或结果解析失败");
+    }
+}
+
+async function requestAgentVisualInspection(config: AiConfig, criteria: string, sourceDescription: string, imageUrls: string[], idempotencyKey: string, signal: AbortSignal) {
+    const prompt = buildAgentVisualInspectionPrompt(criteria, sourceDescription);
+    const messages: ChatCompletionMessage[] = [{
+        role: "user",
+        content: [{ type: "text", text: prompt }, ...imageUrls.map((url) => ({ type: "image_url" as const, image_url: { url } }))],
+    }];
+    return parseAgentMediaInspection(await requestImageQuestion(config, messages, () => undefined, { signal, idempotencyKey }));
+}
+
+function buildAgentVisualInspectionPrompt(criteria: string, sourceDescription: string) {
+    return `你是严格的媒体质量验收员。请查看${sourceDescription}，并只依据可见内容按以下标准验收：\n${criteria}\n\n只输出一个合法 JSON 对象，不要 Markdown、代码块或额外文字。通过时输出 {"status":"passed","summary":"简洁中文结论","issues":[]}；存在影响目标达成的问题时输出 {"status":"needs_revision","summary":"简洁中文结论","issues":["具体可见问题"],"revisedPrompt":"一段可直接重新生成的完整提示词"}。issues 最多 6 条；revisedPrompt 必须保留原目标并明确修正全部问题，不得臆造不可见事实。`;
+}
+
+function parseAgentMediaInspection(answer: string): AgentToolInspection {
+    const value = JSON.parse(answer.trim()) as Record<string, unknown>;
+    if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).some((key) => !["status", "summary", "issues", "revisedPrompt"].includes(key))) throw new Error("视觉验收结果格式无效");
+    const status = value.status;
+    const summary = typeof value.summary === "string" ? value.summary.trim() : "";
+    const issues = Array.isArray(value.issues) ? value.issues.map((issue) => typeof issue === "string" ? issue.trim() : "") : [];
+    const revisedPrompt = typeof value.revisedPrompt === "string" ? value.revisedPrompt.trim() : "";
+    if ((status !== "passed" && status !== "needs_revision" && status !== "unavailable") || !summary || summary.length > 1000 || !Array.isArray(value.issues) || issues.length > 6 || issues.some((issue) => !issue || issue.length > 300) || revisedPrompt.length > 8000) throw new Error("视觉验收结果格式无效");
+    if (status === "needs_revision" && (!issues.length || !revisedPrompt)) throw new Error("视觉验收调整建议缺失");
+    if (status !== "needs_revision" && issues.length) throw new Error("视觉验收问题无效");
+    if (status !== "needs_revision" && revisedPrompt) throw new Error("视觉验收调整建议无效");
+    return { status, summary, issues, ...(revisedPrompt ? { revisedPrompt } : {}) };
+}
+
+function unavailableAgentInspection(summary: string): AgentToolInspection {
+    return { status: "unavailable", summary, issues: [] };
+}
+
 function buildAssistantReferences(nodes: CanvasNodeData[], selectedNodeIds: Set<string>) {
     const nodeById = new Map(nodes.map((node) => [node.id, node]));
     return Array.from(selectedNodeIds)
@@ -1395,6 +1806,174 @@ function buildAssistantReferences(nodes: CanvasNodeData[], selectedNodeIds: Set<
         .filter((node): node is CanvasNodeData => Boolean(node))
         .map(nodeToReference)
         .filter((item): item is CanvasAssistantReference => Boolean(item));
+}
+
+function assistantStageForTool(name: AgentToolName, callId: string, argumentsValue: AgentToolArguments): CanvasAssistantStage | null {
+    if (name === "canvas.plan" && "summary" in argumentsValue && "steps" in argumentsValue) {
+        return { callId, kind: "plan", label: argumentsValue.summary || "正在规划", status: "pending", plan: { summary: argumentsValue.summary, steps: argumentsValue.steps } };
+    }
+    if (name === "image.generate" && "count" in argumentsValue) return { callId, kind: "image", label: `${argumentsValue.count} 张图片生成中`, status: "pending", imageCount: argumentsValue.count };
+    if (name === "image.inspect" && "criteria" in argumentsValue && "nodeIds" in argumentsValue) return { callId, kind: "inspect", label: "正在验收图片内容", status: "pending", nodeIds: argumentsValue.nodeIds, inspectionMedia: "image" };
+    if (name === "video.generate" && "duration" in argumentsValue) return { callId, kind: "video", label: "视频生成中", status: "pending" };
+    if (name === "video.inspect" && "criteria" in argumentsValue && "nodeId" in argumentsValue) return { callId, kind: "inspect", label: "正在验收视频内容", status: "pending", nodeId: argumentsValue.nodeId, inspectionMedia: "video" };
+    if (name === "canvas.arrange" && "mode" in argumentsValue) return { callId, kind: "arrange", label: "节点排列中", status: "pending", nodeIds: argumentsValue.nodeIds };
+    if (name === "canvas.add_text" && "placement" in argumentsValue) return { callId, kind: "text", label: "文本添加中", status: "pending" };
+    if (name === "canvas.delete" && "nodeIds" in argumentsValue && !("mode" in argumentsValue)) return { callId, kind: "delete", label: "节点删除中", status: "pending", nodeIds: argumentsValue.nodeIds };
+    if (name === "canvas.update_text" && "nodeId" in argumentsValue) return { callId, kind: "update_text", label: "文本更新中", status: "pending", nodeId: argumentsValue.nodeId };
+	if (name === "agent.remember" && "content" in argumentsValue && "key" in argumentsValue) return { callId, kind: "remember", label: "正在保存记忆", status: "pending", memoryKey: argumentsValue.key };
+	if (name === "agent.forget" && "key" in argumentsValue) return { callId, kind: "forget", label: "正在遗忘记忆", status: "pending", memoryKey: argumentsValue.key };
+    return null;
+}
+
+function syncAssistantReferenceLabels(value: string, references: CanvasResourceReference[], selectedIds: Set<string>, previousReferences: CanvasResourceReference[] = []) {
+    const selectedLabels = references.filter((reference) => selectedIds.has(reference.nodeId)).map((reference) => reference.label);
+    const currentLabelByNodeId = new Map(references.map((reference) => [reference.nodeId, reference.label]));
+    const renamedLabels = previousReferences.filter((reference) => currentLabelByNodeId.get(reference.nodeId) !== reference.label).map((reference) => reference.label);
+    const withoutRenamedLabels = renamedLabels.reduce(removeAssistantReferenceLabel, value);
+    const next = references.reduce((text, reference) => selectedIds.has(reference.nodeId) ? text : removeAssistantReferenceLabel(text, reference.label), withoutRenamedLabels);
+    const missingLabels = selectedLabels.filter((label) => !hasAssistantReferenceLabel(next, label));
+    return missingLabels.length ? `${missingLabels.join(" ")} ${next.trimStart()}` : next;
+}
+
+function hasAssistantPromptText(value: string, references: CanvasResourceReference[]) {
+    return references.reduce((text, reference) => removeAssistantReferenceLabel(text, reference.label), value).trim().length > 0;
+}
+
+function removeAssistantReferenceLabel(value: string, label: string) {
+    return value.replace(new RegExp(`(^|\\s)${escapeRegExp(label)}(?=\\s|$)`, "g"), "$1").replace(/ {2,}/g, " ").trimStart();
+}
+
+function escapeRegExp(value: string) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function hasAssistantReferenceLabel(value: string, label: string) {
+    return new RegExp(`(^|\\s)${escapeRegExp(label)}(?=\\s|$)`).test(value);
+}
+
+function mergeAssistantImages(current: CanvasAssistantImage[], next: CanvasAssistantImage[], callId: string) {
+    return [...current.filter((image) => image.agentToolCallId !== callId), ...next];
+}
+
+function mergeAssistantVideos(current: (CanvasAssistantVideo & { nodeId?: string })[], next: (CanvasAssistantVideo & { nodeId?: string })[], callId: string) {
+    return [...current.filter((video) => video.agentToolCallId !== callId), ...next];
+}
+
+function applyAssistantToolResult(message: CanvasAssistantMessage, runId: string, callId: string, name: AgentToolName, argumentsValue: AgentToolArguments, result: AgentToolResult, nodes: CanvasNodeData[]) {
+    const resultImages = result.status === "success" ? result.images : undefined;
+    if (name === "image.generate" && resultImages && "prompt" in argumentsValue) {
+        const images = resultImages.flatMap((item) => {
+            const node = nodes.find((candidate) => candidate.id === item.nodeId && candidate.type === CanvasNodeType.Image);
+            const dataUrl = node?.metadata?.content;
+            if (!node || !dataUrl) return [];
+            return [{ id: node.id, dataUrl, storageKey: item.storageKey, prompt: argumentsValue.prompt, nodeId: node.id, agentRunId: runId, agentToolCallId: callId, sourceNodeIds: node.metadata?.sourceNodeIds }];
+        });
+        return images.length ? { ...message, images: mergeAssistantImages(message.images || [], images, callId) } : message;
+    }
+    const resultVideo = result.status === "success" ? result.video : undefined;
+    if (name === "video.generate" && resultVideo && "prompt" in argumentsValue) {
+        const node = nodes.find((candidate) => candidate.id === resultVideo.nodeId && candidate.type === CanvasNodeType.Video);
+        const url = node?.metadata?.content;
+        if (node && url) {
+            const video = { url, storageKey: resultVideo.storageKey, prompt: argumentsValue.prompt, nodeId: node.id, agentRunId: runId, agentToolCallId: callId, sourceNodeIds: node.metadata?.sourceNodeIds };
+            return { ...message, videos: mergeAssistantVideos(message.videos || [], [video], callId) };
+        }
+    }
+    return message;
+}
+
+function upsertAssistantStage(stages: CanvasAssistantStage[], next: CanvasAssistantStage) {
+    const index = next.callId ? stages.findIndex((stage) => stage.callId === next.callId) : -1;
+    if (index < 0) return [...stages, next];
+    return stages.map((stage, stageIndex) => {
+        if (stageIndex !== index || stage.status === "done") return stage;
+        const preservedAsk = stage.ask && stage.ask.status !== "pending" ? stage.ask : undefined;
+        return { ...stage, ...next, ask: preservedAsk || (stage.ask || next.ask ? { ...stage.ask!, ...next.ask! } : undefined) };
+    });
+}
+
+function finishAssistantStage(stages: CanvasAssistantStage[], callId: string, status: "done" | "failed", answer?: string, rejected = false, inspection?: AgentToolInspection) {
+    return stages.map((stage) => {
+        if (stage.callId !== callId) return stage;
+        const skipped = stage.ask?.status === "skipped" || rejected;
+        const ask = stage.ask
+            ? {
+                  ...stage.ask,
+                  ...(answer && !skipped ? { answer } : {}),
+                  status: status === "failed" ? ("failed" as const) : skipped ? ("skipped" as const) : ("answered" as const),
+              }
+            : undefined;
+        const rejectedLabel = stage.kind === "delete" ? "已拒绝删除" : stage.kind === "update_text" ? "已拒绝修改文本" : stage.kind === "remember" ? "已拒绝保存记忆" : stage.kind === "forget" ? "已拒绝遗忘" : undefined;
+        return {
+            ...stage,
+            status,
+            label: status === "failed" ? assistantStageFailedLabel(stage.kind) : inspection ? agentInspectionStageLabel(inspection, stage.inspectionMedia) : rejected && rejectedLabel ? rejectedLabel : assistantStageDoneLabel(stage),
+            ask,
+            inspection: inspection ? { status: inspection.status, summary: inspection.summary, issues: inspection.issues || [] } : stage.inspection,
+        };
+    });
+}
+
+function updateAskStage(stages: CanvasAssistantStage[], callId: string, patch: Partial<NonNullable<CanvasAssistantStage["ask"]>>) {
+    return stages.map((stage) => (stage.callId === callId && stage.ask ? { ...stage, ask: { ...stage.ask, ...patch } } : stage));
+}
+
+function appendAgentObserveStage(stages: CanvasAssistantStage[], callId: string, failed: boolean) {
+    return upsertAssistantStage(stages, { callId: `observe:${callId}`, kind: "observe", label: failed ? "正在分析执行错误" : "正在检查执行状态", status: "pending" });
+}
+
+function finishAgentObserveStages(stages: CanvasAssistantStage[]) {
+    return stages.map((stage) =>
+        stage.kind === "observe" && stage.status === "pending"
+            ? { ...stage, status: "done" as const, label: stage.label.includes("错误") ? "执行错误已分析" : "执行状态已检查" }
+            : stage,
+    );
+}
+
+function finishPendingAssistantStages(stages: CanvasAssistantStage[]) {
+    return stages.map((stage) =>
+        stage.status === "pending" && stage.kind !== "ask"
+            ? { ...stage, status: "done" as const, label: assistantStageDoneLabel(stage) }
+            : stage,
+    );
+}
+
+function failPendingAssistantStages(stages: CanvasAssistantStage[]) {
+    return stages.map((stage) =>
+        stage.status === "pending"
+            ? { ...stage, status: "failed" as const, label: assistantStageFailedLabel(stage.kind), ask: stage.ask ? { ...stage.ask, status: "failed" as const } : undefined }
+            : stage,
+    );
+}
+
+function assistantStageDoneLabel(stage: CanvasAssistantStage) {
+    if (stage.kind === "plan") return "计划已完成";
+    if (stage.kind === "observe") return "执行状态已检查";
+    if (stage.kind === "inspect") return stage.inspection ? agentInspectionStageLabel(stage.inspection, stage.inspectionMedia) : `${stage.inspectionMedia === "video" ? "视频" : "图片"}内容已验收`;
+    if (stage.kind === "image") return `${stage.imageCount || ""} 张图片已生成`.trim();
+    if (stage.kind === "video") return "视频已生成";
+    if (stage.kind === "arrange") return "节点已排列";
+    if (stage.kind === "text") return "文本已添加";
+    if (stage.kind === "delete") return "节点已删除";
+    if (stage.kind === "update_text") return "文本已更新";
+	if (stage.kind === "remember") return `已记住 · ${stage.memoryKey || "项目偏好"}`;
+	if (stage.kind === "forget") return `已遗忘 · ${stage.memoryKey || "项目记忆"}`;
+    return "已询问";
+}
+
+function assistantStageFailedLabel(kind: CanvasAssistantStage["kind"]) {
+    return ({ plan: "规划失败", ask: "询问失败", observe: "执行状态检查失败", inspect: "视觉验收失败", image: "图片生成失败", video: "视频生成失败", arrange: "节点排列失败", text: "文本添加失败", delete: "节点删除失败", update_text: "文本更新失败", remember: "记忆保存失败", forget: "记忆遗忘失败" } as const)[kind];
+}
+
+function agentInspectionStageLabel(inspection: Pick<AgentToolInspection, "status" | "issues">, media?: "image" | "video") {
+    const label = media === "video" ? "视频" : "图片";
+    if (inspection.status === "passed") return `${label}验收通过`;
+    if (inspection.status === "unavailable") return `${label}验收暂不可用`;
+    return `${label}发现 ${inspection.issues.length} 个问题`;
+}
+
+function agentAutonomyLabel(value: AgentAutonomy) {
+    return AGENT_AUTONOMY_OPTIONS.find((option) => option.value === value)?.label || "标准";
 }
 
 function restoreAgentToolResult(runId: string, callId: string, name: NonNullable<AgentEvent["data"]["name"]>, argumentsValue: NonNullable<AgentEvent["data"]["arguments"]>, nodes: CanvasNodeData[]): AgentToolResult | undefined {

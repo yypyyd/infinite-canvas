@@ -42,6 +42,7 @@ func TestUserPreferencesHTTPAreAccountScopedAndValidated(t *testing.T) {
 		"theme": "dark",
 		"aiConfig": map[string]string{"imageModel": "router-image", "videoModel": "router-video"},
 		"imageQuickTools": map[string]any{"ids": []string{"download", "edit"}, "showLabels": true},
+		"agentSettings": map[string]any{"configured": true, "autonomy": "standard"},
 	}
 	saved := routerTestJSON(t, client, http.MethodPost, baseURL+"/api/preferences", primaryValue, nil)
 	if saved.Code != 0 || json.Unmarshal(saved.Data, &preferences) != nil || string(preferences["theme"]) != `"dark"` {
@@ -72,6 +73,9 @@ func TestUserPreferencesHTTPAreAccountScopedAndValidated(t *testing.T) {
 		map[string]any{"theme": "system"},
 		map[string]any{"aiConfig": map[string]any{"imageModel": 1}},
 		map[string]any{"imageQuickTools": map[string]any{"ids": make([]string, 65)}},
+		map[string]any{"agentSettings": map[string]any{"configured": "yes"}},
+		map[string]any{"agentSettings": map[string]any{"configured": true, "autonomy": "unrestricted"}},
+		map[string]any{"agentSettings": map[string]any{"configured": true, "autoExecuteNonDestructive": true}},
 	}
 	for _, value := range invalidValues {
 		if response := routerTestJSON(t, client, http.MethodPost, baseURL+"/api/preferences", value, nil); response.Code != 1 {

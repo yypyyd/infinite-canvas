@@ -32,12 +32,13 @@ type CanvasNodePromptPanelProps = {
     onGenerate: (nodeId: string, mode: CanvasNodeGenerationMode, prompt: string) => void;
     onStop: (nodeId: string) => void;
     mentionReferences?: CanvasResourceReference[];
+    onMentionReference?: (reference: CanvasResourceReference) => void;
     mentionMenuDisabled?: boolean;
     onImageSettingsOpenChange?: (open: boolean) => void;
     onOpenPromptEditor?: (nodeId: string) => void;
 };
 
-export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfigChange, onGenerate, onStop, mentionReferences = [], mentionMenuDisabled = false, onImageSettingsOpenChange, onOpenPromptEditor }: CanvasNodePromptPanelProps) {
+export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfigChange, onGenerate, onStop, mentionReferences = [], onMentionReference, mentionMenuDisabled = false, onImageSettingsOpenChange, onOpenPromptEditor }: CanvasNodePromptPanelProps) {
     const globalConfig = useEffectiveConfig();
     const pricingRules = useConfigStore((state) => state.publicSettings?.modelChannel.pricingRules);
     const groupRatios = useConfigStore((state) => state.publicSettings?.modelChannel.groupRatios);
@@ -99,6 +100,7 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
             <CanvasResourceMentionTextarea
                 value={prompt}
                 references={visibleMentionReferences}
+                onReferenceSelect={onMentionReference}
                 mentionMenuDisabled={mentionMenuDisabled}
                 onChange={updatePrompt}
                 onSubmit={submit}

@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 
-import { applyImageQuickToolsPreference, getImageQuickToolsPreference, USER_PREFERENCES_CHANGED_EVENT, type UserPreferencesPayload } from "@/lib/user-preferences";
+import { applyAgentSettingsPreference, applyImageQuickToolsPreference, getAgentSettingsPreference, getImageQuickToolsPreference, USER_PREFERENCES_CHANGED_EVENT, type UserPreferencesPayload } from "@/lib/user-preferences";
 import { fetchUserPreferences, saveUserPreferences } from "@/services/api/preferences";
 import { aiPreferencesFromConfig, defaultConfig, useConfigStore } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -86,10 +86,12 @@ export function UserPreferencesProvider() {
 
 function currentPreferences(): UserPreferencesPayload {
     const imageQuickTools = getImageQuickToolsPreference();
+    const agentSettings = getAgentSettingsPreference();
     return {
         theme: useThemeStore.getState().theme,
         aiConfig: aiPreferencesFromConfig(useConfigStore.getState().config),
         ...(imageQuickTools ? { imageQuickTools } : {}),
+        ...(agentSettings ? { agentSettings } : {}),
     };
 }
 
@@ -97,4 +99,5 @@ function applyPreferences(preferences: UserPreferencesPayload) {
     useThemeStore.getState().setTheme(preferences.theme || "dark");
     useConfigStore.getState().applyAiPreferences(preferences.aiConfig || aiPreferencesFromConfig(defaultConfig));
     applyImageQuickToolsPreference(preferences.imageQuickTools);
+    applyAgentSettingsPreference(preferences.agentSettings);
 }

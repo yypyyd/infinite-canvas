@@ -219,7 +219,7 @@ function delay(ms: number, signal?: AbortSignal) {
     });
 }
 
-async function extractVideoKeyFrames(sourceUrl: string, count: number, signal?: AbortSignal) {
+export async function extractVideoKeyFrames(sourceUrl: string, count: number, signal?: AbortSignal) {
     const response = await fetch(sourceUrl, { credentials: "include", signal });
     if (!response.ok) throw new Error("视频文件读取失败");
     const blob = await response.blob();

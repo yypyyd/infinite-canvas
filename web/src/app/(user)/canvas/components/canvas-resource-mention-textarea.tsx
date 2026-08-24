@@ -20,13 +20,16 @@ type Props = Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "onChange" | "val
     references: CanvasResourceReference[];
     onChange: (value: string) => void;
     onSubmit?: () => void;
+    onReferenceSelect?: (reference: CanvasResourceReference) => void;
+    onReferenceRemove?: (reference: CanvasResourceReference) => void;
     containerClassName?: string;
     highlightLabels?: boolean;
     mentionMenuDisabled?: boolean;
+    insertReferenceText?: boolean;
 };
 
 export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Props>(function CanvasResourceMentionTextarea(
-    { value, references, onChange, onSubmit, onKeyDown, className, containerClassName, style, highlightLabels = true, mentionMenuDisabled = false, ...props },
+    { value, references, onChange, onSubmit, onReferenceSelect, onReferenceRemove, onKeyDown, className, containerClassName, style, highlightLabels = true, mentionMenuDisabled = false, insertReferenceText = true, ...props },
     forwardedRef,
 ) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
@@ -52,6 +55,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
     }, [mentionMenuDisabled]);
 
     const updateValue = (next: string, selectionStart?: number) => {
+        references.filter((reference) => reference.active && hasReferenceLabel(value, reference.label) && !hasReferenceLabel(next, reference.label)).forEach((reference) => onReferenceRemove?.(reference));
         onChange(next);
         if (typeof selectionStart !== "number") return;
         requestAnimationFrame(() => {
@@ -69,7 +73,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
         if (mentionMenuDisabled) return;
         const prefix = nextValue.slice(0, cursor);
         const match = /(^|\s)@([^\s@]*)$/.exec(prefix);
-        if (!match || !references.some((item) => item.active)) {
+        if (!match) {
             closeMention();
             return;
         }
@@ -81,9 +85,10 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
         if (!mention) return;
         const textarea = textareaRef.current;
         const end = textarea?.selectionStart ?? value.length;
-        const insertText = `${reference.label} `;
+        const insertText = insertReferenceText ? `${reference.label} ` : "";
         const next = `${value.slice(0, mention.start)}${insertText}${value.slice(end)}`;
         closeMention();
+        onReferenceSelect?.(reference);
         updateValue(next, mention.start + insertText.length);
     };
 
@@ -135,7 +140,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
         caretColor: theme.node.text,
         ...(showOverlay ? { background: "transparent", backgroundColor: "transparent" } : {}),
     } as CSSProperties;
-    const menu = mention && candidates.length && textareaRef.current ? <MentionMenu textarea={textareaRef.current} references={candidates} activeIndex={Math.min(activeIndex, candidates.length - 1)} theme={theme} onSelect={insertReference} /> : null;
+    const menu = mention && textareaRef.current ? <MentionMenu textarea={textareaRef.current} references={candidates} hasReferences={references.some((item) => item.active)} activeIndex={Math.max(0, Math.min(activeIndex, candidates.length - 1))} theme={theme} onSelect={insertReference} /> : null;
 
     return (
         <div className={`relative h-full w-full ${containerClassName || ""}`}>
@@ -156,7 +161,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
                 style={mergedStyle}
                 onChange={(event) => {
                     const next = event.target.value;
-                    onChange(next);
+                    updateValue(next);
                     syncMention(next, event.target.selectionStart);
                     requestAnimationFrame(() => {
                         syncOverlayScroll();
@@ -194,7 +199,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
                     props.onDoubleClick?.(event);
                 }}
                 onKeyDown={(event) => {
-                    if ((event.key === "Backspace" || event.key === "Delete") && deleteAdjacentReference(event.key)) {
+                    if (insertReferenceText && (event.key === "Backspace" || event.key === "Delete") && deleteAdjacentReference(event.key)) {
                         event.preventDefault();
                         return;
                     }
@@ -294,12 +299,14 @@ function MentionInlineChip({ reference, label, onPreview }: { reference?: Canvas
 function MentionMenu({
     textarea,
     references,
+    hasReferences,
     activeIndex,
     theme,
     onSelect,
 }: {
     textarea: HTMLTextAreaElement;
     references: CanvasResourceReference[];
+    hasReferences: boolean;
     activeIndex: number;
     theme: (typeof canvasThemes)[keyof typeof canvasThemes];
     onSelect: (reference: CanvasResourceReference) => void;
@@ -326,13 +333,14 @@ function MentionMenu({
     return createPortal(
         <div
             data-canvas-resource-mention-menu="true"
+            data-canvas-no-zoom
             className="fixed z-[1200] max-h-56 w-64 overflow-y-auto rounded-xl border p-1 shadow-2xl backdrop-blur-md"
             style={{ left, top, background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
             onPointerDown={stopCanvasInteraction}
             onMouseDown={stopCanvasInteraction}
             onClick={(event) => event.stopPropagation()}
         >
-            {references.map((reference, index) => (
+            {references.length ? references.map((reference, index) => (
                 <button
                     key={reference.id}
                     type="button"
@@ -355,7 +363,13 @@ function MentionMenu({
                         <span className="block truncate opacity-65">{reference.text || reference.title}</span>
                     </span>
                 </button>
-            ))}
+            )) : (
+                <div className="px-3 py-4 text-center">
+                    <div className="mb-2 flex items-center justify-center gap-2 opacity-55"><ImageIcon className="size-4" /><Video className="size-4" /><FileText className="size-4" /></div>
+                    <div className="text-xs font-medium">{hasReferences ? "没有匹配的画布资源" : "画布中暂无可引用资源"}</div>
+                    <div className="mt-1 text-[11px] opacity-55">{hasReferences ? "换个关键词继续搜索" : "先生成或上传图片、视频，再输入 @ 引用"}</div>
+                </div>
+            )}
         </div>,
         document.body,
     );
@@ -379,4 +393,8 @@ function clamp(value: number, min: number, max: number) {
 
 function escapeRegExp(value: string) {
     return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function hasReferenceLabel(value: string, label: string) {
+    return new RegExp(`(^|\\s)${escapeRegExp(label)}(?=\\s|$)`).test(value);
 }

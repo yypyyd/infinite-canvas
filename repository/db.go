@@ -101,6 +101,7 @@ func DB() (*gorm.DB, error) {
 			&model.AgentRun{},
 			&model.AgentStep{},
 			&model.AgentEvent{},
+			&model.AgentMemory{},
 			&model.UserFile{},
 			&model.UserFileReference{},
 			&model.UserFileUploadReservation{},

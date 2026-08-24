@@ -103,6 +103,7 @@ export type CanvasAssistantImage = {
     dataUrl: string;
     storageKey?: string;
     prompt: string;
+    nodeId?: string;
     agentRunId?: string;
     agentToolCallId?: string;
     sourceNodeIds?: string[];
@@ -120,10 +121,37 @@ export type CanvasAssistantVideo = {
 export type CanvasAssistantConfirmation = {
     runId: string;
     callId: string;
-    name: "canvas.delete" | "canvas.update_text";
-    arguments: { nodeIds: string[] } | { nodeId: string; text: string };
+    name: "canvas.delete" | "canvas.update_text" | "agent.remember" | "agent.forget";
+    arguments: { nodeIds: string[] } | { nodeId: string; text: string } | { kind: string; key: string; content: string; scope: "project" | "user"; confidence: number; expiresInDays: number } | { key: string; scope: "project" | "user" };
     status: "pending" | "approving" | "rejected" | "approved" | "failed";
     agentRunId?: string;
+};
+
+export type CanvasAssistantAskUser = {
+    runId: string;
+    callId: string;
+    question: string;
+    options: string[];
+    answer?: string;
+    status: "pending" | "answering" | "answered" | "skipped" | "failed";
+};
+
+export type CanvasAssistantStageKind = "plan" | "ask" | "observe" | "inspect" | "image" | "video" | "arrange" | "text" | "delete" | "update_text" | "remember" | "forget";
+
+export type CanvasAssistantStage = {
+    callId?: string;
+    kind: CanvasAssistantStageKind;
+    label: string;
+    status: "pending" | "done" | "failed";
+    plan?: { summary: string; steps: string[] };
+    ask?: CanvasAssistantAskUser;
+    inspection?: { status: "passed" | "needs_revision" | "unavailable"; summary: string; issues: string[] };
+    inspectionMedia?: "image" | "video";
+    imageCount?: number;
+    videoNodeIds?: string[];
+    nodeIds?: string[];
+    nodeId?: string;
+    memoryKey?: string;
 };
 
 export type CanvasAssistantMessage = {
@@ -135,10 +163,11 @@ export type CanvasAssistantMessage = {
     references?: CanvasAssistantReference[];
     authorizedNodeIds?: string[];
     images?: CanvasAssistantImage[];
+    videos?: (CanvasAssistantVideo & { nodeId?: string })[];
     runId?: string;
     lastEventSequence?: number;
     confirmation?: CanvasAssistantConfirmation;
-    plan?: { summary: string; steps: string[] };
+    stages?: CanvasAssistantStage[];
 };
 
 export type CanvasAssistantSession = {

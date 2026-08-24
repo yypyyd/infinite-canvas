@@ -191,7 +191,7 @@ func AgentRunEvents(w http.ResponseWriter, r *http.Request, runID string) {
 		if len(events) < 100 {
 			run, err := service.GetAgentRun(user, runID)
 			if err != nil { return }
-			if run.Terminal() { return }
+			if run.Terminal() || run.Status == model.AgentRunStatusWaitingConfirmation { return }
 		}
 		if len(events) == 100 { continue }
 

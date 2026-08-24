@@ -22,6 +22,10 @@ export function buildCanvasResourceReferences(nodes: CanvasNodeData[], connectio
     return globalReferences.map((reference) => activeByNodeId.get(reference.nodeId) || reference);
 }
 
+export function buildCanvasMentionReferences(nodes: CanvasNodeData[]) {
+    return labelResourceNodes(nodes.filter(isResourceNode), true);
+}
+
 export function buildNodeMentionReferenceMap(nodes: CanvasNodeData[], connections: CanvasConnection[], nodeIds: Iterable<string>) {
     const nodeById = new Map(nodes.map((node) => [node.id, node]));
     const inputsByTargetId = new Map<string, CanvasNodeData[]>();

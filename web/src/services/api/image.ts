@@ -325,7 +325,7 @@ export async function requestImageQuestion(config: AiConfig, messages: ChatCompl
             },
             {
                 headers: {
-                    ...aiHeaders(config, "application/json"),
+                    ...aiHeaders(config, "application/json", options?.idempotencyKey),
                 } as Record<string, string>,
                 responseType: "text",
                 signal: options?.signal,

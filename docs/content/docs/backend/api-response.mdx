@@ -82,6 +82,18 @@ curl -X POST "https://huantu.xyz/api/v1/images/generations" \
 
 图片父任务可能返回 `pending_review` 和 `partial_success`；前者表示所有执行项完成并等待审核，后者表示成功与失败并存。持久化文件字段仍为 `storageKey`，签名 URL 不进入响应模型或数据库。
 
+## Agent 事件流
+
+`GET /api/v1/agent/runs/:id/events` 使用 SSE 按 `after` 游标补放并推送 Run 事件。Run 进入终态或 `waiting_confirmation` 后服务端会主动结束当前连接，避免在人为等待期间维持长连接；用户提交澄清回答或破坏性操作决定后，前端按最后已处理序号重新连接同一 Run，已保存事件可幂等重放。
+
+提交 Agent 消息时，`canvasContext.autonomy` 取 `cautious`、`standard` 或 `autonomous`，并与本轮画布快照一起固化。默认 `standard` 会自行补全风格、数量和时长等安全默认值；`autonomous` 还会在每个真实工具结果后检查完成条件，首次非破坏性工具失败可调整参数重试一次。图片或视频生成成功后，服务端会强制追加对应的 `image.inspect` 或 `video.inspect`；前端通过同源视觉模型读取本轮新图片，或从真实视频按时间顺序抽取六张关键帧，并返回 `inspection: { status, summary, issues, revisedPrompt? }`。`status` 取 `passed`、`needs_revision` 或 `unavailable`；只有 `needs_revision` 可携带完整 `revisedPrompt`，自主模式对每种媒体最多据此重新生成一次，视频重做沿用原时长和参考图。视觉模型或视频抽帧不可用只会记为 `unavailable`，不会把已成功生成的媒体改判失败。相同工具与相同参数禁止重放，删除、覆盖文本和长期记忆操作不受自主等级影响，仍需明确确认。
+
+视觉验收的信任边界仍在同源服务端：`image.inspect.nodeIds` 必须属于本轮固化画布或本轮已成功生成的图片节点，最多四个且不可重复；`video.inspect.nodeId` 必须属于同一授权范围内的视频节点。浏览器只把工作区预览图或本地抽取的六张视频关键帧转成内联图片提交到 `/api/v1/chat/completions`，不会把渠道 Base URL、API Key 或签名 URL 交给模型。视频验收只依据关键帧可见内容判断主体一致性、构图、明显画面缺陷、镜头稳定性和连续性，不判断声音或关键帧无法证明的完整运动。验收响应使用固定字段白名单和长度限制严格解析，格式异常降级为 `unavailable`；服务端再次校验状态、问题列表和修订提示词的组合，不能借验收结果绕过节点授权或破坏性确认。
+
+## Agent 长期记忆
+
+画布 Agent 的长期记忆只通过服务端 Run 工具写入，不提供浏览器持久化副本。模型在用户明确表达长期偏好、项目事实或约束时提出 `agent.remember`，前端展示确认卡片；批准后才写入 `agent_memories`。用户纠正时使用 `agent.forget`，同样需要确认。后续 Run 会按当前企业、用户和画布项目检索 `active` 记忆，账号级记忆可跨画布复用，项目级记忆不会跨项目注入；过期和 `forgotten` 记录不会注入。工具结果仍遵循 `{ code, data, msg }`，重复提交相同结果幂等，不同内容会返回冲突。
+
 ## 请求 ID 与访问日志
 
 - 每个响应都会返回 `X-Request-ID`。客户端可传入由字母、数字、点、下划线、冒号或短横线组成且不超过 128 位的请求 ID；缺失或格式无效时由服务端生成 UUID。

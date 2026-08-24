@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,16 +10,23 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
+	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/yypyyd/infinite-canvas/config"
 	"github.com/yypyyd/infinite-canvas/model"
 	"github.com/yypyyd/infinite-canvas/repository"
 )
 
 var adminModelHTTPClient = &http.Client{Timeout: 30 * time.Second}
+
+const modelChannelProtocolAutoDLComfyUI = "autodl_comfyui"
+
+var comfyUIWorkflowIDPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 type PricingRequest struct {
 	Model           string
@@ -109,7 +117,13 @@ func SaveSettings(settings model.Settings) (model.Settings, error) {
 		return model.Settings{}, safeMessageError{message: "启用邮箱域名限制前请至少填写一个有效域名"}
 	}
 	keepPrivateAPIKeys(&settings, normalizeSettings(saved))
+	if err := validateModelChannels(settings.Private.Channels); err != nil {
+		return model.Settings{}, err
+	}
 	if err := validateEmailSetting(settings.Private.Email); err != nil {
+		return model.Settings{}, err
+	}
+	if err := validateStorageSetting(settings.Private.Storage); err != nil {
 		return model.Settings{}, err
 	}
 	if err := validatePaymentSetting(settings.Private.Payment); err != nil {
@@ -135,8 +149,10 @@ func AdminTestChannelModel(index *int, channel model.ModelChannel, modelName str
 	if err != nil {
 		return "", err
 	}
-	if channelModel, ok := findChannelModel(resolved.Models, modelName); ok {
-		modelName = channelModel.UpstreamModel
+	if resolved.Protocol != modelChannelProtocolAutoDLComfyUI {
+		if channelModel, ok := findChannelModel(resolved.Models, modelName); ok {
+			modelName = channelModel.UpstreamModel
+		}
 	}
 	return testAdminChannelModel(resolved, modelName)
 }
@@ -860,6 +876,7 @@ func normalizePrivateSetting(setting model.PrivateSetting) model.PrivateSetting 
 		setting.Channels = []model.ModelChannel{}
 	}
 	setting.PromptSync = normalizePromptSyncSetting(setting.PromptSync)
+	setting.Storage = normalizeStorageSetting(setting.Storage)
 	setting.Email = normalizeEmailSetting(setting.Email)
 	setting.Payment = normalizePaymentSetting(setting.Payment)
 	setting.Referral = normalizeReferralSetting(setting.Referral)
@@ -868,6 +885,64 @@ func normalizePrivateSetting(setting model.PrivateSetting) model.PrivateSetting 
 		setting.Channels[i] = normalizeModelChannel(setting.Channels[i])
 	}
 	return setting
+}
+
+func normalizeStorageSetting(setting model.StorageSetting) model.StorageSetting {
+	setting.Driver = normalizePricingToken(setting.Driver)
+	if setting.Driver != "local" && setting.Driver != "qiniu" {
+		if strings.TrimSpace(config.Cfg.QiniuAccessKey) == "" || strings.TrimSpace(config.Cfg.QiniuSecretKey) == "" || strings.TrimSpace(config.Cfg.QiniuBucket) == "" || strings.TrimSpace(config.Cfg.QiniuDownloadDomain) == "" {
+			setting.Driver = "local"
+		} else {
+			setting.Driver = "qiniu"
+		}
+	} else if setting.Driver != "local" {
+		setting.Driver = "qiniu"
+	}
+	setting.RetentionDays = max(0, setting.RetentionDays)
+	setting.LocalPath = strings.TrimSpace(setting.LocalPath)
+	if setting.LocalPath == "" {
+		setting.LocalPath = strings.TrimSpace(config.Cfg.LocalStoragePath)
+	}
+	setting.QiniuAccessKey = strings.TrimSpace(setting.QiniuAccessKey)
+	setting.QiniuBucket = strings.TrimSpace(setting.QiniuBucket)
+	setting.QiniuRegion = strings.TrimSpace(setting.QiniuRegion)
+	setting.QiniuDownloadDomain = strings.TrimRight(strings.TrimSpace(setting.QiniuDownloadDomain), "/")
+	if setting.QiniuAccessKey == "" {
+		setting.QiniuAccessKey = strings.TrimSpace(config.Cfg.QiniuAccessKey)
+	}
+	if setting.QiniuSecretKey == "" {
+		setting.QiniuSecretKey = strings.TrimSpace(config.Cfg.QiniuSecretKey)
+	}
+	if setting.QiniuBucket == "" {
+		setting.QiniuBucket = strings.TrimSpace(config.Cfg.QiniuBucket)
+	}
+	if setting.QiniuRegion == "" {
+		setting.QiniuRegion = strings.TrimSpace(config.Cfg.QiniuRegion)
+	}
+	if setting.QiniuDownloadDomain == "" {
+		setting.QiniuDownloadDomain = strings.TrimRight(strings.TrimSpace(config.Cfg.QiniuDownloadDomain), "/")
+	}
+	return setting
+}
+
+func validateStorageSetting(setting model.StorageSetting) error {
+	if setting.RetentionDays < 0 || setting.RetentionDays > 36500 {
+		return safeMessageError{message: "旧文件保留天数必须在 0 到 36500 之间"}
+	}
+	if setting.Driver == "local" {
+		path, err := filepath.Abs(setting.LocalPath)
+		if err != nil || strings.TrimSpace(setting.LocalPath) == "" || filepath.Dir(path) == path {
+			return safeMessageError{message: "本地存储目录无效，不能使用磁盘根目录"}
+		}
+		return nil
+	}
+	if setting.QiniuAccessKey == "" || setting.QiniuSecretKey == "" || setting.QiniuBucket == "" || setting.QiniuDownloadDomain == "" {
+		return safeMessageError{message: "使用七牛云前请完整配置 Access Key、Secret Key、Bucket 和 HTTPS 下载域名"}
+	}
+	if !validHTTPSURL(setting.QiniuDownloadDomain) {
+		return safeMessageError{message: "七牛下载域名必须是有效的 HTTPS 地址"}
+	}
+	return nil
 }
 
 func normalizeReferralSetting(setting model.ReferralSetting) model.ReferralSetting {
@@ -1011,6 +1086,8 @@ func hidePrivateAPIKeys(settings model.Settings) model.Settings {
 	for i := range settings.Private.Channels {
 		settings.Private.Channels[i].APIKey = ""
 	}
+	settings.Private.Storage.QiniuSecretKeyConfigured = settings.Private.Storage.QiniuSecretKey != ""
+	settings.Private.Storage.QiniuSecretKey = ""
 	settings.Private.Email.PasswordConfigured = settings.Private.Email.SMTPPassword != ""
 	settings.Private.Email.SMTPPassword = ""
 	settings.Private.Payment.MerchantKeyConfigured = settings.Private.Payment.MerchantKey != ""
@@ -1027,6 +1104,10 @@ func keepPrivateAPIKeys(settings *model.Settings, saved model.Settings) {
 			settings.Private.Channels[i].APIKey = channel.APIKey
 		}
 	}
+	if settings.Private.Storage.QiniuSecretKey == "" {
+		settings.Private.Storage.QiniuSecretKey = saved.Private.Storage.QiniuSecretKey
+	}
+	settings.Private.Storage.QiniuSecretKeyConfigured = false
 	if settings.Private.Email.SMTPPassword == "" {
 		settings.Private.Email.SMTPPassword = saved.Private.Email.SMTPPassword
 	}
@@ -1229,7 +1310,15 @@ func defaultModelModality(modelName string) string {
 }
 
 func normalizeModelChannel(channel model.ModelChannel) model.ModelChannel {
-	channel.Protocol = "openai"
+	channel.Protocol = normalizePricingToken(channel.Protocol)
+	if channel.Protocol != modelChannelProtocolAutoDLComfyUI {
+		channel.Protocol = "openai"
+	}
+	channel.Name = strings.TrimSpace(channel.Name)
+	channel.BaseURL = normalizeModelChannelBaseURL(channel.BaseURL)
+	if channel.Protocol == modelChannelProtocolAutoDLComfyUI && channel.BaseURL == "" {
+		channel.BaseURL = "https://autodl.art"
+	}
 	if channel.Models == nil {
 		channel.Models = []model.ChannelModel{}
 	}
@@ -1258,6 +1347,14 @@ func normalizeModelChannel(channel model.ModelChannel) model.ModelChannel {
 		item.MaxReferenceAudios = max(0, item.MaxReferenceAudios)
 		item.MaxReferenceMedia = max(0, item.MaxReferenceMedia)
 		item.ReferenceMode = normalizeReferenceMode(item.ReferenceMode)
+		if item.Workflow != nil {
+			item.Workflow.WorkflowID = strings.TrimSpace(item.Workflow.WorkflowID)
+			item.Workflow.RequestTemplate = strings.TrimSpace(item.Workflow.RequestTemplate)
+			item.Workflow.ValueMaps = strings.TrimSpace(item.Workflow.ValueMaps)
+			if item.Workflow.ValueMaps == "" {
+				item.Workflow.ValueMaps = "{}"
+			}
+		}
 		if item.Modality == "image" && item.MaxReferenceImages == 0 && containsPricingValue(item.Operations, "edit") {
 			item.MaxReferenceImages = 1
 		}
@@ -1281,6 +1378,93 @@ func normalizeModelChannel(channel model.ModelChannel) model.ModelChannel {
 		channel.Weight = 1
 	}
 	return channel
+}
+
+func validateModelChannels(channels []model.ModelChannel) error {
+	for _, channel := range channels {
+		if channel.Protocol != modelChannelProtocolAutoDLComfyUI {
+			continue
+		}
+		baseURL, err := url.Parse(channel.BaseURL)
+		if err != nil || baseURL.Scheme != "https" || baseURL.Host == "" || baseURL.User != nil || baseURL.RawQuery != "" || baseURL.Fragment != "" {
+			return safeMessageError{message: fmt.Sprintf("AutoDL 渠道 %s 必须使用有效的 HTTPS 接口地址", channel.Name)}
+		}
+		for _, item := range channel.Models {
+			if item.Modality != "image" && item.Modality != "video" {
+				return safeMessageError{message: fmt.Sprintf("AutoDL 模型 %s 只支持图片或视频类型", item.Model)}
+			}
+			if err := validateComfyUIWorkflow(item.Workflow); err != nil {
+				return safeMessageError{message: fmt.Sprintf("AutoDL 模型 %s：%s", item.Model, err.Error())}
+			}
+		}
+	}
+	return nil
+}
+
+func validateComfyUIWorkflow(workflow *model.ComfyUIWorkflowConfig) error {
+	if workflow == nil || !comfyUIWorkflowIDPattern.MatchString(workflow.WorkflowID) {
+		return errors.New("工作流 ID 只能包含字母、数字、点、下划线和短横线")
+	}
+	if len(workflow.RequestTemplate) == 0 || len(workflow.RequestTemplate) > 64<<10 {
+		return errors.New("请求模板不能为空且不能超过 64KB")
+	}
+	if len(workflow.ValueMaps) > 64<<10 {
+		return errors.New("参数映射不能超过 64KB")
+	}
+	var template map[string]any
+	if json.Unmarshal([]byte(workflow.RequestTemplate), &template) != nil {
+		return errors.New("请求模板必须是 JSON 对象")
+	}
+	if err := validateComfyUITemplateValue(template); err != nil {
+		return err
+	}
+	var valueMaps map[string]map[string]any
+	if json.Unmarshal([]byte(workflow.ValueMaps), &valueMaps) != nil {
+		return errors.New("参数映射必须是 JSON 对象，例如 {\"resolution\":{\"720p\":\"720P\"}}")
+	}
+	return nil
+}
+
+func validateComfyUITemplateValue(value any) error {
+	switch typed := value.(type) {
+	case map[string]any:
+		for _, child := range typed {
+			if err := validateComfyUITemplateValue(child); err != nil {
+				return err
+			}
+		}
+	case []any:
+		for _, child := range typed {
+			if err := validateComfyUITemplateValue(child); err != nil {
+				return err
+			}
+		}
+	case string:
+		if strings.Contains(typed, "${") && !isComfyUIPlaceholder(typed) {
+			return fmt.Errorf("模板占位符 %s 不受支持或未独占整个 JSON 值", typed)
+		}
+	}
+	return nil
+}
+
+func isComfyUIPlaceholder(value string) bool {
+	if !strings.HasPrefix(value, "${") || !strings.HasSuffix(value, "}") || strings.Count(value, "${") != 1 {
+		return false
+	}
+	name := strings.TrimSuffix(strings.TrimPrefix(value, "${"), "}")
+	switch name {
+	case "prompt", "negative_prompt", "width", "height", "size", "ratio", "resolution", "seconds", "count", "seed", "generate_audio", "reference_image_url", "reference_image_urls", "reference_video_urls", "reference_audio_urls":
+		return true
+	}
+	if strings.HasPrefix(name, "reference_image_") {
+		index, err := strconv.Atoi(strings.TrimPrefix(name, "reference_image_"))
+		return err == nil && index >= 0 && index < 16
+	}
+	if strings.HasPrefix(name, "reference_audio_") {
+		index, err := strconv.Atoi(strings.TrimPrefix(name, "reference_audio_"))
+		return err == nil && index >= 0 && index < 3
+	}
+	return false
 }
 
 func resolveAdminChannel(index *int, channel model.ModelChannel) (model.ModelChannel, error) {
@@ -1318,6 +1502,13 @@ func resolveAdminChannel(index *int, channel model.ModelChannel) (model.ModelCha
 }
 
 func fetchAdminChannelModels(channel model.ModelChannel) ([]model.DiscoveredModel, error) {
+	if channel.Protocol == modelChannelProtocolAutoDLComfyUI {
+		result := make([]model.DiscoveredModel, 0, len(channel.Models))
+		for _, item := range channel.Models {
+			result = append(result, model.DiscoveredModel{ID: item.Model, Kind: item.Modality, Modality: item.Modality, SupportedRatios: item.AspectRatios, SupportedResolutions: item.ResolutionTiers, SupportedDurations: item.Durations, MaxReferenceImages: item.MaxReferenceImages, MaxReferenceVideos: item.MaxReferenceVideos, MaxReferenceAudios: item.MaxReferenceAudios, MaxReferenceMedia: item.MaxReferenceMedia, SupportsAudioOutput: item.SupportsAudioOutput, ReferenceMode: item.ReferenceMode, ReferenceCapabilityProvided: true, ReferenceVideosProvided: true, ReferenceAudiosProvided: true, ReferenceMediaProvided: true, AudioOutputProvided: true})
+		}
+		return result, nil
+	}
 	request, err := http.NewRequest(http.MethodGet, BuildModelChannelURL(channel, "/models?extended=true"), nil)
 	if err != nil {
 		return nil, err
@@ -1429,6 +1620,19 @@ func testAdminChannelModel(channel model.ModelChannel, modelName string) (string
 		return "", errors.New("缺少模型名称")
 	}
 	targetModel := strings.TrimSpace(modelName)
+	if channel.Protocol == modelChannelProtocolAutoDLComfyUI {
+		configured, ok := findChannelModel(channel.Models, targetModel)
+		if !ok {
+			return "", safeMessageError{message: "测试失败：渠道未配置该模型"}
+		}
+		if err := validateComfyUIWorkflow(configured.Workflow); err != nil {
+			return "", safeMessageError{message: "配置校验失败：" + err.Error()}
+		}
+		if err := testAutoDLComfyUICredentials(context.Background(), channel); err != nil {
+			return "", err
+		}
+		return "AutoDL Token 与 ComfyUI API 权限校验通过（未提交付费任务）", nil
+	}
 	if configured, ok := findChannelModel(channel.Models, targetModel); ok && strings.TrimSpace(configured.UpstreamModel) != "" {
 		targetModel = configured.UpstreamModel
 	}

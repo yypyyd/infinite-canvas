@@ -5,7 +5,7 @@ import { Cpu } from "lucide-react";
 
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { selectableModelsByCapability, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
+import { selectableModelsByCapability, useConfigStore, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
 
 type ModelPickerProps = {
     config: AiConfig;
@@ -21,8 +21,11 @@ type ModelPickerProps = {
 export function ModelPicker({ config, value, onChange, capability, className, fullWidth = false, placeholder = "选择模型", onMissingConfig }: ModelPickerProps) {
     const pickerId = useId();
     const [open, setOpen] = useState(false);
+    const managedModels = useConfigStore((state) => state.publicSettings?.modelChannel.models);
     const options = useMemo(() => Array.from(new Set(selectableModelsByCapability(config, capability).filter(Boolean))), [capability, config]);
+    const modelNames = useMemo(() => new Map(managedModels?.map((model) => [model.id, model.name?.trim() || model.id])), [managedModels]);
     const current = value || "";
+    const currentLabel = modelNames.get(current) || current;
 
     useEffect(() => {
         const closeOtherPicker = (event: Event) => {
@@ -51,10 +54,10 @@ export function ModelPicker({ config, value, onChange, capability, className, fu
                 )}
                 onMouseDown={(event) => event.stopPropagation()}
                 onPointerDown={(event) => event.stopPropagation()}
-                title={current || placeholder}
+                title={currentLabel || placeholder}
             >
                 <ModelIcon model={current} />
-                <span className="canvas-model-picker-text min-w-0 flex-1 truncate text-left">{current || placeholder}</span>
+                <span className="canvas-model-picker-text min-w-0 flex-1 truncate text-left">{currentLabel || placeholder}</span>
             </SelectTrigger>
             <SelectContent
                 data-canvas-no-zoom
@@ -68,8 +71,8 @@ export function ModelPicker({ config, value, onChange, capability, className, fu
             >
                 {options.length ? (
                     options.map((model) => (
-                        <SelectItem key={model} value={model} textValue={model}>
-                            <ModelLabel model={model} />
+                        <SelectItem key={model} value={model} textValue={modelNames.get(model) || model}>
+                            <ModelLabel model={model} label={modelNames.get(model) || model} />
                         </SelectItem>
                     ))
                 ) : (
@@ -87,11 +90,11 @@ function emptyModelLabel(config: AiConfig, capability?: ModelCapability) {
     return `暂无可用${label}模型`;
 }
 
-function ModelLabel({ model }: { model: string }) {
+function ModelLabel({ model, label }: { model: string; label: string }) {
     return (
         <span className="flex min-w-0 items-center gap-2">
             <ModelIcon model={model} />
-            <span className="truncate">{model}</span>
+            <span className="truncate">{label}</span>
         </span>
     );
 }

@@ -297,7 +297,7 @@ export async function uploadAdminAssetFile(token: string, file: File) {
 }
 
 export type AdminModelChannel = {
-    protocol: "openai";
+    protocol: "openai" | "autodl_comfyui";
     name: string;
     baseUrl: string;
     apiKey: string;
@@ -321,6 +321,11 @@ export type AdminChannelModel = {
     maxReferenceMedia: number;
     supportsAudioOutput: boolean;
     referenceMode: "frame" | "asset" | "none";
+    workflow?: {
+        workflowId: string;
+        requestTemplate: string;
+        valueMaps: string;
+    };
 };
 
 export type AdminDiscoveredModel = {
@@ -425,6 +430,7 @@ export type AdminAnnouncement = {
 
 export type AdminPrivateSettings = {
     channels: AdminModelChannel[];
+    storage: AdminStorageSetting;
     promptSync: {
         enabled: boolean;
         cron: string;
@@ -452,6 +458,18 @@ export type AdminPrivateSettings = {
         objectDeletionFailedThreshold: number;
         objectDeletionExpiredLeasesThreshold: number;
     };
+};
+
+export type AdminStorageSetting = {
+    driver: "qiniu" | "local";
+    retentionDays: number;
+    localPath: string;
+    qiniuAccessKey: string;
+    qiniuSecretKey: string;
+    qiniuBucket: string;
+    qiniuRegion: string;
+    qiniuDownloadDomain: string;
+    qiniuSecretKeyConfigured: boolean;
 };
 
 export type AdminPaymentMethod = "alipay" | "wxpay" | "qqpay";

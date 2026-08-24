@@ -159,6 +159,17 @@ description: settings 表中 public 和 private 配置结构说明
       "remark": "支持完整图片分辨率"
     }
   ],
+  "storage": {
+    "driver": "qiniu",
+    "retentionDays": 0,
+    "localPath": "/app/data/user-files",
+    "qiniuAccessKey": "ak-xxx",
+    "qiniuSecretKey": "<仅保存，不返回>",
+    "qiniuSecretKeyConfigured": true,
+    "qiniuBucket": "private-files",
+    "qiniuRegion": "as0",
+    "qiniuDownloadDomain": "https://files.example.com"
+  },
   "promptSync": {
     "enabled": true,
     "cron": "*/5 * * * *"
@@ -193,18 +204,23 @@ description: settings 表中 public 和 private 配置结构说明
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `channels` | object[] | 模型渠道列表 |
+| `storage` | object | 用户媒体文件存储与无引用旧文件保留策略 |
 | `promptSync` | object | GitHub 远程提示词定时同步配置 |
 | `email` | object | 注册验证码 SMTP 私有配置；密码不会出现在公开接口，后台读取时也只返回是否已配置 |
 | `payment` | object | 易支付 V1 私有配置、支付方式与充值档位；商户密钥不会出现在公开接口，后台读取时也只返回是否已配置 |
+
+`storage.driver` 可选 `qiniu` 或 `local`。七牛模式使用后台私有配置中的 Access Key、Secret Key、Bucket、区域和 HTTPS 私有下载域名；Secret Key 读取时始终为空，提交空值表示沿用旧值。环境变量中的既有七牛配置仅作为未填写设置的默认值。`local` 模式把新文件写入 `localPath`，浏览器仍通过企业鉴权接口读取，不返回服务器绝对路径；生产部署必须将该目录挂载到持久化磁盘。切换驱动只影响新文件，文件表中的 `storage_driver` 负责继续读取和清理已有文件，不自动迁移对象。
+
+`storage.retentionDays` 控制无业务引用文件的保留时间，从 `unreferenced_at` 开始计算；`0` 表示不自动删除正式文件。上传取消、过期预留和失败写入产生的临时对象不受该开关影响，仍由删除队列及时回收。清理 Worker 只按数据库文件记录和引用状态入队，不扫描目录后直接删除；删除任务按文件记录固化的存储驱动选择七牛或本地磁盘，并保持租约、重试和幂等语义。
 
 `channels` 每项字段：
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `protocol` | string | 协议，当前为 `openai` |
+| `protocol` | string | 渠道协议：`openai` 或 `autodl_comfyui` |
 | `name` | string | 渠道名称 |
-| `baseUrl` | string | OpenAI 兼容接口地址 |
-| `apiKey` | string | 渠道密钥 |
+| `baseUrl` | string | 上游接口地址；AutoDL 默认使用 `https://autodl.art` |
+| `apiKey` | string | 渠道密钥或 AutoDL ComfyUI Token；只保存在服务端，后台读取时为空 |
 | `models` | object[] | 该渠道的模型映射与实际能力列表 |
 | `weight` | number | 渠道权重；同一请求命中多个能力相符的渠道时按权重随机 |
 | `enabled` | boolean | 是否启用 |
@@ -227,8 +243,39 @@ description: settings 表中 public 和 private 配置结构说明
 | `maxReferenceMedia` | number | 参考图、参考视频和参考音频的合计上限；`0` 表示不额外限制合计数量 |
 | `supportsAudioOutput` | boolean | 是否接受 `generate_audio=true` 的视频生成请求 |
 | `referenceMode` | string | 参考模式：`frame`、`asset` 或 `none` |
+| `workflow` | object | 仅 `autodl_comfyui` 使用，包含 `workflowId`、`requestTemplate` 和 `valueMaps` |
 
-后端调用模型时，会先按对外模型名、类型、操作、请求规格、三类参考素材数量、参考素材合计数量和音频输出要求筛选已启用且密钥完整的渠道，再在能力相符的渠道中按 `weight` 加权随机选择。用户价格始终读取公开模型的 `pricingRules`，不会因随机命中不同上游渠道而变化；请求发送前会把 `model` 替换为所选渠道的 `upstreamModel`。视频 multipart 请求使用 `input_reference`、`reference_videos`、`reference_audios` 和 `generate_audio` 字段；用户端对已上传到工作区的引用提交对应 `storageKey` JSON，服务端校验企业归属后流式组装同样的 multipart。图片、视频、音频单文件分别限制为 20MiB、200MiB、50MiB，整体引用限制为 320MiB。
+### AutoDL ComfyUI 工作流渠道
+
+AutoDL 渠道不在线抓取网页或模型列表。管理员先手动增加对外模型，再为每个图片或视频模型绑定工作流：
+
+```json
+{
+  "protocol": "autodl_comfyui",
+  "name": "AutoDL 视频",
+  "baseUrl": "https://autodl.art",
+  "apiKey": "<仅保存，不返回>",
+  "models": [
+    {
+      "model": "minimax-video",
+      "upstreamModel": "minimax-video",
+      "modality": "video",
+      "operations": ["generation"],
+      "workflow": {
+        "workflowId": "minimax_h3_lightx2v_v5",
+        "requestTemplate": "{\"prompt\":\"${prompt}\",\"duration\":\"${seconds}\",\"resolution\":\"${resolution}\",\"ref_image_0\":\"${reference_image_0}\"}",
+        "valueMaps": "{\"resolution\":{\"720p\":\"720P\"}}"
+      }
+    }
+  ]
+}
+```
+
+请求模板必须是 JSON 对象，占位符必须独占整个 JSON 值，不支持脚本、表达式或字符串插值。可用占位符为 `prompt`、`negative_prompt`、`width`、`height`、`size`、`ratio`、`resolution`、`seconds`、`count`、`seed`、`generate_audio`、`reference_image_url`、`reference_image_urls`、`reference_image_0` 至 `reference_image_15`、`reference_video_urls` 和 `reference_audio_urls`。未提供的可选引用会从最终请求中删除；`valueMaps` 按占位符名称将统一参数转换为工作流枚举值。
+
+服务端通过 AutoDL 的创建与结果查询接口维护任务，不把 Token、请求中的存储签名引用或 AutoDL 临时结果 URL 返回浏览器、写入生成任务结果或审计详情。成功结果只允许从 HTTPS 公网地址下载，重定向后仍会重新校验，并限制文件类型和大小；下载完成后立即归档到当前企业配置的文件存储。图片连接中断和普通视频任务均由生成任务维护 Worker 继续查询，最终失败或超过公共等待窗口时按任务固化的扣费来源幂等退款。后台“模型测试”只校验工作流 ID、模板和映射，不提交可能产生费用的真实任务。
+
+后端调用模型时，会先按对外模型名、类型、操作、请求规格、三类参考素材数量、参考素材合计数量和音频输出要求筛选已启用且密钥完整的渠道，再在能力相符的渠道中按 `weight` 加权随机选择。用户价格始终读取公开模型的 `pricingRules`，不会因随机命中不同上游渠道而变化；OpenAI 请求发送前会把 `model` 替换为所选渠道的 `upstreamModel`，AutoDL 请求则按当前模型的工作流配置渲染。视频 multipart 请求使用 `input_reference`、`reference_videos`、`reference_audios` 和 `generate_audio` 字段；用户端对已上传到工作区的引用提交对应 `storageKey` JSON，服务端校验企业归属后为对应 Provider 生成短期私有 URL 或流式组装 multipart。图片、视频、音频单文件分别限制为 20MiB、200MiB、50MiB，整体引用限制为 320MiB。
 
 `promptSync` 字段：
 

@@ -4,7 +4,7 @@ import { CheckCircleOutlined, DeleteOutlined, FormatPainterOutlined, PlusOutline
 import { json } from "@codemirror/lang-json";
 import { App, Button, Card, Col, Flex, Form, Input, InputNumber, Row, Segmented, Select, Space, Switch, Table, Tabs, Tag, Typography } from "antd";
 import dynamic from "next/dynamic";
-import { Activity, Boxes, HandCoins, Mail, Megaphone, RefreshCw, ShieldCheck, WalletCards } from "lucide-react";
+import { Activity, Boxes, HandCoins, HardDrive, Mail, Megaphone, RefreshCw, ShieldCheck, WalletCards } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { EditorView } from "@uiw/react-codemirror";
 
@@ -15,6 +15,7 @@ import { AccessAndRegistrationSettingsEditor, OperationsAlertSettingsEditor, Ope
 import { EmailSettingsEditor } from "./components/email-settings-editor";
 import { PaymentSettingsEditor } from "./components/payment-settings-editor";
 import { ReferralSettingsEditor } from "./components/referral-settings-editor";
+import { StorageSettingsEditor } from "./components/storage-settings-editor";
 import { inferModelModality, inferModelOperations, normalizeModelOperations } from "../model-capabilities";
 
 const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), { ssr: false });
@@ -52,6 +53,7 @@ const emptySettings: AdminSettings = {
     },
     private: {
         channels: [],
+        storage: { driver: "local", retentionDays: 0, localPath: "data/user-files", qiniuAccessKey: "", qiniuSecretKey: "", qiniuBucket: "", qiniuRegion: "as0", qiniuDownloadDomain: "", qiniuSecretKeyConfigured: false },
         promptSync: { enabled: true, cron: "*/5 * * * *" },
         email: { smtpHost: "", smtpPort: 587, smtpUsername: "", smtpPassword: "", smtpFromEmail: "", smtpFromName: "道生画境", smtpSecurity: "starttls", passwordConfigured: false },
         payment: { enabled: false, gatewayUrl: "https://www.ezfpy.cn", merchantId: "", merchantKey: "", merchantKeyConfigured: false, siteName: "道生画境", productName: "余额充值", methods: ["alipay", "wxpay"], packages: [], creditsPerYuan: 0 },
@@ -70,7 +72,7 @@ const emptySettings: AdminSettings = {
     },
 };
 type SettingsTabKey = "public" | "private";
-type SettingsSectionKey = "models" | "access" | "operations" | "payment" | "referral" | "monitoring" | "email" | "sync";
+type SettingsSectionKey = "models" | "access" | "operations" | "payment" | "referral" | "storage" | "monitoring" | "email" | "sync";
 type EditorMode = "visual" | "json";
 
 const modelAspectRatioOptions = ["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "21:9"];
@@ -121,6 +123,15 @@ const settingsTabs = [
         ),
     },
     {
+        key: "storage",
+        label: (
+            <span className="inline-flex items-center gap-2">
+                <HardDrive className="size-4" />
+                文件存储
+            </span>
+        ),
+    },
+    {
         key: "monitoring",
         label: (
             <span className="inline-flex items-center gap-2">
@@ -165,7 +176,7 @@ export default function AdminSettingsPage() {
     const managedModels = Form.useWatch(["public", "modelChannel", "models"], form) || [];
     const publicModels = enabledManagedModelIds(managedModels).length ? enabledManagedModelIds(managedModels) : rawPublicModels;
     const channelModels = useMemo(() => collectChannelModels(channels), [channels]);
-    const activeTab: SettingsTabKey = activeSection === "payment" || activeSection === "referral" || activeSection === "monitoring" || activeSection === "email" || activeSection === "sync" ? "private" : "public";
+    const activeTab: SettingsTabKey = activeSection === "payment" || activeSection === "referral" || activeSection === "storage" || activeSection === "monitoring" || activeSection === "email" || activeSection === "sync" ? "private" : "public";
     const activeMode = editorMode[activeTab];
     const activeJsonText = jsonText[activeTab];
     const jsonError = activeMode === "json" ? getJsonError(activeJsonText) : "";
@@ -379,6 +390,8 @@ export default function AdminSettingsPage() {
                                 <PaymentSettingsEditor />
                             ) : activeSection === "referral" ? (
                                 <ReferralSettingsEditor />
+                            ) : activeSection === "storage" ? (
+                                <StorageSettingsEditor />
                             ) : activeSection === "monitoring" ? (
                                 <OperationsAlertSettingsEditor />
                             ) : activeSection === "email" ? (
@@ -637,6 +650,17 @@ function normalizePricingRules(items: Partial<AdminSettings["public"]["modelChan
 function normalizePrivateSetting(setting: Partial<AdminSettings["private"]> = {}): AdminSettings["private"] {
     return {
         channels: (setting.channels || []).map(normalizeChannel),
+        storage: {
+            driver: setting.storage?.driver === "local" ? "local" : "qiniu",
+            retentionDays: Math.min(36500, Math.max(0, Math.floor(Number(setting.storage?.retentionDays) || 0))),
+            localPath: setting.storage?.localPath?.trim() || "data/user-files",
+            qiniuAccessKey: setting.storage?.qiniuAccessKey?.trim() || "",
+            qiniuSecretKey: setting.storage?.qiniuSecretKey || "",
+            qiniuBucket: setting.storage?.qiniuBucket?.trim() || "",
+            qiniuRegion: setting.storage?.qiniuRegion?.trim() || "as0",
+            qiniuDownloadDomain: setting.storage?.qiniuDownloadDomain?.trim().replace(/\/+$/, "") || "",
+            qiniuSecretKeyConfigured: setting.storage?.qiniuSecretKeyConfigured === true,
+        },
         promptSync: {
             enabled: setting.promptSync?.enabled !== false,
             cron: setting.promptSync?.cron || "*/5 * * * *",
@@ -687,7 +711,7 @@ function normalizeAlertThreshold(value: number | undefined, fallback: number) {
 
 function normalizeChannel(item: Partial<AdminModelChannel> = {}): AdminModelChannel {
     return {
-        protocol: "openai",
+        protocol: item.protocol === "autodl_comfyui" ? "autodl_comfyui" : "openai",
         name: item.name || "",
         baseUrl: item.baseUrl || "",
         apiKey: item.apiKey || "",
@@ -719,6 +743,13 @@ function normalizeChannelModels(items: Partial<AdminChannelModel>[] = []): Admin
                 maxReferenceMedia: Math.max(0, Math.floor(Number(item.maxReferenceMedia) || 0)),
                 supportsAudioOutput: item.supportsAudioOutput === true,
                 referenceMode: normalizeReferenceMode(item.referenceMode),
+                workflow: item.workflow
+                    ? {
+                          workflowId: item.workflow.workflowId?.trim() || "",
+                          requestTemplate: item.workflow.requestTemplate?.trim() || "",
+                          valueMaps: item.workflow.valueMaps?.trim() || "{}",
+                      }
+                    : undefined,
             },
         ];
     });

@@ -11,24 +11,25 @@ import (
 )
 
 type Config struct {
-	Port                string `env:"PORT" envDefault:"8080"`
-	AdminUsername       string `env:"ADMIN_USERNAME" envDefault:"admin"`
-	AdminPassword       string `env:"ADMIN_PASSWORD"`
-	JWTSecret           string `env:"JWT_SECRET"`
-	JWTExpireHours      int    `env:"JWT_EXPIRE_HOURS" envDefault:"168"`
-	StorageDriver       string `env:"STORAGE_DRIVER" envDefault:"sqlite"`
-	DatabaseDSN         string `env:"DATABASE_DSN" envDefault:"data/infinite-canvas.db"`
-	PublicBaseURL       string `env:"PUBLIC_BASE_URL"`
-	UserStorageQuotaMB  int64  `env:"USER_STORAGE_QUOTA_MB" envDefault:"5120"`
-	QiniuAccessKey      string `env:"QINIU_ACCESS_KEY"`
-	QiniuSecretKey      string `env:"QINIU_SECRET_KEY"`
-	QiniuBucket         string `env:"QINIU_BUCKET"`
-	QiniuRegion         string `env:"QINIU_REGION" envDefault:"as0"`
-	QiniuDownloadDomain string `env:"QINIU_DOWNLOAD_DOMAIN"`
-	BatchWorkerExecutorURL string `env:"BATCH_WORKER_EXECUTOR_URL"`
-	BatchWorkerToken       string `env:"BATCH_WORKER_TOKEN"`
-	BatchWorkerConcurrency int    `env:"BATCH_WORKER_CONCURRENCY" envDefault:"4"`
-	BatchWorkerTenantConcurrency int `env:"BATCH_WORKER_TENANT_CONCURRENCY" envDefault:"2"`
+	Port                         string `env:"PORT" envDefault:"8080"`
+	AdminUsername                string `env:"ADMIN_USERNAME" envDefault:"admin"`
+	AdminPassword                string `env:"ADMIN_PASSWORD"`
+	JWTSecret                    string `env:"JWT_SECRET"`
+	JWTExpireHours               int    `env:"JWT_EXPIRE_HOURS" envDefault:"168"`
+	StorageDriver                string `env:"STORAGE_DRIVER" envDefault:"sqlite"`
+	DatabaseDSN                  string `env:"DATABASE_DSN" envDefault:"data/infinite-canvas.db"`
+	PublicBaseURL                string `env:"PUBLIC_BASE_URL"`
+	UserStorageQuotaMB           int64  `env:"USER_STORAGE_QUOTA_MB" envDefault:"5120"`
+	LocalStoragePath             string `env:"LOCAL_STORAGE_PATH" envDefault:"data/user-files"`
+	QiniuAccessKey               string `env:"QINIU_ACCESS_KEY"`
+	QiniuSecretKey               string `env:"QINIU_SECRET_KEY"`
+	QiniuBucket                  string `env:"QINIU_BUCKET"`
+	QiniuRegion                  string `env:"QINIU_REGION" envDefault:"as0"`
+	QiniuDownloadDomain          string `env:"QINIU_DOWNLOAD_DOMAIN"`
+	BatchWorkerExecutorURL       string `env:"BATCH_WORKER_EXECUTOR_URL"`
+	BatchWorkerToken             string `env:"BATCH_WORKER_TOKEN"`
+	BatchWorkerConcurrency       int    `env:"BATCH_WORKER_CONCURRENCY" envDefault:"4"`
+	BatchWorkerTenantConcurrency int    `env:"BATCH_WORKER_TENANT_CONCURRENCY" envDefault:"2"`
 }
 
 var Cfg Config
@@ -85,4 +86,3 @@ func normalizeDockerSQLiteDSN(appDataDir string) {
 	}
 	Cfg.DatabaseDSN = filepath.Join(filepath.Dir(appDataDir), filepath.FromSlash(slashPath)) + suffix
 }
-

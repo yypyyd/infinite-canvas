@@ -39,6 +39,7 @@ func New() *gin.Engine {
 	api.POST("/workspace/files/upload-ticket", middleware.UserAuth, middleware.OrganizationAuth, gin.WrapF(handler.PrepareUserWorkspaceFileUpload))
 	api.POST("/workspace/files/confirm", middleware.UserAuth, middleware.OrganizationAuth, gin.WrapF(handler.ConfirmUserWorkspaceFileUpload))
 	api.POST("/workspace/files/:uploadId/cancel", middleware.UserAuth, middleware.OrganizationAuth, func(c *gin.Context) { handler.CancelUserWorkspaceFileUpload(c.Writer, c.Request, c.Param("uploadId")) })
+	api.PUT("/workspace/files/:uploadId/content", middleware.UserAuth, middleware.OrganizationAuth, func(c *gin.Context) { handler.UploadLocalUserWorkspaceFile(c.Writer, c.Request, c.Param("uploadId")) })
 	api.GET("/workspace/files/:storageKey", middleware.UserAuth, middleware.OrganizationAuth, func(c *gin.Context) {
 		handler.UserWorkspaceFile(c.Writer, c.Request, c.Param("storageKey"))
 	})
@@ -120,6 +121,8 @@ func New() *gin.Engine {
 	api.HEAD("/media/references/:id", func(c *gin.Context) {
 		handler.ReferenceMedia(c.Writer, c.Request, c.Param("id"))
 	})
+	api.GET("/media/storage/:id", func(c *gin.Context) { handler.PublicLocalStorageReference(c.Writer, c.Request, c.Param("id")) })
+	api.HEAD("/media/storage/:id", func(c *gin.Context) { handler.PublicLocalStorageReference(c.Writer, c.Request, c.Param("id")) })
 	api.GET("/asset-files/:name", func(c *gin.Context) {
 		handler.AssetFile(c.Writer, c.Request, c.Param("name"))
 	})

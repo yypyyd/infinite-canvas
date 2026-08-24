@@ -2,7 +2,10 @@ package handler
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/yypyyd/infinite-canvas/service"
 )
@@ -81,6 +84,21 @@ func ConfirmUserWorkspaceFileUpload(w http.ResponseWriter, r *http.Request) {
 	OK(w, result)
 }
 
+func UploadLocalUserWorkspaceFile(w http.ResponseWriter, r *http.Request, uploadID string) {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok {
+		Fail(w, "未登录或权限不足")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 80<<20)
+	mimeType := strings.TrimSpace(strings.Split(r.Header.Get("Content-Type"), ";")[0])
+	if err := service.UploadLocalUserWorkspaceFile(r.Context(), user, uploadID, mimeType, r.Body); err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, true)
+}
+
 func CancelUserWorkspaceFileUpload(w http.ResponseWriter, r *http.Request, uploadID string) {
 	user, ok := service.UserFromContext(r.Context())
 	if !ok {
@@ -100,6 +118,23 @@ func UserWorkspaceFile(w http.ResponseWriter, r *http.Request, storageKey string
 		Fail(w, "未登录或权限不足")
 		return
 	}
+	if file, item, exists := service.OpenLocalUserWorkspaceFile(user, storageKey); exists {
+		defer file.Close()
+		info, err := file.Stat()
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", item.MimeType)
+		w.Header().Set("Content-Length", strconv.FormatInt(item.Size, 10))
+		w.Header().Set("Cache-Control", "private, no-store")
+		if r.Method == http.MethodHead {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		http.ServeContent(w, r, item.StorageKey, info.ModTime(), file)
+		return
+	}
 	if r.Method == http.MethodHead {
 		if !service.UserWorkspaceFileExists(user, storageKey) {
 			http.NotFound(w, r)
@@ -115,6 +150,28 @@ func UserWorkspaceFile(w http.ResponseWriter, r *http.Request, storageKey string
 	}
 	w.Header().Set("Cache-Control", "private, no-store")
 	http.Redirect(w, r, fileURL, http.StatusTemporaryRedirect)
+}
+
+func PublicLocalStorageReference(w http.ResponseWriter, r *http.Request, fileID string) {
+	expires, err := strconv.ParseInt(r.URL.Query().Get("expires"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	file, item, err := service.OpenPublicLocalStorageReference(fileID, expires, r.URL.Query().Get("signature"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer file.Close()
+	w.Header().Set("Content-Type", item.MimeType)
+	w.Header().Set("Content-Length", strconv.FormatInt(item.Size, 10))
+	w.Header().Set("Cache-Control", "private, no-store")
+	if r.Method == http.MethodHead {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	_, _ = io.Copy(w, io.LimitReader(file, item.Size))
 }
 
 func UserStorageStatus(w http.ResponseWriter, r *http.Request) {

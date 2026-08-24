@@ -26,6 +26,7 @@ const referenceModeOptions = [
 
 export function ChannelModelCapabilitiesEditor({ managedModels }: { managedModels: AdminManagedModel[] }) {
     const channelModels = (Form.useWatch("models") || []) as AdminChannelModel[];
+    const protocol = Form.useWatch("protocol") || "openai";
     const managedModelMap = useMemo(() => new Map(managedModels.map((item) => [item.id, item])), [managedModels]);
     const [keyword, setKeyword] = useState("");
     const visibleIndexes = useMemo(() => {
@@ -41,7 +42,12 @@ export function ChannelModelCapabilitiesEditor({ managedModels }: { managedModel
 
     return (
         <Flex vertical gap={12}>
-            <Alert type="info" showIcon title="渠道只声明上游能力" description="模型售价和对外开放能力仍在模型中心统一维护；这里配置当前渠道实际能处理的类型、操作、比例、分辨率、时长和参考图数量，路由会先匹配能力再按渠道权重选择。" />
+            <Alert
+                type="info"
+                showIcon
+                title={protocol === "autodl_comfyui" ? "工作流配置与渠道能力分开管理" : "渠道只声明上游能力"}
+                description={protocol === "autodl_comfyui" ? "每个模型绑定一个 AutoDL 工作流和请求模板；任务提交、状态恢复、结果归档与扣费退款仍走系统公共链路。" : "模型售价和对外开放能力仍在模型中心统一维护；这里配置当前渠道实际能处理的类型、操作、比例、分辨率、时长和参考图数量。"}
+            />
             <Form.List name="models">
                 {(fields, { remove }) => {
                     if (!fields.length) return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚未选择渠道模型" />;
@@ -106,6 +112,7 @@ export function ChannelModelCapabilitiesEditor({ managedModels }: { managedModel
 }
 
 function ModelCapabilityFields({ fieldName, channelModel, managedModel }: { fieldName: number; channelModel?: AdminChannelModel; managedModel?: AdminManagedModel }) {
+    const protocol = Form.useWatch("protocol") || "openai";
     const modelName = channelModel?.model || "";
     const modality = channelModel?.modality || managedModel?.modality || inferModelModality(modelName);
     const supportsResolution = modality === "image" || modality === "video";
@@ -132,6 +139,35 @@ function ModelCapabilityFields({ fieldName, channelModel, managedModel }: { fiel
                         <Input />
                     </Form.Item>
                 </Col>
+                {protocol === "autodl_comfyui" ? (
+                    <>
+                        <Col span={24}>
+                            <Form.Item name={[fieldName, "workflow", "workflowId"]} label="AutoDL 工作流 ID" rules={[{ required: true, whitespace: true, message: "请输入工作流 ID" }]} extra="对应 AutoDL API 路径中的 workflow_id；只允许字母、数字、点、下划线和短横线。">
+                                <Input placeholder="例如 minimax_h3_lightx2v_v5" />
+                            </Form.Item>
+                        </Col>
+                        <Col xs={24} md={16}>
+                            <Form.Item
+                                name={[fieldName, "workflow", "requestTemplate"]}
+                                label="JSON 请求模板"
+                                rules={[{ required: true, whitespace: true, message: "请输入 JSON 请求模板" }, { validator: validateJSONObject }]}
+                                extra={'占位符必须独占整个 JSON 值，例如 "prompt": "${prompt}"；可用 prompt、negative_prompt、width、height、size、ratio、resolution、seconds、count、seed、generate_audio 和参考素材占位符。'}
+                            >
+                                <Input.TextArea autoSize={{ minRows: 8, maxRows: 18 }} spellCheck={false} />
+                            </Form.Item>
+                        </Col>
+                        <Col xs={24} md={8}>
+                            <Form.Item
+                                name={[fieldName, "workflow", "valueMaps"]}
+                                label="参数映射 JSON"
+                                rules={[{ required: true, whitespace: true, message: "请输入参数映射" }, { validator: validateJSONObject }]}
+                                extra={'按占位符名称转换枚举值，例如 {"resolution":{"720p":"720P"}}；不需要映射时填写 {}。'}
+                            >
+                                <Input.TextArea autoSize={{ minRows: 8, maxRows: 18 }} spellCheck={false} />
+                            </Form.Item>
+                        </Col>
+                    </>
+                ) : null}
                 <Col xs={24} md={12}>
                     <Form.Item name={[fieldName, "operations"]} label="支持操作" rules={[{ required: true, message: "请选择至少一种操作" }]}>
                         <Select mode="multiple" options={modelOperationOptions} />
@@ -204,4 +240,14 @@ function ModelCapabilityFields({ fieldName, channelModel, managedModel }: { fiel
             </Row>
         </>
     );
+}
+
+async function validateJSONObject(_: unknown, value?: string) {
+    if (!value?.trim()) return;
+    try {
+        const parsed = JSON.parse(value);
+        if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") throw new Error();
+    } catch {
+        throw new Error("请输入有效的 JSON 对象");
+    }
 }

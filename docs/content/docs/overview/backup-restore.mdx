@@ -5,6 +5,8 @@ description: 备份和恢复数据库与七牛 Kodo 对象存储
 
 # 备份与恢复
 
+内置对象命令当前负责七牛 Kodo 的备份与恢复。使用本地文件存储时，还必须在停机窗口单独备份 `storage.localPath` 对应的持久化目录，并与数据库快照保持同一时间点；不要只保留数据库备份。
+
 应用镜像内置 `/app/ops-backup`，支持 SQLite、MySQL、PostgreSQL 和七牛 Kodo。备份会生成版本化 `manifest.json`，并为数据库快照和每个对象记录大小与 SHA-256。
 
 ## 一致性边界

@@ -43,7 +43,23 @@ func expireStaleGenerationTasks(timestamp time.Time) {
 		return
 	}
 	for _, task := range tasks {
-		if task.Modality == "video" && task.UpstreamTaskID != "" {
+		autoDLTask := false
+		if task.UpstreamTaskID != "" {
+			channel, channelErr := generationTaskChannel(task.ChannelName)
+			if channelErr == nil && IsAutoDLComfyUIChannel(channel) {
+				autoDLTask = true
+				ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+				settled, reconcileErr := ReconcileAutoDLGenerationTask(ctx, &task, channel)
+				cancel()
+				if reconcileErr != nil {
+					logWorkerError("generation_task", "autodl_reconcile_failed", reconcileErr, "task_id", task.ID)
+				}
+				if settled {
+					continue
+				}
+			}
+		}
+		if !autoDLTask && task.Modality == "video" && task.UpstreamTaskID != "" {
 			settled, reconcileErr := reconcileRunningVideoTask(task)
 			if reconcileErr != nil {
 				logWorkerError("generation_task", "video_reconcile_failed", reconcileErr, "task_id", task.ID)
@@ -170,7 +186,7 @@ func generationTaskChannel(name string) (model.ModelChannel, error) {
 			return channel, nil
 		}
 	}
-	return model.ModelChannel{}, errors.New("video task channel is unavailable")
+	return model.ModelChannel{}, errors.New("generation task channel is unavailable")
 }
 
 func generationTaskVideoPayload(body []byte) map[string]any {

@@ -150,6 +150,10 @@ func proxyAIGetRequest(w http.ResponseWriter, r *http.Request, path string) {
 		return
 	}
 	channel := selection.Channel
+	if service.IsAutoDLComfyUIChannel(channel) {
+		proxyAutoDLGetRequest(w, r, path, generationTask, channel)
+		return
+	}
 	request, err := http.NewRequest(http.MethodGet, service.BuildModelChannelURL(channel, path), nil)
 	if err != nil {
 		Fail(w, "AI 接口请求失败")
@@ -238,10 +242,12 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 	}
 	cleanup := func() {}
 	var request *http.Request
-	if path == "/videos" && canBuildStorageReferenceRequest(requestMeta) {
-		request, cleanup, err = buildAIUpstreamStorageRequest(r.Context(), r, user, requestMeta, selection, "")
-	} else {
-		request, err = buildAIUpstreamRequest(r, path, body, contentType, selection, "")
+	if !service.IsAutoDLComfyUIChannel(selection.Channel) {
+		if path == "/videos" && canBuildStorageReferenceRequest(requestMeta) {
+			request, cleanup, err = buildAIUpstreamStorageRequest(r.Context(), r, user, requestMeta, selection, "")
+		} else {
+			request, err = buildAIUpstreamRequest(r, path, body, contentType, selection, "")
+		}
 	}
 	defer cleanup()
 	if err != nil {
@@ -268,13 +274,17 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		FailError(w, err)
 		return
 	}
-	request.Header.Set("Idempotency-Key", task.RequestID)
 	w.Header().Set("X-Generation-Request-ID", task.RequestID)
 	finishTask := func(status model.GenerationTaskStatus, message string) {
 		if err := service.FinishGenerationTask(task, status, message); err != nil {
 			log.Printf("AI proxy finish generation task failed: task=%s status=%s err=%v", task.ID, status, err)
 		}
 	}
+	if service.IsAutoDLComfyUIChannel(selection.Channel) {
+		proxyAutoDLGeneration(w, r, body, contentType, requestMeta, user, selection, &task, finishTask)
+		return
+	}
+	request.Header.Set("Idempotency-Key", task.RequestID)
 	excludedChannels := []string{}
 	for {
 		response, responseBody, requestErr := doAIRequestWithRetry(request, nil)
@@ -310,8 +320,15 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 			excludedChannels = append(excludedChannels, selection.Channel.Name)
 			nextSelection, selectErr := service.SelectModelChannelExcluding(pricingRequest, excludedChannels)
 			if selectErr == nil {
-				nextRequest, buildErr := buildAIUpstreamRequest(r, path, body, contentType, nextSelection, task.RequestID)
-				if buildErr == nil {
+				if service.IsAutoDLComfyUIChannel(nextSelection.Channel) {
+					if updateErr := service.UpdateGenerationTaskChannel(&task, nextSelection.Channel.Name, nextSelection.Model.UpstreamModel); updateErr == nil {
+						if response != nil {
+							_ = response.Body.Close()
+						}
+						proxyAutoDLGeneration(w, r, body, contentType, requestMeta, user, nextSelection, &task, finishTask)
+						return
+					}
+				} else if nextRequest, buildErr := buildAIUpstreamRequest(r, path, body, contentType, nextSelection, task.RequestID); buildErr == nil {
 					if updateErr := service.UpdateGenerationTaskChannel(&task, nextSelection.Channel.Name, nextSelection.Model.UpstreamModel); updateErr != nil {
 						log.Printf("AI proxy update failover channel failed: task=%s channel=%s err=%v", task.ID, nextSelection.Channel.Name, updateErr)
 					} else {
@@ -363,6 +380,99 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		}
 		return
 	}
+}
+
+func proxyAutoDLGeneration(w http.ResponseWriter, r *http.Request, body []byte, contentType string, meta aiRequestMeta, user model.AuthUser, selection service.ModelChannelSelection, task *model.GenerationTask, finishTask func(model.GenerationTaskStatus, string)) {
+	input, err := autoDLGenerationInput(body, contentType, meta)
+	if err != nil {
+		message := "AutoDL 请求参数无效"
+		var requestErr *aiError
+		if errors.As(err, &requestErr) {
+			message = requestErr.Error()
+		}
+		finishTask(model.GenerationTaskStatusFailed, message)
+		Fail(w, message)
+		return
+	}
+	upstreamTaskID, initialBody, err := service.SubmitAutoDLComfyUITask(r.Context(), user, *task, selection, input)
+	if err != nil {
+		finishTask(model.GenerationTaskStatusFailed, err.Error())
+		FailError(w, err)
+		return
+	}
+	if err := service.UpdateGenerationTaskRecovery(task, upstreamTaskID, initialBody, nil); err != nil {
+		finishTask(model.GenerationTaskStatusFailed, "生成任务状态保存失败")
+		Fail(w, "生成任务状态保存失败")
+		return
+	}
+	if task.Modality == "video" {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_, _ = w.Write(initialBody)
+		return
+	}
+	waitCtx, cancelWait := context.WithTimeout(r.Context(), 30*time.Minute)
+	defer cancelWait()
+	for {
+		settled, reconcileErr := service.ReconcileAutoDLGenerationTask(waitCtx, task, selection.Channel)
+		if settled {
+			if task.Status == model.GenerationTaskStatusFailed {
+				Fail(w, task.ErrorMessage)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			_, _ = w.Write([]byte(task.ResultJSON))
+			return
+		}
+		if reconcileErr != nil {
+			log.Printf("AutoDL image task reconcile failed: task=%s err=%v", task.ID, reconcileErr)
+		}
+		timer := time.NewTimer(2 * time.Second)
+		select {
+		case <-waitCtx.Done():
+			timer.Stop()
+			if errors.Is(waitCtx.Err(), context.DeadlineExceeded) {
+				message := "AutoDL 图片任务超过 30 分钟未完成，已自动结束"
+				finishTask(model.GenerationTaskStatusFailed, message)
+				Fail(w, message)
+			}
+			return
+		case <-timer.C:
+		}
+	}
+}
+
+func proxyAutoDLGetRequest(w http.ResponseWriter, r *http.Request, path string, task *model.GenerationTask, channel model.ModelChannel) {
+	if task == nil {
+		Fail(w, "AutoDL 任务必须通过原生成记录查询")
+		return
+	}
+	archiveCtx, cancelArchive := generatedArchiveContext(r.Context())
+	settled, err := service.ReconcileAutoDLGenerationTask(archiveCtx, task, channel)
+	cancelArchive()
+	if err != nil {
+		log.Printf("AutoDL task reconcile failed: task=%s err=%v", task.ID, err)
+		Fail(w, "AutoDL 任务状态查询失败")
+		return
+	}
+	if task.Status == model.GenerationTaskStatusFailed {
+		Fail(w, task.ErrorMessage)
+		return
+	}
+	if strings.HasSuffix(path, "/content") {
+		if settled && len(task.StorageKeys) > 0 {
+			if user, ok := service.UserFromContext(r.Context()); ok && proxyArchivedGenerationContent(w, r, user, task.StorageKeys[0]) {
+				return
+			}
+		}
+		Fail(w, "视频尚未生成完成")
+		return
+	}
+	body := []byte(task.ResultJSON)
+	if len(body) == 0 {
+		body = []byte(`{"id":"` + task.UpstreamTaskID + `","status":"queued"}`)
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_, _ = w.Write(body)
 }
 
 func buildAIUpstreamRequest(r *http.Request, path string, body []byte, contentType string, selection service.ModelChannelSelection, idempotencyKey string) (*http.Request, error) {
@@ -1127,6 +1237,9 @@ func cacheVideoGeneration(body []byte, mimeType string) string {
 
 type aiRequestMeta struct {
 	ModelName                 string
+	Prompt                    string
+	NegativePrompt            string
+	Seed                      string
 	ResponseFormat            string
 	Count                     int
 	Size                      string
@@ -1248,6 +1361,9 @@ func readMultipartAIRequest(body []byte, contentType string) aiRequestMeta {
 	referenceImages := len(form.File["image"]) + len(form.File["image[]"]) + len(form.File["input_reference"]) + len(form.File["input_reference[]"]) + len(form.File["reference_images"]) + len(form.File["reference_images[]"])
 	return aiRequestMeta{
 		ModelName:       firstFormValue(form, "model"),
+		Prompt:          firstFormValue(form, "prompt"),
+		NegativePrompt:  firstFormValue(form, "negative_prompt"),
+		Seed:            firstFormValue(form, "seed"),
 		ResponseFormat:  firstFormValue(form, "response_format"),
 		Count:           readIntValue(firstFormValue(form, "n"), 1),
 		Size:            firstFormValue(form, "size", "ratio"),
@@ -1270,6 +1386,9 @@ func readJSONAIRequest(body []byte) aiRequestMeta {
 	audioReferences := stringSliceField(payload, "reference_audios_storage_keys")
 	return aiRequestMeta{
 		ModelName:                 readStringField(payload, "model"),
+		Prompt:                    readStringField(payload, "prompt"),
+		NegativePrompt:            readStringField(payload, "negative_prompt"),
+		Seed:                      readStringField(payload, "seed"),
 		ResponseFormat:            readStringField(payload, "response_format"),
 		Count:                     readIntField(payload, 1, "n"),
 		Size:                      readStringField(payload, "size", "ratio"),
@@ -1286,6 +1405,48 @@ func readJSONAIRequest(body []byte) aiRequestMeta {
 		ReferenceVideoStorageKeys: videoReferences,
 		ReferenceAudioStorageKeys: audioReferences,
 	}
+}
+
+func autoDLGenerationInput(body []byte, contentType string, meta aiRequestMeta) (service.AutoDLGenerationInput, error) {
+	input := service.AutoDLGenerationInput{
+		Prompt: meta.Prompt, NegativePrompt: meta.NegativePrompt, Size: meta.Size, Ratio: meta.Size,
+		Resolution: meta.Resolution, ResolutionTier: meta.ResolutionTier, Seconds: meta.Duration,
+		Count: meta.Count, Seed: meta.Seed, GenerateAudio: meta.GenerateAudio,
+		ReferenceImageStorageKeys: meta.InputReferenceStorageKeys, ReferenceVideoStorageKeys: meta.ReferenceVideoStorageKeys,
+		ReferenceAudioStorageKeys: meta.ReferenceAudioStorageKeys,
+	}
+	if !strings.HasPrefix(contentType, "multipart/form-data") {
+		if meta.ReferenceImages > len(meta.InputReferenceStorageKeys) || meta.ReferenceVideos > len(meta.ReferenceVideoStorageKeys) || meta.ReferenceAudios > len(meta.ReferenceAudioStorageKeys) {
+			return input, &aiError{"AutoDL 参考素材必须使用当前账号工作区文件"}
+		}
+		return input, nil
+	}
+	if meta.ReferenceVideos > 0 || meta.ReferenceAudios > 0 {
+		return input, &aiError{"AutoDL 视频和音频参考素材必须使用当前账号工作区文件"}
+	}
+	form, err := readMultipartForm(body, contentType)
+	if err != nil {
+		return input, &aiError{"参考图请求格式无效"}
+	}
+	defer form.RemoveAll()
+	for _, field := range []string{"image", "image[]", "input_reference", "input_reference[]", "reference_images", "reference_images[]"} {
+		for _, header := range form.File[field] {
+			file, openErr := header.Open()
+			if openErr != nil {
+				return input, openErr
+			}
+			data, readErr := io.ReadAll(io.LimitReader(file, (20<<20)+1))
+			_ = file.Close()
+			if readErr != nil {
+				return input, readErr
+			}
+			if len(data) == 0 || len(data) > 20<<20 {
+				return input, &aiError{"AutoDL 单张参考图必须在 20MB 以内"}
+			}
+			input.ReferenceImages = append(input.ReferenceImages, service.AutoDLReferenceFile{MimeType: header.Header.Get("Content-Type"), Data: data})
+		}
+	}
+	return input, nil
 }
 
 func stringSliceField(payload map[string]any, key string) []string {

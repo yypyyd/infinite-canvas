@@ -39,6 +39,7 @@ export default function AdminChannelsPage() {
     const [testResults, setTestResults] = useState<Record<string, { status: "success" | "error"; duration?: string; message: string }>>({});
     const managedModels = settings?.public.modelChannel.models || [];
     const channelFormModels = Form.useWatch("models", channelForm) || [];
+    const channelProtocol = Form.useWatch("protocol", channelForm) || "openai";
     const channelTableData = useMemo(() => channels.map((channel, index) => ({ ...channel, _index: index, _rowKey: String(index) + "-" + channel.name + "-" + channel.baseUrl })), [channels]);
     const modelSelectGroups = useMemo(() => buildModelSelectGroups(modelSelectSource, modelSelectExisting), [modelSelectSource, modelSelectExisting]);
     const activeModelSelectModels = useMemo(() => {
@@ -177,9 +178,11 @@ export default function AdminChannelsPage() {
         const models = uniqueModels(modelSelectSelected).map((model) => {
             const current = currentModelMap.get(model);
             const discovered = discoveredModels[model];
-            if (!current) return createChannelModel(model, managedModels, discovered);
-            if (!discovered) return current;
-            return normalizeChannelModels([
+            const configured = !current
+                ? createChannelModel(model, managedModels, discovered)
+                : !discovered
+                  ? current
+                  : normalizeChannelModels([
                 {
                     ...current,
                     modality: discovered.modality || current.modality,
@@ -194,6 +197,7 @@ export default function AdminChannelsPage() {
                     referenceMode: discovered.referenceCapabilityProvided ? discovered.referenceMode : current.referenceMode,
                 },
             ])[0];
+            return channelProtocol === "autodl_comfyui" && !configured.workflow ? { ...configured, workflow: defaultComfyUIWorkflow() } : configured;
         });
         channelForm.setFieldValue("models", models);
         rememberModels(channelModelNames(models));
@@ -335,7 +339,15 @@ export default function AdminChannelsPage() {
                         </Col>
                         <Col xs={12} md={5}>
                             <Form.Item name="protocol" label="协议">
-                                <Select options={[{ label: "OpenAI", value: "openai" }]} />
+                                <Select
+                                    options={[
+                                        { label: "OpenAI 兼容", value: "openai" },
+                                        { label: "AutoDL ComfyUI", value: "autodl_comfyui" },
+                                    ]}
+                                    onChange={(value) => {
+                                        if (value === "autodl_comfyui" && !channelForm.getFieldValue("baseUrl")) channelForm.setFieldValue("baseUrl", "https://autodl.art");
+                                    }}
+                                />
                             </Form.Item>
                         </Col>
                         <Col xs={12} md={5}>
@@ -354,8 +366,8 @@ export default function AdminChannelsPage() {
                             </Form.Item>
                         </Col>
                         <Col xs={24} md={12}>
-                            <Form.Item name="apiKey" label="API Key" rules={editingChannelIndex === null ? [{ required: true, message: "请输入 API Key" }] : []}>
-                                <Input.Password placeholder={editingChannelIndex === null ? "" : "留空则沿用已保存的 API Key"} />
+                            <Form.Item name="apiKey" label={channelProtocol === "autodl_comfyui" ? "AutoDL ComfyUI Token" : "API Key"} rules={editingChannelIndex === null ? [{ required: true, message: channelProtocol === "autodl_comfyui" ? "请输入 AutoDL Token" : "请输入 API Key" }] : []}>
+                                <Input.Password placeholder={editingChannelIndex === null ? "" : `留空则沿用已保存的${channelProtocol === "autodl_comfyui" ? " Token" : " API Key"}`} />
                             </Form.Item>
                         </Col>
                         <Col span={24}>
@@ -406,12 +418,16 @@ export default function AdminChannelsPage() {
                         <Space.Compact style={{ flex: "1 1 320px" }}>
                             <Input value={modelSelectNewModel} placeholder="输入模型名称" onChange={(event) => setModelSelectNewModel(event.target.value)} onPressEnter={addModelInSelector} />
                             <Button onClick={addModelInSelector}>增加模型</Button>
-                            <Button icon={<ReloadOutlined />} loading={isFetchingChannelModels} onClick={() => void fetchChannelModelList()}>
-                                拉取模型列表
-                            </Button>
+                            {channelProtocol === "openai" ? (
+                                <Button icon={<ReloadOutlined />} loading={isFetchingChannelModels} onClick={() => void fetchChannelModelList()}>
+                                    拉取模型列表
+                                </Button>
+                            ) : null}
                         </Space.Compact>
                     </Flex>
-                    <Typography.Text type="secondary">系统通过 OpenAI /models?extended=true 拉取模型及能力；上游不支持时，请在这里手动增加并配置模型。</Typography.Text>
+                    <Typography.Text type="secondary">
+                        {channelProtocol === "openai" ? "系统通过 OpenAI /models?extended=true 拉取模型及能力；上游不支持时可手动增加。" : "AutoDL 不在线拉取模型；请手动增加对外模型，并在模型配置中填写工作流。"}
+                    </Typography.Text>
                     <Tabs
                         activeKey={modelSelectTab}
                         onChange={(key) => setModelSelectTab(key as ModelSelectTabKey)}
@@ -495,7 +511,7 @@ export default function AdminChannelsPage() {
                 destroyOnHidden
             >
                 <Flex vertical gap={12}>
-                    <Typography.Text type="secondary">模型测试统一通过 OpenAI 兼容的 `/chat/completions` 发送一条 hi。</Typography.Text>
+                    <Typography.Text type="secondary">{testChannel?.protocol === "autodl_comfyui" ? "AutoDL 测试会校验工作流、JSON 模板及 Token 的 ComfyUI API 权限，不会提交付费生成任务。" : "模型测试通过 OpenAI 兼容的 /models?extended=true 校验模型是否存在。"}</Typography.Text>
                     <Input.Search placeholder="搜索模型..." allowClear value={testKeyword} onChange={(event) => setTestKeyword(event.target.value)} />
                     <Table
                         rowKey="model"
@@ -545,7 +561,7 @@ export default function AdminChannelsPage() {
 
 function normalizeChannel(item: Partial<AdminModelChannel> = {}): AdminModelChannel {
     return {
-        protocol: "openai",
+        protocol: item.protocol === "autodl_comfyui" ? "autodl_comfyui" : "openai",
         name: item.name?.trim() || "",
         baseUrl: item.baseUrl?.trim() || "",
         apiKey: item.apiKey || "",
@@ -577,9 +593,20 @@ function normalizeChannelModels(items: Partial<AdminChannelModel>[] = []): Admin
                 maxReferenceMedia: Math.max(0, Math.floor(Number(item.maxReferenceMedia) || 0)),
                 supportsAudioOutput: item.supportsAudioOutput === true,
                 referenceMode: normalizeReferenceMode(item.referenceMode),
+                workflow: item.workflow
+                    ? {
+                          workflowId: item.workflow.workflowId?.trim() || "",
+                          requestTemplate: item.workflow.requestTemplate?.trim() || "",
+                          valueMaps: item.workflow.valueMaps?.trim() || "{}",
+                      }
+                    : undefined,
             },
         ];
     });
+}
+
+function defaultComfyUIWorkflow() {
+    return { workflowId: "", requestTemplate: '{\n  "prompt": "${prompt}"\n}', valueMaps: "{}" };
 }
 
 function createChannelModel(model: string, managedModels: AdminManagedModel[], discovered?: AdminDiscoveredModel): AdminChannelModel {

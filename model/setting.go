@@ -23,19 +23,27 @@ type ModelChannel struct {
 
 // ChannelModel stores one public model's upstream mapping and channel-specific capabilities.
 type ChannelModel struct {
-	Model               string   `json:"model"`
-	UpstreamModel       string   `json:"upstreamModel"`
-	Modality            string   `json:"modality"`
-	Operations          []string `json:"operations"`
-	AspectRatios        []string `json:"aspectRatios"`
-	ResolutionTiers     []string `json:"resolutionTiers"`
-	Durations           []int    `json:"durations"`
-	MaxReferenceImages  int      `json:"maxReferenceImages"`
-	MaxReferenceVideos  int      `json:"maxReferenceVideos"`
-	MaxReferenceAudios  int      `json:"maxReferenceAudios"`
-	MaxReferenceMedia   int      `json:"maxReferenceMedia"`
-	SupportsAudioOutput bool     `json:"supportsAudioOutput"`
-	ReferenceMode       string   `json:"referenceMode"`
+	Model               string                 `json:"model"`
+	UpstreamModel       string                 `json:"upstreamModel"`
+	Modality            string                 `json:"modality"`
+	Operations          []string               `json:"operations"`
+	AspectRatios        []string               `json:"aspectRatios"`
+	ResolutionTiers     []string               `json:"resolutionTiers"`
+	Durations           []int                  `json:"durations"`
+	MaxReferenceImages  int                    `json:"maxReferenceImages"`
+	MaxReferenceVideos  int                    `json:"maxReferenceVideos"`
+	MaxReferenceAudios  int                    `json:"maxReferenceAudios"`
+	MaxReferenceMedia   int                    `json:"maxReferenceMedia"`
+	SupportsAudioOutput bool                   `json:"supportsAudioOutput"`
+	ReferenceMode       string                 `json:"referenceMode"`
+	Workflow            *ComfyUIWorkflowConfig `json:"workflow,omitempty"`
+}
+
+// ComfyUIWorkflowConfig maps the unified generation request to one configured workflow.
+type ComfyUIWorkflowConfig struct {
+	WorkflowID      string `json:"workflowId"`
+	RequestTemplate string `json:"requestTemplate"`
+	ValueMaps       string `json:"valueMaps"`
 }
 
 type DiscoveredModel struct {
@@ -178,11 +186,24 @@ type CheckInSetting struct {
 // PrivateSetting stores backend-only settings.
 type PrivateSetting struct {
 	Channels         []ModelChannel         `json:"channels"`
+	Storage          StorageSetting         `json:"storage"`
 	PromptSync       PromptSyncSetting      `json:"promptSync"`
 	Email            EmailSetting           `json:"email"`
 	Payment          PaymentSetting         `json:"payment"`
 	Referral         ReferralSetting        `json:"referral"`
 	OperationsAlerts OperationsAlertSetting `json:"operationsAlerts"`
+}
+
+type StorageSetting struct {
+	Driver                   string `json:"driver"`
+	RetentionDays            int    `json:"retentionDays"`
+	LocalPath                string `json:"localPath"`
+	QiniuAccessKey           string `json:"qiniuAccessKey"`
+	QiniuSecretKey           string `json:"qiniuSecretKey"`
+	QiniuBucket              string `json:"qiniuBucket"`
+	QiniuRegion              string `json:"qiniuRegion"`
+	QiniuDownloadDomain      string `json:"qiniuDownloadDomain"`
+	QiniuSecretKeyConfigured bool   `json:"qiniuSecretKeyConfigured"`
 }
 
 type OperationsAlertSetting struct {

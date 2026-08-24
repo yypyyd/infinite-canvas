@@ -26,7 +26,7 @@ import { supportsImageQuality, supportsImageReferences } from "@/lib/image-model
 import type { ReferenceImage } from "@/types/image";
 import { CanvasPromptLibrary } from "./canvas-prompt-library";
 import { CanvasResourceMentionTextarea } from "./canvas-resource-mention-textarea";
-import { CANVAS_AGENT_RUN_REVERTED_EVENT, CanvasNodeType, type CanvasAssistantImage, type CanvasAssistantMessage, type CanvasAssistantReference, type CanvasAssistantSession, type CanvasAssistantStage, type CanvasAssistantVideo, type CanvasConnection, type CanvasNodeData } from "../types";
+import { CANVAS_AGENT_RUN_REVERTED_EVENT, CanvasNodeType, type CanvasAssistantGenerationPlaceholder, type CanvasAssistantImage, type CanvasAssistantMessage, type CanvasAssistantReference, type CanvasAssistantSession, type CanvasAssistantStage, type CanvasAssistantVideo, type CanvasConnection, type CanvasNodeData } from "../types";
 import { buildCanvasMentionReferences, type CanvasResourceReference } from "../utils/canvas-resource-references";
 
 type AssistantMode = "ask" | "image";
@@ -52,6 +52,8 @@ type CanvasAssistantPanelProps = {
     onInsertImage: (image: CanvasAssistantImage) => void;
     onInsertImages: (images: CanvasAssistantImage[]) => Promise<{ nodeId: string; storageKey: string }[]>;
     onInsertVideo: (video: UploadedFile & CanvasAssistantVideo) => Promise<{ nodeId: string; storageKey: string }>;
+    onStartGeneration: (placeholder: CanvasAssistantGenerationPlaceholder) => void;
+    onSettleGeneration: (runId: string, callId: string | undefined, status: "failed" | "cancelled", error?: string) => void;
     onArrangeNodes: (nodeIds: string[], mode: "horizontal" | "vertical" | "grid", gap: number, agentMeta?: { runId: string; callId: string; authorizedNodeIds: string[] }) => { nodeId: string; x: number; y: number }[];
     onInsertText: (text: string, placement?: "center" | "right_of_selection", agentMeta?: { runId: string; callId: string; sourceNodeIds?: string[] }) => string;
     onPersistToolResult: (runId: string, callId: string, name: NonNullable<AgentEvent["data"]["name"]>, result: AgentToolResult) => Promise<AgentToolResult>;
@@ -78,6 +80,8 @@ export function CanvasAssistantPanel({
     onInsertImage,
     onInsertImages,
     onInsertVideo,
+    onStartGeneration,
+    onSettleGeneration,
     onArrangeNodes,
     onInsertText,
     onPersistToolResult,
@@ -399,15 +403,18 @@ export function CanvasAssistantPanel({
                             return;
                         }
                         if (event.type === "run.failed") {
+                            onSettleGeneration(runId, undefined, "failed", event.data.error || "助手请求失败");
                             advanceStages(failPendingAssistantStages, { text: event.data.error || "助手请求失败", isLoading: false, runId: undefined });
                             return;
                         }
                         if (event.type === "run.cancelled") {
                             const interrupted = interruptedOperations.current.delete(runId);
+                            onSettleGeneration(runId, undefined, "cancelled");
                             advanceStages(failPendingAssistantStages, { text: event.data.reason === "tool_reverted" ? "画布操作已撤销" : interrupted ? "已被新消息打断" : "已取消", confirmation: undefined, isLoading: false, runId: undefined });
                             return;
                         }
                         if (event.type === "tool.reverted") {
+                            onSettleGeneration(runId, event.data.callId, "cancelled");
                             advanceStages(failPendingAssistantStages, { text: "画布操作已撤销", confirmation: undefined, isLoading: false, runId: undefined });
                             return;
                         }
@@ -458,6 +465,7 @@ export function CanvasAssistantPanel({
 							}
                         }
                         if (event.type === "tool.completed" && event.data.callId) {
+                            if (event.data.status === "failed") onSettleGeneration(runId, event.data.callId, "failed", event.data.error || "生成失败");
                             advanceStages((stages) => appendAgentObserveStage(finishAssistantStage(stages, event.data.callId!, event.data.status === "failed" ? "failed" : "done", event.data.output?.answer, event.data.status === "rejected", event.data.output?.inspection), event.data.callId!, event.data.status === "failed"), {
                                 confirmation: undefined,
                                 isLoading: true,
@@ -484,11 +492,13 @@ export function CanvasAssistantPanel({
                             }));
                         const serverReceipt = await getAgentToolResultReceipt(runId, callId);
                         if (serverReceipt.status === "completed" && serverReceipt.result) {
+                            if (serverReceipt.result.status === "failed") onSettleGeneration(runId, callId, "failed", serverReceipt.result.error);
                             completedToolResults.set(toolKey, serverReceipt.result);
                             completeToolEvent(serverReceipt.result);
                             return;
                         }
                         if (serverReceipt.status !== "pending") {
+                            onSettleGeneration(runId, callId, serverReceipt.status === "failed" ? "failed" : "cancelled", serverReceipt.status === "failed" ? "生成失败" : undefined);
                             advanceEvent({ isLoading: false });
                             return;
                         }
@@ -569,8 +579,9 @@ export function CanvasAssistantPanel({
                                     canvasId: projectId,
                                     requestIds: [idempotencyKey],
                                 });
-                                await flushActiveWorkspaceChanges({ domains: ["generation_record"] });
                                 generationRecord = { kind: "image", id: generationRecordId, prompt: toolArguments.prompt, config: toolConfig, count: imageCount, startedAt: generationStartedAt };
+                                onStartGeneration({ runId, callId, type: "image", count: imageCount, prompt: toolArguments.prompt, sourceNodeIds: toolSourceNodeIds, generationRecordId });
+                                await flushActiveWorkspaceChanges({ domains: ["generation_record"] });
                                 const generated = referenceImages.length
                                     ? await requestEdit(toolConfig, toolArguments.prompt, referenceImages, undefined, { signal: toolAbortController.signal, idempotencyKey })
                                     : await requestGeneration(toolConfig, toolArguments.prompt, { signal: toolAbortController.signal, idempotencyKey });
@@ -630,8 +641,9 @@ export function CanvasAssistantPanel({
                                     canvasId: projectId,
                                     requestId: idempotencyKey,
                                 });
-                                await flushActiveWorkspaceChanges({ domains: ["generation_record"] });
                                 generationRecord = { kind: "video", id: generationRecordId, prompt: toolArguments.prompt, config: toolConfig, startedAt: generationStartedAt };
+                                onStartGeneration({ runId, callId, type: "video", count: 1, prompt: toolArguments.prompt, sourceNodeIds: toolArguments.imageNodeId ? [toolArguments.imageNodeId] : refs.map((item) => item.id), generationRecordId });
+                                await flushActiveWorkspaceChanges({ domains: ["generation_record"] });
                                 const stored = await storeGeneratedVideo(await requestVideoGeneration(toolConfig, toolArguments.prompt, referenceImages, [], [], { signal: toolAbortController.signal, idempotencyKey }));
                                 if (!stored.storageKey) throw new Error("生成的视频未保存到工作区");
                                 await saveCanvasVideoGenerationRecord(historyOwnerId, {
@@ -710,11 +722,13 @@ export function CanvasAssistantPanel({
                             window.clearInterval(leaseHeartbeat);
                             releaseToolRequest();
                             if (revertedOperations.current.has(runId)) {
+                                onSettleGeneration(runId, callId, "cancelled");
                                 handledToolCalls.current.delete(toolKey);
                                 advanceEvent({ text: "画布操作已撤销", isLoading: false, runId: undefined });
                                 return;
                             }
                             if (interruptedOperations.current.has(runId)) {
+                                onSettleGeneration(runId, callId, "cancelled");
                                 handledToolCalls.current.delete(toolKey);
                                 advanceEvent({ text: "已被新消息打断", isLoading: false, runId: undefined });
                                 return;
@@ -726,6 +740,7 @@ export function CanvasAssistantPanel({
                                 throw new Error("画布操作已完成，但结果尚未确认保存；请刷新页面恢复运行，系统不会重复执行该工具");
                             }
                             const errorMessage = error instanceof Error ? error.message : "工具执行失败";
+                            onSettleGeneration(runId, callId, "failed", errorMessage);
                             const failedResult: AgentToolResult = { callId, status: "failed", error: errorMessage };
                             updateMessageWith(sessionId, assistantMessageId, (message) => ({ ...message, stages: finishAssistantStage(message.stages || [], callId, "failed") }));
                             await submitAgentToolResult(runId, toolExecutorToken.current, failedResult);
@@ -769,7 +784,7 @@ export function CanvasAssistantPanel({
                 refreshRunningState();
             }
         },
-        [effectiveConfig, historyOwnerId, isAiConfigReady, managedModels, onApplyDestructiveTool, onArrangeNodes, onFlashAssistantNodes, onInsertImages, onInsertText, onInsertVideo, onPersistToolResult, onRestoreToolResult, projectId, refreshRunningState, updateMessageWith],
+        [effectiveConfig, historyOwnerId, isAiConfigReady, managedModels, onApplyDestructiveTool, onArrangeNodes, onFlashAssistantNodes, onInsertImages, onInsertText, onInsertVideo, onPersistToolResult, onRestoreToolResult, onSettleGeneration, onStartGeneration, projectId, refreshRunningState, updateMessageWith],
     );
 
     useEffect(() => {

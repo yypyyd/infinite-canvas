@@ -922,7 +922,7 @@ func agentMediaRequestNeedsClarification(content string) bool {
 
 func agentMediaIntent(content string, negated bool) (bool, bool) {
 	mediaAction := containsAgentPhrase(content, "生成", "制作", "做一张", "画一张")
-	video := !negated && (containsAgentPhrase(content, "生成视频", "生成短视频", "制作视频", "制作短视频") || (mediaAction && containsAgentPhrase(content, "视频", "短片")))
+	video := !negated && (containsAgentPhrase(content, "生成视频", "生成短视频", "制作视频", "制作短视频", "我要视频", "我要的是视频", "要的是视频", "做成视频") || (mediaAction && containsAgentPhrase(content, "视频", "短片")))
 	image := !negated && !video && (containsAgentPhrase(content, "生成图片", "生成一张图", "生成一张图片", "生图", "商品主图", "电商主图", "场景图", "海报") || (mediaAction && containsAgentPhrase(content, "图片", "图像", "照片")))
 	return image, video
 }

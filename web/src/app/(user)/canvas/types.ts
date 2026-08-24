@@ -63,6 +63,7 @@ export type CanvasNodeMetadata = {
     generationRecordId?: string;
     agentRunId?: string;
     agentToolCallId?: string;
+    agentGenerationIndex?: number;
     sourceNodeIds?: string[];
     splitFromNodeId?: string;
     splitRow?: number;
@@ -116,6 +117,16 @@ export type CanvasAssistantVideo = {
     agentRunId: string;
     agentToolCallId: string;
     sourceNodeIds?: string[];
+};
+
+export type CanvasAssistantGenerationPlaceholder = {
+    runId: string;
+    callId: string;
+    type: "image" | "video";
+    count: number;
+    prompt: string;
+    sourceNodeIds: string[];
+    generationRecordId: string;
 };
 
 export type CanvasAssistantConfirmation = {

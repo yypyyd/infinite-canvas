@@ -60,6 +60,7 @@ import { resolveCanvasVideoConfig } from "../utils/canvas-video-config";
 import {
     CANVAS_AGENT_RUN_REVERTED_EVENT,
     CanvasNodeType,
+    type CanvasAssistantGenerationPlaceholder,
     type CanvasAssistantImage,
     type CanvasAssistantSession,
     type CanvasAssistantVideo,
@@ -3243,6 +3244,98 @@ function InfiniteCanvasPage() {
         [screenToCanvas, size.height, size.width],
     );
 
+    const startAssistantGeneration = useCallback(
+        ({ runId, callId, type, count, prompt, sourceNodeIds, generationRecordId }: CanvasAssistantGenerationPlaceholder) => {
+            const nodeType = type === "image" ? CanvasNodeType.Image : CanvasNodeType.Video;
+            const expectedCount = type === "image" ? normalizeImageCount(count) : 1;
+            const spec = NODE_DEFAULT_SIZE[nodeType];
+            const existing = nodesRef.current
+                .filter((node) => node.type === nodeType && node.metadata?.agentRunId === runId && node.metadata?.agentToolCallId === callId)
+                .sort((left, right) => (left.metadata?.agentGenerationIndex || 0) - (right.metadata?.agentGenerationIndex || 0));
+            const sources = nodesRef.current.filter((node) => sourceNodeIds.includes(node.id));
+            const center = screenToCanvas((containerRef.current?.getBoundingClientRect().left || 0) + size.width / 2, (containerRef.current?.getBoundingClientRect().top || 0) + size.height / 2);
+            const gap = 32;
+            const columns = Math.min(expectedCount, 4);
+            const rows = Math.ceil(expectedCount / columns);
+            const origin = sources.length
+                ? { x: Math.max(...sources.map((node) => node.position.x + node.width)) + 64, y: Math.min(...sources.map((node) => node.position.y)) }
+                : { x: center.x - (columns * spec.width + (columns - 1) * gap) / 2, y: center.y - (rows * spec.height + (rows - 1) * gap) / 2 };
+            const created = Array.from({ length: Math.max(0, expectedCount - existing.length) }, (_, offset) => {
+                const index = existing.length + offset;
+                return {
+                    id: nanoid(),
+                    type: nodeType,
+                    title: prompt.slice(0, 32) || (type === "image" ? "Generated Image" : "Generated Video"),
+                    position: { x: origin.x + (index % columns) * (spec.width + gap), y: origin.y + Math.floor(index / columns) * (spec.height + gap) },
+                    width: spec.width,
+                    height: spec.height,
+                    metadata: {
+                        prompt,
+                        status: NODE_STATUS_LOADING,
+                        generationMode: type,
+                        generationRecordId,
+                        agentRunId: runId,
+                        agentToolCallId: callId,
+                        agentGenerationIndex: index,
+                        sourceNodeIds,
+                    },
+                } satisfies CanvasNodeData;
+            });
+            const existingIds = new Set(existing.map((node) => node.id));
+            const refreshed = nodesRef.current.map((node) =>
+                existingIds.has(node.id) && !node.metadata?.content
+                    ? { ...node, metadata: { ...node.metadata, prompt, status: NODE_STATUS_LOADING, errorDetails: undefined, generationRecordId, sourceNodeIds } }
+                    : node,
+            );
+            const nextNodes = [...refreshed, ...created];
+            const targets = nextNodes
+                .filter((node) => node.type === nodeType && node.metadata?.agentRunId === runId && node.metadata?.agentToolCallId === callId)
+                .slice(0, expectedCount);
+            const connectionKeys = new Set(connectionsRef.current.map((connection) => `${connection.fromNodeId}:${connection.toNodeId}`));
+            const createdConnections = targets.flatMap((target) =>
+                sourceNodeIds.flatMap((sourceNodeId) => {
+                    const connection = normalizeConnection(sourceNodeId, target.id, nextNodes, "source");
+                    if (!connection || connectionKeys.has(`${connection.fromNodeId}:${connection.toNodeId}`)) return [];
+                    connectionKeys.add(`${connection.fromNodeId}:${connection.toNodeId}`);
+                    return [{ id: nanoid(), ...connection }];
+                }),
+            );
+            const nextConnections = [...connectionsRef.current, ...createdConnections];
+            nodesRef.current = nextNodes;
+            connectionsRef.current = nextConnections;
+            setNodes(nextNodes);
+            setConnections(nextConnections);
+            setSelectedNodeIds(new Set(targets.map((node) => node.id)));
+            setSelectedConnectionId(null);
+            focusAssistantNodes(targets, true, runId);
+        },
+        [focusAssistantNodes, screenToCanvas, size.height, size.width],
+    );
+
+    const settleAssistantGeneration = useCallback((runId: string, callId: string | undefined, status: "failed" | "cancelled", error?: string) => {
+        const targets = nodesRef.current.filter(
+            (node) =>
+                node.metadata?.agentRunId === runId &&
+                (!callId || node.metadata?.agentToolCallId === callId) &&
+                !node.metadata?.content &&
+                (node.metadata?.status === NODE_STATUS_LOADING || (status === "cancelled" && Boolean(callId))),
+        );
+        if (!targets.length) return;
+        const targetIds = new Set(targets.map((node) => node.id));
+        const nextNodes =
+            status === "cancelled"
+                ? nodesRef.current.filter((node) => !targetIds.has(node.id))
+                : nodesRef.current.map((node) => (targetIds.has(node.id) ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_ERROR, errorDetails: error || "生成失败" } } : node));
+        const nextConnections = status === "cancelled" ? connectionsRef.current.filter((connection) => !targetIds.has(connection.fromNodeId) && !targetIds.has(connection.toNodeId)) : connectionsRef.current;
+        nodesRef.current = nextNodes;
+        connectionsRef.current = nextConnections;
+        setNodes(nextNodes);
+        if (status === "cancelled") {
+            setConnections(nextConnections);
+            setSelectedNodeIds((selected) => new Set([...selected].filter((id) => !targetIds.has(id))));
+        }
+    }, []);
+
     const insertAssistantImages = useCallback(
         async (images: CanvasAssistantImage[]) => {
             const stored = await Promise.all(
@@ -3252,27 +3345,44 @@ function InfiniteCanvasPage() {
                     return { image, storedImage, meta, size: fitNodeSize(meta.width, meta.height) };
                 }),
             );
+            const agentImage = images.find((image) => image.agentRunId && image.agentToolCallId);
+            const placeholders = agentImage
+                ? nodesRef.current
+                      .filter((node) => node.type === CanvasNodeType.Image && node.metadata?.agentRunId === agentImage.agentRunId && node.metadata?.agentToolCallId === agentImage.agentToolCallId)
+                      .sort((left, right) => (left.metadata?.agentGenerationIndex || 0) - (right.metadata?.agentGenerationIndex || 0))
+                : [];
             const center = screenToCanvas((containerRef.current?.getBoundingClientRect().left || 0) + size.width / 2, (containerRef.current?.getBoundingClientRect().top || 0) + size.height / 2);
             const gap = 32;
             const totalWidth = stored.reduce((sum, item) => sum + item.size.width, 0) + Math.max(0, stored.length - 1) * gap;
             let x = center.x - totalWidth / 2;
-            const created = stored.map(({ image, storedImage, meta, size: nodeSize }) => {
-                const id = nanoid();
+            const resolved = stored.map(({ image, storedImage, meta, size: nodeSize }, index) => {
+                const placeholder = placeholders[index];
+                const position = placeholder
+                    ? { x: placeholder.position.x + placeholder.width / 2 - nodeSize.width / 2, y: placeholder.position.y + placeholder.height / 2 - nodeSize.height / 2 }
+                    : { x, y: center.y - nodeSize.height / 2 };
                 const node: CanvasNodeData = {
-                    id,
+                    id: placeholder?.id || nanoid(),
                     type: CanvasNodeType.Image,
                     title: image.prompt.slice(0, 32) || "Generated Image",
-                    position: { x, y: center.y - nodeSize.height / 2 },
+                    position,
                     width: nodeSize.width,
                     height: nodeSize.height,
-                    metadata: { ...imageMetadata({ ...storedImage, width: meta.width, height: meta.height }), prompt: image.prompt, agentRunId: image.agentRunId, agentToolCallId: image.agentToolCallId, sourceNodeIds: image.sourceNodeIds },
+                    metadata: { ...placeholder?.metadata, ...imageMetadata({ ...storedImage, width: meta.width, height: meta.height }), prompt: image.prompt, agentRunId: image.agentRunId, agentToolCallId: image.agentToolCallId, agentGenerationIndex: index, sourceNodeIds: image.sourceNodeIds },
                 };
-                x += nodeSize.width + gap;
+                if (!placeholder) x += nodeSize.width + gap;
                 return node;
             });
-            const nextNodes = [...nodesRef.current, ...created];
+            const resolvedById = new Map(resolved.map((node) => [node.id, node]));
+            const unresolvedIds = new Set(placeholders.slice(resolved.length).filter((node) => !node.metadata?.content).map((node) => node.id));
+            const existingIds = new Set(nodesRef.current.map((node) => node.id));
+            const nextNodes = [
+                ...nodesRef.current.map((node) =>
+                    resolvedById.get(node.id) || (unresolvedIds.has(node.id) ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_ERROR, errorDetails: "图片未生成成功" } } : node),
+                ),
+                ...resolved.filter((node) => !existingIds.has(node.id)),
+            ];
             const existingConnections = new Set(connectionsRef.current.map((connection) => `${connection.fromNodeId}:${connection.toNodeId}`));
-            const createdConnections = created.flatMap((node, index) =>
+            const createdConnections = resolved.flatMap((node, index) =>
                 (stored[index].image.sourceNodeIds || []).flatMap((sourceNodeId) => {
                     const connection = normalizeConnection(sourceNodeId, node.id, nextNodes, "source");
                     if (!connection || existingConnections.has(`${connection.fromNodeId}:${connection.toNodeId}`)) return [];
@@ -3281,17 +3391,16 @@ function InfiniteCanvasPage() {
                 }),
             );
             const nextConnections = [...connectionsRef.current, ...createdConnections];
-            const agentImage = images.find((image) => image.agentRunId && image.agentToolCallId);
             if (agentImage?.agentRunId && agentImage.agentToolCallId) markAssistantHistory(agentImage.agentRunId, agentImage.agentToolCallId);
             nodesRef.current = nextNodes;
             connectionsRef.current = nextConnections;
             setNodes(nextNodes);
             setConnections(nextConnections);
-            setSelectedNodeIds(new Set(created.map((node) => node.id)));
+            setSelectedNodeIds(new Set(resolved.map((node) => node.id)));
             setSelectedConnectionId(null);
-            if (created[0]) setDialogNodeId(created[0].id);
-            focusAssistantNodes(created, true, agentImage?.agentRunId);
-            return created.map((node, index) => ({ nodeId: node.id, storageKey: stored[index].storedImage.storageKey }));
+            if (resolved[0]) setDialogNodeId(resolved[0].id);
+            focusAssistantNodes(resolved, true, agentImage?.agentRunId);
+            return resolved.map((node, index) => ({ nodeId: node.id, storageKey: stored[index].storedImage.storageKey }));
         },
         [focusAssistantNodes, markAssistantHistory, screenToCanvas, size.height, size.width],
     );
@@ -3302,19 +3411,22 @@ function InfiniteCanvasPage() {
             const center = screenToCanvas((containerRef.current?.getBoundingClientRect().left || 0) + size.width / 2, (containerRef.current?.getBoundingClientRect().top || 0) + size.height / 2);
             const selected = nodesRef.current.filter((node) => video.sourceNodeIds?.includes(node.id));
             const nodeSize = fitNodeSize(video.width || 1280, video.height || 720, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
-            const position = selected.length
-                ? { x: Math.max(...selected.map((node) => node.position.x + node.width)) + 40, y: Math.min(...selected.map((node) => node.position.y)) }
-                : { x: center.x - nodeSize.width / 2, y: center.y - nodeSize.height / 2 };
+            const placeholder = nodesRef.current.find((node) => node.type === CanvasNodeType.Video && node.metadata?.agentRunId === video.agentRunId && node.metadata?.agentToolCallId === video.agentToolCallId);
+            const position = placeholder
+                ? { x: placeholder.position.x + placeholder.width / 2 - nodeSize.width / 2, y: placeholder.position.y + placeholder.height / 2 - nodeSize.height / 2 }
+                : selected.length
+                  ? { x: Math.max(...selected.map((node) => node.position.x + node.width)) + 40, y: Math.min(...selected.map((node) => node.position.y)) }
+                  : { x: center.x - nodeSize.width / 2, y: center.y - nodeSize.height / 2 };
             const node: CanvasNodeData = {
-                id: nanoid(),
+                id: placeholder?.id || nanoid(),
                 type: CanvasNodeType.Video,
                 title: video.prompt.slice(0, 32) || "Generated Video",
                 position,
                 width: nodeSize.width,
                 height: nodeSize.height,
-                metadata: { ...videoMetadata(video), prompt: video.prompt, agentRunId: video.agentRunId, agentToolCallId: video.agentToolCallId, sourceNodeIds: video.sourceNodeIds },
+                metadata: { ...placeholder?.metadata, ...videoMetadata(video), prompt: video.prompt, agentRunId: video.agentRunId, agentToolCallId: video.agentToolCallId, agentGenerationIndex: 0, sourceNodeIds: video.sourceNodeIds },
             };
-            const nextNodes = [...nodesRef.current, node];
+            const nextNodes = placeholder ? nodesRef.current.map((item) => (item.id === placeholder.id ? node : item)) : [...nodesRef.current, node];
             const existingConnections = new Set(connectionsRef.current.map((connection) => `${connection.fromNodeId}:${connection.toNodeId}`));
             const createdConnections = (video.sourceNodeIds || []).flatMap((sourceNodeId) => {
                 const connection = normalizeConnection(sourceNodeId, node.id, nextNodes, "source");
@@ -3964,6 +4076,8 @@ function InfiniteCanvasPage() {
                         onInsertImage={insertAssistantImage}
                         onInsertImages={insertAssistantImages}
                         onInsertVideo={insertAssistantVideo}
+                        onStartGeneration={startAssistantGeneration}
+                        onSettleGeneration={settleAssistantGeneration}
                         onArrangeNodes={arrangeAssistantNodes}
                         onInsertText={insertAssistantText}
                         onPersistToolResult={persistAssistantToolResult}
@@ -4405,7 +4519,23 @@ async function restoreInterruptedCanvasMedia(nodes: CanvasNodeData[], imageResul
     if (!interrupted.length) return nodes;
 
     const interruptedIds = new Set(interrupted.map((node) => node.id));
-    const imageRootIds = [...new Set(interrupted.filter((node) => node.type === CanvasNodeType.Image).map((node) => node.metadata?.batchRootId || node.id))];
+    const interruptedImages = interrupted.filter((node) => node.type === CanvasNodeType.Image);
+    const agentImageGroups = [...new Map(interruptedImages.filter((node) => node.metadata?.agentRunId && node.metadata.agentToolCallId).map((node) => [`${node.metadata!.agentRunId}:${node.metadata!.agentToolCallId}`, node])).values()].map((seed) => {
+        const allTargets = nodes
+            .filter((node) => node.type === CanvasNodeType.Image && node.metadata?.agentRunId === seed.metadata?.agentRunId && node.metadata?.agentToolCallId === seed.metadata?.agentToolCallId)
+            .sort((left, right) => (left.metadata?.agentGenerationIndex || 0) - (right.metadata?.agentGenerationIndex || 0));
+        return { root: allTargets[0], allTargets, targets: allTargets.filter((node) => interruptedIds.has(node.id)) };
+    });
+    const agentImageIds = new Set(agentImageGroups.flatMap((group) => group.allTargets.map((node) => node.id)));
+    const imageRootIds = [...new Set(interruptedImages.filter((node) => !agentImageIds.has(node.id)).map((node) => node.metadata?.batchRootId || node.id))];
+    const imageGroups = [
+        ...agentImageGroups,
+        ...imageRootIds.map((rootId) => {
+            const root = nodes.find((node) => node.id === rootId);
+            const allTargets = root?.metadata?.isBatchRoot ? nodes.filter((node) => node.metadata?.batchRootId === rootId) : nodes.filter((node) => node.id === rootId);
+            return { root, allTargets, targets: allTargets.filter((node) => interruptedIds.has(node.id)) };
+        }),
+    ];
     const usedResults = new Set<string>();
     const recoveredImages = new Map<string, UploadedImage>();
     const recoveredVideos = new Map<string, UploadedFile>();
@@ -4413,11 +4543,8 @@ async function restoreInterruptedCanvasMedia(nodes: CanvasNodeData[], imageResul
     const pending = new Set<string>();
     const primaryImageIds = new Map<string, string>();
 
-    for (const rootId of imageRootIds) {
-        const root = nodes.find((node) => node.id === rootId);
-        const allTargets = root?.metadata?.isBatchRoot ? nodes.filter((node) => node.metadata?.batchRootId === rootId) : nodes.filter((node) => node.id === rootId);
-        const targets = allTargets.filter((node) => interruptedIds.has(node.id));
-        if (!targets.length && !interruptedIds.has(rootId)) continue;
+    for (const { root, allTargets, targets } of imageGroups) {
+        if (!root || !targets.length) continue;
         const generationRecordId = root?.metadata?.generationRecordId || targets[0].metadata?.generationRecordId;
         const prompt = root?.metadata?.prompt || targets[0].metadata?.prompt || "";
         const result = imageResults.find((item) => !usedResults.has(item.id) && (generationRecordId ? item.id === generationRecordId : item.prompt === prompt));
@@ -4444,6 +4571,11 @@ async function restoreInterruptedCanvasMedia(nodes: CanvasNodeData[], imageResul
             if (image && !primaryImage) primaryImage = { nodeId: node.id, image };
             if (image && interruptedIds.has(node.id)) recoveredImages.set(node.id, image);
         });
+        if (root.metadata?.agentToolCallId) {
+            targets.forEach((node) => {
+                if (!recoveredImages.has(node.id) && !errors.has(node.id)) errors.set(node.id, "图片未生成成功");
+            });
+        }
         if (root?.metadata?.isBatchRoot) {
             if (primaryImage && interruptedIds.has(root.id)) recoveredImages.set(root.id, primaryImage.image);
             if (primaryImage) primaryImageIds.set(root.id, primaryImage.nodeId);

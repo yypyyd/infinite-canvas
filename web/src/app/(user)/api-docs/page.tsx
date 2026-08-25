@@ -98,13 +98,13 @@ export default function ModelSquarePage() {
     return (
         <main className="h-full overflow-y-auto bg-background text-foreground">
             <div className="relative mx-auto min-h-full w-full max-w-[1600px] px-4 pb-10 pt-8 sm:px-6 sm:pt-12 lg:px-8">
-                <div className="pointer-events-none absolute inset-x-0 top-0 h-[440px] overflow-hidden opacity-70 dark:opacity-40" aria-hidden="true">
+                <div className="pointer-events-none absolute inset-x-0 top-0 h-[440px] overflow-hidden opacity-55 dark:opacity-35" aria-hidden="true">
                     <div className="absolute left-[8%] top-[-210px] size-[420px] rounded-full bg-primary/15 blur-3xl" />
                     <div className="absolute right-[12%] top-[-180px] size-[360px] rounded-full bg-primary/10 blur-3xl" />
                 </div>
 
                 <header className="relative mx-auto max-w-3xl text-center">
-                    <div className="mx-auto flex size-11 items-center justify-center rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/15">
+                    <div className="mx-auto flex size-11 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/15">
                         <Sparkles className="size-5" />
                     </div>
                     <h1 className="mt-4 text-3xl font-semibold tracking-[-.045em] sm:text-5xl">模型广场</h1>
@@ -129,7 +129,7 @@ export default function ModelSquarePage() {
                 </header>
 
                 <div className="relative mt-8 grid items-start gap-4 lg:grid-cols-[250px_minmax(0,1fr)]">
-                    <aside className="rounded-2xl border border-border bg-card/85 p-4 backdrop-blur lg:sticky lg:top-4">
+                    <aside className="rounded-xl border border-border bg-card p-4 lg:sticky lg:top-4">
                         <div className="mb-4 flex items-start justify-between gap-3">
                             <div>
                                 <h2 className="text-sm font-semibold">筛选模型</h2>
@@ -158,7 +158,7 @@ export default function ModelSquarePage() {
                             <div className="flex items-center gap-2 text-xs text-muted-foreground"><LayoutGrid className="size-3.5" />卡片视图</div>
                         </div>
                         {isLoading || !modelChannel ? (
-                            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{Array.from({ length: 6 }, (_, index) => <div key={index} className="rounded-2xl border border-border bg-card p-5"><Skeleton active paragraph={{ rows: 4 }} /></div>)}</div>
+                            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{Array.from({ length: 6 }, (_, index) => <div key={index} className="rounded-xl border border-border bg-card p-5"><Skeleton active paragraph={{ rows: 4 }} /></div>)}</div>
                         ) : pagedModels.length ? (
                             <>
                                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -167,7 +167,7 @@ export default function ModelSquarePage() {
                                 {visibleModels.length > pageSize ? <div className="mt-6 flex justify-center"><Pagination current={currentPage} pageSize={pageSize} total={visibleModels.length} showSizeChanger={false} onChange={setPage} /></div> : null}
                             </>
                         ) : (
-                            <div className="rounded-2xl border border-dashed border-border bg-card/60 py-20"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有找到符合条件的模型"><Button onClick={() => { setKeyword(""); clearFilters(); }}>清除筛选</Button></Empty></div>
+                            <div className="rounded-xl border border-dashed border-border bg-card py-20"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有找到符合条件的模型"><Button onClick={() => { setKeyword(""); clearFilters(); }}>清除筛选</Button></Empty></div>
                         )}
                     </section>
                 </div>
@@ -209,7 +209,7 @@ function ModelCard({ model, rules, onDetails, onCopy }: { model: MarketplaceMode
     const Icon = meta.icon;
     const tags = capabilityTags(model);
     return (
-        <article className="group flex min-h-[250px] flex-col rounded-2xl border border-border bg-card p-5 transition duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[0_14px_40px_rgba(23,23,23,.07)] dark:hover:shadow-none">
+        <article className="group flex min-h-[250px] flex-col rounded-xl border border-border bg-card p-5 transition duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[0_14px_30px_rgba(86,52,35,.07)] dark:hover:shadow-none">
             <div className="flex items-start justify-between gap-3">
                 <div className="flex min-w-0 items-start gap-3">
                     <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/15"><Icon className="size-[18px]" /></span>
@@ -256,7 +256,7 @@ function ModelDetails({ model, rules, endpoint, operation, operations, onOperati
     return (
         <div className="pb-6">
             <div className="flex items-start gap-4 border-b border-border pb-6 pr-8">
-                <span className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/15"><Icon className="size-5" /></span>
+                <span className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/15"><Icon className="size-5" /></span>
                 <div className="min-w-0 flex-1">
                     <div className="text-xs font-medium text-primary">{meta.label}模型</div>
                     <h2 className="mt-1 break-words text-2xl font-semibold tracking-[-.035em]">{model.name || model.id}</h2>
@@ -285,7 +285,7 @@ function ModelDetails({ model, rules, endpoint, operation, operations, onOperati
                 </div>
             </section>
 
-            <section className="mt-7 overflow-hidden rounded-2xl border border-border">
+            <section className="mt-7 overflow-hidden rounded-xl border border-border">
                 <div className="flex flex-col gap-3 border-b border-border bg-muted/35 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
                     <div><h3 className="text-sm font-semibold">API 调用示例</h3><p className="mt-1 text-xs text-muted-foreground">替换 API Key 和提示词即可调用</p></div>
                     {operations.length > 1 ? <Segmented<ModelOperation> size="small" value={operation} options={operations.map((item) => ({ label: operationMeta[item], value: item }))} onChange={onOperationChange} /> : null}

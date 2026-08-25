@@ -1122,7 +1122,7 @@ export default function CommercePage() {
     return (
         <div className="bg-background">
             <div className="mx-auto max-w-[1440px] px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
-                <header className="hero-atmosphere mb-9 flex min-h-64 flex-wrap items-end justify-between gap-6 rounded-[30px] bg-[#f5f5f7] p-7 sm:p-10 dark:rounded-none dark:border-b dark:border-border dark:bg-transparent dark:p-0 dark:py-12 dark:sm:py-14">
+                <header className="hero-atmosphere mb-9 flex min-h-64 flex-wrap items-end justify-between gap-6 rounded-xl border border-border bg-card p-7 sm:p-10 dark:rounded-none dark:border-b dark:border-border dark:bg-transparent dark:p-0 dark:py-12 dark:sm:py-14">
                     <div>
                         <div className="mb-3 inline-flex items-center gap-2 text-sm font-medium text-primary">
                             <Building2 className="size-4" /> 企业电商工作区

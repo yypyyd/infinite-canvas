@@ -165,7 +165,7 @@ function AccountContent() {
     return (
         <main className="h-full overflow-y-auto bg-background">
             <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
-                <section className="relative overflow-hidden rounded-[30px] bg-[#f5f5f7] dark:bg-card dark:ring-1 dark:ring-border">
+                <section className="relative overflow-hidden rounded-xl border border-border bg-card">
                     <div className="relative flex flex-col gap-5 px-5 py-6 sm:flex-row sm:items-center sm:px-7 sm:py-8">
                         <Avatar size={72} src={user.avatarUrl || undefined} className="shrink-0 border border-border bg-foreground text-xl font-semibold text-background">
                             {avatarText}
@@ -202,7 +202,7 @@ function AccountContent() {
                     </div>
                 </section>
 
-                <div className="mt-6 rounded-[22px] bg-card px-4 shadow-[0_12px_36px_rgba(23,23,23,.06)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border sm:px-6">
+                <div className="mt-6 rounded-xl border border-border bg-card px-4 sm:px-6">
                     <Tabs activeKey={activeTab} items={accountTabs} onChange={(key) => router.replace(key === "profile" ? "/account" : `/account?tab=${key}`, { scroll: false })} tabBarStyle={{ margin: 0 }} />
                 </div>
 
@@ -279,7 +279,7 @@ function ProfileSection() {
 
     return (
         <>
-            <section className="overflow-hidden rounded-[28px] bg-card shadow-[0_18px_50px_rgba(23,23,23,.07)] ring-1 ring-border/70">
+            <section className="overflow-hidden rounded-xl border border-border bg-card">
                 <header className="flex flex-col gap-4 border-b border-border px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-7">
                     <div>
                         <div className="flex items-center gap-2 text-lg font-semibold tracking-tight">
@@ -317,7 +317,7 @@ function ProfileSection() {
                             <ShieldCheck className="size-4" />
                             账号安全
                         </div>
-                        <span className="flex size-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                        <span className="flex size-11 items-center justify-center rounded-lg bg-primary/10 text-primary">
                             <KeyRound className="size-5" />
                         </span>
                         <div className="mt-4 font-medium">登录密码</div>
@@ -338,7 +338,7 @@ function ProfileSection() {
                             </div>
                             <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">{storagePercent}%</span>
                         </div>
-                        <div className="mt-5 grid grid-cols-3 gap-2 rounded-2xl bg-muted/70 p-3 text-center">
+                        <div className="mt-5 grid grid-cols-3 gap-2 rounded-lg bg-muted/70 p-3 text-center">
                             {[
                                 [projectCount, "画布"],
                                 [assetCount, "素材"],
@@ -1453,7 +1453,7 @@ curl "${endpoint}/videos/VIDEO_TASK_ID/content?model=YOUR_VIDEO_MODEL" \\
 
     return (
         <>
-            <section className="overflow-hidden rounded-[28px] bg-card shadow-[0_18px_50px_rgba(23,23,23,.07)] ring-1 ring-border/70">
+            <section className="overflow-hidden rounded-xl border border-border bg-card">
                 <header className="flex flex-col gap-4 border-b border-border px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-7">
                     <div>
                         <div className="flex items-center gap-2 text-lg font-semibold tracking-tight">
@@ -1481,7 +1481,7 @@ curl "${endpoint}/videos/VIDEO_TASK_ID/content?model=YOUR_VIDEO_MODEL" \\
                             <div className="divide-y divide-border">
                                 {keysQuery.data.map((item) => (
                                     <div key={item.id} className="flex flex-col gap-3 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-center">
-                                        <span className={`flex size-10 shrink-0 items-center justify-center rounded-2xl ${item.status === "active" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
+                                        <span className={`flex size-10 shrink-0 items-center justify-center rounded-lg ${item.status === "active" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
                                             <KeyRound className="size-4" />
                                         </span>
                                         <div className="min-w-0 flex-1">
@@ -1514,7 +1514,7 @@ curl "${endpoint}/videos/VIDEO_TASK_ID/content?model=YOUR_VIDEO_MODEL" \\
                             快速接入
                         </div>
                         <p className="mt-2 text-sm leading-6 text-muted-foreground">使用 Bearer 鉴权访问图片、视频和音频模型。Key 自动绑定当前企业，无需传企业编号。</p>
-                        <div className="mt-5 rounded-2xl bg-muted/70 p-4">
+                        <div className="mt-5 rounded-lg bg-muted/70 p-4">
                             <div className="flex items-center justify-between gap-3">
                                 <span className="text-xs text-muted-foreground">API Endpoint</span>
                                 <Button type="text" size="small" icon={<Copy className="size-3.5" />} onClick={() => copyText(endpoint, "接口地址已复制")} />
@@ -1529,7 +1529,7 @@ curl "${endpoint}/videos/VIDEO_TASK_ID/content?model=YOUR_VIDEO_MODEL" \\
                                 <code>GET /generation-tasks/recovery</code>
                             </div>
                         </div>
-                        <div className="mt-3 rounded-2xl bg-muted/70 p-4">
+                        <div className="mt-3 rounded-lg bg-muted/70 p-4">
                             <div className="flex items-center justify-between gap-3">
                                 <Segmented
                                     size="small"
@@ -1541,7 +1541,7 @@ curl "${endpoint}/videos/VIDEO_TASK_ID/content?model=YOUR_VIDEO_MODEL" \\
                             </div>
                             <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-all text-xs leading-5">{curlExample}</pre>
                         </div>
-                        <div className="mt-3 rounded-2xl bg-primary/[.055] p-4 ring-1 ring-primary/15">
+                        <div className="mt-3 rounded-lg bg-primary/[.055] p-4 ring-1 ring-primary/15">
                             <div className="flex gap-2 text-xs leading-5">
                                 <RefreshCw className="mt-0.5 size-3.5 shrink-0 text-primary" />
                                 <div><span className="font-medium text-foreground">请求超时不要更换 Key。</span><span className="text-muted-foreground"> 使用原 </span><code className="text-foreground">Idempotency-Key</code><span className="text-muted-foreground"> 查询真实状态，避免重复生成和扣费。</span></div>

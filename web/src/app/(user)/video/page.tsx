@@ -2,7 +2,7 @@
 
 import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, LoaderCircle, Music2, Plus, SlidersHorizontal, Sparkles, Trash2, Upload, VideoIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { App, Button, Checkbox, Drawer, Empty, Input, Modal, Tag, Typography } from "antd";
+import { App, Button, Checkbox, Drawer, Input, Modal, Tag, Typography } from "antd";
 import { nanoid } from "nanoid";
 
 import { AssetPickerModal, type InsertAssetPayload } from "@/app/(user)/canvas/components/asset-picker-modal";
@@ -403,8 +403,8 @@ export default function VideoPage() {
 
     return (
         <div className="flex h-full flex-col overflow-hidden bg-background text-foreground">
-            <main className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[300px_minmax(0,1fr)] lg:overflow-hidden xl:grid-cols-[320px_minmax(0,1fr)] xl:p-6">
-                <aside className="thin-scrollbar hidden min-h-0 overflow-y-auto rounded-[24px] bg-card p-5 shadow-[0_16px_48px_rgba(23,23,23,.07)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border lg:block">
+            <main className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto bg-card lg:grid-cols-[300px_minmax(0,1fr)] lg:overflow-hidden xl:grid-cols-[320px_minmax(0,1fr)]">
+                <aside className="thin-scrollbar hidden min-h-0 overflow-y-auto border-r border-border bg-card p-5 lg:block">
                     <LogPanel
                         logs={logs}
                         selectedLogIds={selectedLogIds}
@@ -416,8 +416,8 @@ export default function VideoPage() {
                     />
                 </aside>
 
-                <section className="grid gap-4 lg:min-h-0 lg:overflow-hidden xl:grid-cols-[420px_minmax(0,1fr)]">
-                    <div className="thin-scrollbar flex flex-col rounded-[24px] bg-card p-5 shadow-[0_16px_48px_rgba(23,23,23,.07)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border lg:min-h-0 lg:overflow-y-auto lg:p-6">
+                <section className="grid lg:min-h-0 lg:overflow-hidden xl:grid-cols-[420px_minmax(0,1fr)]">
+                    <div className="thin-scrollbar flex flex-col bg-card p-5 lg:min-h-0 lg:overflow-y-auto lg:p-6 xl:border-r xl:border-border">
                         <div className="flex items-start justify-between gap-3">
                             <div>
                                 <div className="mb-2 text-xs font-medium text-primary">AI 动态影棚</div>
@@ -576,8 +576,8 @@ export default function VideoPage() {
                         </div>
                     </div>
 
-                    <div className="thin-scrollbar rounded-[24px] bg-card p-5 shadow-[0_16px_48px_rgba(23,23,23,.07)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border lg:min-h-0 lg:overflow-y-auto lg:p-6">
-                        <div className="mb-4 flex items-center justify-between gap-3">
+                    <div className="thin-scrollbar border-t border-border bg-background p-5 lg:min-h-0 lg:overflow-y-auto lg:p-6 xl:border-t-0">
+                        <div className="mb-6 flex items-center justify-between gap-3 border-b border-border/70 pb-4">
                             <div>
                                 <div className="text-xs font-medium text-primary">实时结果</div>
                                 <h2 className="mt-1 text-2xl font-semibold tracking-[-.03em]">营销视频</h2>
@@ -597,9 +597,17 @@ export default function VideoPage() {
                                 )}
                             </div>
                         ) : (
-                            <div className="flex min-h-[320px] flex-col items-center justify-center rounded-lg border border-dashed border-neutral-300 text-center dark:border-neutral-700 lg:min-h-[560px]">
-                                <VideoIcon className="mb-4 size-11 text-neutral-400" />
-                                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有生成视频" />
+                            <div className="flex min-h-[320px] flex-col items-center justify-center px-6 text-center lg:min-h-[560px]">
+                                <span className="mb-5 flex size-12 items-center justify-center rounded-xl bg-card text-primary ring-1 ring-border">
+                                    <VideoIcon className="size-5" />
+                                </span>
+                                <div className="text-base font-semibold">视频画布已准备好</div>
+                                <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">描述镜头与主体动作，需要时添加参考素材，生成结果会在这里播放。</p>
+                                <div className="mt-5 flex flex-wrap justify-center gap-2 text-xs text-muted-foreground">
+                                    <span className="rounded-md bg-card px-2.5 py-1.5 ring-1 ring-border">01 描述镜头</span>
+                                    <span className="rounded-md bg-card px-2.5 py-1.5 ring-1 ring-border">02 添加参考</span>
+                                    <span className="rounded-md bg-card px-2.5 py-1.5 ring-1 ring-border">03 开始生成</span>
+                                </div>
                             </div>
                         )}
                     </div>
@@ -755,7 +763,7 @@ function LogPanel({
         <>
             <div className="mb-3 flex items-center justify-between gap-3">
                 <h2 className="text-base font-semibold">生成记录</h2>
-                <Tag className="m-0">{logs.length}</Tag>
+                <span className="text-xs tabular-nums text-muted-foreground">{logs.length}</span>
             </div>
             <div className="mb-4 flex flex-wrap gap-2">
                 <Button size="small" icon={<Plus className="size-3.5" />} onClick={onCreateSession}>
@@ -768,7 +776,7 @@ function LogPanel({
                     删除
                 </Button>
             </div>
-            <div className="space-y-3">
+            <div className="space-y-1">
                 {logs.map((log) => (
                     <LogCard
                         key={log.id}
@@ -789,7 +797,7 @@ function LogCard({ log, selected, active, onSelectedChange, onClick }: { log: Ge
     return (
         <button
             type="button"
-            className={`block w-full rounded-lg border p-2 text-left transition ${active ? "border-neutral-900 bg-blue-50 dark:border-neutral-100 dark:bg-blue-950/20" : "border-neutral-200 bg-background hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-neutral-900"}`}
+            className={`block w-full rounded-md px-2 py-2.5 text-left transition ${active ? "bg-muted text-foreground" : "hover:bg-muted/60"}`}
             onClick={onClick}
         >
             <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2">

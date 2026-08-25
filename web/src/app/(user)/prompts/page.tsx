@@ -64,7 +64,7 @@ export default function PromptsPage() {
                     ) : null}
                     {!query.isLoading ? (
                         <>
-                            <div className="mx-auto mt-9 w-full max-w-2xl rounded-full bg-card p-1.5 shadow-[0_14px_40px_rgba(23,23,23,.08)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border">
+                            <div className="mx-auto mt-9 w-full max-w-2xl rounded-xl border border-border bg-card p-1.5">
                                 <Input size="large" className="w-full" prefix={<Search className="size-4 text-muted-foreground" />} value={titleKeyword} placeholder="搜索标题、品类或视觉风格" onChange={(event) => setTitleKeyword(event.target.value)} />
                             </div>
                             <div className="mx-auto mt-6 grid max-w-6xl gap-3 text-left">

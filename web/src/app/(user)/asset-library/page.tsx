@@ -115,7 +115,7 @@ export default function AssetLibraryPage() {
                         <h1 className="text-5xl font-semibold tracking-[-.045em] sm:text-6xl">好素材，让创作更快开始。</h1>
                         <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-muted-foreground">挑选团队素材，加入我的素材后继续编辑和使用。</p>
                     </div>
-                    <div className="mx-auto mt-9 w-full max-w-2xl rounded-full bg-card p-1.5 shadow-[0_14px_40px_rgba(23,23,23,.08)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border">
+                    <div className="mx-auto mt-9 w-full max-w-2xl rounded-xl border border-border bg-card p-1.5">
                         <Input
                             size="large"
                             className="w-full"

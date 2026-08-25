@@ -201,7 +201,7 @@ export default function AssetsPage() {
                         <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-muted-foreground">集中管理商品实拍、品牌参考、卖点文案与生成结果。</p>
                     </div>
 
-                    <div className="mx-auto mt-9 w-full max-w-2xl rounded-full bg-card p-1.5 shadow-[0_14px_40px_rgba(23,23,23,.08)] ring-1 ring-black/[.04] dark:shadow-none dark:ring-border">
+                    <div className="mx-auto mt-9 w-full max-w-2xl rounded-xl border border-border bg-card p-1.5">
                         <Input.Search
                             className="w-full"
                             size="large"

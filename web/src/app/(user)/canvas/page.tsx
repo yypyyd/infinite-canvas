@@ -107,14 +107,14 @@ export default function CanvasPage() {
                 ) : projects.length ? (
                     <section>
                         <h2 className="mb-[18px] text-[22px] font-semibold tracking-[-.02em]">我的项目</h2>
-                        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                        <div className="grid items-start gap-4 sm:grid-cols-2 xl:grid-cols-3">
                             {projects.map((project, index) => (
                                 <CanvasProjectCard key={project.id} project={project} featured={index === 0} />
                             ))}
                         </div>
                     </section>
                 ) : (
-                    <section className="flex min-h-[360px] flex-col items-center justify-center rounded-[28px] bg-[#f5f5f7] p-8 text-center dark:bg-transparent dark:border dark:border-dashed dark:border-border-strong">
+                    <section className="flex min-h-[360px] flex-col items-center justify-center rounded-xl border border-dashed border-border bg-card p-8 text-center">
                         <h2 className="text-xl font-medium">还没有商品项目</h2>
                         <p className="mt-3 text-sm text-muted-foreground">为一个商品或一次营销活动建立独立画布，集中管理全部视觉素材。</p>
                         <Button type="primary" className="mt-6" icon={<Plus className="size-4" />} onClick={() => createAndEnter()}>

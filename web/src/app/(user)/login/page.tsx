@@ -103,7 +103,7 @@ function LoginContent() {
 
     return (
         <main className="flex h-full min-h-0 items-center justify-center overflow-y-auto bg-background px-4 py-8 sm:px-6">
-            <section className="w-full max-w-[1040px] overflow-hidden rounded-[32px] bg-[#f5f5f5] shadow-[0_28px_90px_rgba(23,23,23,.1)] dark:bg-card dark:shadow-none dark:ring-1 dark:ring-border lg:grid lg:grid-cols-[1.05fr_.95fr]">
+            <section className="w-full max-w-[1040px] overflow-hidden rounded-xl border border-border bg-card lg:grid lg:grid-cols-[1.05fr_.95fr]">
                 <div className="hidden min-h-[680px] flex-col justify-between bg-[linear-gradient(145deg,#f0f0f0,#fafafa_54%,#e5e5e5)] p-12 dark:bg-[linear-gradient(145deg,#171717,#000000_54%,#262626)] lg:flex">
                     <div className="text-sm font-medium text-primary">道生画境</div>
                     <div>

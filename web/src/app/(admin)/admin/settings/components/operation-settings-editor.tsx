@@ -5,9 +5,9 @@ import dayjs from "dayjs";
 import { Alert, Button, Card, Col, DatePicker, Empty, Flex, Form, Input, InputNumber, Row, Select, Space, Switch, Tag, Typography } from "antd";
 
 const announcementTypes = [
-    { label: "普通", value: "info", color: "blue" },
+    { label: "普通", value: "info", color: "primary" },
     { label: "成功", value: "success", color: "green" },
-    { label: "提醒", value: "warning", color: "orange" },
+    { label: "提醒", value: "warning", color: "primary" },
     { label: "重要", value: "error", color: "red" },
 ];
 

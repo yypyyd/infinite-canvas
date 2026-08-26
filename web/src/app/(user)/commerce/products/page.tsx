@@ -132,7 +132,7 @@ export default function CommerceProductsPage() {
                     { title: "品牌", dataIndex: "brandName" },
                     { title: "类目", dataIndex: "category" },
                     { title: "SKU 数", dataIndex: "skuCount" },
-                    { title: "状态", dataIndex: "status", render: (value) => <Tag color={value === "active" ? "green" : value === "paused" ? "default" : "gold"}>{value}</Tag> },
+                    { title: "状态", dataIndex: "status", render: (value) => <Tag color={value === "active" ? "green" : value === "paused" ? "default" : "primary"}>{value}</Tag> },
                     { title: "更新时间", dataIndex: "updatedAt" },
                     {
                         title: "操作",

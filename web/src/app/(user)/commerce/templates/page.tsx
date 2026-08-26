@@ -124,7 +124,7 @@ export default function CommerceTemplatesPage() {
                     { title: "类型", dataIndex: "templateType", render: (value) => value || "custom" },
                     { title: "平台", dataIndex: "platform", render: (value) => value || "original" },
                     { title: "版本", dataIndex: "currentVersion", render: (value) => `v${value}` },
-                    { title: "状态", dataIndex: "status", render: (value) => <Tag color={value === "active" ? "green" : value === "disabled" ? "default" : "gold"}>{value}</Tag> },
+                    { title: "状态", dataIndex: "status", render: (value) => <Tag color={value === "active" ? "green" : value === "disabled" ? "default" : "primary"}>{value}</Tag> },
                     { title: "更新时间", dataIndex: "updatedAt" },
                     {
                         title: "操作",

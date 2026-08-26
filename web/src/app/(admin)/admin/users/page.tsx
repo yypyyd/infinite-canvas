@@ -90,7 +90,7 @@ export default function AdminUsersPage() {
             title: "角色",
             dataIndex: "role",
             width: 100,
-            render: (_, item) => <Tag color={item.role === "admin" ? "gold" : "default"}>{item.role === "admin" ? "管理员" : "用户"}</Tag>,
+            render: (_, item) => <Tag color={item.role === "admin" ? "primary" : "default"}>{item.role === "admin" ? "管理员" : "用户"}</Tag>,
         },
         {
             title: "分组",

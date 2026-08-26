@@ -907,7 +907,7 @@ function LogCard({ log, selected, active, onSelectedChange, onClick }: { log: Ge
                         </Tag>
                     ) : (
                         <div className="flex gap-1">
-                            <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none" color="blue">
+                            <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none" color="green">
                                 成功 {log.successCount ?? log.imageCount}
                             </Tag>
                             {log.failCount ? (

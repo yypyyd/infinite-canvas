@@ -132,7 +132,7 @@ export function BatchResultComparison({
                                 }
                                 extra={
                                     item.isPrimary ? (
-                                        <Tag color="blue" icon={<Crown className="size-3" />}>
+                                        <Tag color="primary" icon={<Crown className="size-3" />}>
                                             主图
                                         </Tag>
                                     ) : null

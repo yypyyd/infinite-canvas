@@ -445,7 +445,7 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
                             </Typography.Text>
                         </div>
                         <Space wrap>
-                            <Tag color="blue">
+                            <Tag color="primary">
                                 {capabilityLabel(selectedOperations)} · 按{unitLabel[defaultUnit(selectedModality)]}
                             </Tag>
                             {selectedModality === "image" || selectedModality === "video" ? (
@@ -475,7 +475,7 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
                                     {selectedModality === "image" || selectedModality === "video" ? (
                                         <Col span={4}>
                                             <Form.Item label="分辨率">
-                                                <Tag color="geekblue">{rule.resolutionTier.toUpperCase()}</Tag>
+                                                <Tag color="primary">{rule.resolutionTier.toUpperCase()}</Tag>
                                             </Form.Item>
                                         </Col>
                                     ) : null}

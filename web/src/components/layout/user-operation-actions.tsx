@@ -14,9 +14,9 @@ import { useUserStore } from "@/stores/use-user-store";
 
 const ANNOUNCEMENT_SEEN_KEY = "infinite-canvas-announcement-seen-v1";
 const announcementTypeMeta = {
-    info: { label: "公告", color: "blue" },
+    info: { label: "公告", color: "primary" },
     success: { label: "进展", color: "green" },
-    warning: { label: "提醒", color: "orange" },
+    warning: { label: "提醒", color: "primary" },
     error: { label: "重要", color: "red" },
 };
 

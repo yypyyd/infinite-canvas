@@ -72,9 +72,9 @@ const roleOptions = [
 ];
 const roleLabels: Record<string, string> = { owner: "所有者", admin: "管理员", member: "成员", reviewer: "审核人" };
 const statusLabels: Record<string, string> = { draft: "草稿", active: "在售", paused: "暂停", queued: "排队中", running: "生产中", pending_review: "待审核", partial_success: "部分成功", completed: "已完成", failed: "失败", cancelled: "已取消" };
-const statusColors: Record<string, string> = { active: "green", completed: "green", running: "blue", queued: "gold", pending_review: "cyan", partial_success: "orange", failed: "red", cancelled: "default", paused: "orange" };
+const statusColors: Record<string, string> = { active: "green", completed: "green", running: "primary", queued: "primary", pending_review: "primary", partial_success: "primary", failed: "red", cancelled: "default", paused: "primary" };
 const reviewLabels: Record<string, string> = { pending: "待审核", approved: "已通过", rejected: "已驳回" };
-const reviewColors: Record<string, string> = { pending: "gold", approved: "green", rejected: "red" };
+const reviewColors: Record<string, string> = { pending: "primary", approved: "green", rejected: "red" };
 const canSetBatchItemPrimary = (item: BatchProductionItem) => item.status === "completed" && item.reviewStatus === "approved" && Boolean(item.resultStorageKey) && !item.isPrimary && Number.isInteger(item.runNumber) && item.runNumber > 0;
 type ListQuery = { page: number; pageSize: number; keyword: string };
 const initialListQuery: ListQuery = { page: 1, pageSize: 20, keyword: "" };
@@ -537,7 +537,7 @@ export default function CommercePage() {
     const organizationPanel = (
         <div className="flex flex-col gap-5">
             {(invitationsQuery.data || []).length ? (
-                <Card className="border-orange-200 bg-orange-50/60 dark:border-orange-900 dark:bg-orange-950/20">
+                <Card className="border-primary/30 bg-primary/5 dark:border-primary/40 dark:bg-primary/10">
                     <div className="mb-3 text-sm font-medium">待接受的企业邀请</div>
                     <div className="flex flex-wrap gap-2">
                         {invitationsQuery.data?.map((item) => (
@@ -1774,7 +1774,7 @@ export default function CommercePage() {
                                 item.reviewStatus ? (
                                     <div className="space-y-1">
                                         <Tag color={reviewColors[item.reviewStatus]}>{reviewLabels[item.reviewStatus]}</Tag>
-                                        {item.isPrimary ? <Tag color="blue">商品主图</Tag> : null}
+                                        {item.isPrimary ? <Tag color="primary">商品主图</Tag> : null}
                                     </div>
                                 ) : (
                                     "—"

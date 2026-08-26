@@ -97,13 +97,13 @@ const accountTabs = [
 const creditTypeMeta: Record<string, { label: string; color?: string }> = {
     admin_adjust: { label: "后台调整" },
     ai_consume: { label: "模型消费", color: "blue" },
-    ai_refund: { label: "失败返还", color: "cyan" },
+    ai_refund: { label: "失败返还", color: "primary" },
     redeem_code: { label: "兑换码充值", color: "green" },
     balance_exchange: { label: "余额兑换", color: "green" },
-    daily_check_in: { label: "每日签到", color: "gold" },
+    daily_check_in: { label: "每日签到", color: "primary" },
     new_user_reward: { label: "新用户赠送", color: "purple" },
-    organization_transfer_out: { label: "转入企业", color: "orange" },
-    organization_transfer_in: { label: "企业收款", color: "geekblue" },
+    organization_transfer_out: { label: "转入企业", color: "primary" },
+    organization_transfer_in: { label: "企业收款", color: "primary" },
 };
 const modalityLabels: Record<string, string> = { image: "图片", video: "视频", text: "文本", audio: "音频" };
 
@@ -175,7 +175,7 @@ function AccountContent() {
                             <div className="flex min-w-0 flex-wrap items-center gap-2">
                                 <h1 className="truncate text-2xl font-semibold tracking-tight sm:text-3xl">{userName}</h1>
                                 <Tag className="m-0">{user.role === "admin" ? "管理员" : "普通用户"}</Tag>
-                                <Tag className="m-0" color="blue">
+                                <Tag className="m-0" color="primary">
                                     {user.group || "default"}
                                 </Tag>
                             </div>
@@ -751,7 +751,7 @@ function HistorySection() {
 }
 
 function generationStatusColor(status: GenerationHistoryItem["status"]) {
-    return status === "成功" ? "green" : status === "生成中" ? "processing" : status === "部分失败" ? "orange" : "red";
+    return status === "成功" ? "green" : status === "生成中" ? "processing" : status === "部分失败" ? "primary" : "red";
 }
 
 function historySelectionKey(item: GenerationHistoryItem) {
@@ -1158,7 +1158,7 @@ function BalanceSection() {
                                                 <div className="flex items-center justify-between gap-2">
                                                     <span className="truncate text-sm font-medium">{item.name}</span>
                                                     {discountCents > 0 ? (
-                                                        <Tag className="m-0 shrink-0" color="gold">
+                                                        <Tag className="m-0 shrink-0" color="primary">
                                                             省 ¥{formatYuan(discountCents)}
                                                         </Tag>
                                                     ) : null}
@@ -1178,7 +1178,7 @@ function BalanceSection() {
                                     <div className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
                                         应付 ¥{selectedPackage ? formatYuan(selectedPackage.amountCents) : "—"}
                                         {selectedPackage && selectedPackage.balanceCents > selectedPackage.amountCents ? (
-                                            <Tag className="m-0" color="gold">
+                                            <Tag className="m-0" color="primary">
                                                 省 ¥{formatYuan(selectedPackage.balanceCents - selectedPackage.amountCents)}
                                             </Tag>
                                         ) : null}
@@ -1307,7 +1307,7 @@ function PaymentOrderRow({ order }: { order: PaymentOrder }) {
             </div>
             <span className="hidden text-muted-foreground sm:block">{dayjs(order.createdAt).format("MM-DD HH:mm")}</span>
             <span className="hidden tabular-nums sm:block">到账 ¥{formatYuan(order.balanceCents)}<span className="block text-xs text-muted-foreground">实付 ¥{formatYuan(order.amountCents)}</span></span>
-            <Tag className="m-0" color={order.status === "paid" ? "green" : "gold"}>{order.status === "paid" ? "已到账" : "待支付"}</Tag>
+            <Tag className="m-0" color={order.status === "paid" ? "green" : "primary"}>{order.status === "paid" ? "已到账" : "待支付"}</Tag>
         </div>
     );
 }

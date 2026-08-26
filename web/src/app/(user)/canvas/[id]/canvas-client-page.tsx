@@ -4226,9 +4226,9 @@ function CanvasTopBar({
                         <Button type="text" shape="circle" className="!h-8 !w-8 !min-w-8 !p-0" style={{ color: theme.node.text }} icon={<Save className="size-4" />} onClick={onSaveCanvas} title="保存画布 Ctrl+S" aria-label="保存画布" />
                         <span className="relative hidden text-xs font-medium opacity-75 sm:inline">
                             自动保存
-                            {hasUnsavedChanges ? <span className="absolute -right-2 -top-1 size-1.5 rounded-full bg-amber-400" /> : null}
+                            {hasUnsavedChanges ? <span className="absolute -right-2 -top-1 size-1.5 rounded-full bg-primary" /> : null}
                         </span>
-                        {hasUnsavedChanges ? <span className="size-1.5 rounded-full bg-amber-400 sm:hidden" /> : null}
+                        {hasUnsavedChanges ? <span className="size-1.5 rounded-full bg-primary sm:hidden" /> : null}
                         <Switch size="small" checked={autoSaveEnabled} onChange={onAutoSaveChange} aria-label="自动保存" />
                     </div>
                     <UserStatusActions

@@ -1,11 +1,62 @@
 package service
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/yypyyd/infinite-canvas/model"
 )
+
+func TestSimpleAgentMediaCommandRejectsCompoundWorkflows(t *testing.T) {
+	for _, content := range []string{"生成一张红色运动鞋海报", "制作咖啡机旋转展示视频", "策划一张夏季饮料海报", "生成一张先进科技风海报"} {
+		if !simpleAgentMediaCommand(content) {
+			t.Fatalf("expected simple media command for %q", content)
+		}
+	}
+	for _, content := range []string{"先分析图片，然后生成海报", "生成图片；再添加文案", "比较图片并且生成视频", "生成图片同时排列节点"} {
+		if simpleAgentMediaCommand(content) {
+			t.Fatalf("expected compound workflow for %q", content)
+		}
+	}
+}
+
+func TestAgentModelCanvasContextKeepsFocusAndOneHopOnly(t *testing.T) {
+	context := AgentCanvasContext{
+		Autonomy: agentAutonomyStandard, SelectedNodeIDs: []string{"a"}, FocusNodeIDs: []string{"a"},
+		Nodes: []AgentCanvasNode{
+			{ID: "a", Type: "text", Title: "目标", X: 0, Y: 0, Width: 100, Height: 50, Content: "保留内容", StorageKey: "secret/a"},
+			{ID: "b", Type: "image", Title: "一跳", X: 200, Y: 0, Width: 100, Height: 100, Prompt: "保留提示", StorageKey: "secret/b"},
+			{ID: "c", Type: "text", Title: "二跳", X: 400, Y: 0, Width: 100, Height: 50, Content: "不得泄漏的长内容"},
+		},
+		Connections: []AgentCanvasConnection{{From: "a", To: "b"}, {From: "b", To: "c"}},
+	}
+	raw, _ := json.Marshal(context)
+	result, err := agentModelCanvasContext(string(raw), []model.AgentStep{{ToolName: "canvas.add_text", Status: model.AgentStepStatusCompleted, Output: `{"status":"success","nodeId":"generated-1"}`}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{`"id":"a"`, `"id":"b"`, `"nodeCount":3`, `"generated-1"`} {
+		if !strings.Contains(result, expected) {
+			t.Fatalf("model context missing %s: %s", expected, result)
+		}
+	}
+	for _, forbidden := range []string{`"id":"c"`, "不得泄漏的长内容", "secret/a", "secret/b"} {
+		if strings.Contains(result, forbidden) {
+			t.Fatalf("model context leaked %q: %s", forbidden, result)
+		}
+	}
+}
+
+func TestAgentModelToolResultOmitsMediaStorageKey(t *testing.T) {
+	result, err := json.Marshal(agentModelToolResult(model.AgentStep{ToolName: "image.generate", Status: model.AgentStepStatusCompleted, Output: `{"status":"success","images":[{"nodeId":"image-1","storageKey":"private/image-1.png"}]}`}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(result), "image-1") || strings.Contains(string(result), "storageKey") || strings.Contains(string(result), "private/") {
+		t.Fatalf("unsafe model tool result: %s", result)
+	}
+}
 
 func TestAgentMediaRequestNeedsClarification(t *testing.T) {
 	for _, content := range []string{"生成图片", "帮我生成一张图片", "请制作短视频", "我想要策划并生成海报"} {

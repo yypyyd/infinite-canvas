@@ -15,6 +15,7 @@ var (
 	ErrAgentToolResultConflict   = errors.New("agent tool result conflicts with saved result")
 	ErrAgentToolExecutionClaimed = errors.New("agent tool execution already claimed")
 	ErrAgentToolNotRevertible    = errors.New("agent tool cannot be reverted")
+	ErrAgentStepNotRetryable     = errors.New("agent step cannot be retried")
 )
 
 func CreateAgentSession(session model.AgentSession) (model.AgentSession, error) {
@@ -63,12 +64,12 @@ func GetAgentSession(organizationID, userID, sessionID string) (model.AgentSessi
 	return session, err
 }
 
-func CreateAgentRun(message model.AgentMessage, run model.AgentRun, step model.AgentStep, event model.AgentEvent) (model.AgentMessage, model.AgentRun, error) {
+func CreateAgentRun(message model.AgentMessage, run model.AgentRun, step model.AgentStep, event model.AgentEvent, snapshots ...model.AgentRunSnapshot) (model.AgentMessage, model.AgentRun, error) {
 	db, err := DB()
 	if err != nil {
 		return message, run, err
 	}
-	if existingMessage, existingRun, found, existingErr := getExistingAgentRunSubmission(db, message, run); existingErr != nil {
+	if existingMessage, existingRun, found, existingErr := getExistingAgentRunSubmission(db, message, run, snapshots); existingErr != nil {
 		return message, run, existingErr
 	} else if found {
 		return existingMessage, existingRun, nil
@@ -89,6 +90,12 @@ func CreateAgentRun(message model.AgentMessage, run model.AgentRun, step model.A
 		if err := tx.Create(&run).Error; err != nil {
 			return err
 		}
+		if len(snapshots) > 0 {
+			snapshot := snapshots[0]
+			if err := tx.Create(&snapshot).Error; err != nil {
+				return err
+			}
+		}
 		if err := tx.Create(&step).Error; err != nil {
 			return err
 		}
@@ -96,22 +103,31 @@ func CreateAgentRun(message model.AgentMessage, run model.AgentRun, step model.A
 		return tx.Create(&event).Error
 	})
 	if err != nil {
-		if existingMessage, existingRun, found, existingErr := getExistingAgentRunSubmission(db, message, run); found || existingErr != nil {
+		if existingMessage, existingRun, found, existingErr := getExistingAgentRunSubmission(db, message, run, snapshots); found || existingErr != nil {
 			return existingMessage, existingRun, existingErr
 		}
 	}
 	return message, run, err
 }
 
-func getExistingAgentRunSubmission(db *gorm.DB, message model.AgentMessage, run model.AgentRun) (model.AgentMessage, model.AgentRun, bool, error) {
+func getExistingAgentRunSubmission(db *gorm.DB, message model.AgentMessage, run model.AgentRun, snapshots []model.AgentRunSnapshot) (model.AgentMessage, model.AgentRun, bool, error) {
 	var existing model.AgentRun
 	if err := db.Where("organization_id = ? AND user_id = ? AND id = ?", run.OrganizationID, run.UserID, run.ID).First(&existing).Error; errors.Is(err, gorm.ErrRecordNotFound) {
 		return message, run, false, nil
 	} else if err != nil {
 		return message, run, false, err
 	}
-	if existing.SessionID != run.SessionID || existing.Model != run.Model || existing.Context != run.Context {
+	if existing.SessionID != run.SessionID || existing.Model != run.Model || existing.Context != run.Context || existing.MaxToolCalls != run.MaxToolCalls || existing.MaxMediaCalls != run.MaxMediaCalls || existing.MaxDurationSec != run.MaxDurationSec || existing.MaxCredits != run.MaxCredits {
 		return message, run, true, ErrAgentToolResultConflict
+	}
+	if len(snapshots) > 0 {
+		var existingSnapshot model.AgentRunSnapshot
+		if err := db.Where("organization_id = ? AND user_id = ? AND run_id = ?", run.OrganizationID, run.UserID, run.ID).First(&existingSnapshot).Error; err != nil {
+			return message, run, true, err
+		}
+		if existingSnapshot.Checksum != snapshots[0].Checksum {
+			return message, run, true, ErrAgentToolResultConflict
+		}
 	}
 	var existingStep model.AgentStep
 	if err := db.Where("organization_id = ? AND user_id = ? AND run_id = ? AND type = ?", run.OrganizationID, run.UserID, run.ID, model.AgentStepTypeCompletion).Order("created_at asc").First(&existingStep).Error; err != nil {
@@ -194,8 +210,8 @@ func ListActiveAgentMemories(organizationID, userID, projectID string, limit int
 	now := time.Now().UTC().Format("2006-01-02T15:04:05.000000000Z")
 	var memories []model.AgentMemory
 	err = db.Where(
-		"organization_id = ? AND user_id = ? AND status = ? AND (project_id = ? OR project_id = '') AND (expires_at = '' OR expires_at > ?)",
-		organizationID, userID, model.AgentMemoryStatusActive, projectID, now,
+		"organization_id = ? AND user_id = ? AND status = ? AND confidence >= ? AND (project_id = ? OR project_id = '') AND (expires_at = '' OR expires_at > ?)",
+		organizationID, userID, model.AgentMemoryStatusActive, 0.35, projectID, now,
 	).Order("confidence desc, updated_at desc").Limit(limit).Find(&memories).Error
 	return memories, err
 }
@@ -687,6 +703,56 @@ func RevertAgentTool(organizationID, userID, runID, callID, timestamp string, re
 	return run, err
 }
 
+func RevertAgentRun(organizationID, userID, runID string, callIDs []string, timestamp string, revertedEvents []model.AgentEvent, cancelledEvent model.AgentEvent) (model.AgentRun, error) {
+	db, err := DB()
+	if err != nil {
+		return model.AgentRun{}, err
+	}
+	var run model.AgentRun
+	err = transactionWithSQLiteRetry(db, func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("organization_id = ? AND user_id = ? AND id = ?", organizationID, userID, runID).First(&run).Error; err != nil {
+			return err
+		}
+		var count int64
+		if err := tx.Model(&model.AgentStep{}).Where("organization_id = ? AND user_id = ? AND run_id = ? AND type = ? AND tool_call_id IN ?", organizationID, userID, runID, model.AgentStepTypeTool, callIDs).Count(&count).Error; err != nil {
+			return err
+		}
+		if count != int64(len(callIDs)) || len(revertedEvents) != len(callIDs) {
+			return ErrAgentToolNotRevertible
+		}
+		for _, event := range revertedEvents {
+			var eventCount int64
+			if err := tx.Model(&model.AgentEvent{}).Where("organization_id = ? AND user_id = ? AND run_id = ? AND type = ? AND payload = ?", organizationID, userID, runID, model.AgentEventToolReverted, event.Payload).Count(&eventCount).Error; err != nil {
+				return err
+			}
+			if eventCount == 0 {
+				if err := appendAgentEvent(tx, run, event); err != nil {
+					return err
+				}
+			}
+		}
+		if run.Terminal() {
+			return nil
+		}
+		result := tx.Model(&model.AgentRun{}).Where("organization_id = ? AND user_id = ? AND id = ? AND status IN ?", organizationID, userID, runID, []model.AgentRunStatus{model.AgentRunStatusRunning, model.AgentRunStatusWaitingConfirmation, model.AgentRunStatusWaitingTool}).Updates(map[string]any{"status": model.AgentRunStatusCancelled, "completed_at": timestamp, "updated_at": timestamp})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return gorm.ErrRecordNotFound
+		}
+		if err := tx.Model(&model.AgentStep{}).Where("organization_id = ? AND user_id = ? AND run_id = ? AND status = ?", organizationID, userID, runID, model.AgentStepStatusRunning).Updates(map[string]any{"status": model.AgentStepStatusCancelled, "completed_at": timestamp, "updated_at": timestamp}).Error; err != nil {
+			return err
+		}
+		if err := appendAgentEvent(tx, run, cancelledEvent); err != nil {
+			return err
+		}
+		run.Status, run.CompletedAt, run.UpdatedAt = model.AgentRunStatusCancelled, timestamp, timestamp
+		return nil
+	})
+	return run, err
+}
+
 func GetAgentRun(organizationID, userID, runID string) (model.AgentRun, error) {
 	db, err := DB()
 	if err != nil {
@@ -705,6 +771,55 @@ func GetAgentToolStep(organizationID, userID, runID, callID string) (model.Agent
 	var step model.AgentStep
 	err = db.Where("organization_id = ? AND user_id = ? AND run_id = ? AND tool_call_id = ? AND type = ?", organizationID, userID, runID, callID, model.AgentStepTypeTool).First(&step).Error
 	return step, err
+}
+
+func ListAgentSteps(organizationID, userID, runID string) ([]model.AgentStep, error) {
+	db, err := DB()
+	if err != nil {
+		return nil, err
+	}
+	var steps []model.AgentStep
+	err = db.Where("organization_id = ? AND user_id = ? AND run_id = ?", organizationID, userID, runID).Order("created_at asc").Find(&steps).Error
+	return steps, err
+}
+
+func RetryAgentStep(organizationID, userID, runID, sourceCallID, timestamp string, retryStep model.AgentStep, retryEvent model.AgentEvent) (model.AgentRun, error) {
+	db, err := DB()
+	if err != nil {
+		return model.AgentRun{}, err
+	}
+	var run model.AgentRun
+	err = transactionWithSQLiteRetry(db, func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("organization_id = ? AND user_id = ? AND id = ?", organizationID, userID, runID).First(&run).Error; err != nil {
+			return err
+		}
+		if run.Status != model.AgentRunStatusFailed {
+			return ErrAgentStepNotRetryable
+		}
+		var source model.AgentStep
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("organization_id = ? AND user_id = ? AND run_id = ? AND tool_call_id = ? AND type = ? AND status = ?", organizationID, userID, runID, sourceCallID, model.AgentStepTypeTool, model.AgentStepStatusFailed).First(&source).Error; err != nil {
+			return ErrAgentStepNotRetryable
+		}
+		if source.ToolName != retryStep.ToolName || source.Input != retryStep.Input {
+			return ErrAgentStepNotRetryable
+		}
+		if err := tx.Create(&retryStep).Error; err != nil {
+			return err
+		}
+		result := tx.Model(&model.AgentRun{}).Where("organization_id = ? AND user_id = ? AND id = ? AND status = ?", organizationID, userID, runID, model.AgentRunStatusFailed).Updates(map[string]any{"status": model.AgentRunStatusWaitingTool, "error": "", "completed_at": "", "updated_at": timestamp})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrAgentStepNotRetryable
+		}
+		if err := appendAgentEvent(tx, run, retryEvent); err != nil {
+			return err
+		}
+		run.Status, run.Error, run.CompletedAt, run.UpdatedAt = model.AgentRunStatusWaitingTool, "", "", timestamp
+		return nil
+	})
+	return run, err
 }
 
 func ListCompletedAgentToolSteps(organizationID, userID, runID string) ([]model.AgentStep, error) {
@@ -740,17 +855,26 @@ func ClaimAgentToolExecution(organizationID, userID, runID, callID, token, times
 	if err != nil {
 		return err
 	}
-	result := db.Model(&model.AgentStep{}).Where(
-		"organization_id = ? AND user_id = ? AND run_id = ? AND tool_call_id = ? AND type = ? AND status = ? AND (execution_token = '' OR execution_token = ? OR execution_at <= ?)",
-		organizationID, userID, runID, callID, model.AgentStepTypeTool, model.AgentStepStatusRunning, token, deadline,
-	).Updates(map[string]any{"execution_token": token, "execution_at": timestamp, "updated_at": timestamp})
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected != 1 {
-		return ErrAgentToolExecutionClaimed
-	}
-	return nil
+	return transactionWithSQLiteRetry(db, func(tx *gorm.DB) error {
+		var step model.AgentStep
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("organization_id = ? AND user_id = ? AND run_id = ? AND tool_call_id = ? AND type = ? AND status = ?", organizationID, userID, runID, callID, model.AgentStepTypeTool, model.AgentStepStatusRunning).First(&step).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrAgentToolExecutionClaimed
+			}
+			return err
+		}
+		if step.ExecutionToken != "" && step.ExecutionToken != token && step.ExecutionAt > deadline {
+			return ErrAgentToolExecutionClaimed
+		}
+		takeover := step.ExecutionToken != "" && step.ExecutionToken != token
+		if err := tx.Model(&step).Updates(map[string]any{"execution_token": token, "execution_at": timestamp, "updated_at": timestamp}).Error; err != nil {
+			return err
+		}
+		if takeover {
+			return tx.Model(&model.AgentRun{}).Where("organization_id = ? AND user_id = ? AND id = ?", organizationID, userID, runID).UpdateColumn("tool_lease_takeovers", gorm.Expr("tool_lease_takeovers + 1")).Error
+		}
+		return nil
+	})
 }
 
 func GetAgentToolOutput(organizationID, userID, runID, callID string) (string, error) {

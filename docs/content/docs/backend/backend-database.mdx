@@ -50,6 +50,9 @@ description: 当前后端主要数据表与字段说明
 - `agent_steps`
 - `agent_events`
 - `agent_memories`
+- `agent_run_snapshots`
+- `agent_plan_steps`
+- `agent_feedbacks`
 - `user_projects`
 - `user_assets`
 - `user_generation_records`
@@ -86,13 +89,17 @@ description: 当前后端主要数据表与字段说明
 
 原始 Key 使用 32 字节密码学安全随机数生成，仅在创建成功响应中返回一次；服务端不保存明文，撤销后摘要不能再次鉴权。删除用户时会同步删除其 Key 记录。
 
-### agent_sessions / agent_messages / agent_runs / agent_steps / agent_events
+### agent_sessions / agent_messages / agent_runs / agent_steps / agent_events / agent_run_snapshots / agent_plan_steps
 
-画布 Agent 的持久执行骨架。`agent_sessions` 按企业、用户和画布项目保存会话；`agent_messages` 保存有序消息；`agent_runs` 保存对应用户消息编号、`running`、`waiting_confirmation`、`waiting_tool` 与完成、失败、取消状态，并在隐藏 `context` 中固化本轮自主等级、画布快照和授权选区；`agent_steps` 保存 completion/tool 输入输出、工具调用编号、确认决定，以及模型步骤和画布工具的执行租约；`agent_events` 保存可恢复 SSE 事件。所有访问同时校验 `organization_id + user_id`。客户端会预分配会话与运行编号并先随画布保存，服务端对同编号同请求进行幂等重放、对冲突请求明确拒绝；Completion Step 由数据库原子认领，Tool Step 使用 90 秒租约并由执行页面每 30 秒续租，避免多实例或多标签页重复规划、生成、扣费和修改画布，执行页面失联后仍可接管。自主模式下首次非破坏性工具失败会保留为可观察的失败 Step 并恢复 Completion，允许模型修改参数重试一次；第二次失败仍结束 Run，相同参数始终禁止重放。当前开放图片/视频生成、图片/视频视觉验收、节点排列、文本插入、节点删除和文本覆盖；每个成功的图片或视频生成 Step 都必须由后续对应的 `image.inspect` 或 `video.inspect` Step 覆盖其实际节点编号，验收结论与问题保存在 Step 输出中，自主模式对每种媒体最多使用一次完整修订提示词重新生成。删除与覆盖只有持久化批准后才转入 `waiting_tool`，拒绝则记录未执行 observation。画布历史撤销 Agent 工具副作用时会幂等追加 `tool.reverted` 事件；仍在执行或等待后续工具的 Run 同时转为 `cancelled`，避免模型继续基于已回滚结果规划。媒体结果只保存节点编号和私有 `storageKey`，不保存二进制或签名 URL。`waiting_tool` 超过 15 分钟会定时或惰性回收，`waiting_confirmation` 则保持等待用户明确决定。
+画布 Agent 的持久执行骨架。`agent_sessions` 按企业、用户和画布项目保存会话；`agent_messages` 保存有序消息；`agent_runs` 保存运行状态、工具/媒体/时间/算力预算、预算停止原因、事件流续接次数和工具租约接管次数，隐藏 `context` 只用于节点授权和模型上下文裁剪；`agent_steps` 保存 completion/tool 输入输出、工具调用编号、确认决定和执行租约；`agent_events` 保存可恢复 SSE 事件。`agent_run_snapshots` 单独保存每轮第一个副作用前的完整节点与连线及 SHA-256 校验值，只允许当前企业和账号在整轮撤销时读取，模型与运行诊断看不到快照正文；本地历史淘汰、刷新或换设备后仍能恢复。`agent_plan_steps` 按 Run、计划版本和位置保存标题、完成条件、顺序依赖、状态、关联工具及失败/跳过原因；失败后重新规划会保留旧版本，并把旧版本未完成步骤标为 `skipped`。所有访问同时校验 `organization_id + user_id`。客户端预分配会话与运行编号，服务端对同编号、上下文、预算和快照校验值进行幂等重放，对冲突请求明确拒绝；Completion Step 由数据库原子认领，Tool Step 使用 90 秒租约并由执行页面续租，执行页面失联后可安全接管。自主模式下首次非破坏性工具失败会恢复 Completion，允许调整或重规划一次；第二次失败仍结束 Run，相同参数始终禁止重放。媒体结果只保存节点编号和私有 `storageKey`，不保存二进制或签名 URL。`waiting_tool` 超过 15 分钟会回收，`waiting_confirmation` 保持等待用户决定。
 
 ### agent_memories
 
-Agent 的长期记忆表。记忆同时绑定企业、用户和可选画布项目；`project_id` 为空表示账号级记忆，否则只会在该画布项目的 Run 中检索。`kind` 取 `preference`、`fact`、`constraint` 或 `experience`，`key` 在同一企业/用户/项目范围内作为稳定覆盖键，`content` 保存可注入模型上下文的短文本，`confidence` 用于检索排序，`source_run_id` 和 `source_message_id` 保留来源，`expires_at` 支持自动过期。`active` 记录会注入后续 Run；用户批准 `agent.forget` 后改为 `forgotten` 并保留遗忘时间，永不再注入。所有写入由服务端从已确认的模型工具参数生成，浏览器不能提交任意记忆内容；读取、覆盖和遗忘均校验 `organization_id + user_id`，避免跨企业、跨账号或跨项目泄漏。
+Agent 的长期记忆表。记忆同时绑定企业、用户和可选画布项目；`project_id` 为空表示账号级记忆。`kind` 取 `preference`、`fact`、`constraint` 或 `experience`，`confidence` 用于检索排序，`source_run_id` 和 `source_message_id` 保留来源。只有 `active`、未过期且置信度不低于 `0.35` 的记录会注入后续 Run；用户批准 `agent.forget` 后改为 `forgotten`。所有写入由服务端从已确认的模型工具参数生成，读取、覆盖和遗忘均校验 `organization_id + user_id`。
+
+### agent_feedbacks
+
+保存用户对每个 Run 最新一次 `accepted`、`helpful`、`unhelpful`、`deleted` 或 `corrected` 信号。同一企业、账号和 Run 只有一条记录，后续信号覆盖前一信号并只应用评分差值：采纳/有用小幅提高该 Run 产生的 `experience` 记忆置信度，无用、删除或纠正小幅降低；偏好、事实和约束不受隐式反馈影响，置信度限制在 `0.1–0.9`。
 
 ### organizations / organization_members
 

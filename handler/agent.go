@@ -13,6 +13,11 @@ import (
 	"github.com/yypyyd/infinite-canvas/service"
 )
 
+const (
+	agentEventPollMin = 200 * time.Millisecond
+	agentEventPollMax = time.Second
+)
+
 func CreateAgentSession(w http.ResponseWriter, r *http.Request) {
 	user, ok := service.UserFromContext(r.Context())
 	if !ok {
@@ -130,6 +135,75 @@ func GetAgentRun(w http.ResponseWriter, r *http.Request, runID string) {
 	OK(w, run)
 }
 
+func GetAgentRunDiagnostics(w http.ResponseWriter, r *http.Request, runID string) {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok {
+		Fail(w, "未登录或权限不足")
+		return
+	}
+	diagnostics, err := service.GetAgentRunDiagnostics(user, runID)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, diagnostics)
+}
+
+func RetryAgentStep(w http.ResponseWriter, r *http.Request, runID, callID string) {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok {
+		Fail(w, "未登录或权限不足")
+		return
+	}
+	result, err := service.RetryAgentStep(user, runID, callID)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, result)
+}
+
+func SubmitAgentFeedback(w http.ResponseWriter, r *http.Request, runID string) {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok {
+		Fail(w, "未登录或权限不足")
+		return
+	}
+	var request service.SubmitAgentFeedbackRequest
+	if !decodeAgentJSON(w, r, &request) {
+		return
+	}
+	result, err := service.SubmitAgentFeedback(user, runID, request)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, result)
+}
+
+func GetAgentMetrics(w http.ResponseWriter, r *http.Request) {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok {
+		Fail(w, "未登录或权限不足")
+		return
+	}
+	hours := 0
+	if value := strings.TrimSpace(r.URL.Query().Get("hours")); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil {
+			Fail(w, "统计时间范围无效")
+			return
+		}
+		hours = parsed
+	}
+	metrics, err := service.GetAgentMetrics(user, hours)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, metrics)
+}
+
 func CancelAgentRun(w http.ResponseWriter, r *http.Request, runID string) {
 	user, ok := service.UserFromContext(r.Context())
 	if !ok {
@@ -162,6 +236,20 @@ func RevertAgentTool(w http.ResponseWriter, r *http.Request, runID string) {
 	OK(w, run)
 }
 
+func RevertAgentRun(w http.ResponseWriter, r *http.Request, runID string) {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok {
+		Fail(w, "未登录或权限不足")
+		return
+	}
+	result, err := service.RevertAgentRun(user, runID)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, result)
+}
+
 func AgentRunEvents(w http.ResponseWriter, r *http.Request, runID string) {
 	user, ok := service.UserFromContext(r.Context())
 	if !ok {
@@ -171,6 +259,9 @@ func AgentRunEvents(w http.ResponseWriter, r *http.Request, runID string) {
 	after, ok := agentEventAfter(w, r)
 	if !ok {
 		return
+	}
+	if after > 0 {
+		_ = service.RecordAgentStreamReconnect(user, runID)
 	}
 	if _, err := service.GetAgentRun(user, runID); err != nil {
 		FailError(w, err)
@@ -189,13 +280,14 @@ func AgentRunEvents(w http.ResponseWriter, r *http.Request, runID string) {
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
-	pollTicker := time.NewTicker(200 * time.Millisecond)
+	pollTimer := time.NewTimer(agentEventPollMin)
 	heartbeatTicker := time.NewTicker(15 * time.Second)
-	defer pollTicker.Stop()
+	defer pollTimer.Stop()
 	defer heartbeatTicker.Stop()
+	idlePolls := 0
 
 	for {
-		events, err := service.ListAgentEvents(user, runID, after)
+		events, run, err := service.PollAgentRunEvents(user, runID, after)
 		if err != nil {
 			return
 		}
@@ -206,13 +298,12 @@ func AgentRunEvents(w http.ResponseWriter, r *http.Request, runID string) {
 			after = event.Sequence
 		}
 		if len(events) > 0 {
+			idlePolls = 0
 			flusher.Flush()
+		} else {
+			idlePolls++
 		}
 		if len(events) < 100 {
-			run, err := service.GetAgentRun(user, runID)
-			if err != nil {
-				return
-			}
 			if run.Terminal() || run.Status == model.AgentRunStatusWaitingConfirmation {
 				return
 			}
@@ -224,7 +315,8 @@ func AgentRunEvents(w http.ResponseWriter, r *http.Request, runID string) {
 		select {
 		case <-r.Context().Done():
 			return
-		case <-pollTicker.C:
+		case <-pollTimer.C:
+			pollTimer.Reset(agentEventPollDelay(idlePolls))
 		case <-heartbeatTicker.C:
 			if _, err := io.WriteString(w, ": heartbeat\n\n"); err != nil {
 				return
@@ -232,6 +324,17 @@ func AgentRunEvents(w http.ResponseWriter, r *http.Request, runID string) {
 			flusher.Flush()
 		}
 	}
+}
+
+func agentEventPollDelay(idlePolls int) time.Duration {
+	delay := agentEventPollMin
+	for i := 0; i < idlePolls && delay < agentEventPollMax; i++ {
+		delay *= 2
+	}
+	if delay > agentEventPollMax {
+		return agentEventPollMax
+	}
+	return delay
 }
 
 func decodeAgentJSON(w http.ResponseWriter, r *http.Request, target any) bool {

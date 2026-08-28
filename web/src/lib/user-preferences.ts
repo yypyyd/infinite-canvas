@@ -10,6 +10,10 @@ export type UserPreferencesPayload = {
 export type AgentSettingsPreference = {
     configured: boolean;
     autonomy?: AgentAutonomy;
+    maxToolCalls?: number;
+    maxMediaCalls?: number;
+    maxDurationSec?: number;
+    maxCredits?: number;
 };
 
 export type AgentAutonomy = "cautious" | "standard" | "autonomous";

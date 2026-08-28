@@ -8,11 +8,11 @@
   <a href="https://linux.do/"><img src="https://img.shields.io/badge/Linux.do-Community-2b6de8?style=flat-square" alt="Linux.do"></a>
   <a href="https://render.com/deploy?repo=https://github.com/yypyyd/infinite-canvas"><img src="https://img.shields.io/badge/Render-Deploy-46e3b7?style=flat-square&logo=render&logoColor=111111" alt="Deploy to Render"></a>
   <a href="https://github.com/yypyyd/infinite-canvas"><img src="https://img.shields.io/github/stars/yypyyd/infinite-canvas?style=flat-square&logo=github" alt="GitHub stars"></a>
-  <a href="VERSION"><img src="https://img.shields.io/badge/version-v0.2.16-2563eb?style=flat-square" alt="Version"></a>
+  <a href="VERSION"><img src="https://img.shields.io/badge/version-v0.2.17-2563eb?style=flat-square" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-f97316?style=flat-square" alt="License"></a>
   <a href="https://www.docker.com/"><img src="https://img.shields.io/badge/Docker-ready-2496ed?style=flat-square&logo=docker&logoColor=white" alt="Docker ready"></a>
-  <a href="https://nextjs.org/"><img src="https://img.shields.io/badge/Next.js-16.2-000000?style=flat-square&logo=nextdotjs" alt="Next.js"></a>
-  <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.25-00add8?style=flat-square&logo=go&logoColor=white" alt="Go"></a>
+  <a href="https://nextjs.org/"><img src="https://img.shields.io/badge/Next.js-16.3-000000?style=flat-square&logo=nextdotjs" alt="Next.js"></a>
+  <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.26-00add8?style=flat-square&logo=go&logoColor=white" alt="Go"></a>
 </p>
 
 道生画境是一款面向电商视觉生产的开源 AI 工作台。它把商品画布、商品图生成、参考图编辑、营销视频、灵感模板和商品素材沉淀放在同一个界面里，适合品牌、电商运营与设计团队连续完成主图、场景图、详情页视觉和活动素材。

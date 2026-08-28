@@ -179,6 +179,7 @@ export type CanvasAssistantMessage = {
     lastEventSequence?: number;
     confirmation?: CanvasAssistantConfirmation;
     stages?: CanvasAssistantStage[];
+    feedback?: "accepted" | "unhelpful";
 };
 
 export type CanvasAssistantSession = {

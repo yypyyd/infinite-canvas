@@ -13,9 +13,7 @@ import { fetchAssetLibrary, type AssetLibraryItem } from "@/services/api/assets"
 export type AssetPickerTab = "my-assets" | "library";
 
 export type InsertAssetPayload =
-    | { kind: "text"; content: string; title: string }
-    | { kind: "image"; dataUrl: string; title: string; storageKey?: string }
-    | { kind: "video"; url: string; title: string; storageKey?: string; width?: number; height?: number };
+    { kind: "text"; content: string; title: string } | { kind: "image"; dataUrl: string; title: string; storageKey?: string } | { kind: "video"; url: string; title: string; storageKey?: string; width?: number; height?: number };
 
 type Props = {
     open: boolean;

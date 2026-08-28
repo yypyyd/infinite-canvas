@@ -103,7 +103,7 @@ func validImageQuickToolsPreferences(raw json.RawMessage) bool {
 
 func validAgentSettingsPreferences(raw json.RawMessage) bool {
 	var value map[string]json.RawMessage
-	if json.Unmarshal(raw, &value) != nil || len(value) < 1 || len(value) > 2 {
+	if json.Unmarshal(raw, &value) != nil || len(value) < 1 || len(value) > 6 {
 		return false
 	}
 	var configured bool
@@ -111,7 +111,7 @@ func validAgentSettingsPreferences(raw json.RawMessage) bool {
 		return false
 	}
 	for key := range value {
-		if key != "configured" && key != "autonomy" {
+		if key != "configured" && key != "autonomy" && key != "maxToolCalls" && key != "maxMediaCalls" && key != "maxDurationSec" && key != "maxCredits" {
 			return false
 		}
 	}
@@ -119,6 +119,14 @@ func validAgentSettingsPreferences(raw json.RawMessage) bool {
 		var autonomy string
 		if json.Unmarshal(rawAutonomy, &autonomy) != nil || (autonomy != agentAutonomyCautious && autonomy != agentAutonomyStandard && autonomy != agentAutonomyAutonomous) {
 			return false
+		}
+	}
+	for key, bounds := range map[string][2]int{"maxToolCalls": {1, 12}, "maxMediaCalls": {1, 6}, "maxDurationSec": {60, 1800}, "maxCredits": {1, 10000}} {
+		if rawValue, exists := value[key]; exists {
+			var number int
+			if json.Unmarshal(rawValue, &number) != nil || number < bounds[0] || number > bounds[1] {
+				return false
+			}
 		}
 	}
 	return true

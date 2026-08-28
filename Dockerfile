@@ -1,5 +1,9 @@
-# 构建 Next.js 前端产物。
-FROM oven/bun:1.3.13 AS web-build
+# 使用 Bun 严格安装锁文件，使用与生产一致的 Node.js 构建 Next.js。
+FROM oven/bun:1.3.13 AS bun-runtime
+
+FROM node:22-bookworm-slim AS web-build
+
+COPY --from=bun-runtime /usr/local/bin/bun /usr/local/bin/bun
 
 WORKDIR /app/web
 ARG NEXT_PUBLIC_DOC_URL=https://docs.canvas.best
@@ -13,10 +17,10 @@ RUN --mount=type=cache,target=/root/.bun/install/cache bun install --frozen-lock
 COPY VERSION /app/VERSION
 COPY CHANGELOG.md /app/CHANGELOG.md
 COPY web ./
-RUN bun run build
+RUN node node_modules/next/dist/bin/next build
 
 # 构建 Go 后端入口。
-FROM golang:1.25-alpine AS api-build
+FROM golang:1.26.6-alpine AS api-build
 
 ENV PATH="/usr/local/go/bin:${PATH}"
 WORKDIR /app

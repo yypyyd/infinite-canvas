@@ -21,11 +21,10 @@ import (
 )
 
 const (
-	agentSystemPrompt            = "你是画布 Agent，不是只会回答问题的聊天机器人。根据画布 JSON、长期记忆和最后用户请求，先确定目标与可验证的完成条件，再自主拆解、执行工具、观察真实结果并继续规划，直到完成或明确阻塞。修改画布必须调用工具，禁止假装完成；多工具任务先调用 canvas.plan，每次只调用一个。用户要求修改、替换或调整已有图片节点时优先使用 image.edit 而不是重新生成。参数：canvas.plan {summary,steps}；image.generate {prompt,count,referenceNodeIds}；image.edit {nodeId,prompt,count}；image.inspect {nodeIds,criteria}；video.generate {prompt,duration,imageNodeId}；video.inspect {nodeId,criteria}；canvas.add_text {text,placement,sourceNodeIds}；canvas.arrange {nodeIds,mode,gap}；canvas.delete {nodeIds}；canvas.update_text {nodeId,text}；agent.ask_user {question,options}；agent.remember {kind,key,content,scope,confidence,expiresInDays}；agent.forget {key,scope}。生成或编辑图片、生成视频后必须调用对应的 image.inspect 或 video.inspect 对照用户目标验收真实内容，再决定完成或调整；只有验收结果为 needs_revision 才可根据 revisedPrompt 重新生成，自主模式下每种媒体最多调整一次。只有用户明确表达以后长期遵循的偏好、项目事实或约束时才调用 agent.remember；不要把一次性请求或敏感信息写入记忆。删除、改文本、记住或遗忘都需用户确认。只有缺少可执行的主体或目标、要求互相冲突、或必须操作的目标无法唯一确定时才调用 agent.ask_user；能从画布、记忆或安全默认值推断的信息不要追问。每个真实 TOOL_RESULT 后先检查完成条件、剩余差距和可观察错误，再决定总结、调整或继续；不得重复同名同参数工具，也不得声称验证了工具结果中没有提供的信息。调用工具时只输出一行 `TOOL_CALL {\"name\":\"canvas.arrange\",\"arguments\":{...}}`；无需工具或任务完成时简短回答，并说明采用过的关键假设。"
+	agentSystemPrompt            = "你是画布 Agent，不是只会回答问题的聊天机器人。根据画布 JSON、长期记忆和最后用户请求，先确定目标与可验证的完成条件，再自主拆解、执行工具、观察真实结果并继续规划，直到完成或明确阻塞。修改画布必须调用工具，禁止假装完成；多工具任务先调用 canvas.plan，每次只调用一个，计划的每个 steps 项必须按顺序对应后续一个真实工具及其成功条件，不要把纯思考过程写成步骤；计划中的步骤失败且仍能调整时，再次调用 canvas.plan 给出剩余步骤的新计划，服务端会保留旧计划与跳过原因。用户要求修改、替换或调整已有图片节点时优先使用 image.edit 而不是重新生成。参数：canvas.plan {summary,steps}；image.generate {prompt,count,referenceNodeIds}；image.edit {nodeId,prompt,count}；image.inspect {nodeIds,criteria}；video.generate {prompt,duration,imageNodeId}；video.inspect {nodeId,criteria}；canvas.add_text {text,placement,sourceNodeIds}；canvas.arrange {nodeIds,mode,gap}；canvas.delete {nodeIds}；canvas.update_text {nodeId,text}；agent.ask_user {question,options}；agent.remember {kind,key,content,scope,confidence,expiresInDays}；agent.forget {key,scope}。生成或编辑图片、生成视频后必须调用对应的 image.inspect 或 video.inspect 对照用户目标验收真实内容，再决定完成或调整；只有验收结果为 needs_revision 才可根据 revisedPrompt 重新生成，自主模式下每种媒体最多调整一次。只有用户明确表达以后长期遵循的偏好、项目事实或约束时才调用 agent.remember；不要把一次性请求或敏感信息写入记忆。删除、改文本、记住或遗忘都需用户确认。只有缺少可执行的主体或目标、要求互相冲突、或必须操作的目标无法唯一确定时才调用 agent.ask_user；能从画布、记忆或安全默认值推断的信息不要追问。每个真实 TOOL_RESULT 后先检查完成条件、剩余差距和可观察错误，再决定总结、调整或继续；不得重复同名同参数工具，也不得声称验证了工具结果中没有提供的信息。调用工具时只输出一行 `TOOL_CALL {\"name\":\"canvas.arrange\",\"arguments\":{...}}`；无需工具或任务完成时简短回答，并说明采用过的关键假设。"
 	agentAutonomyCautious        = "cautious"
 	agentAutonomyStandard        = "standard"
 	agentAutonomyAutonomous      = "autonomous"
-	agentMaxToolCalls            = 8
 	agentWaitingToolTimeout      = 15 * time.Minute
 	agentWaitingToolTimeoutError = "工具结果等待超时"
 	agentToolExecutionLease      = 90 * time.Second
@@ -62,15 +61,25 @@ type AgentCanvasConnection struct {
 type AgentCanvasContext struct {
 	Autonomy        string                  `json:"autonomy"`
 	SelectedNodeIDs []string                `json:"selectedNodeIds"`
+	FocusNodeIDs    []string                `json:"focusNodeIds,omitempty"`
 	Nodes           []AgentCanvasNode       `json:"nodes"`
 	Connections     []AgentCanvasConnection `json:"connections"`
 }
 
 type SubmitAgentMessageRequest struct {
-	RunID         string             `json:"runId"`
-	Content       string             `json:"content"`
-	Model         string             `json:"model"`
-	CanvasContext AgentCanvasContext `json:"canvasContext"`
+	RunID          string             `json:"runId"`
+	Content        string             `json:"content"`
+	Model          string             `json:"model"`
+	CanvasContext  AgentCanvasContext `json:"canvasContext"`
+	CanvasSnapshot json.RawMessage    `json:"canvasSnapshot"`
+	Budget         AgentRunBudget     `json:"budget"`
+}
+
+type AgentRunBudget struct {
+	MaxToolCalls   int `json:"maxToolCalls"`
+	MaxMediaCalls  int `json:"maxMediaCalls"`
+	MaxDurationSec int `json:"maxDurationSec"`
+	MaxCredits     int `json:"maxCredits"`
 }
 
 type AgentToolImage struct {
@@ -126,6 +135,59 @@ type ConfirmAgentToolRequest struct {
 
 type RevertAgentToolRequest struct {
 	CallID string `json:"callId"`
+}
+
+type AgentRunDiagnostic struct {
+	ID           string                `json:"id"`
+	Status       model.AgentRunStatus  `json:"status"`
+	Model        string                `json:"model"`
+	Error        string                `json:"error,omitempty"`
+	StartedAt    string                `json:"startedAt"`
+	CompletedAt  string                `json:"completedAt,omitempty"`
+	DurationMS   int64                 `json:"durationMs"`
+	CanRevert    bool                  `json:"canRevert"`
+	Budget       AgentRunBudget        `json:"budget"`
+	Usage        AgentRunUsage         `json:"usage"`
+	BudgetReason string                `json:"budgetReason,omitempty"`
+	Plan         []model.AgentPlanStep `json:"plan"`
+	Steps        []AgentStepDiagnostic `json:"steps"`
+}
+
+type AgentRunUsage struct {
+	ToolCalls          int `json:"toolCalls"`
+	MediaCalls         int `json:"mediaCalls"`
+	DurationSec        int `json:"durationSec"`
+	StreamReconnects   int `json:"streamReconnects"`
+	Credits            int `json:"credits"`
+	ToolLeaseTakeovers int `json:"toolLeaseTakeovers"`
+}
+
+type AgentStepDiagnostic struct {
+	CallID       string                `json:"callId,omitempty"`
+	Type         model.AgentStepType   `json:"type"`
+	ToolName     string                `json:"toolName,omitempty"`
+	Status       model.AgentStepStatus `json:"status"`
+	Confirmation string                `json:"confirmation,omitempty"`
+	Error        string                `json:"error,omitempty"`
+	StartedAt    string                `json:"startedAt"`
+	CompletedAt  string                `json:"completedAt,omitempty"`
+	DurationMS   int64                 `json:"durationMs"`
+	Retryable    bool                  `json:"retryable"`
+	Revertible   bool                  `json:"revertible"`
+	Reverted     bool                  `json:"reverted"`
+}
+
+type AgentStepRetryResult struct {
+	Run          model.AgentRun `json:"run"`
+	CallID       string         `json:"callId"`
+	SourceCallID string         `json:"sourceCallId"`
+}
+
+type AgentRunRevertResult struct {
+	Run              model.AgentRun  `json:"run"`
+	CallIDs          []string        `json:"callIds"`
+	Snapshot         json.RawMessage `json:"snapshot"`
+	SnapshotChecksum string          `json:"snapshotChecksum"`
 }
 
 type AgentToolResultReceipt struct {
@@ -312,7 +374,16 @@ func SubmitAgentMessage(user model.AuthUser, sessionID string, request SubmitAge
 	if err != nil || len(contextJSON) > 256<<10 {
 		return AgentRunSubmission{}, safeMessageError{message: "画布上下文过大"}
 	}
-	if _, err := repository.GetAgentSession(user.OrganizationID, user.ID, sessionID); err != nil {
+	budget, err := normalizeAgentRunBudget(request.Budget)
+	if err != nil {
+		return AgentRunSubmission{}, err
+	}
+	snapshotPayload, snapshotChecksum, err := normalizeAgentRunSnapshot(request.CanvasSnapshot, canvasContext)
+	if err != nil {
+		return AgentRunSubmission{}, err
+	}
+	session, err := repository.GetAgentSession(user.OrganizationID, user.ID, sessionID)
+	if err != nil {
 		return AgentRunSubmission{}, err
 	}
 	timestamp, runID := now(), request.RunID
@@ -320,10 +391,11 @@ func SubmitAgentMessage(user model.AuthUser, sessionID string, request SubmitAge
 		runID = newID("agent-run")
 	}
 	message := model.AgentMessage{ID: newID("agent-message"), OrganizationID: user.OrganizationID, UserID: user.ID, SessionID: sessionID, Role: model.AgentMessageRoleUser, Content: request.Content, CreatedAt: timestamp}
-	run := model.AgentRun{ID: runID, OrganizationID: user.OrganizationID, UserID: user.ID, SessionID: sessionID, MessageID: message.ID, Model: request.Model, Context: string(contextJSON), Status: model.AgentRunStatusRunning, StartedAt: timestamp, CreatedAt: timestamp, UpdatedAt: timestamp}
+	run := model.AgentRun{ID: runID, OrganizationID: user.OrganizationID, UserID: user.ID, SessionID: sessionID, MessageID: message.ID, Model: request.Model, Context: string(contextJSON), MaxToolCalls: budget.MaxToolCalls, MaxMediaCalls: budget.MaxMediaCalls, MaxDurationSec: budget.MaxDurationSec, MaxCredits: budget.MaxCredits, Status: model.AgentRunStatusRunning, StartedAt: timestamp, CreatedAt: timestamp, UpdatedAt: timestamp}
 	step := model.AgentStep{ID: newID("agent-step"), OrganizationID: user.OrganizationID, UserID: user.ID, RunID: runID, Type: model.AgentStepTypeCompletion, Status: model.AgentStepStatusRunning, Input: request.Content, StartedAt: timestamp, CreatedAt: timestamp, UpdatedAt: timestamp}
 	event := model.AgentEvent{ID: newID("agent-event"), OrganizationID: user.OrganizationID, UserID: user.ID, RunID: runID, Type: model.AgentEventRunStarted, Payload: "{}", CreatedAt: timestamp}
-	message, run, err = repository.CreateAgentRun(message, run, step, event)
+	snapshot := model.AgentRunSnapshot{ID: newID("agent-run-snapshot"), OrganizationID: user.OrganizationID, UserID: user.ID, RunID: runID, ProjectID: session.ProjectID, Payload: string(snapshotPayload), Checksum: snapshotChecksum, CreatedAt: timestamp}
+	message, run, err = repository.CreateAgentRun(message, run, step, event, snapshot)
 	if errors.Is(err, repository.ErrAgentToolResultConflict) {
 		return AgentRunSubmission{}, safeMessageError{message: "运行编号与已提交请求不一致"}
 	}
@@ -426,6 +498,20 @@ func SubmitAgentToolResult(user model.AuthUser, runID string, request SubmitAgen
 	}
 	if err != nil {
 		return model.AgentRun{}, err
+	}
+	if toolStep.ToolName == "canvas.plan" && request.Plan != nil {
+		if _, err := repository.ReplaceAgentPlan(run.OrganizationID, run.UserID, run.ID, request.CallID, request.Plan.Steps, timestamp); err != nil {
+			return model.AgentRun{}, err
+		}
+	}
+	if toolStep.ToolName != "canvas.plan" {
+		reason := request.Error
+		if request.Status == "success" {
+			reason = ""
+		}
+		if err := repository.FinishAgentPlanStep(user.OrganizationID, user.ID, runID, request.CallID, request.Status == "success", reason, timestamp); err != nil {
+			return model.AgentRun{}, err
+		}
 	}
 	if resume {
 		startAgentRun(run, user.Group)
@@ -545,12 +631,13 @@ func ConfirmAgentTool(user model.AuthUser, runID string, request ConfirmAgentToo
 		if err != nil {
 			return model.AgentRun{}, err
 		}
+		_ = repository.FinishAgentPlanStep(user.OrganizationID, user.ID, runID, request.CallID, request.Decision == "approved", answer, timestamp)
 		if resume {
 			startAgentRun(run, user.Group)
 		}
 		return run, nil
 	}
-	if toolStep.ToolName != "canvas.delete" && toolStep.ToolName != "canvas.update_text" && toolStep.ToolName != "agent.remember" && toolStep.ToolName != "agent.forget" {
+	if !agentToolRequiresConfirmation(toolStep.ToolName) {
 		return model.AgentRun{}, safeMessageError{message: "该工具无需确认"}
 	}
 	authorization, err := agentRunNodeAuthorization(run)
@@ -561,7 +648,6 @@ func ConfirmAgentTool(user model.AuthUser, runID string, request ConfirmAgentToo
 	if err != nil {
 		return model.AgentRun{}, err
 	}
-
 	rejectedObservation, err := json.Marshal(map[string]string{"status": "rejected", "error": "用户拒绝执行该工具调用"})
 	if err != nil {
 		return model.AgentRun{}, err
@@ -577,6 +663,9 @@ func ConfirmAgentTool(user model.AuthUser, runID string, request ConfirmAgentToo
 	)
 	if err != nil {
 		return model.AgentRun{}, err
+	}
+	if request.Decision == "rejected" {
+		_ = repository.FinishAgentPlanStep(user.OrganizationID, user.ID, runID, request.CallID, false, "用户拒绝执行", timestamp)
 	}
 	if approved {
 		time.AfterFunc(agentWaitingToolTimeout, func() { _ = expireWaitingAgentRun(user.OrganizationID, user.ID, runID) })
@@ -595,15 +684,100 @@ func GetAgentRun(user model.AuthUser, runID string) (model.AgentRun, error) {
 	return repository.GetAgentRun(user.OrganizationID, user.ID, runID)
 }
 
-func ListAgentEvents(user model.AuthUser, runID string, after int64) ([]model.AgentEvent, error) {
+func PollAgentRunEvents(user model.AuthUser, runID string, after int64) ([]model.AgentEvent, model.AgentRun, error) {
 	runID = strings.TrimSpace(runID)
-	if err := expireWaitingAgentRun(user.OrganizationID, user.ID, runID); err != nil {
-		return nil, err
+	events, err := repository.ListAgentEvents(user.OrganizationID, user.ID, runID, after, 100)
+	if err != nil {
+		return nil, model.AgentRun{}, err
 	}
-	if _, err := repository.GetAgentRun(user.OrganizationID, user.ID, runID); err != nil {
-		return nil, err
+	run, err := repository.GetAgentRun(user.OrganizationID, user.ID, runID)
+	return events, run, err
+}
+
+func GetAgentRunDiagnostics(user model.AuthUser, runID string) (AgentRunDiagnostic, error) {
+	run, err := GetAgentRun(user, runID)
+	if err != nil {
+		return AgentRunDiagnostic{}, err
 	}
-	return repository.ListAgentEvents(user.OrganizationID, user.ID, runID, after, 100)
+	steps, err := repository.ListAgentSteps(user.OrganizationID, user.ID, run.ID)
+	if err != nil {
+		return AgentRunDiagnostic{}, err
+	}
+	events, err := repository.ListAgentEvents(user.OrganizationID, user.ID, run.ID, 0, 100)
+	if err != nil {
+		return AgentRunDiagnostic{}, err
+	}
+	reverted := revertedAgentToolCallIDs(events)
+	plan, err := repository.ListAgentPlanSteps(user.OrganizationID, user.ID, run.ID)
+	if err != nil {
+		return AgentRunDiagnostic{}, err
+	}
+	if plan == nil {
+		plan = []model.AgentPlanStep{}
+	}
+	result := AgentRunDiagnostic{
+		ID: run.ID, Status: run.Status, Model: run.Model, Error: run.Error,
+		StartedAt: run.StartedAt, CompletedAt: run.CompletedAt,
+		DurationMS: agentDurationMS(run.StartedAt, run.CompletedAt),
+		Budget:     effectiveAgentRunBudget(run),
+		Usage:      agentRunUsage(run, steps), BudgetReason: run.BudgetReason, Plan: plan,
+		Steps: make([]AgentStepDiagnostic, 0, len(steps)),
+	}
+	for _, step := range steps {
+		_, wasReverted := reverted[step.ToolCallID]
+		revertible := step.Type == model.AgentStepTypeTool && agentStepSucceeded(step) && revertibleAgentTool(step.ToolName) && !wasReverted
+		diagnostic := AgentStepDiagnostic{
+			CallID: step.ToolCallID, Type: step.Type, ToolName: step.ToolName, Status: step.Status,
+			Confirmation: step.Confirmation, Error: step.Error, StartedAt: step.StartedAt,
+			CompletedAt: step.CompletedAt, DurationMS: agentDurationMS(step.StartedAt, step.CompletedAt),
+			Retryable:  run.Status == model.AgentRunStatusFailed && step.Status == model.AgentStepStatusFailed && step.Confirmation == "" && retryableAgentTool(step.ToolName),
+			Revertible: revertible, Reverted: wasReverted,
+		}
+		result.CanRevert = result.CanRevert || revertible
+		result.Steps = append(result.Steps, diagnostic)
+	}
+	return result, nil
+}
+
+func RetryAgentStep(user model.AuthUser, runID, sourceCallID string) (AgentStepRetryResult, error) {
+	if err := RequireOrganizationWrite(user); err != nil {
+		return AgentStepRetryResult{}, err
+	}
+	runID, sourceCallID = strings.TrimSpace(runID), strings.TrimSpace(sourceCallID)
+	if runID == "" || sourceCallID == "" {
+		return AgentStepRetryResult{}, safeMessageError{message: "运行或工具调用编号无效"}
+	}
+	run, err := repository.GetAgentRun(user.OrganizationID, user.ID, runID)
+	if err != nil {
+		return AgentStepRetryResult{}, err
+	}
+	step, err := repository.GetAgentToolStep(user.OrganizationID, user.ID, runID, sourceCallID)
+	if err != nil {
+		return AgentStepRetryResult{}, err
+	}
+	if run.Status != model.AgentRunStatusFailed || step.Status != model.AgentStepStatusFailed || step.Confirmation != "" || !retryableAgentTool(step.ToolName) {
+		return AgentStepRetryResult{}, safeMessageError{message: "该失败步骤当前不能重试"}
+	}
+	authorization, err := agentRunNodeAuthorization(run)
+	if err != nil {
+		return AgentStepRetryResult{}, err
+	}
+	arguments, raw, err := decodeAgentToolArguments(step.ToolName, step.Input, authorization)
+	if err != nil {
+		return AgentStepRetryResult{}, err
+	}
+	callID, timestamp := newID("agent-tool-call"), now()
+	payload, _ := json.Marshal(map[string]any{"callId": callID, "name": step.ToolName, "arguments": arguments, "meta": map[string]any{"retryOf": sourceCallID}})
+	retryStep := model.AgentStep{ID: newID("agent-step"), OrganizationID: user.OrganizationID, UserID: user.ID, RunID: runID, Type: model.AgentStepTypeTool, Status: model.AgentStepStatusRunning, ToolCallID: callID, ToolName: step.ToolName, Input: raw, StartedAt: timestamp, CreatedAt: timestamp, UpdatedAt: timestamp}
+	run, err = repository.RetryAgentStep(user.OrganizationID, user.ID, runID, sourceCallID, timestamp, retryStep, model.AgentEvent{ID: newID("agent-event"), Type: model.AgentEventToolCall, Payload: string(payload), CreatedAt: timestamp})
+	if errors.Is(err, repository.ErrAgentStepNotRetryable) {
+		return AgentStepRetryResult{}, safeMessageError{message: "该失败步骤已被处理或当前不能重试"}
+	}
+	if err != nil {
+		return AgentStepRetryResult{}, err
+	}
+	time.AfterFunc(agentWaitingToolTimeout, func() { _ = expireWaitingAgentRun(user.OrganizationID, user.ID, runID) })
+	return AgentStepRetryResult{Run: run, CallID: callID, SourceCallID: sourceCallID}, nil
 }
 
 func CancelAgentRun(user model.AuthUser, runID string) (model.AgentRun, error) {
@@ -613,6 +787,7 @@ func CancelAgentRun(user model.AuthUser, runID string) (model.AgentRun, error) {
 		return model.AgentRun{}, err
 	}
 	if cancelled {
+		_ = repository.FinalizeAgentPlan(user.OrganizationID, user.ID, runID, "运行已取消", now())
 		agentRuns.Lock()
 		execution := agentRuns.cancels[runID]
 		agentRuns.Unlock()
@@ -635,9 +810,7 @@ func RevertAgentTool(user model.AuthUser, runID string, request RevertAgentToolR
 	if err != nil {
 		return model.AgentRun{}, err
 	}
-	switch step.ToolName {
-	case "image.generate", "image.edit", "video.generate", "canvas.arrange", "canvas.add_text", "canvas.delete", "canvas.update_text":
-	default:
+	if !revertibleAgentTool(step.ToolName) {
 		return model.AgentRun{}, safeMessageError{message: "该工具没有可撤销的画布操作"}
 	}
 	timestamp := now()
@@ -660,6 +833,56 @@ func RevertAgentTool(user model.AuthUser, runID string, request RevertAgentToolR
 		execution.cancel()
 	}
 	return run, nil
+}
+
+func RevertAgentRun(user model.AuthUser, runID string) (AgentRunRevertResult, error) {
+	if err := RequireOrganizationWrite(user); err != nil {
+		return AgentRunRevertResult{}, err
+	}
+	runID = strings.TrimSpace(runID)
+	if runID == "" {
+		return AgentRunRevertResult{}, safeMessageError{message: "运行编号无效"}
+	}
+	if _, err := repository.GetAgentRun(user.OrganizationID, user.ID, runID); err != nil {
+		return AgentRunRevertResult{}, err
+	}
+	snapshot, err := repository.GetAgentRunSnapshot(user.OrganizationID, user.ID, runID)
+	if err != nil {
+		return AgentRunRevertResult{}, safeMessageError{message: "本轮没有可恢复的服务端画布快照"}
+	}
+	steps, err := repository.ListAgentSteps(user.OrganizationID, user.ID, runID)
+	if err != nil {
+		return AgentRunRevertResult{}, err
+	}
+	callIDs := make([]string, 0)
+	events := make([]model.AgentEvent, 0)
+	timestamp := now()
+	for _, step := range steps {
+		if !agentStepSucceeded(step) || !revertibleAgentTool(step.ToolName) {
+			continue
+		}
+		callIDs = append(callIDs, step.ToolCallID)
+		payload, _ := json.Marshal(map[string]string{"callId": step.ToolCallID, "name": step.ToolName})
+		events = append(events, model.AgentEvent{ID: newID("agent-event"), Type: model.AgentEventToolReverted, Payload: string(payload), CreatedAt: timestamp})
+	}
+	if len(callIDs) == 0 {
+		return AgentRunRevertResult{}, safeMessageError{message: "本轮没有可撤销的画布操作"}
+	}
+	run, err := repository.RevertAgentRun(user.OrganizationID, user.ID, runID, callIDs, timestamp, events, model.AgentEvent{ID: newID("agent-event"), Type: model.AgentEventRunCancelled, Payload: `{"reason":"tool_reverted"}`, CreatedAt: timestamp})
+	if errors.Is(err, repository.ErrAgentToolNotRevertible) {
+		return AgentRunRevertResult{}, safeMessageError{message: "本轮画布操作当前不能撤销"}
+	}
+	if err != nil {
+		return AgentRunRevertResult{}, err
+	}
+	_ = repository.MarkAgentRunSnapshotRestored(user.OrganizationID, user.ID, runID, snapshot.Checksum, timestamp)
+	agentRuns.Lock()
+	execution := agentRuns.cancels[runID]
+	agentRuns.Unlock()
+	if execution.cancel != nil {
+		execution.cancel()
+	}
+	return AgentRunRevertResult{Run: run, CallIDs: callIDs, Snapshot: json.RawMessage(snapshot.Payload), SnapshotChecksum: snapshot.Checksum}, nil
 }
 
 func startAgentRun(run model.AgentRun, userGroup string) {
@@ -705,14 +928,23 @@ func executeAgentRun(ctx context.Context, cancel context.CancelFunc, run model.A
 		return
 	}
 	if completion.ToolCall != nil {
+		if reason := agentRunBudgetReason(run, mustListAgentToolSteps(run), completion.ToolCall.Name); reason != "" {
+			_ = repository.MarkAgentRunBudgetReason(run.OrganizationID, run.UserID, run.ID, reason, now())
+			completion.ToolCall = nil
+			completion.Content = agentBudgetMessage(reason)
+		}
+	}
+	if completion.ToolCall != nil {
 		payload, _ := json.Marshal(map[string]any{"callId": completion.ToolCall.ID, "name": completion.ToolCall.Name, "arguments": completion.ToolCall.Arguments})
 		timestamp := now()
 		step := model.AgentStep{ID: newID("agent-step"), OrganizationID: run.OrganizationID, UserID: run.UserID, RunID: run.ID, Type: model.AgentStepTypeTool, Status: model.AgentStepStatusRunning, ToolCallID: completion.ToolCall.ID, ToolName: completion.ToolCall.Name, Input: completion.ToolCall.Raw, StartedAt: timestamp, CreatedAt: timestamp, UpdatedAt: timestamp}
-		confirmationRequired := completion.ToolCall.Name == "canvas.delete" || completion.ToolCall.Name == "canvas.update_text" || completion.ToolCall.Name == "agent.ask_user" || completion.ToolCall.Name == "agent.remember" || completion.ToolCall.Name == "agent.forget"
+		confirmationRequired := agentToolRequiresConfirmation(completion.ToolCall.Name)
 		if confirmationRequired {
 			event := model.AgentEvent{ID: newID("agent-event"), Type: model.AgentEventToolConfirmationRequired, Payload: string(payload), CreatedAt: timestamp}
 			if err := repository.WaitAgentRunForConfirmation(run.OrganizationID, run.UserID, run.ID, completion.Content, step, event, timestamp); err != nil {
 				failAgentRunUnlessCancelled(run, err)
+			} else if completion.ToolCall.Name != "canvas.plan" {
+				_ = repository.StartNextAgentPlanStep(run.OrganizationID, run.UserID, run.ID, completion.ToolCall.ID, completion.ToolCall.Name, timestamp)
 			}
 		} else {
 			events := []model.AgentEvent{}
@@ -728,12 +960,16 @@ func executeAgentRun(ctx context.Context, cancel context.CancelFunc, run model.A
 			if err := repository.WaitAgentRunForTool(run.OrganizationID, run.UserID, run.ID, completion.Content, step, timestamp, events...); err != nil {
 				failAgentRunUnlessCancelled(run, err)
 			} else {
+				if completion.ToolCall.Name != "canvas.plan" {
+					_ = repository.StartNextAgentPlanStep(run.OrganizationID, run.UserID, run.ID, completion.ToolCall.ID, completion.ToolCall.Name, timestamp)
+				}
 				time.AfterFunc(agentWaitingToolTimeout, func() { _ = expireWaitingAgentRun(run.OrganizationID, run.UserID, run.ID) })
 			}
 		}
 		return
 	}
 	payload, _ := json.Marshal(map[string]string{"content": completion.Content})
+	_ = repository.FinalizeAgentPlan(run.OrganizationID, run.UserID, run.ID, "运行已结束", now())
 	if err := repository.CompleteAgentRun(run.OrganizationID, run.UserID, run.ID, newID("agent-message"), newID("agent-event"), newID("agent-event"), completion.Content, string(payload), now()); err != nil {
 		failedPayload, _ := json.Marshal(map[string]string{"error": "助手结果保存失败"})
 		_ = repository.FailAgentRun(run.OrganizationID, run.UserID, run.ID, newID("agent-event"), "助手结果保存失败", string(failedPayload), now())
@@ -753,7 +989,9 @@ func failAgentRunUnlessCancelled(run model.AgentRun, err error) {
 		message = "助手服务连接中断，请重试"
 	}
 	payload, _ := json.Marshal(map[string]string{"error": message})
-	_ = repository.FailAgentRun(run.OrganizationID, run.UserID, run.ID, newID("agent-event"), message, string(payload), now())
+	timestamp := now()
+	_ = repository.FailAgentRun(run.OrganizationID, run.UserID, run.ID, newID("agent-event"), message, string(payload), timestamp)
+	_ = repository.FinalizeAgentPlan(run.OrganizationID, run.UserID, run.ID, message, timestamp)
 }
 
 func expireWaitingAgentRun(organizationID, userID, runID string) error {
@@ -778,9 +1016,14 @@ func requestAgentCompletion(ctx context.Context, run model.AgentRun, userGroup, 
 	if err != nil {
 		return completion, err
 	}
+	maxToolCalls := effectiveAgentRunBudget(run).MaxToolCalls
 	toolSteps, err := repository.ListCompletedAgentToolSteps(run.OrganizationID, run.UserID, run.ID)
 	if err != nil {
 		return completion, err
+	}
+	if reason := agentRunBudgetReason(run, toolSteps, ""); reason != "" {
+		_ = repository.MarkAgentRunBudgetReason(run.OrganizationID, run.UserID, run.ID, reason, now())
+		return agentCompletion{Content: agentBudgetMessage(reason)}, nil
 	}
 	session, err := repository.GetAgentSession(run.OrganizationID, run.UserID, run.SessionID)
 	if err != nil {
@@ -827,11 +1070,15 @@ func requestAgentCompletion(ctx context.Context, run model.AgentRun, userGroup, 
 		}
 	}()
 
+	modelCanvasContext, err := agentModelCanvasContext(run.Context, toolSteps)
+	if err != nil {
+		return completion, err
+	}
 	requestMessages := make([]agentChatMessage, 0, len(messages)+4)
 	requestMessages = append(requestMessages,
 		agentChatMessage{Role: "system", Content: agentSystemPrompt},
 		agentChatMessage{Role: "system", Content: agentAutonomyPrompt(agentRunAutonomy(run))},
-		agentChatMessage{Role: "system", Content: run.Context},
+		agentChatMessage{Role: "system", Content: modelCanvasContext},
 	)
 	if len(memories) > 0 {
 		memoryPayload := make([]map[string]any, 0, len(memories))
@@ -848,14 +1095,11 @@ func requestAgentCompletion(ctx context.Context, run model.AgentRun, userGroup, 
 	if len(toolSteps) > 0 {
 		completed := make([]map[string]any, 0, len(toolSteps))
 		for _, step := range toolSteps {
-			var arguments, result any
+			var arguments any
 			if json.Unmarshal([]byte(step.Input), &arguments) != nil {
 				arguments = step.Input
 			}
-			if json.Unmarshal([]byte(step.Output), &result) != nil {
-				result = step.Output
-			}
-			completed = append(completed, map[string]any{"name": step.ToolName, "arguments": arguments, "result": result})
+			completed = append(completed, map[string]any{"name": step.ToolName, "arguments": arguments, "result": agentModelToolResult(step)})
 		}
 		completedPayload, _ := json.Marshal(completed)
 		requestMessages = append(requestMessages, agentChatMessage{Role: "system", Content: "本轮已执行的工具及真实 TOOL_RESULT：" + string(completedPayload) + "。先对照目标检查结果；仍需工具时只输出下一条 TOOL_CALL，否则立即简洁总结。"})
@@ -877,7 +1121,7 @@ func requestAgentCompletion(ctx context.Context, run model.AgentRun, userGroup, 
 	for _, message := range messages[conversationStart : currentIndex+1] {
 		requestMessages = append(requestMessages, agentChatMessage{Role: string(message.Role), Content: message.Content})
 	}
-	if len(toolSteps) >= agentMaxToolCalls {
+	if len(toolSteps) >= maxToolCalls {
 		requestMessages = append(requestMessages, agentChatMessage{Role: "system", Content: "本次运行已达到工具调用上限，请根据已有真实结果直接总结，不要再请求工具。"})
 	}
 	bodyValue := map[string]any{"model": selection.Model.UpstreamModel, "messages": requestMessages, "tools": agentToolSchemas(), "tool_choice": "auto", "stream": false, "max_tokens": 256}
@@ -944,7 +1188,7 @@ func requestAgentCompletion(ctx context.Context, run model.AgentRun, userGroup, 
 		return completion, errors.New("agent upstream returned multiple tool calls")
 	}
 	if len(message.ToolCalls) == 1 {
-		if len(toolSteps) >= agentMaxToolCalls {
+		if len(toolSteps) >= maxToolCalls {
 			return completion, errors.New("agent exceeded tool call limit")
 		}
 		call := message.ToolCalls[0]
@@ -952,7 +1196,7 @@ func requestAgentCompletion(ctx context.Context, run model.AgentRun, userGroup, 
 			return completion, errors.New("agent upstream returned unsupported tool call")
 		}
 		toolName := canonicalAgentToolName(call.Function.Name)
-		if toolName == "canvas.plan" && len(toolSteps) != 0 {
+		if toolName == "canvas.plan" && len(toolSteps) != 0 && failedAgentToolCallCount(toolSteps) == 0 {
 			return completion, errors.New("agent requested a duplicate plan")
 		}
 		authorization, authorizationErr := agentRunNodeAuthorization(run)
@@ -980,11 +1224,11 @@ func requestAgentCompletion(ctx context.Context, run model.AgentRun, userGroup, 
 		return completion, nil
 	}
 	if textName, textArguments, ok := parseAgentTextToolCall(completion.Content); ok {
-		if len(toolSteps) >= agentMaxToolCalls {
+		if len(toolSteps) >= maxToolCalls {
 			return completion, errors.New("agent exceeded tool call limit")
 		}
 		textName = canonicalAgentToolName(textName)
-		if textName == "canvas.plan" && len(toolSteps) != 0 {
+		if textName == "canvas.plan" && len(toolSteps) != 0 && failedAgentToolCallCount(toolSteps) == 0 {
 			return completion, errors.New("agent requested a duplicate plan")
 		}
 		authorization, authorizationErr := agentRunNodeAuthorization(run)
@@ -1011,11 +1255,11 @@ func requestAgentCompletion(ctx context.Context, run model.AgentRun, userGroup, 
 		return completion, nil
 	}
 	if textName, textArguments, ok := parseAgentNaturalLanguageToolCall(completion.Content); ok {
-		if len(toolSteps) >= agentMaxToolCalls {
+		if len(toolSteps) >= maxToolCalls {
 			return completion, errors.New("agent exceeded tool call limit")
 		}
 		textName = canonicalAgentToolName(textName)
-		if textName == "canvas.plan" && len(toolSteps) != 0 {
+		if textName == "canvas.plan" && len(toolSteps) != 0 && failedAgentToolCallCount(toolSteps) == 0 {
 			return completion, errors.New("agent requested a duplicate plan")
 		}
 		authorization, authorizationErr := agentRunNodeAuthorization(run)
@@ -1079,6 +1323,9 @@ func routeDeterministicAgentCompletion(run model.AgentRun, messages []model.Agen
 	if !imageIntent && !videoIntent {
 		return agentCompletion{}, false, nil
 	}
+	if !simpleAgentMediaCommand(content) {
+		return agentCompletion{}, false, nil
+	}
 	if canvasContext.Autonomy == agentAutonomyCautious {
 		return agentCompletion{}, false, nil
 	}
@@ -1103,7 +1350,7 @@ func routeDeterministicAgentCompletion(run model.AgentRun, messages []model.Agen
 		}
 		arguments, raw, err := normalizeDeterministicAgentToolArguments("canvas.plan", canvasPlanArguments{
 			Summary: "策划并生成" + kind,
-			Steps:   []string{"明确" + kind + "视觉目标", "生成" + kind + "并添加到画布"},
+			Steps:   []string{"生成" + kind + "并添加到画布", "对照目标验收真实内容"},
 		}, authorization)
 		if err != nil {
 			return agentCompletion{}, true, err
@@ -1275,6 +1522,17 @@ func agentMediaIntent(content string, negated bool) (bool, bool) {
 	video := !negated && (containsAgentPhrase(content, "生成视频", "生成短视频", "制作视频", "制作短视频", "我要视频", "我要的是视频", "要的是视频", "做成视频") || (mediaAction && containsAgentPhrase(content, "视频", "短片")))
 	image := !negated && !video && (containsAgentPhrase(content, "生成图片", "生成一张图", "生成一张图片", "生图", "商品主图", "电商主图", "场景图", "海报") || (mediaAction && containsAgentPhrase(content, "图片", "图像", "照片")))
 	return image, video
+}
+
+func simpleAgentMediaCommand(content string) bool {
+	content = strings.TrimSpace(content)
+	if content == "" || strings.ContainsAny(content, "；;\n") {
+		return false
+	}
+	if strings.HasPrefix(content, "先") || containsAgentPhrase(content, "，先", ",先", "然后", "接着", "随后", "再把", "并且", "同时") {
+		return false
+	}
+	return !containsAgentPhrase(content, "分析画布", "分析图片", "比较图片", "对比图片", "排列节点", "整理画布", "添加文本", "添加文案", "删除节点", "修改文字", "更新文字", "记住这个", "忘记这个")
 }
 
 func agentImageExecutionPrompt(content string) string {
@@ -1501,12 +1759,80 @@ func agentAutonomyPrompt(autonomy string) string {
 }
 
 func retryableAgentTool(name string) bool {
-	switch name {
-	case "image.generate", "image.edit", "video.generate", "canvas.arrange", "canvas.add_text":
-		return true
-	default:
+	definition, ok := agentToolDefinitionFor(name)
+	return ok && definition.Retryable
+}
+
+func revertibleAgentTool(name string) bool {
+	definition, ok := agentToolDefinitionFor(name)
+	return ok && definition.Revertible
+}
+
+func agentStepSucceeded(step model.AgentStep) bool {
+	if step.Status != model.AgentStepStatusCompleted || step.Confirmation == "rejected" || step.Output == "" {
 		return false
 	}
+	var result SubmitAgentToolResultRequest
+	return json.Unmarshal([]byte(step.Output), &result) == nil && result.Status == "success"
+}
+
+func agentModelToolResult(step model.AgentStep) any {
+	var request SubmitAgentToolResultRequest
+	if json.Unmarshal([]byte(step.Output), &request) != nil {
+		return map[string]string{"status": string(step.Status)}
+	}
+	if request.Status == "failed" {
+		return map[string]string{"status": request.Status, "error": request.Error}
+	}
+	switch step.ToolName {
+	case "image.generate", "image.edit":
+		nodeIDs := make([]string, 0, len(request.Images))
+		for _, image := range request.Images {
+			nodeIDs = append(nodeIDs, image.NodeID)
+		}
+		return map[string]any{"status": request.Status, "nodeIds": nodeIDs}
+	case "video.generate":
+		nodeID := ""
+		if request.Video != nil {
+			nodeID = request.Video.NodeID
+		}
+		return map[string]any{"status": request.Status, "nodeId": nodeID}
+	default:
+		return map[string]any{"status": request.Status, "output": agentToolResultOutput(step.ToolName, request)}
+	}
+}
+
+func revertedAgentToolCallIDs(events []model.AgentEvent) map[string]struct{} {
+	result := make(map[string]struct{})
+	for _, event := range events {
+		if event.Type != model.AgentEventToolReverted {
+			continue
+		}
+		var payload struct {
+			CallID string `json:"callId"`
+		}
+		if json.Unmarshal([]byte(event.Payload), &payload) == nil && payload.CallID != "" {
+			result[payload.CallID] = struct{}{}
+		}
+	}
+	return result
+}
+
+func agentDurationMS(start, end string) int64 {
+	startedAt, err := time.Parse(timestampLayout, start)
+	if err != nil {
+		return 0
+	}
+	finishedAt := time.Now().UTC()
+	if end != "" {
+		if parsed, parseErr := time.Parse(timestampLayout, end); parseErr == nil {
+			finishedAt = parsed
+		}
+	}
+	if finishedAt.Before(startedAt) {
+		return 0
+	}
+	return finishedAt.Sub(startedAt).Milliseconds()
 }
 
 func failedAgentToolCallCount(steps []model.AgentStep) int {
@@ -1544,6 +1870,9 @@ func normalizeAgentCanvasContext(value AgentCanvasContext) (AgentCanvasContext, 
 	}
 	if len(value.SelectedNodeIDs) > 20 {
 		return AgentCanvasContext{}, safeMessageError{message: "选中节点过多"}
+	}
+	if len(value.FocusNodeIDs) > 20 {
+		return AgentCanvasContext{}, safeMessageError{message: "关注节点过多"}
 	}
 	if len(value.Nodes) > 200 {
 		return AgentCanvasContext{}, safeMessageError{message: "画布节点过多"}
@@ -1623,7 +1952,20 @@ func normalizeAgentCanvasContext(value AgentCanvasContext) (AgentCanvasContext, 
 			validSelectedIDs = append(validSelectedIDs, id)
 		}
 	}
-	result := AgentCanvasContext{Autonomy: autonomy, SelectedNodeIDs: validSelectedIDs, Nodes: make([]AgentCanvasNode, 0, len(nodes)), Connections: connections}
+	focusIDs := make([]string, 0, len(value.FocusNodeIDs))
+	seenFocus := make(map[string]struct{}, len(value.FocusNodeIDs))
+	for _, id := range value.FocusNodeIDs {
+		id = strings.TrimSpace(id)
+		if _, exists := nodes[id]; !exists {
+			continue
+		}
+		if _, exists := seenFocus[id]; exists {
+			continue
+		}
+		seenFocus[id] = struct{}{}
+		focusIDs = append(focusIDs, id)
+	}
+	result := AgentCanvasContext{Autonomy: autonomy, SelectedNodeIDs: validSelectedIDs, FocusNodeIDs: focusIDs, Nodes: make([]AgentCanvasNode, 0, len(nodes)), Connections: connections}
 	for _, id := range nodeIDs {
 		node, exists := nodes[id]
 		if !exists {
@@ -1632,6 +1974,94 @@ func normalizeAgentCanvasContext(value AgentCanvasContext) (AgentCanvasContext, 
 		result.Nodes = append(result.Nodes, node)
 	}
 	return result, nil
+}
+
+func agentModelCanvasContext(raw string, steps []model.AgentStep) (string, error) {
+	var full AgentCanvasContext
+	if err := json.Unmarshal([]byte(raw), &full); err != nil {
+		return "", errors.New("agent canvas context invalid")
+	}
+	focus := make(map[string]struct{}, len(full.FocusNodeIDs)+len(full.SelectedNodeIDs))
+	for _, id := range append(append([]string{}, full.FocusNodeIDs...), full.SelectedNodeIDs...) {
+		focus[id] = struct{}{}
+	}
+	seeds := make(map[string]struct{}, len(focus))
+	for id := range focus {
+		seeds[id] = struct{}{}
+	}
+	for _, connection := range full.Connections {
+		if _, ok := seeds[connection.From]; ok {
+			focus[connection.To] = struct{}{}
+		}
+		if _, ok := seeds[connection.To]; ok {
+			focus[connection.From] = struct{}{}
+		}
+	}
+	typeCounts := make(map[string]int)
+	retainedNodes := make([]AgentCanvasNode, 0, len(focus))
+	retained := make(map[string]struct{}, len(focus))
+	minX, minY, maxX, maxY := math.Inf(1), math.Inf(1), math.Inf(-1), math.Inf(-1)
+	for _, node := range full.Nodes {
+		typeCounts[node.Type]++
+		minX, minY = math.Min(minX, node.X), math.Min(minY, node.Y)
+		maxX, maxY = math.Max(maxX, node.X+node.Width), math.Max(maxY, node.Y+node.Height)
+		if _, ok := focus[node.ID]; !ok {
+			continue
+		}
+		node.StorageKey = ""
+		retained[node.ID] = struct{}{}
+		retainedNodes = append(retainedNodes, node)
+	}
+	connections := make([]AgentCanvasConnection, 0)
+	for _, connection := range full.Connections {
+		_, fromOK := retained[connection.From]
+		_, toOK := retained[connection.To]
+		if fromOK && toOK {
+			connections = append(connections, connection)
+		}
+	}
+	generatedNodeIDs := make([]string, 0)
+	seenGenerated := make(map[string]struct{})
+	for _, step := range steps {
+		if !agentStepSucceeded(step) {
+			continue
+		}
+		var result SubmitAgentToolResultRequest
+		_ = json.Unmarshal([]byte(step.Output), &result)
+		ids := append([]string{}, result.NodeIDs...)
+		for _, image := range result.Images {
+			ids = append(ids, image.NodeID)
+		}
+		if result.Video != nil {
+			ids = append(ids, result.Video.NodeID)
+		}
+		if result.NodeID != "" {
+			ids = append(ids, result.NodeID)
+		}
+		for _, id := range ids {
+			if id == "" {
+				continue
+			}
+			if _, exists := seenGenerated[id]; !exists {
+				seenGenerated[id] = struct{}{}
+				generatedNodeIDs = append(generatedNodeIDs, id)
+			}
+		}
+	}
+	bounds := map[string]float64{}
+	if len(full.Nodes) > 0 {
+		bounds = map[string]float64{"minX": minX, "minY": minY, "maxX": maxX, "maxY": maxY}
+	}
+	payload := map[string]any{
+		"autonomy": full.Autonomy, "selectedNodeIds": full.SelectedNodeIDs, "focusNodeIds": full.FocusNodeIDs,
+		"nodes": retainedNodes, "connections": connections,
+		"summary": map[string]any{"nodeCount": len(full.Nodes), "typeCounts": typeCounts, "bounds": bounds, "generatedNodeIds": generatedNodeIDs},
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	return string(encoded), nil
 }
 
 func agentRunNodeAuthorization(run model.AgentRun) (agentNodeAuthorization, error) {
@@ -2344,36 +2774,10 @@ func agentToolResultOutput(name string, request SubmitAgentToolResultRequest) an
 }
 
 func canonicalAgentToolName(name string) string {
-	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "canvas_plan":
-		return "canvas.plan"
-	case "image_generate":
-		return "image.generate"
-	case "image_edit":
-		return "image.edit"
-	case "image_inspect":
-		return "image.inspect"
-	case "video_generate":
-		return "video.generate"
-	case "video_inspect":
-		return "video.inspect"
-	case "canvas_arrange":
-		return "canvas.arrange"
-	case "canvas_add_text":
-		return "canvas.add_text"
-	case "canvas_delete":
-		return "canvas.delete"
-	case "canvas_update_text":
-		return "canvas.update_text"
-	case "agent_ask_user":
-		return "agent.ask_user"
-	case "agent_remember":
-		return "agent.remember"
-	case "agent_forget":
-		return "agent.forget"
-	default:
-		return name
+	if definition, ok := agentToolDefinitionFor(name); ok {
+		return definition.Name
 	}
+	return name
 }
 
 func persistAgentMemoryToolResult(run model.AgentRun, name string, arguments any, result *AgentToolMemory) error {
@@ -2418,7 +2822,7 @@ func sensitiveAgentMemoryKey(key string) bool {
 
 func agentToolSchemas() []any {
 	return []any{
-		map[string]any{"type": "function", "function": map[string]any{"name": "canvas_plan", "description": "当任务需要两个及以上工具时，先向用户展示本轮简短执行计划；单步任务不要调用", "parameters": map[string]any{"type": "object", "properties": map[string]any{"summary": map[string]any{"type": "string", "maxLength": 120}, "steps": map[string]any{"type": "array", "minItems": 2, "maxItems": 7, "items": map[string]any{"type": "string", "maxLength": 80}}}, "required": []string{"summary", "steps"}, "additionalProperties": false}}},
+		map[string]any{"type": "function", "function": map[string]any{"name": "canvas_plan", "description": "当任务需要两个及以上工具时，先展示执行计划；每个步骤按顺序对应后续一个真实工具及其成功条件，失败后可提交剩余步骤的新计划", "parameters": map[string]any{"type": "object", "properties": map[string]any{"summary": map[string]any{"type": "string", "maxLength": 120}, "steps": map[string]any{"type": "array", "minItems": 2, "maxItems": 7, "items": map[string]any{"type": "string", "maxLength": 80}}}, "required": []string{"summary", "steps"}, "additionalProperties": false}}},
 		map[string]any{"type": "function", "function": map[string]any{"name": "image_generate", "description": "根据提示词生成一至四张图片，可通过 referenceNodeIds 引用画布中的图片节点作为参考", "parameters": map[string]any{"type": "object", "properties": map[string]any{"prompt": map[string]any{"type": "string", "maxLength": 8000}, "count": map[string]any{"type": "integer", "minimum": 1, "maximum": 4, "default": 1}, "referenceNodeIds": map[string]any{"type": "array", "maxItems": 6, "uniqueItems": true, "items": map[string]any{"type": "string"}}}, "required": []string{"prompt"}, "additionalProperties": false}}},
 		map[string]any{"type": "function", "function": map[string]any{"name": "image_edit", "description": "以画布中一个图片节点为源图进行编辑修改，生成一至四张新图片并自动连线；用户要求修改、替换、调整已有图片时优先使用，而不是重新生成", "parameters": map[string]any{"type": "object", "properties": map[string]any{"nodeId": map[string]any{"type": "string"}, "prompt": map[string]any{"type": "string", "maxLength": 8000}, "count": map[string]any{"type": "integer", "minimum": 1, "maximum": 4, "default": 1}}, "required": []string{"nodeId", "prompt"}, "additionalProperties": false}}},
 		map[string]any{"type": "function", "function": map[string]any{"name": "image_inspect", "description": "使用视觉模型对照用户目标验收一至四个图片节点；图片生成后、总结完成前必须调用", "parameters": map[string]any{"type": "object", "properties": map[string]any{"nodeIds": map[string]any{"type": "array", "minItems": 1, "maxItems": 4, "uniqueItems": true, "items": map[string]any{"type": "string"}}, "criteria": map[string]any{"type": "string", "maxLength": 2000}}, "required": []string{"nodeIds", "criteria"}, "additionalProperties": false}}},

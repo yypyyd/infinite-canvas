@@ -146,6 +146,13 @@ func New() *gin.Engine {
 	v1.GET("/agent/runs/:id", func(c *gin.Context) {
 		handler.GetAgentRun(c.Writer, c.Request, c.Param("id"))
 	})
+	v1.GET("/agent/runs/:id/diagnostics", func(c *gin.Context) {
+		handler.GetAgentRunDiagnostics(c.Writer, c.Request, c.Param("id"))
+	})
+	v1.GET("/agent/metrics", gin.WrapF(handler.GetAgentMetrics))
+	v1.POST("/agent/runs/:id/feedback", func(c *gin.Context) {
+		handler.SubmitAgentFeedback(c.Writer, c.Request, c.Param("id"))
+	})
 	v1.GET("/agent/runs/:id/events", func(c *gin.Context) {
 		handler.AgentRunEvents(c.Writer, c.Request, c.Param("id"))
 	})
@@ -166,6 +173,12 @@ func New() *gin.Engine {
 	})
 	v1.POST("/agent/runs/:id/tool-reverts", func(c *gin.Context) {
 		handler.RevertAgentTool(c.Writer, c.Request, c.Param("id"))
+	})
+	v1.POST("/agent/runs/:id/revert", func(c *gin.Context) {
+		handler.RevertAgentRun(c.Writer, c.Request, c.Param("id"))
+	})
+	v1.POST("/agent/runs/:id/steps/:callId/retry", func(c *gin.Context) {
+		handler.RetryAgentStep(c.Writer, c.Request, c.Param("id"), c.Param("callId"))
 	})
 	v1.GET("/videos/:id", func(c *gin.Context) {
 		handler.AIVideo(c.Writer, c.Request, c.Param("id"))

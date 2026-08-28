@@ -8,6 +8,8 @@ type AgentStepStatus string
 type AgentEventType string
 type AgentMemoryKind string
 type AgentMemoryStatus string
+type AgentPlanStepStatus string
+type AgentFeedbackSignal string
 
 const (
 	AgentSessionStatusActive   AgentSessionStatus = "active"
@@ -49,6 +51,18 @@ const (
 
 	AgentMemoryStatusActive    AgentMemoryStatus = "active"
 	AgentMemoryStatusForgotten AgentMemoryStatus = "forgotten"
+
+	AgentPlanStepStatusPending   AgentPlanStepStatus = "pending"
+	AgentPlanStepStatusRunning   AgentPlanStepStatus = "running"
+	AgentPlanStepStatusCompleted AgentPlanStepStatus = "completed"
+	AgentPlanStepStatusFailed    AgentPlanStepStatus = "failed"
+	AgentPlanStepStatusSkipped   AgentPlanStepStatus = "skipped"
+
+	AgentFeedbackSignalAccepted  AgentFeedbackSignal = "accepted"
+	AgentFeedbackSignalHelpful   AgentFeedbackSignal = "helpful"
+	AgentFeedbackSignalUnhelpful AgentFeedbackSignal = "unhelpful"
+	AgentFeedbackSignalDeleted   AgentFeedbackSignal = "deleted"
+	AgentFeedbackSignalCorrected AgentFeedbackSignal = "corrected"
 )
 
 type AgentSession struct {
@@ -75,19 +89,76 @@ type AgentMessage struct {
 }
 
 type AgentRun struct {
-	ID             string         `json:"id" gorm:"primaryKey"`
-	OrganizationID string         `json:"organizationId" gorm:"index:idx_agent_run_owner,priority:1"`
-	UserID         string         `json:"userId" gorm:"index:idx_agent_run_owner,priority:2"`
-	SessionID      string         `json:"sessionId" gorm:"index"`
-	MessageID      string         `json:"-" gorm:"index"`
-	Model          string         `json:"model" gorm:"index"`
-	Context        string         `json:"-" gorm:"type:text"`
-	Status         AgentRunStatus `json:"status" gorm:"index"`
-	Error          string         `json:"error,omitempty" gorm:"type:text"`
-	StartedAt      string         `json:"startedAt" gorm:"index"`
-	CompletedAt    string         `json:"completedAt,omitempty"`
-	CreatedAt      string         `json:"createdAt" gorm:"index"`
-	UpdatedAt      string         `json:"updatedAt"`
+	ID                 string         `json:"id" gorm:"primaryKey"`
+	OrganizationID     string         `json:"organizationId" gorm:"index:idx_agent_run_owner,priority:1"`
+	UserID             string         `json:"userId" gorm:"index:idx_agent_run_owner,priority:2"`
+	SessionID          string         `json:"sessionId" gorm:"index"`
+	MessageID          string         `json:"-" gorm:"index"`
+	Model              string         `json:"model" gorm:"index"`
+	Context            string         `json:"-" gorm:"type:text"`
+	MaxToolCalls       int            `json:"maxToolCalls" gorm:"not null;default:8"`
+	MaxMediaCalls      int            `json:"maxMediaCalls" gorm:"not null;default:3"`
+	MaxDurationSec     int            `json:"maxDurationSec" gorm:"not null;default:900"`
+	MaxCredits         int            `json:"maxCredits" gorm:"not null;default:100"`
+	BudgetReason       string         `json:"budgetReason,omitempty"`
+	StreamReconnects   int            `json:"streamReconnects" gorm:"not null;default:0"`
+	ToolLeaseTakeovers int            `json:"toolLeaseTakeovers" gorm:"not null;default:0"`
+	Status             AgentRunStatus `json:"status" gorm:"index"`
+	Error              string         `json:"error,omitempty" gorm:"type:text"`
+	StartedAt          string         `json:"startedAt" gorm:"index"`
+	CompletedAt        string         `json:"completedAt,omitempty"`
+	CreatedAt          string         `json:"createdAt" gorm:"index"`
+	UpdatedAt          string         `json:"updatedAt"`
+}
+
+// AgentRunSnapshot stores the exact pre-run canvas state for cross-device rollback.
+// Payload is server-only and returned only to the owning user during a full-run revert.
+type AgentRunSnapshot struct {
+	ID             string `json:"id" gorm:"primaryKey"`
+	OrganizationID string `json:"organizationId" gorm:"uniqueIndex:idx_agent_run_snapshot_owner,priority:1"`
+	UserID         string `json:"userId" gorm:"uniqueIndex:idx_agent_run_snapshot_owner,priority:2"`
+	RunID          string `json:"runId" gorm:"uniqueIndex:idx_agent_run_snapshot_owner,priority:3;index"`
+	ProjectID      string `json:"projectId" gorm:"index"`
+	Payload        string `json:"-" gorm:"type:longtext"`
+	Checksum       string `json:"checksum"`
+	CreatedAt      string `json:"createdAt" gorm:"index"`
+	RestoredAt     string `json:"restoredAt,omitempty"`
+}
+
+// AgentPlanStep is a durable, revisioned execution plan. New plans skip unfinished
+// steps from the previous revision instead of mutating history.
+type AgentPlanStep struct {
+	ID                 string              `json:"id" gorm:"primaryKey"`
+	OrganizationID     string              `json:"organizationId" gorm:"index:idx_agent_plan_owner,priority:1"`
+	UserID             string              `json:"userId" gorm:"index:idx_agent_plan_owner,priority:2"`
+	RunID              string              `json:"runId" gorm:"uniqueIndex:idx_agent_plan_position,priority:1;index"`
+	Revision           int                 `json:"revision" gorm:"uniqueIndex:idx_agent_plan_position,priority:2"`
+	PlanCallID         string              `json:"planCallId" gorm:"index"`
+	Position           int                 `json:"position" gorm:"uniqueIndex:idx_agent_plan_position,priority:3"`
+	Title              string              `json:"title"`
+	CompletionCriteria string              `json:"completionCriteria"`
+	DependsOnPosition  int                 `json:"dependsOnPosition,omitempty"`
+	Status             AgentPlanStepStatus `json:"status" gorm:"index"`
+	ToolCallID         string              `json:"toolCallId,omitempty" gorm:"index"`
+	ToolName           string              `json:"toolName,omitempty"`
+	Reason             string              `json:"reason,omitempty"`
+	StartedAt          string              `json:"startedAt,omitempty"`
+	CompletedAt        string              `json:"completedAt,omitempty"`
+	CreatedAt          string              `json:"createdAt"`
+	UpdatedAt          string              `json:"updatedAt"`
+}
+
+// AgentFeedback keeps the latest user outcome signal for a Run. Replacing a
+// signal applies only its delta to experience-memory confidence.
+type AgentFeedback struct {
+	ID             string              `json:"id" gorm:"primaryKey"`
+	OrganizationID string              `json:"organizationId" gorm:"uniqueIndex:idx_agent_feedback_run,priority:1"`
+	UserID         string              `json:"userId" gorm:"uniqueIndex:idx_agent_feedback_run,priority:2"`
+	RunID          string              `json:"runId" gorm:"uniqueIndex:idx_agent_feedback_run,priority:3;index"`
+	Signal         AgentFeedbackSignal `json:"signal" gorm:"index"`
+	Note           string              `json:"note,omitempty" gorm:"type:text"`
+	CreatedAt      string              `json:"createdAt" gorm:"index"`
+	UpdatedAt      string              `json:"updatedAt"`
 }
 
 type AgentStep struct {

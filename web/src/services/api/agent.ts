@@ -27,7 +27,16 @@ export type AgentRun = {
     error?: string;
     startedAt: string;
     completedAt?: string;
+    maxToolCalls: number;
+    maxMediaCalls: number;
+    maxDurationSec: number;
+    maxCredits: number;
+    budgetReason?: "tool_calls" | "media_calls" | "duration" | "credits";
+    streamReconnects: number;
+    toolLeaseTakeovers: number;
 };
+
+export type AgentRunBudget = { maxToolCalls: number; maxMediaCalls: number; maxDurationSec: number; maxCredits: number };
 
 export type AgentCanvasNode = {
     id: string;
@@ -51,6 +60,7 @@ export type AgentCanvasConnection = {
 export type AgentCanvasContext = {
     autonomy: "cautious" | "standard" | "autonomous";
     selectedNodeIds: string[];
+    focusNodeIds: string[];
     nodes: AgentCanvasNode[];
     connections: AgentCanvasConnection[];
 };
@@ -71,19 +81,7 @@ export type AgentToolArguments =
     | { key: string; scope: "project" | "user" };
 
 export type AgentToolName =
-    | "canvas.plan"
-    | "image.generate"
-    | "image.edit"
-    | "image.inspect"
-    | "video.generate"
-    | "video.inspect"
-    | "canvas.arrange"
-    | "canvas.add_text"
-    | "canvas.delete"
-    | "canvas.update_text"
-    | "agent.ask_user"
-    | "agent.remember"
-    | "agent.forget";
+    "canvas.plan" | "image.generate" | "image.edit" | "image.inspect" | "video.generate" | "video.inspect" | "canvas.arrange" | "canvas.add_text" | "canvas.delete" | "canvas.update_text" | "agent.ask_user" | "agent.remember" | "agent.forget";
 
 export type AgentToolInspection = {
     status: "passed" | "needs_revision" | "unavailable";
@@ -106,7 +104,7 @@ export type AgentEvent = {
         name?: AgentToolName;
         arguments?: AgentToolArguments;
         output?: { answer?: string; inspection?: AgentToolInspection; memory?: { id?: string; key: string; status: "active" | "forgotten"; scope: "project" | "user" } };
-        meta?: { needsClaim?: boolean };
+        meta?: { needsClaim?: boolean; retryOf?: string };
     };
     createdAt: string;
 };
@@ -115,8 +113,8 @@ export function createAgentSession(projectId: string, title = "新对话", sessi
     return apiPost<AgentSession>("/api/v1/agent/sessions", { sessionId, projectId, title, profile: {} });
 }
 
-export function submitAgentMessage(sessionId: string, runId: string, content: string, model: string, canvasContext: AgentCanvasContext) {
-    return apiPost<{ message: AgentMessage; run: AgentRun }>(`/api/v1/agent/sessions/${sessionId}/messages`, { runId, content, model, canvasContext });
+export function submitAgentMessage(sessionId: string, runId: string, content: string, model: string, canvasContext: AgentCanvasContext, canvasSnapshot: unknown, budget: AgentRunBudget) {
+    return apiPost<{ message: AgentMessage; run: AgentRun }>(`/api/v1/agent/sessions/${sessionId}/messages`, { runId, content, model, canvasContext, canvasSnapshot, budget });
 }
 
 export type AgentToolResult =
@@ -199,12 +197,80 @@ export function getAgentRun(runId: string) {
     return apiGet<AgentRun>(`/api/v1/agent/runs/${runId}`);
 }
 
+export type AgentStepDiagnostic = {
+    callId?: string;
+    type: "completion" | "tool";
+    toolName?: AgentToolName;
+    status: "running" | "completed" | "failed" | "cancelled";
+    confirmation?: "approved" | "rejected";
+    error?: string;
+    startedAt: string;
+    completedAt?: string;
+    durationMs: number;
+    retryable: boolean;
+    revertible: boolean;
+    reverted: boolean;
+};
+
+export type AgentRunDiagnostics = Pick<AgentRun, "id" | "status" | "model" | "error" | "startedAt" | "completedAt"> & {
+    durationMs: number;
+    canRevert: boolean;
+    budget: AgentRunBudget;
+    usage: { toolCalls: number; mediaCalls: number; durationSec: number; streamReconnects: number; credits: number; toolLeaseTakeovers: number };
+    budgetReason?: "tool_calls" | "media_calls" | "duration" | "credits";
+    plan: { id: string; revision: number; position: number; title: string; completionCriteria: string; dependsOnPosition?: number; status: "pending" | "running" | "completed" | "failed" | "skipped"; toolName?: AgentToolName; reason?: string }[];
+    steps: AgentStepDiagnostic[];
+};
+
+export function getAgentRunDiagnostics(runId: string) {
+    return apiGet<AgentRunDiagnostics>(`/api/v1/agent/runs/${runId}/diagnostics`);
+}
+
+export function retryAgentStep(runId: string, callId: string) {
+    return apiPost<{ run: AgentRun; callId: string; sourceCallId: string }>(`/api/v1/agent/runs/${runId}/steps/${encodeURIComponent(callId)}/retry`);
+}
+
 export function cancelAgentRun(runId: string) {
     return apiPost<AgentRun>(`/api/v1/agent/runs/${runId}/cancel`);
 }
 
 export function revertAgentTool(runId: string, callId: string) {
     return apiPost<AgentRun>(`/api/v1/agent/runs/${runId}/tool-reverts`, { callId });
+}
+
+export function revertAgentRun(runId: string) {
+    return apiPost<{ run: AgentRun; callIds: string[]; snapshot: { nodes: unknown[]; connections: unknown[] }; snapshotChecksum: string }>(`/api/v1/agent/runs/${runId}/revert`);
+}
+
+export type AgentFeedbackSignal = "accepted" | "helpful" | "unhelpful" | "deleted" | "corrected";
+
+export function submitAgentFeedback(runId: string, signal: AgentFeedbackSignal, note?: string) {
+    return apiPost<{ feedback: { id: string; runId: string; signal: AgentFeedbackSignal; note?: string }; adjustedMemories: number }>(`/api/v1/agent/runs/${runId}/feedback`, { signal, note });
+}
+
+export type AgentMetrics = {
+    hours: number;
+    runs: number;
+    completedRuns: number;
+    failedRuns: number;
+    cancelledRuns: number;
+    budgetStoppedRuns: number;
+    toolCalls: number;
+    failedToolCalls: number;
+    mediaCalls: number;
+    streamReconnects: number;
+    toolLeaseTakeovers: number;
+    feedback: Record<string, number>;
+    averageDurationMs: number;
+    averageToolCalls: number;
+    toolFailureRate: number;
+    completionRate: number;
+    credits: number;
+    alerts: string[];
+};
+
+export function getAgentMetrics(hours = 24) {
+    return apiGet<AgentMetrics>(`/api/v1/agent/metrics?hours=${hours}`);
 }
 
 export function getAgentToolResultReceipt(runId: string, callId: string) {
@@ -215,7 +281,7 @@ export function confirmAgentTool(runId: string, callId: string, decision: "appro
     return apiPost<AgentRun>(`/api/v1/agent/runs/${runId}/confirmation`, { callId, decision, answer });
 }
 
-export async function streamAgentRun(runId: string, onEvent: (event: AgentEvent) => void | Promise<void>, signal?: AbortSignal, after = 0) {
+export async function streamAgentRun(runId: string, onEvent: (event: AgentEvent) => void | Promise<void>, signal?: AbortSignal, after = 0, onProcessed?: (sequence: number) => void) {
     const response = await fetch(`/api/v1/agent/runs/${runId}/events${after > 0 ? `?after=${after}` : ""}`, {
         credentials: "include",
         headers: organizationHeaders(),
@@ -237,7 +303,11 @@ export async function streamAgentRun(runId: string, onEvent: (event: AgentEvent)
                 .split("\n")
                 .find((line) => line.startsWith("data: "))
                 ?.slice(6);
-            if (data) await onEvent(JSON.parse(data) as AgentEvent);
+            if (data) {
+                const event = JSON.parse(data) as AgentEvent;
+                await onEvent(event);
+                onProcessed?.(event.sequence);
+            }
         }
     }
 }

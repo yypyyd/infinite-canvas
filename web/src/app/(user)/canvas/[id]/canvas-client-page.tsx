@@ -33,7 +33,7 @@ import { videoReferenceCapabilities } from "@/lib/video-reference";
 import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { flushActiveWorkspaceChanges, isWorkspaceVersionConflictError } from "@/components/layout/workspace-provider";
-import { revertAgentTool, type AgentToolName, type AgentToolResult } from "@/services/api/agent";
+import { revertAgentRun, revertAgentTool, submitAgentFeedback, type AgentToolName, type AgentToolResult } from "@/services/api/agent";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -289,6 +289,7 @@ function InfiniteCanvasPage() {
     const historyRef = useRef<{ past: CanvasHistoryEntry[]; future: CanvasHistoryEntry[] }>({ past: [], future: [] });
     const lastHistoryRef = useRef<CanvasHistoryEntry | null>(null);
     const pendingAgentHistoryRef = useRef(new Map<string, { runId: string; callId: string }>());
+    const correctedAgentRunsRef = useRef(new Set<string>());
     const lastSavedProjectRef = useRef<CanvasSaveSnapshot | null>(null);
     const historyCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const canvasSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1103,9 +1104,13 @@ function InfiniteCanvasPage() {
     const deleteNodes = useCallback((ids: Set<string>) => {
         if (!ids.size) return;
         const allIds = new Set(ids);
+        const affectedRuns = new Set<string>();
         nodesRef.current.forEach((node) => {
-            if (ids.has(node.id)) node.metadata?.batchChildIds?.forEach((childId) => allIds.add(childId));
+            if (!ids.has(node.id)) return;
+            node.metadata?.batchChildIds?.forEach((childId) => allIds.add(childId));
+            if (node.metadata?.agentRunId) affectedRuns.add(node.metadata.agentRunId);
         });
+        affectedRuns.forEach((runId) => void submitAgentFeedback(runId, "deleted").catch(() => {}));
         setNodes((prev) => {
             const next = prev.filter((node) => !allIds.has(node.id));
             return next.map((node) => {
@@ -1427,6 +1432,34 @@ function InfiniteCanvasPage() {
             });
         },
         [message],
+    );
+
+    const revertAssistantRun = useCallback(
+        async (runId: string) => {
+            const pendingCalls = [...pendingAgentHistoryRef.current.values()];
+            const committed = lastHistoryRef.current;
+            if (!committed) throw new Error("画布历史尚未就绪");
+            const current = pendingCalls.length ? { ...createHistoryEntry(), agentToolCalls: pendingCalls } : committed;
+            const timeline = [...historyRef.current.past, current];
+            const firstRunEntry = timeline.findIndex((entry) => entry.agentToolCalls?.some((tool) => tool.runId === runId));
+            const result = await revertAgentRun(runId);
+            const serverSnapshot = result.snapshot as Pick<CanvasHistoryEntry, "nodes" | "connections">;
+            const beforeRun = firstRunEntry > 0 ? timeline[firstRunEntry - 1] : serverSnapshot;
+            if (!beforeRun?.nodes || !beforeRun?.connections) throw new Error("服务端画布快照无效，无法安全撤销");
+            const restored: CanvasHistoryEntry = {
+                ...beforeRun,
+                chatSessions: current.chatSessions,
+                activeChatId: current.activeChatId,
+                backgroundMode: current.backgroundMode,
+                showImageInfo: current.showImageInfo,
+            };
+            historyRef.current.past = firstRunEntry > 0 ? timeline.slice(0, firstRunEntry - 1) : [];
+            historyRef.current.future = [];
+            applyHistory(restored);
+            window.dispatchEvent(new CustomEvent(CANVAS_AGENT_RUN_REVERTED_EVENT, { detail: { runId } }));
+            void message.success("已撤销本轮画布操作");
+        },
+        [applyHistory, createHistoryEntry, message],
     );
 
     const undoCanvas = useCallback(() => {
@@ -1912,6 +1945,11 @@ function InfiniteCanvasPage() {
     }, []);
 
     const handleNodeContentChange = useCallback((nodeId: string, content: string) => {
+        const runId = nodesRef.current.find((node) => node.id === nodeId)?.metadata?.agentRunId;
+        if (runId && !correctedAgentRunsRef.current.has(runId)) {
+            correctedAgentRunsRef.current.add(runId);
+            void submitAgentFeedback(runId, "corrected").catch(() => correctedAgentRunsRef.current.delete(runId));
+        }
         setNodes((prev) => prev.map((node) => (node.id === nodeId ? { ...node, metadata: { ...node.metadata, content } } : node)));
     }, []);
 
@@ -4139,6 +4177,7 @@ function InfiniteCanvasPage() {
                         onPersistToolResult={persistAssistantToolResult}
                         onApplyDestructiveTool={applyDestructiveAssistantTool}
                         onRestoreToolResult={restoreAssistantToolResult}
+                        onRevertRun={revertAssistantRun}
                         onFlashAssistantNodes={flashAssistantNodes}
                         onLocateNode={locateAssistantNode}
                         onPasteImage={pasteAssistantImage}

@@ -418,7 +418,9 @@ function AssetCard({ asset, onOpen, onEdit, onCopy, onDownload, onDelete }: { as
                     {cover ? (
                         <img src={cover} alt={asset.title} className="aspect-[4/3] w-full object-cover" />
                     ) : (
-                        <div className="flex aspect-[4/3] items-center justify-center bg-neutral-100 p-5 text-center text-sm leading-6 text-neutral-600 dark:bg-neutral-900 dark:text-neutral-300">{asset.kind === "text" ? asset.data.content : "暂无封面"}</div>
+                        <div className="flex aspect-[4/3] items-center justify-center bg-neutral-100 p-5 text-center text-sm leading-6 text-neutral-600 dark:bg-neutral-900 dark:text-neutral-300">
+                            {asset.kind === "text" ? asset.data.content : "暂无封面"}
+                        </div>
                     )}
                 </button>
             }
@@ -483,7 +485,9 @@ function AssetDrawer({ asset, onClose, onCopy, onDownload }: { asset: Asset | nu
                     {cover ? (
                         <Image src={cover} alt={asset.title} className="rounded-lg" />
                     ) : (
-                        <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-5 text-sm leading-6 text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">{asset.kind === "text" ? asset.data.content : "暂无封面"}</div>
+                        <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-5 text-sm leading-6 text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">
+                            {asset.kind === "text" ? asset.data.content : "暂无封面"}
+                        </div>
                     )}
                     <div>
                         <Typography.Title level={4} className="!mb-2">

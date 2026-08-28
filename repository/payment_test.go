@@ -53,8 +53,8 @@ func TestSettlePaymentOrderKeepsBalanceSeparateFromCredits(t *testing.T) {
 
 func TestSettlePaymentOrderCreditsInviterOnce(t *testing.T) {
 	testDB := setupUserWorkspaceTestDB(t)
-	inviter := model.User{ID: "referral-inviter", Username: "referral-inviter", BalanceCents: 100, Status: model.UserStatusActive, CreatedAt: workspaceTestNow, UpdatedAt: workspaceTestNow}
-	invitee := model.User{ID: "referral-invitee", Username: "referral-invitee", InviterID: inviter.ID, Status: model.UserStatusActive, CreatedAt: workspaceTestNow, UpdatedAt: workspaceTestNow}
+	inviter := model.User{ID: "referral-inviter", Username: "referral-inviter", AffCode: "referral-inviter-code", BalanceCents: 100, Status: model.UserStatusActive, CreatedAt: workspaceTestNow, UpdatedAt: workspaceTestNow}
+	invitee := model.User{ID: "referral-invitee", Username: "referral-invitee", AffCode: "referral-invitee-code", InviterID: inviter.ID, Status: model.UserStatusActive, CreatedAt: workspaceTestNow, UpdatedAt: workspaceTestNow}
 	order := model.PaymentOrder{ID: "referral-payment-order", OrderNo: "referral-pay-order", UserID: invitee.ID, AmountCents: 9800, BalanceCents: 10000, Status: model.PaymentOrderStatusPending, CreatedAt: workspaceTestNow, UpdatedAt: workspaceTestNow}
 	for _, item := range []any{&inviter, &invitee, &order} {
 		if err := testDB.Create(item).Error; err != nil {

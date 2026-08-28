@@ -183,20 +183,20 @@ export default function AdminChannelsPage() {
                 : !discovered
                   ? current
                   : normalizeChannelModels([
-                {
-                    ...current,
-                    modality: discovered.modality || current.modality,
-                    aspectRatios: discovered.supportedRatios?.length ? discovered.supportedRatios : current.aspectRatios,
-                    resolutionTiers: discovered.supportedResolutions || [],
-                    durations: discovered.supportedDurations || [],
-                    maxReferenceImages: discovered.referenceCapabilityProvided ? discovered.maxReferenceImages : current.maxReferenceImages,
-                    maxReferenceVideos: discovered.referenceVideosProvided ? discovered.maxReferenceVideos : current.maxReferenceVideos,
-                    maxReferenceAudios: discovered.referenceAudiosProvided ? discovered.maxReferenceAudios : current.maxReferenceAudios,
-                    maxReferenceMedia: discovered.referenceMediaProvided ? discovered.maxReferenceMedia : current.maxReferenceMedia,
-                    supportsAudioOutput: discovered.audioOutputProvided ? discovered.supportsAudioOutput : current.supportsAudioOutput,
-                    referenceMode: discovered.referenceCapabilityProvided ? discovered.referenceMode : current.referenceMode,
-                },
-            ])[0];
+                        {
+                            ...current,
+                            modality: discovered.modality || current.modality,
+                            aspectRatios: discovered.supportedRatios?.length ? discovered.supportedRatios : current.aspectRatios,
+                            resolutionTiers: discovered.supportedResolutions || [],
+                            durations: discovered.supportedDurations || [],
+                            maxReferenceImages: discovered.referenceCapabilityProvided ? discovered.maxReferenceImages : current.maxReferenceImages,
+                            maxReferenceVideos: discovered.referenceVideosProvided ? discovered.maxReferenceVideos : current.maxReferenceVideos,
+                            maxReferenceAudios: discovered.referenceAudiosProvided ? discovered.maxReferenceAudios : current.maxReferenceAudios,
+                            maxReferenceMedia: discovered.referenceMediaProvided ? discovered.maxReferenceMedia : current.maxReferenceMedia,
+                            supportsAudioOutput: discovered.audioOutputProvided ? discovered.supportsAudioOutput : current.supportsAudioOutput,
+                            referenceMode: discovered.referenceCapabilityProvided ? discovered.referenceMode : current.referenceMode,
+                        },
+                    ])[0];
             return channelProtocol === "autodl_comfyui" && !configured.workflow ? { ...configured, workflow: defaultComfyUIWorkflow() } : configured;
         });
         channelForm.setFieldValue("models", models);
@@ -366,7 +366,11 @@ export default function AdminChannelsPage() {
                             </Form.Item>
                         </Col>
                         <Col xs={24} md={12}>
-                            <Form.Item name="apiKey" label={channelProtocol === "autodl_comfyui" ? "AutoDL ComfyUI Token" : "API Key"} rules={editingChannelIndex === null ? [{ required: true, message: channelProtocol === "autodl_comfyui" ? "请输入 AutoDL Token" : "请输入 API Key" }] : []}>
+                            <Form.Item
+                                name="apiKey"
+                                label={channelProtocol === "autodl_comfyui" ? "AutoDL ComfyUI Token" : "API Key"}
+                                rules={editingChannelIndex === null ? [{ required: true, message: channelProtocol === "autodl_comfyui" ? "请输入 AutoDL Token" : "请输入 API Key" }] : []}
+                            >
                                 <Input.Password placeholder={editingChannelIndex === null ? "" : `留空则沿用已保存的${channelProtocol === "autodl_comfyui" ? " Token" : " API Key"}`} />
                             </Form.Item>
                         </Col>
@@ -468,7 +472,15 @@ export default function AdminChannelsPage() {
                                     const summary = discoveredSummary(discoveredModels[model]);
                                     const toggle = () => setModelSelectSelected((current) => (checked ? current.filter((item) => item !== model) : uniqueModels([...current, model])));
                                     return (
-                                        <div key={model} role="checkbox" aria-checked={checked} tabIndex={0} className="flex min-w-0 cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted/60" onClick={toggle} onKeyDown={(event) => (event.key === " " || event.key === "Enter" ? (event.preventDefault(), toggle()) : undefined)}>
+                                        <div
+                                            key={model}
+                                            role="checkbox"
+                                            aria-checked={checked}
+                                            tabIndex={0}
+                                            className="flex min-w-0 cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted/60"
+                                            onClick={toggle}
+                                            onKeyDown={(event) => (event.key === " " || event.key === "Enter" ? (event.preventDefault(), toggle()) : undefined)}
+                                        >
                                             <Checkbox checked={checked} onClick={(event) => event.stopPropagation()} onChange={toggle} />
                                             <Typography.Text strong ellipsis={{ tooltip: model }} style={{ flex: 1, minWidth: 0 }}>
                                                 {model}
@@ -511,7 +523,9 @@ export default function AdminChannelsPage() {
                 destroyOnHidden
             >
                 <Flex vertical gap={12}>
-                    <Typography.Text type="secondary">{testChannel?.protocol === "autodl_comfyui" ? "AutoDL 测试会校验工作流、JSON 模板及 Token 的 ComfyUI API 权限，不会提交付费生成任务。" : "模型测试通过 OpenAI 兼容的 /models?extended=true 校验模型是否存在。"}</Typography.Text>
+                    <Typography.Text type="secondary">
+                        {testChannel?.protocol === "autodl_comfyui" ? "AutoDL 测试会校验工作流、JSON 模板及 Token 的 ComfyUI API 权限，不会提交付费生成任务。" : "模型测试通过 OpenAI 兼容的 /models?extended=true 校验模型是否存在。"}
+                    </Typography.Text>
                     <Input.Search placeholder="搜索模型..." allowClear value={testKeyword} onChange={(event) => setTestKeyword(event.target.value)} />
                     <Table
                         rowKey="model"

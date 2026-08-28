@@ -3,6 +3,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, App, Avatar, Button, Card, Descriptions, Drawer, Empty, Form, Input, InputNumber, Modal, Pagination, Popconfirm, Progress, Select, Statistic, Table, Tabs, Tag, Upload } from "antd";
 import { Boxes, Building2, ClipboardList, Columns3, Download, FileStack, History, PackagePlus, Palette, Plus, RefreshCw, ScanText, Settings2, Trash2, UserPlus, Users, WalletCards } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
@@ -63,7 +64,8 @@ import { useAssetStore } from "@/stores/use-asset-store";
 import { flushActiveWorkspaceChanges } from "@/components/layout/workspace-provider";
 import { uploadWorkspaceFile, workspaceFileUrl } from "@/services/api/workspace";
 import { CanvasNodeType } from "@/app/(user)/canvas/types";
-import { BatchResultComparison } from "./components/batch-result-comparison";
+
+const BatchResultComparison = dynamic(() => import("./components/batch-result-comparison").then((module) => module.BatchResultComparison), { ssr: false });
 
 const roleOptions = [
     { value: "admin", label: "管理员" },
@@ -1825,33 +1827,35 @@ export default function CommercePage() {
                     ]}
                 />
             </Drawer>
-            <BatchResultComparison
-                open={comparisonOpen}
-                job={selectedBatch}
-                items={comparisonItems}
-                canReview={canReview}
-                working={working}
-                onClose={() => setComparisonOpen(false)}
-                onApprove={(item) => {
-                    setComparisonOpen(false);
-                    setComparisonItems([]);
-                    openReview(item, "approved");
-                }}
-                onReject={(item) => {
-                    setComparisonOpen(false);
-                    setComparisonItems([]);
-                    openReview(item, "rejected");
-                }}
-                onSetPrimary={async (item) => {
-                    if (!canSetPrimary(item)) {
-                        message.error("当前结果不可设为主图");
-                        return;
-                    }
-                    const requestJobId = item.jobId;
-                    if ((await setPrimary(item)) && selectedBatchIdRef.current === requestJobId)
-                        setComparisonItems((current) => current.map((currentItem) => (currentItem.productId === item.productId && currentItem.skuId === item.skuId ? { ...currentItem, isPrimary: currentItem.id === item.id } : currentItem)));
-                }}
-            />
+            {comparisonItems.length ? (
+                <BatchResultComparison
+                    open={comparisonOpen}
+                    job={selectedBatch}
+                    items={comparisonItems}
+                    canReview={canReview}
+                    working={working}
+                    onClose={() => setComparisonOpen(false)}
+                    onApprove={(item) => {
+                        setComparisonOpen(false);
+                        setComparisonItems([]);
+                        openReview(item, "approved");
+                    }}
+                    onReject={(item) => {
+                        setComparisonOpen(false);
+                        setComparisonItems([]);
+                        openReview(item, "rejected");
+                    }}
+                    onSetPrimary={async (item) => {
+                        if (!canSetPrimary(item)) {
+                            message.error("当前结果不可设为主图");
+                            return;
+                        }
+                        const requestJobId = item.jobId;
+                        if ((await setPrimary(item)) && selectedBatchIdRef.current === requestJobId)
+                            setComparisonItems((current) => current.map((currentItem) => (currentItem.productId === item.productId && currentItem.skuId === item.skuId ? { ...currentItem, isPrimary: currentItem.id === item.id } : currentItem)));
+                    }}
+                />
+            ) : null}
             <Modal
                 title={reviewDraft?.status === "approved" ? "通过生产结果" : "驳回生产结果"}
                 open={Boolean(reviewDraft)}

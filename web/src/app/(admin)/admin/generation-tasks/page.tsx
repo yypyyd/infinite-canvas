@@ -7,6 +7,7 @@ import { Button, Card, Col, Form, Input, Row, Select, Space, Tag, Typography } f
 import dayjs from "dayjs";
 import { useEffect, useState } from "react";
 
+import { generationTaskPollInterval } from "@/lib/query-polling";
 import { fetchAdminGenerationTasks, type AdminGenerationTask } from "@/services/api/admin";
 import { useUserStore } from "@/stores/use-user-store";
 
@@ -44,7 +45,7 @@ export default function AdminGenerationTasksPage() {
         queryKey: ["admin-generation-tasks", token, keyword, status, modality, page, pageSize],
         queryFn: () => fetchAdminGenerationTasks(token, { keyword, type: status, category: modality, page, pageSize }),
         enabled: Boolean(token),
-        refetchInterval: 30000,
+        refetchInterval: (result) => generationTaskPollInterval(result.state.data?.items),
     });
 
     useEffect(() => setPage(1), [keyword, status, modality]);

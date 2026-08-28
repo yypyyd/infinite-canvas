@@ -4,11 +4,11 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/gin-gonic/gin"
 	"github.com/yypyyd/infinite-canvas/config"
 	"github.com/yypyyd/infinite-canvas/handler"
 	"github.com/yypyyd/infinite-canvas/model"
 	"github.com/yypyyd/infinite-canvas/service"
-	"github.com/gin-gonic/gin"
 )
 
 func AdminAuth(c *gin.Context) {
@@ -111,7 +111,9 @@ func OrganizationAuth(c *gin.Context) {
 		return
 	}
 	organizationID := strings.TrimSpace(c.GetHeader("X-Organization-ID"))
-	if organizationID == "" { organizationID = strings.TrimSpace(c.Query("organization")) }
+	if organizationID == "" {
+		organizationID = strings.TrimSpace(c.Query("organization"))
+	}
 	if organizationID != "" && user.OrganizationID == organizationID {
 		c.Next()
 		return

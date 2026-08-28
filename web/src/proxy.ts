@@ -8,7 +8,7 @@ const directAccessBlockedHtml = `<!doctype html><html lang="zh-CN"><head><meta c
 let accessPolicy = { blockChina: false, expiresAt: 0 };
 let accessPolicyRequest: Promise<boolean> | null = null;
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
     if (!isChinaRequest(request) || !(await blockChinaAccess())) return NextResponse.next();
     return new NextResponse(directAccessBlockedHtml, {
         status: 451,

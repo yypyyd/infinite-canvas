@@ -9,7 +9,8 @@
         "start": "next start",
         "format": "prettier --write .",
         "format:check": "prettier --check .",
-        "types:check": "tsc --noEmit"
+        "types:check": "tsc --noEmit",
+        "test": "bun test src"
     },
     "dependencies": {
         "@ant-design/icons": "^6.1.1",

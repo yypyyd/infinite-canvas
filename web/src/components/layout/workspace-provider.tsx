@@ -178,11 +178,15 @@ async function flushPendingChanges(token: string, userId: string) {
 }
 
 function generationRecoveryRequestIds(changes: PendingWorkspaceChange[]) {
-    return [...new Set(changes.flatMap((change) => {
-        if (change.domain !== "generation_record" || change.deleted || change.data.status === "生成中") return [];
-        const requestIds = Array.isArray(change.data.requestIds) ? change.data.requestIds : [];
-        return [...requestIds.filter((value): value is string => typeof value === "string" && Boolean(value)), ...(typeof change.data.requestId === "string" && change.data.requestId ? [change.data.requestId] : [])];
-    }))];
+    return [
+        ...new Set(
+            changes.flatMap((change) => {
+                if (change.domain !== "generation_record" || change.deleted || change.data.status === "生成中") return [];
+                const requestIds = Array.isArray(change.data.requestIds) ? change.data.requestIds : [];
+                return [...requestIds.filter((value): value is string => typeof value === "string" && Boolean(value)), ...(typeof change.data.requestId === "string" && change.data.requestId ? [change.data.requestId] : [])];
+            }),
+        ),
+    ];
 }
 
 function applyWorkspaceSnapshot(userId: string, records: WorkspaceRecord[], pending: PendingWorkspaceChange[], force: boolean) {

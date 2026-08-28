@@ -26,7 +26,9 @@ export function PromptDetailDialog({ prompt, onClose, onCopy, onSaveAsset }: { p
                                 </div>
                                 <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-neutral-800 dark:text-neutral-300">{prompt.prompt}</p>
                                 <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-neutral-500 dark:text-neutral-400">
-                                    <span>创建：{formatPromptDate(prompt.createdAt)} · 更新：{formatPromptDate(prompt.updatedAt)}</span>
+                                    <span>
+                                        创建：{formatPromptDate(prompt.createdAt)} · 更新：{formatPromptDate(prompt.updatedAt)}
+                                    </span>
                                     {prompt.githubUrl ? (
                                         <a href={prompt.githubUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary transition hover:underline">
                                             GitHub 来源

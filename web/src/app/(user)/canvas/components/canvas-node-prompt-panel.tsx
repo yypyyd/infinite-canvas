@@ -38,7 +38,19 @@ type CanvasNodePromptPanelProps = {
     onOpenPromptEditor?: (nodeId: string) => void;
 };
 
-export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfigChange, onGenerate, onStop, mentionReferences = [], onMentionReference, mentionMenuDisabled = false, onImageSettingsOpenChange, onOpenPromptEditor }: CanvasNodePromptPanelProps) {
+export function CanvasNodePromptPanel({
+    node,
+    isRunning,
+    onPromptChange,
+    onConfigChange,
+    onGenerate,
+    onStop,
+    mentionReferences = [],
+    onMentionReference,
+    mentionMenuDisabled = false,
+    onImageSettingsOpenChange,
+    onOpenPromptEditor,
+}: CanvasNodePromptPanelProps) {
     const globalConfig = useEffectiveConfig();
     const pricingRules = useConfigStore((state) => state.publicSettings?.modelChannel.pricingRules);
     const groupRatios = useConfigStore((state) => state.publicSettings?.modelChannel.groupRatios);
@@ -129,7 +141,14 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
                         </>
                     ) : mode === "video" ? (
                         <>
-                            <ModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, canvasVideoModelPatch(config, model, managedModels, pricingRules))} capability="video" className="!h-10 !w-auto !min-w-0 flex-1" onMissingConfig={() => openConfigDialog(true)} />
+                            <ModelPicker
+                                config={config}
+                                value={config.model}
+                                onChange={(model) => onConfigChange(node.id, canvasVideoModelPatch(config, model, managedModels, pricingRules))}
+                                capability="video"
+                                className="!h-10 !w-auto !min-w-0 flex-1"
+                                onMissingConfig={() => openConfigDialog(true)}
+                            />
                             <CanvasVideoSettingsPopover config={config} buttonClassName="!h-10 !w-full !min-w-0 !max-w-[132px] !justify-start !rounded-full !px-3" onConfigChange={(key, value) => onConfigChange(node.id, videoConfigPatch(key, value))} />
                         </>
                     ) : mode === "audio" ? (

@@ -411,9 +411,7 @@ export default function ImagePage() {
     const runGenerationSlot = async (index: number, snapshot: { text: string; config: AiConfig; references: ReferenceImage[] }, idempotencyKey?: string) => {
         const itemStartedAt = performance.now();
         try {
-            const result = snapshot.references.length
-                ? await requestEdit(snapshot.config, snapshot.text, snapshot.references, undefined, { idempotencyKey })
-                : await requestGeneration(snapshot.config, snapshot.text, { idempotencyKey });
+            const result = snapshot.references.length ? await requestEdit(snapshot.config, snapshot.text, snapshot.references, undefined, { idempotencyKey }) : await requestGeneration(snapshot.config, snapshot.text, { idempotencyKey });
             const image = result[0];
             if (!image) throw new Error("接口没有返回图片");
             const meta = await readImageMeta(image.dataUrl);
@@ -881,11 +879,7 @@ function LogCard({ log, selected, active, onSelectedChange, onClick }: { log: Ge
     const thumbnails = (log.thumbnails || []).filter(Boolean).slice(0, 4);
 
     return (
-        <button
-            type="button"
-            className={`block w-full rounded-md px-2 py-2.5 text-left transition ${active ? "bg-muted text-foreground" : "hover:bg-muted/60"}`}
-            onClick={onClick}
-        >
+        <button type="button" className={`block w-full rounded-md px-2 py-2.5 text-left transition ${active ? "bg-muted text-foreground" : "hover:bg-muted/60"}`} onClick={onClick}>
             <div className="grid grid-cols-[minmax(128px,1fr)_auto] gap-2">
                 <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-2">
                     <Checkbox className="mt-0.5" checked={selected} onClick={(event) => event.stopPropagation()} onChange={(event) => onSelectedChange(event.target.checked)} />
@@ -990,7 +984,6 @@ function serializeLog(log: GenerationLog): GenerationLog {
         thumbnails: [],
     };
 }
-
 
 function normalizeLogConfig(log: Partial<GenerationLog>): GenerationLogConfig {
     return {

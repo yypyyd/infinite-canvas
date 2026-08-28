@@ -20,8 +20,8 @@ const (
 	AgentRunStatusWaitingConfirmation AgentRunStatus = "waiting_confirmation"
 	AgentRunStatusWaitingTool         AgentRunStatus = "waiting_tool"
 	AgentRunStatusCompleted           AgentRunStatus = "completed"
-	AgentRunStatusFailed      AgentRunStatus = "failed"
-	AgentRunStatusCancelled   AgentRunStatus = "cancelled"
+	AgentRunStatusFailed              AgentRunStatus = "failed"
+	AgentRunStatusCancelled           AgentRunStatus = "cancelled"
 
 	AgentStepTypeCompletion AgentStepType = "completion"
 	AgentStepTypeTool       AgentStepType = "tool"
@@ -31,23 +31,23 @@ const (
 	AgentStepStatusFailed    AgentStepStatus = "failed"
 	AgentStepStatusCancelled AgentStepStatus = "cancelled"
 
-	AgentEventRunStarted           AgentEventType = "run.started"
-	AgentEventPlanCreated          AgentEventType = "plan.created"
-	AgentEventMessageDelta         AgentEventType = "message.delta"
+	AgentEventRunStarted               AgentEventType = "run.started"
+	AgentEventPlanCreated              AgentEventType = "plan.created"
+	AgentEventMessageDelta             AgentEventType = "message.delta"
 	AgentEventToolConfirmationRequired AgentEventType = "tool.confirmation_required"
-	AgentEventToolCall             AgentEventType = "tool.call"
-	AgentEventToolCompleted AgentEventType = "tool.completed"
-	AgentEventToolReverted  AgentEventType = "tool.reverted"
-	AgentEventRunCompleted  AgentEventType = "run.completed"
-	AgentEventRunFailed     AgentEventType = "run.failed"
-	AgentEventRunCancelled  AgentEventType = "run.cancelled"
+	AgentEventToolCall                 AgentEventType = "tool.call"
+	AgentEventToolCompleted            AgentEventType = "tool.completed"
+	AgentEventToolReverted             AgentEventType = "tool.reverted"
+	AgentEventRunCompleted             AgentEventType = "run.completed"
+	AgentEventRunFailed                AgentEventType = "run.failed"
+	AgentEventRunCancelled             AgentEventType = "run.cancelled"
 
 	AgentMemoryKindPreference AgentMemoryKind = "preference"
 	AgentMemoryKindFact       AgentMemoryKind = "fact"
 	AgentMemoryKindConstraint AgentMemoryKind = "constraint"
 	AgentMemoryKindExperience AgentMemoryKind = "experience"
 
-	AgentMemoryStatusActive   AgentMemoryStatus = "active"
+	AgentMemoryStatusActive    AgentMemoryStatus = "active"
 	AgentMemoryStatusForgotten AgentMemoryStatus = "forgotten"
 )
 
@@ -125,21 +125,21 @@ type AgentEvent struct {
 // AgentMemory is a user-controlled, server-side fact that can be reused by later Runs.
 // Content is intentionally plain text and never contains model credentials or canvas media.
 type AgentMemory struct {
-	ID             string            `json:"id" gorm:"primaryKey"`
-	OrganizationID string            `json:"organizationId" gorm:"index:idx_agent_memory_scope,priority:1;uniqueIndex:idx_agent_memory_identity,priority:1"`
-	UserID         string            `json:"userId" gorm:"index:idx_agent_memory_scope,priority:2;uniqueIndex:idx_agent_memory_identity,priority:2"`
-	ProjectID      string            `json:"projectId" gorm:"index:idx_agent_memory_scope,priority:3;uniqueIndex:idx_agent_memory_identity,priority:3"`
-	Kind           AgentMemoryKind   `json:"kind" gorm:"index"`
-	Key            string            `json:"key" gorm:"index:idx_agent_memory_key,priority:1;uniqueIndex:idx_agent_memory_identity,priority:4"`
-	Content        string            `json:"content" gorm:"type:text"`
-	SourceRunID    string            `json:"sourceRunId,omitempty" gorm:"index"`
-	SourceMessageID string           `json:"sourceMessageId,omitempty" gorm:"index"`
-	Confidence     float64           `json:"confidence"`
-	Status         AgentMemoryStatus `json:"status" gorm:"index"`
-	ExpiresAt      string            `json:"expiresAt,omitempty" gorm:"index"`
-	ForgottenAt    string            `json:"forgottenAt,omitempty"`
-	CreatedAt      string            `json:"createdAt" gorm:"index"`
-	UpdatedAt      string            `json:"updatedAt"`
+	ID              string            `json:"id" gorm:"primaryKey"`
+	OrganizationID  string            `json:"organizationId" gorm:"index:idx_agent_memory_scope,priority:1;uniqueIndex:idx_agent_memory_identity,priority:1"`
+	UserID          string            `json:"userId" gorm:"index:idx_agent_memory_scope,priority:2;uniqueIndex:idx_agent_memory_identity,priority:2"`
+	ProjectID       string            `json:"projectId" gorm:"index:idx_agent_memory_scope,priority:3;uniqueIndex:idx_agent_memory_identity,priority:3"`
+	Kind            AgentMemoryKind   `json:"kind" gorm:"index"`
+	Key             string            `json:"key" gorm:"index:idx_agent_memory_key,priority:1;uniqueIndex:idx_agent_memory_identity,priority:4"`
+	Content         string            `json:"content" gorm:"type:text"`
+	SourceRunID     string            `json:"sourceRunId,omitempty" gorm:"index"`
+	SourceMessageID string            `json:"sourceMessageId,omitempty" gorm:"index"`
+	Confidence      float64           `json:"confidence"`
+	Status          AgentMemoryStatus `json:"status" gorm:"index"`
+	ExpiresAt       string            `json:"expiresAt,omitempty" gorm:"index"`
+	ForgottenAt     string            `json:"forgottenAt,omitempty"`
+	CreatedAt       string            `json:"createdAt" gorm:"index"`
+	UpdatedAt       string            `json:"updatedAt"`
 }
 
 func (run AgentRun) Terminal() bool {

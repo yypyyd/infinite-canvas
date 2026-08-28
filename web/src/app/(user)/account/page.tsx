@@ -3,7 +3,35 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { App, Avatar, Button, Card, Checkbox, Descriptions, Empty, Form, Image as AntImage, Input, InputNumber, Modal, Pagination, Progress, Segmented, Select, Skeleton, Table, Tabs, Tag, Typography, type TableColumnsType } from "antd";
 import dayjs from "dayjs";
-import { ArrowRight, CheckSquare, CircleDollarSign, CircleUserRound, Clock3, Cloud, Code2, Coins, Copy, ExternalLink, Film, HandCoins, History, ImageIcon, KeyRound, ListChecks, LoaderCircle, PencilLine, Plus, QrCode, ReceiptText, RefreshCw, Search, ShieldCheck, Smartphone, Trash2, WalletCards } from "lucide-react";
+import {
+    ArrowRight,
+    CheckSquare,
+    CircleDollarSign,
+    CircleUserRound,
+    Clock3,
+    Cloud,
+    Code2,
+    Coins,
+    Copy,
+    ExternalLink,
+    Film,
+    HandCoins,
+    History,
+    ImageIcon,
+    KeyRound,
+    ListChecks,
+    LoaderCircle,
+    PencilLine,
+    Plus,
+    QrCode,
+    ReceiptText,
+    RefreshCw,
+    Search,
+    ShieldCheck,
+    Smartphone,
+    Trash2,
+    WalletCards,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -13,7 +41,20 @@ import { DOCS_URL } from "@/constant/env";
 import { useCopyText } from "@/hooks/use-copy-text";
 import { useOpenMedia } from "@/hooks/use-open-media";
 import { formatDuration } from "@/lib/image-utils";
-import { changePassword, createUserAPIKey, deleteUserAPIKey, fetchCreditLogs, fetchGenerationTasks, fetchUserAPIKeys, updateProfile as updateUserProfile, type CreditLog, type CreatedUserAPIKey, type GenerationTask, type UserAPIKey } from "@/services/api/auth";
+import { generationTaskPollInterval } from "@/lib/query-polling";
+import {
+    changePassword,
+    createUserAPIKey,
+    deleteUserAPIKey,
+    fetchCreditLogs,
+    fetchGenerationTasks,
+    fetchUserAPIKeys,
+    updateProfile as updateUserProfile,
+    type CreditLog,
+    type CreatedUserAPIKey,
+    type GenerationTask,
+    type UserAPIKey,
+} from "@/services/api/auth";
 import { createPaymentOrder, exchangeBalanceForCredits, fetchPaymentConfig, fetchPaymentOrders, type PaymentMethod, type PaymentOrder } from "@/services/api/payments";
 import { fetchReferralDashboard } from "@/services/api/referrals";
 import { countGenerationHistory, deleteGenerationHistory, GENERATION_HISTORY_CHANGED_EVENT, readGenerationHistory, resolveGenerationHistoryMedia, resolveGenerationHistoryPreview, type GenerationHistoryItem } from "@/services/generation-history";
@@ -206,7 +247,23 @@ function AccountContent() {
                     <Tabs activeKey={activeTab} items={accountTabs} onChange={(key) => router.replace(key === "profile" ? "/account" : `/account?tab=${key}`, { scroll: false })} tabBarStyle={{ margin: 0 }} />
                 </div>
 
-                <div className="mt-5">{activeTab === "profile" ? <ProfileSection /> : activeTab === "balance" ? <BalanceSection /> : activeTab === "tasks" ? <TaskSection /> : activeTab === "history" ? <HistorySection /> : activeTab === "credits" ? <CreditsSection /> : activeTab === "referrals" ? <ReferralSection /> : <APIKeySection key={user.organizationId} />}</div>
+                <div className="mt-5">
+                    {activeTab === "profile" ? (
+                        <ProfileSection />
+                    ) : activeTab === "balance" ? (
+                        <BalanceSection />
+                    ) : activeTab === "tasks" ? (
+                        <TaskSection />
+                    ) : activeTab === "history" ? (
+                        <HistorySection />
+                    ) : activeTab === "credits" ? (
+                        <CreditsSection />
+                    ) : activeTab === "referrals" ? (
+                        <ReferralSection />
+                    ) : (
+                        <APIKeySection key={user.organizationId} />
+                    )}
+                </div>
             </div>
         </main>
     );
@@ -424,7 +481,7 @@ function TaskSection() {
         queryKey: ["generation-tasks", token, keyword, status, modality, page],
         queryFn: () => fetchGenerationTasks(token, { keyword, type: status, category: modality, page, pageSize: creditPageSize }),
         enabled: Boolean(token),
-        refetchInterval: 30000,
+        refetchInterval: (result) => generationTaskPollInterval(result.state.data?.items),
     });
     const columns = useMemo<TableColumnsType<GenerationTask>>(
         () => [
@@ -768,7 +825,10 @@ function HistoryCard({ item, selected, onSelectedChange, onOpen, onDelete }: { i
     const preview = previewQuery.data || item.previewUrls[0];
     const mediaUrl = previewQuery.data || item.mediaUrl;
     return (
-        <article className={`group relative overflow-hidden rounded-2xl border border-border bg-card transition hover:-translate-y-0.5 hover:border-foreground/25 ${selected ? "ring-2 ring-primary/40" : ""}`} style={{ contentVisibility: "auto", containIntrinsicSize: "0 360px" }}>
+        <article
+            className={`group relative overflow-hidden rounded-2xl border border-border bg-card transition hover:-translate-y-0.5 hover:border-foreground/25 ${selected ? "ring-2 ring-primary/40" : ""}`}
+            style={{ contentVisibility: "auto", containIntrinsicSize: "0 360px" }}
+        >
             <button type="button" onClick={onOpen} className="relative block aspect-[16/10] w-full overflow-hidden bg-muted text-left">
                 {item.kind === "image" && preview ? <img src={preview} alt={item.title} className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.025]" /> : null}
                 {item.kind === "video" && mediaUrl ? <video src={mediaUrl} muted preload="metadata" className="h-full w-full object-cover" /> : null}
@@ -1112,17 +1172,7 @@ function BalanceSection() {
                             <div className="mt-1 text-xs text-muted-foreground">当前比例 ¥1 = {config.creditsPerYuan.toLocaleString()} 点，只能兑换为个人算力，不支持反向兑换</div>
                             <div className="mt-4 flex flex-col gap-4 lg:flex-row lg:items-center">
                                 <div className="w-full lg:w-64">
-                                    <InputNumber
-                                        className="!w-full"
-                                        min={1}
-                                        max={Math.max(1, maxExchangeYuan)}
-                                        precision={0}
-                                        addonBefore="兑换"
-                                        addonAfter="元"
-                                        value={exchangeYuan}
-                                        disabled={maxExchangeYuan < 1}
-                                        onChange={setExchangeYuan}
-                                    />
+                                    <InputNumber className="!w-full" min={1} max={Math.max(1, maxExchangeYuan)} precision={0} addonBefore="兑换" addonAfter="元" value={exchangeYuan} disabled={maxExchangeYuan < 1} onChange={setExchangeYuan} />
                                     <div className="mt-2 text-xs text-muted-foreground">最多可兑换 {maxExchangeYuan.toLocaleString()} 元</div>
                                 </div>
                                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -1191,7 +1241,15 @@ function BalanceSection() {
                                         block
                                         value={method}
                                         onChange={(value) => setMethod(value as PaymentMethod)}
-                                        options={config.methods.map((value) => ({ value, label: <span className="inline-flex items-center gap-1.5">{paymentMethodIcon(value)}{paymentMethodLabel(value)}</span> }))}
+                                        options={config.methods.map((value) => ({
+                                            value,
+                                            label: (
+                                                <span className="inline-flex items-center gap-1.5">
+                                                    {paymentMethodIcon(value)}
+                                                    {paymentMethodLabel(value)}
+                                                </span>
+                                            ),
+                                        }))}
                                     />
                                     <Button className="mt-4" type="primary" size="large" block icon={<CircleDollarSign className="size-4" />} loading={submitting} disabled={!selectedPackage || !method} onClick={() => void submit()}>
                                         前往支付
@@ -1209,7 +1267,9 @@ function BalanceSection() {
                         <span className="text-xs text-muted-foreground">共 {ordersQuery.data.total} 笔</span>
                     </div>
                     <div className="divide-y divide-border">
-                        {ordersQuery.data.items.map((order) => <PaymentOrderRow key={order.id} order={order} />)}
+                        {ordersQuery.data.items.map((order) => (
+                            <PaymentOrderRow key={order.id} order={order} />
+                        ))}
                     </div>
                     {ordersQuery.data.total > 5 ? (
                         <div className="mt-3 flex justify-end">
@@ -1238,7 +1298,11 @@ function ReferralSection() {
                 <h2 className="text-lg font-semibold">邀请返佣</h2>
                 <p className="mt-1 text-sm text-muted-foreground">分享专属邀请链接，好友注册并完成首次充值后，返佣会自动到账你的人民币余额；后续充值不再返佣。</p>
             </div>
-            {query.isLoading ? <Skeleton active className="mt-5" /> : query.isError ? <Empty className="py-10" image={Empty.PRESENTED_IMAGE_SIMPLE} description="邀请数据读取失败" /> : (
+            {query.isLoading ? (
+                <Skeleton active className="mt-5" />
+            ) : query.isError ? (
+                <Empty className="py-10" image={Empty.PRESENTED_IMAGE_SIMPLE} description="邀请数据读取失败" />
+            ) : (
                 <>
                     <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                         <div className="rounded-xl border border-border p-4">
@@ -1288,9 +1352,15 @@ function ReferralSection() {
                                         { title: "时间", dataIndex: "createdAt", render: (value: string) => dayjs(value).format("YYYY-MM-DD HH:mm") },
                                     ]}
                                 />
-                                {dashboard.total > 8 ? <div className="mt-4 flex justify-end"><Pagination current={page} pageSize={8} total={dashboard.total} showSizeChanger={false} onChange={setPage} /></div> : null}
+                                {dashboard.total > 8 ? (
+                                    <div className="mt-4 flex justify-end">
+                                        <Pagination current={page} pageSize={8} total={dashboard.total} showSizeChanger={false} onChange={setPage} />
+                                    </div>
+                                ) : null}
                             </>
-                        ) : <Empty className="py-8" image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂时没有返佣记录" />}
+                        ) : (
+                            <Empty className="py-8" image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂时没有返佣记录" />
+                        )}
                     </div>
                 </>
             )}
@@ -1306,8 +1376,13 @@ function PaymentOrderRow({ order }: { order: PaymentOrder }) {
                 <div className="mt-0.5 truncate text-xs text-muted-foreground">{order.orderNo}</div>
             </div>
             <span className="hidden text-muted-foreground sm:block">{dayjs(order.createdAt).format("MM-DD HH:mm")}</span>
-            <span className="hidden tabular-nums sm:block">到账 ¥{formatYuan(order.balanceCents)}<span className="block text-xs text-muted-foreground">实付 ¥{formatYuan(order.amountCents)}</span></span>
-            <Tag className="m-0" color={order.status === "paid" ? "green" : "primary"}>{order.status === "paid" ? "已到账" : "待支付"}</Tag>
+            <span className="hidden tabular-nums sm:block">
+                到账 ¥{formatYuan(order.balanceCents)}
+                <span className="block text-xs text-muted-foreground">实付 ¥{formatYuan(order.amountCents)}</span>
+            </span>
+            <Tag className="m-0" color={order.status === "paid" ? "green" : "primary"}>
+                {order.status === "paid" ? "已到账" : "待支付"}
+            </Tag>
         </div>
     );
 }
@@ -1534,7 +1609,12 @@ curl "${endpoint}/videos/VIDEO_TASK_ID/content?model=YOUR_VIDEO_MODEL" \\
                                 <Segmented
                                     size="small"
                                     value={exampleType}
-                                    options={[{ label: "模型", value: "models" }, { label: "图片", value: "image" }, { label: "视频", value: "video" }, { label: "恢复", value: "recovery" }]}
+                                    options={[
+                                        { label: "模型", value: "models" },
+                                        { label: "图片", value: "image" },
+                                        { label: "视频", value: "video" },
+                                        { label: "恢复", value: "recovery" },
+                                    ]}
                                     onChange={(value) => setExampleType(value as APIExampleType)}
                                 />
                                 <Button type="text" size="small" icon={<Copy className="size-3.5" />} onClick={() => copyText(curlExample, "示例已复制")} />
@@ -1544,7 +1624,12 @@ curl "${endpoint}/videos/VIDEO_TASK_ID/content?model=YOUR_VIDEO_MODEL" \\
                         <div className="mt-3 rounded-lg bg-primary/[.055] p-4 ring-1 ring-primary/15">
                             <div className="flex gap-2 text-xs leading-5">
                                 <RefreshCw className="mt-0.5 size-3.5 shrink-0 text-primary" />
-                                <div><span className="font-medium text-foreground">请求超时不要更换 Key。</span><span className="text-muted-foreground"> 使用原 </span><code className="text-foreground">Idempotency-Key</code><span className="text-muted-foreground"> 查询真实状态，避免重复生成和扣费。</span></div>
+                                <div>
+                                    <span className="font-medium text-foreground">请求超时不要更换 Key。</span>
+                                    <span className="text-muted-foreground"> 使用原 </span>
+                                    <code className="text-foreground">Idempotency-Key</code>
+                                    <span className="text-muted-foreground"> 查询真实状态，避免重复生成和扣费。</span>
+                                </div>
                             </div>
                         </div>
                         <div className="mt-4 flex gap-2 text-xs leading-5 text-muted-foreground">
@@ -1572,7 +1657,11 @@ curl "${endpoint}/videos/VIDEO_TASK_ID/content?model=YOUR_VIDEO_MODEL" \\
                 title="API Key 创建成功"
                 open={Boolean(createdKey)}
                 onCancel={closeCreatedKey}
-                footer={<Button type="primary" onClick={closeCreatedKey}>我已保存</Button>}
+                footer={
+                    <Button type="primary" onClick={closeCreatedKey}>
+                        我已保存
+                    </Button>
+                }
                 destroyOnHidden
             >
                 <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">

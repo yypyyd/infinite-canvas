@@ -78,7 +78,21 @@ export function CanvasToolbar({
                 <ToolbarButton id="tool-select" label="选择工具" active={tool === "select"} hovered={hovered} activeStyle={activeStyle} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={() => onToolChange("select")}>
                     <MousePointer2 className="size-4.5" />
                 </ToolbarButton>
-                <ToolbarButton id="tool-hand" label="移动画布" active={tool === "pan"} hovered={hovered} activeStyle={activeStyle} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={() => { onToolChange("pan"); onDeselect(); }}>
+                <ToolbarButton
+                    id="tool-hand"
+                    label="移动画布"
+                    active={tool === "pan"}
+                    hovered={hovered}
+                    activeStyle={activeStyle}
+                    hoverStyle={hoverStyle}
+                    wrapRef={wrapRef}
+                    onTipX={setTipX}
+                    onHover={setHovered}
+                    onClick={() => {
+                        onToolChange("pan");
+                        onDeselect();
+                    }}
+                >
                     <Hand className="size-4.5" />
                 </ToolbarButton>
                 <ToolbarButton id="tool-undo" label="撤销" disabled={!canUndo} hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onUndo}>

@@ -16,7 +16,7 @@ export type PricingRule = {
     unit: string;
     resolutionTier?: string;
     billingMode?: "fixed" | "ratio";
-    credits: number;
+    credits: number | null;
     minCredits?: number;
     modelRatio?: number;
     completionRatio?: number;
@@ -88,7 +88,7 @@ function selectPricingRule(rules: PricingRule[], request: NormalizedCreditReques
     let bestScore = -1;
     for (const rawRule of rules) {
         const rule = normalizeRule(rawRule);
-        if (rawRule.enabled === false || rule.model !== request.model) continue;
+        if (rawRule.enabled === false || (rawRule.billingMode !== "ratio" && rawRule.credits == null) || rule.model !== request.model) continue;
         const score = pricingRuleScore(rule, request);
         if (score === null || score <= bestScore) continue;
         selected = rawRule;

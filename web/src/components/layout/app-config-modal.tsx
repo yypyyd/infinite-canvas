@@ -67,13 +67,7 @@ export function AppConfigModal() {
                     </div>
                     <div className="grid gap-4 md:grid-cols-4">
                         <Form.Item label="画布默认生图张数" extra="新建画布生图和配置节点默认使用，单个节点仍可单独覆盖。" className="mb-4">
-                            <Input
-                                type="number"
-                                min={1}
-                                max={15}
-                                value={config.canvasImageCount}
-                                onChange={(event) => updateConfig("canvasImageCount", String(normalizeImageCount(event.target.value, 15, 3)))}
-                            />
+                            <Input type="number" min={1} max={15} value={config.canvasImageCount} onChange={(event) => updateConfig("canvasImageCount", String(normalizeImageCount(event.target.value, 15, 3)))} />
                         </Form.Item>
                         <Form.Item label="默认音频声音" className="mb-4">
                             <Select value={config.audioVoice} options={audioVoiceOptions} onChange={(value) => updateConfig("audioVoice", value)} />

@@ -52,9 +52,9 @@ func TestImageGenerationHTTPBillingAndIdempotency(t *testing.T) {
 	settings := saved
 	settings.Public.ModelChannel = model.PublicModelChannelSetting{
 		AvailableModels: []string{"router-image-model"},
-		Models: []model.ModelDefinition{{ID: "router-image-model", Name: "Router Image", Modality: "image", Operations: []string{"generation"}, ResolutionTiers: []string{"1k"}, Enabled: true}},
-		PricingRules: []model.PricingRule{{Model: "router-image-model", Modality: "image", Operation: "generation", Unit: "image", ResolutionTier: "1k", BillingMode: "fixed", Credits: 2, Enabled: true}},
-		GroupRatios: map[string]float64{"default": 1},
+		Models:          []model.ModelDefinition{{ID: "router-image-model", Name: "Router Image", Modality: "image", Operations: []string{"generation"}, ResolutionTiers: []string{"1k"}, Enabled: true}},
+		PricingRules:    []model.PricingRule{{Model: "router-image-model", Modality: "image", Operation: "generation", Unit: "image", ResolutionTier: "1k", BillingMode: "fixed", Credits: 2, Enabled: true}},
+		GroupRatios:     map[string]float64{"default": 1},
 	}
 	settings.Private.Channels = []model.ModelChannel{{
 		Name: "router-generation", BaseURL: upstream.URL, APIKey: "router-generation-key", Weight: 1, Enabled: true,
@@ -135,9 +135,13 @@ func TestImageGenerationHTTPBillingAndIdempotency(t *testing.T) {
 		setRouterTestOrganizationCredits(t, tenant.Organization.ID, 10, 100, 0)
 		client, baseURL := loginRouterTestClient(t, tenant.User.Username)
 		status, body := routerTestImageGeneration(t, client, baseURL, tenant.Organization.ID, "router-generation-shared", "success")
-		if status != http.StatusOK || !bytes.Contains(body, []byte(`"data"`)) { t.Fatalf("shared generation response: status=%d body=%s", status, body) }
+		if status != http.StatusOK || !bytes.Contains(body, []byte(`"data"`)) {
+			t.Fatalf("shared generation response: status=%d body=%s", status, body)
+		}
 		assertRouterTestSharedGenerationAccounting(t, tenant, 10, 6, 4, model.GenerationTaskStatusSuccess)
-		if upstreamCalls.Load() != 3 { t.Fatalf("upstream calls = %d, want 3", upstreamCalls.Load()) }
+		if upstreamCalls.Load() != 3 {
+			t.Fatalf("upstream calls = %d, want 3", upstreamCalls.Load())
+		}
 	})
 
 	t.Run("shared balance and monthly budget stop requests before upstream", func(t *testing.T) {
@@ -145,10 +149,16 @@ func TestImageGenerationHTTPBillingAndIdempotency(t *testing.T) {
 		setRouterTestCredits(t, tenant.User.ID, 10)
 		setRouterTestOrganizationCredits(t, tenant.Organization.ID, 3, 100, 0)
 		client, baseURL := loginRouterTestClient(t, tenant.User.Username)
-		if status, body := routerTestImageGeneration(t, client, baseURL, tenant.Organization.ID, "router-generation-shared-balance", "success"); status != http.StatusOK || !bytes.Contains(body, []byte(`"code":1`)) { t.Fatalf("shared balance response: status=%d body=%s", status, body) }
+		if status, body := routerTestImageGeneration(t, client, baseURL, tenant.Organization.ID, "router-generation-shared-balance", "success"); status != http.StatusOK || !bytes.Contains(body, []byte(`"code":1`)) {
+			t.Fatalf("shared balance response: status=%d body=%s", status, body)
+		}
 		setRouterTestOrganizationCredits(t, tenant.Organization.ID, 10, 3, 0)
-		if status, body := routerTestImageGeneration(t, client, baseURL, tenant.Organization.ID, "router-generation-shared-budget", "success"); status != http.StatusOK || !bytes.Contains(body, []byte(`"code":1`)) { t.Fatalf("shared budget response: status=%d body=%s", status, body) }
-		if upstreamCalls.Load() != 3 { t.Fatalf("shared limits reached upstream, calls=%d", upstreamCalls.Load()) }
+		if status, body := routerTestImageGeneration(t, client, baseURL, tenant.Organization.ID, "router-generation-shared-budget", "success"); status != http.StatusOK || !bytes.Contains(body, []byte(`"code":1`)) {
+			t.Fatalf("shared budget response: status=%d body=%s", status, body)
+		}
+		if upstreamCalls.Load() != 3 {
+			t.Fatalf("shared limits reached upstream, calls=%d", upstreamCalls.Load())
+		}
 	})
 
 	t.Run("shared mode failure refunds organization budget", func(t *testing.T) {
@@ -157,9 +167,13 @@ func TestImageGenerationHTTPBillingAndIdempotency(t *testing.T) {
 		setRouterTestOrganizationCredits(t, tenant.Organization.ID, 10, 100, 0)
 		client, baseURL := loginRouterTestClient(t, tenant.User.Username)
 		status, body := routerTestImageGeneration(t, client, baseURL, tenant.Organization.ID, "router-generation-shared-refund", "fail")
-		if status != http.StatusOK || !bytes.Contains(body, []byte(`"code":1`)) { t.Fatalf("shared refund response: status=%d body=%s", status, body) }
+		if status != http.StatusOK || !bytes.Contains(body, []byte(`"code":1`)) {
+			t.Fatalf("shared refund response: status=%d body=%s", status, body)
+		}
 		assertRouterTestSharedGenerationAccounting(t, tenant, 10, 10, 0, model.GenerationTaskStatusFailed)
-		if upstreamCalls.Load() != 4 { t.Fatalf("upstream calls = %d, want 4", upstreamCalls.Load()) }
+		if upstreamCalls.Load() != 4 {
+			t.Fatalf("upstream calls = %d, want 4", upstreamCalls.Load())
+		}
 	})
 
 	t.Run("shared charge still refunds organization after mode switch", func(t *testing.T) {
@@ -168,38 +182,64 @@ func TestImageGenerationHTTPBillingAndIdempotency(t *testing.T) {
 		setRouterTestOrganizationCredits(t, tenant.Organization.ID, 10, 100, 0)
 		client, baseURL := loginRouterTestClient(t, tenant.User.Username)
 		status, body := routerTestImageGeneration(t, client, baseURL, tenant.Organization.ID, "router-generation-shared-switch", "fail-switch")
-		if status != http.StatusOK || !bytes.Contains(body, []byte(`"code":1`)) { t.Fatalf("shared mode switch response: status=%d body=%s", status, body) }
+		if status != http.StatusOK || !bytes.Contains(body, []byte(`"code":1`)) {
+			t.Fatalf("shared mode switch response: status=%d body=%s", status, body)
+		}
 		assertRouterTestSharedGenerationAccounting(t, tenant, 10, 10, 0, model.GenerationTaskStatusFailed)
-		if upstreamCalls.Load() != 5 { t.Fatalf("upstream calls = %d, want 5", upstreamCalls.Load()) }
+		if upstreamCalls.Load() != 5 {
+			t.Fatalf("upstream calls = %d, want 5", upstreamCalls.Load())
+		}
 	})
 }
 
 func setRouterTestOrganizationCredits(t *testing.T, organizationID string, credits int, budget int, used int) {
 	t.Helper()
 	database, err := repository.DB()
-	if err != nil { t.Fatal(err) }
-	if err := database.Model(&model.Organization{}).Where("id = ?", organizationID).Updates(map[string]any{"credit_mode": model.OrganizationCreditModeShared, "credits": credits, "monthly_credit_budget": budget, "monthly_credits_used": used, "credit_budget_month": time.Now().UTC().Format("2006-01")}).Error; err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Model(&model.Organization{}).Where("id = ?", organizationID).Updates(map[string]any{"credit_mode": model.OrganizationCreditModeShared, "credits": credits, "monthly_credit_budget": budget, "monthly_credits_used": used, "credit_budget_month": time.Now().UTC().Format("2006-01")}).Error; err != nil {
+		t.Fatal(err)
+	}
 }
 
 func assertRouterTestSharedGenerationAccounting(t *testing.T, tenant routerTestTenant, personalCredits int, organizationCredits int, monthlyUsed int, status model.GenerationTaskStatus) {
 	t.Helper()
 	database, err := repository.DB()
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	var user model.User
 	var organization model.Organization
 	var tasks []model.GenerationTask
 	var logs []model.CreditLog
-	if err := database.First(&user, "id = ?", tenant.User.ID).Error; err != nil { t.Fatal(err) }
-	if err := database.First(&organization, "id = ?", tenant.Organization.ID).Error; err != nil { t.Fatal(err) }
-	if err := database.Where("organization_id = ? AND user_id = ?", tenant.Organization.ID, tenant.User.ID).Find(&tasks).Error; err != nil { t.Fatal(err) }
-	if err := database.Where("organization_id = ? AND user_id = ?", tenant.Organization.ID, tenant.User.ID).Find(&logs).Error; err != nil { t.Fatal(err) }
+	if err := database.First(&user, "id = ?", tenant.User.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := database.First(&organization, "id = ?", tenant.Organization.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Where("organization_id = ? AND user_id = ?", tenant.Organization.ID, tenant.User.ID).Find(&tasks).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Where("organization_id = ? AND user_id = ?", tenant.Organization.ID, tenant.User.ID).Find(&logs).Error; err != nil {
+		t.Fatal(err)
+	}
 	if user.Credits != personalCredits || organization.Credits != organizationCredits || organization.MonthlyCreditsUsed != monthlyUsed || len(tasks) != 1 || tasks[0].Status != status || tasks[0].CreditSource != model.CreditSourceOrganization {
 		t.Fatalf("unexpected shared accounting: user=%#v organization=%#v tasks=%#v", user, organization, tasks)
 	}
 	wantLogs := 1
-	if status == model.GenerationTaskStatusFailed { wantLogs = 2 }
-	if len(logs) != wantLogs { t.Fatalf("unexpected shared credit logs: %#v", logs) }
-	for _, log := range logs { if log.CreditSource != model.CreditSourceOrganization { t.Fatalf("shared task used personal ledger: %#v", log) } }
+	if status == model.GenerationTaskStatusFailed {
+		wantLogs = 2
+	}
+	if len(logs) != wantLogs {
+		t.Fatalf("unexpected shared credit logs: %#v", logs)
+	}
+	for _, log := range logs {
+		if log.CreditSource != model.CreditSourceOrganization {
+			t.Fatalf("shared task used personal ledger: %#v", log)
+		}
+	}
 }
 
 func routerTestImageGeneration(t *testing.T, client *http.Client, baseURL, organizationID, requestID, prompt string) (int, []byte) {

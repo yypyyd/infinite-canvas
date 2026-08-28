@@ -684,7 +684,9 @@ function normalizePrivateSetting(setting: Partial<AdminSettings["private"]> = {}
             siteName: setting.payment?.siteName?.trim() || "道生画境",
             productName: setting.payment?.productName?.trim() || "余额充值",
             methods: (setting.payment?.methods || []).filter((item) => item === "alipay" || item === "wxpay" || item === "qqpay"),
-            packages: (setting.payment?.packages || []).map((item) => ({ id: item.id?.trim() || "", name: item.name?.trim() || "", amountCents: Math.max(0, Math.floor(Number(item.amountCents) || 0)), balanceCents: Math.max(0, Math.floor(Number(item.balanceCents) || 0)) })).filter((item) => item.id && item.name),
+            packages: (setting.payment?.packages || [])
+                .map((item) => ({ id: item.id?.trim() || "", name: item.name?.trim() || "", amountCents: Math.max(0, Math.floor(Number(item.amountCents) || 0)), balanceCents: Math.max(0, Math.floor(Number(item.balanceCents) || 0)) }))
+                .filter((item) => item.id && item.name),
             creditsPerYuan: Math.max(0, Math.floor(Number(setting.payment?.creditsPerYuan) || 0)),
         },
         referral: {
@@ -810,20 +812,25 @@ function collectChannelModels(channels: AdminModelChannel[]) {
     for (const item of channels.filter((channel) => channel.enabled).flatMap((channel) => channel.models || [])) {
         const current = models.get(item.model);
         const useIncomingReference = !!current && (item.maxReferenceImages > current.maxReferenceImages || (item.maxReferenceImages === current.maxReferenceImages && current.referenceMode === "none" && item.referenceMode !== "none"));
-        models.set(item.model, current ? {
-            ...current,
-            modality: current.modality || item.modality,
-            operations: Array.from(new Set([...current.operations, ...item.operations])),
-            aspectRatios: Array.from(new Set([...current.aspectRatios, ...item.aspectRatios])),
-            resolutionTiers: Array.from(new Set([...current.resolutionTiers, ...item.resolutionTiers])),
-            durations: normalizeDurations([...current.durations, ...item.durations]),
-            maxReferenceImages: Math.max(current.maxReferenceImages, item.maxReferenceImages),
-            maxReferenceVideos: Math.max(current.maxReferenceVideos, item.maxReferenceVideos),
-            maxReferenceAudios: Math.max(current.maxReferenceAudios, item.maxReferenceAudios),
-            maxReferenceMedia: Math.max(current.maxReferenceMedia, item.maxReferenceMedia),
-            supportsAudioOutput: current.supportsAudioOutput || item.supportsAudioOutput,
-            referenceMode: useIncomingReference ? item.referenceMode : current.referenceMode,
-        } : item);
+        models.set(
+            item.model,
+            current
+                ? {
+                      ...current,
+                      modality: current.modality || item.modality,
+                      operations: Array.from(new Set([...current.operations, ...item.operations])),
+                      aspectRatios: Array.from(new Set([...current.aspectRatios, ...item.aspectRatios])),
+                      resolutionTiers: Array.from(new Set([...current.resolutionTiers, ...item.resolutionTiers])),
+                      durations: normalizeDurations([...current.durations, ...item.durations]),
+                      maxReferenceImages: Math.max(current.maxReferenceImages, item.maxReferenceImages),
+                      maxReferenceVideos: Math.max(current.maxReferenceVideos, item.maxReferenceVideos),
+                      maxReferenceAudios: Math.max(current.maxReferenceAudios, item.maxReferenceAudios),
+                      maxReferenceMedia: Math.max(current.maxReferenceMedia, item.maxReferenceMedia),
+                      supportsAudioOutput: current.supportsAudioOutput || item.supportsAudioOutput,
+                      referenceMode: useIncomingReference ? item.referenceMode : current.referenceMode,
+                  }
+                : item,
+        );
     }
     return [...models.values()];
 }
@@ -871,7 +878,11 @@ async function collectSettings(form: any, editorMode: Record<SettingsTabKey, Edi
         }
         values.private = privateSetting;
     }
-    values.public.modelChannel.models = normalizeManagedModels(values.public.modelChannel.models || [], collectChannelModels(values.private.channels).map((item) => item.model), values.public.modelChannel.modelAspectRatios);
+    values.public.modelChannel.models = normalizeManagedModels(
+        values.public.modelChannel.models || [],
+        collectChannelModels(values.private.channels).map((item) => item.model),
+        values.public.modelChannel.modelAspectRatios,
+    );
     values.public.modelChannel.availableModels = enabledManagedModelIds(values.public.modelChannel.models);
     values.public.modelChannel.modelAspectRatios = modelAspectRatiosFromManagedModels(values.public.modelChannel.models, values.public.modelChannel.modelAspectRatios);
     return normalizeSettings(values);

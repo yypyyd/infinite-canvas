@@ -258,11 +258,13 @@ export function InfiniteCanvas({ containerRef, viewport, backgroundMode = "lines
             <CanvasGrid viewport={viewport} mode={backgroundMode} />
             <div
                 className="absolute origin-top-left"
-                style={{
-                    transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.k})`,
-                    "--canvas-inverse-scale": `${1.5 / Math.max(viewport.k, 0.05)}`,
-                    "--canvas-menu-inverse-scale": `${1 / Math.max(viewport.k, 0.05)}`,
-                } as React.CSSProperties}
+                style={
+                    {
+                        transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.k})`,
+                        "--canvas-inverse-scale": `${1.5 / Math.max(viewport.k, 0.05)}`,
+                        "--canvas-menu-inverse-scale": `${1 / Math.max(viewport.k, 0.05)}`,
+                    } as React.CSSProperties
+                }
             >
                 {children}
             </div>

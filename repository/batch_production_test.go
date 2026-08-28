@@ -30,6 +30,59 @@ func createBatchTestJob(t *testing.T, testDB *gorm.DB, organizationID, jobID str
 	}
 }
 
+func TestAggregateBatchProductionJobCountsMixedStatuses(t *testing.T) {
+	testDB := setupUserWorkspaceTestDB(t)
+	createWorkspaceTestOrganizations(t, testDB, "organization-a")
+	createBatchTestJob(t, testDB, "organization-a", "job-a", model.BatchProductionStatusQueued,
+		model.BatchProductionStatusQueued,
+		model.BatchProductionStatusRunning,
+		model.BatchProductionStatusCompleted,
+		model.BatchProductionStatusFailed,
+		model.BatchProductionStatusCancelled,
+	)
+	var job model.BatchProductionJob
+	if err := testDB.First(&job, "id = ?", "job-a").Error; err != nil {
+		t.Fatalf("load batch job: %v", err)
+	}
+	if err := aggregateBatchProductionJob(testDB, &job, workspaceTestNow); err != nil {
+		t.Fatalf("aggregate batch job: %v", err)
+	}
+	if job.Status != model.BatchProductionStatusRunning || job.TotalItems != 5 || job.QueuedItems != 1 || job.RunningItems != 1 || job.CompletedItems != 1 || job.FailedItems != 1 {
+		t.Fatalf("unexpected aggregate: %#v", job)
+	}
+}
+
+func TestAggregateBatchProductionJobCountsReviewStatuses(t *testing.T) {
+	testDB := setupUserWorkspaceTestDB(t)
+	createWorkspaceTestOrganizations(t, testDB, "organization-a")
+	createBatchTestJob(t, testDB, "organization-a", "job-a", model.BatchProductionStatusRunning, model.BatchProductionStatusCompleted, model.BatchProductionStatusCompleted)
+	if err := testDB.Model(&model.BatchProductionItem{}).Where("id = ?", "job-a-item-a").Update("review_status", model.BatchProductionReviewPending).Error; err != nil {
+		t.Fatalf("set pending review: %v", err)
+	}
+	if err := testDB.Model(&model.BatchProductionItem{}).Where("id = ?", "job-a-item-b").Update("review_status", model.BatchProductionReviewApproved).Error; err != nil {
+		t.Fatalf("set approved review: %v", err)
+	}
+	var job model.BatchProductionJob
+	if err := testDB.First(&job, "id = ?", "job-a").Error; err != nil {
+		t.Fatalf("load batch job: %v", err)
+	}
+	if err := aggregateBatchProductionJob(testDB, &job, workspaceTestNow); err != nil {
+		t.Fatalf("aggregate pending review job: %v", err)
+	}
+	if job.Status != model.BatchProductionStatusPendingReview || job.CompletedItems != 2 {
+		t.Fatalf("unexpected pending review aggregate: %#v", job)
+	}
+	if err := testDB.Model(&model.BatchProductionItem{}).Where("id = ?", "job-a-item-a").Update("review_status", model.BatchProductionReviewRejected).Error; err != nil {
+		t.Fatalf("set rejected review: %v", err)
+	}
+	if err := aggregateBatchProductionJob(testDB, &job, workspaceTestNow); err != nil {
+		t.Fatalf("aggregate rejected review job: %v", err)
+	}
+	if job.Status != model.BatchProductionStatusPartialSuccess {
+		t.Fatalf("unexpected rejected review aggregate: %#v", job)
+	}
+}
+
 func TestClaimNextBatchProductionItemDoesNotDuplicateConcurrentClaims(t *testing.T) {
 	testDB := setupUserWorkspaceTestDB(t)
 	createWorkspaceTestOrganizations(t, testDB, "organization-a")

@@ -147,7 +147,7 @@ export type CanvasAssistantAskUser = {
     status: "pending" | "answering" | "answered" | "skipped" | "failed";
 };
 
-export type CanvasAssistantStageKind = "plan" | "ask" | "observe" | "inspect" | "image" | "video" | "arrange" | "text" | "delete" | "update_text" | "remember" | "forget";
+export type CanvasAssistantStageKind = "plan" | "ask" | "observe" | "inspect" | "image" | "image_edit" | "video" | "arrange" | "text" | "delete" | "update_text" | "remember" | "forget";
 
 export type CanvasAssistantStage = {
     callId?: string;

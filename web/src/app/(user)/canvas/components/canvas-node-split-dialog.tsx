@@ -46,14 +46,15 @@ export function CanvasNodeSplitDialog({ dataUrl, open, onClose, onConfirm }: { d
         });
     };
     const removeLine = (axis: "horizontalLines" | "verticalLines", index: number) => setParams((current) => ({ ...current, [axis]: (current[axis] || []).filter((_, lineIndex) => lineIndex !== index) }));
-    const addLine = (axis: "horizontalLines" | "verticalLines") => setParams((current) => {
-        const lines = current[axis] || [];
-        const bounds = [0, ...lines, 1];
-        let bestIndex = 0;
-        for (let index = 1; index < bounds.length - 1; index += 1) if (bounds[index + 1] - bounds[index] > bounds[bestIndex + 1] - bounds[bestIndex]) bestIndex = index;
-        const nextLines = [...lines, (bounds[bestIndex] + bounds[bestIndex + 1]) / 2].sort((a, b) => a - b);
-        return { ...current, [axis]: nextLines, rows: axis === "horizontalLines" ? nextLines.length + 1 : current.rows, columns: axis === "verticalLines" ? nextLines.length + 1 : current.columns };
-    });
+    const addLine = (axis: "horizontalLines" | "verticalLines") =>
+        setParams((current) => {
+            const lines = current[axis] || [];
+            const bounds = [0, ...lines, 1];
+            let bestIndex = 0;
+            for (let index = 1; index < bounds.length - 1; index += 1) if (bounds[index + 1] - bounds[index] > bounds[bestIndex + 1] - bounds[bestIndex]) bestIndex = index;
+            const nextLines = [...lines, (bounds[bestIndex] + bounds[bestIndex + 1]) / 2].sort((a, b) => a - b);
+            return { ...current, [axis]: nextLines, rows: axis === "horizontalLines" ? nextLines.length + 1 : current.rows, columns: axis === "verticalLines" ? nextLines.length + 1 : current.columns };
+        });
 
     return (
         <Modal title={null} open={open && Boolean(dataUrl)} onCancel={onClose} footer={null} width={820} centered destroyOnHidden>
@@ -70,15 +71,38 @@ export function CanvasNodeSplitDialog({ dataUrl, open, onClose, onConfirm }: { d
                                 <SplitGrid rows={rows} columns={columns} horizontalLines={params.horizontalLines || []} verticalLines={params.verticalLines || []} onLineChange={updateLine} onLineRemove={removeLine} />
                             </div>
                         </div>
-                        <div className="mt-3 flex items-center justify-between text-sm"><span className="opacity-60">原图</span><span className="font-semibold">{image ? `${image.width} x ${image.height} px` : "读取中"}</span></div>
+                        <div className="mt-3 flex items-center justify-between text-sm">
+                            <span className="opacity-60">原图</span>
+                            <span className="font-semibold">{image ? `${image.width} x ${image.height} px` : "读取中"}</span>
+                        </div>
                     </div>
                     <div className="space-y-4 py-2">
                         <NumberField label="行数" value={rows} onChange={(value) => updateGrid("rows", value)} />
                         <NumberField label="列数" value={columns} onChange={(value) => updateGrid("columns", value)} />
-                        <div className="flex gap-2"><Button size="small" icon={<Plus className="size-3.5" />} onClick={() => addLine("horizontalLines")}>新增横线</Button><Button size="small" icon={<Plus className="size-3.5" />} onClick={() => addLine("verticalLines")}>新增竖线</Button></div>
-                        <Button size="small" icon={<RotateCcw className="size-3.5" />} onClick={() => resetGrid()}>重置为等分</Button>
-                        <div className="rounded-xl border px-4 py-3 text-sm"><div className="flex items-center justify-between"><span className="opacity-60">子节点</span><span className="font-semibold">{total} 个</span></div><div className="mt-2 flex items-center justify-between"><span className="opacity-60">尺寸范围</span><span className="font-semibold">{image ? `${Math.floor(image.width / columns)}–${Math.ceil(image.width / columns)} × ${Math.floor(image.height / rows)}–${Math.ceil(image.height / rows)}` : "未知"}</span></div></div>
-                        <Button type="primary" size="large" className="w-full" icon={<Grid2x2 className="size-4" />} onClick={() => onConfirm({ ...params, rows, columns })}>生成子节点</Button>
+                        <div className="flex gap-2">
+                            <Button size="small" icon={<Plus className="size-3.5" />} onClick={() => addLine("horizontalLines")}>
+                                新增横线
+                            </Button>
+                            <Button size="small" icon={<Plus className="size-3.5" />} onClick={() => addLine("verticalLines")}>
+                                新增竖线
+                            </Button>
+                        </div>
+                        <Button size="small" icon={<RotateCcw className="size-3.5" />} onClick={() => resetGrid()}>
+                            重置为等分
+                        </Button>
+                        <div className="rounded-xl border px-4 py-3 text-sm">
+                            <div className="flex items-center justify-between">
+                                <span className="opacity-60">子节点</span>
+                                <span className="font-semibold">{total} 个</span>
+                            </div>
+                            <div className="mt-2 flex items-center justify-between">
+                                <span className="opacity-60">尺寸范围</span>
+                                <span className="font-semibold">{image ? `${Math.floor(image.width / columns)}–${Math.ceil(image.width / columns)} × ${Math.floor(image.height / rows)}–${Math.ceil(image.height / rows)}` : "未知"}</span>
+                            </div>
+                        </div>
+                        <Button type="primary" size="large" className="w-full" icon={<Grid2x2 className="size-4" />} onClick={() => onConfirm({ ...params, rows, columns })}>
+                            生成子节点
+                        </Button>
                     </div>
                 </div>
             </div>
@@ -87,10 +111,29 @@ export function CanvasNodeSplitDialog({ dataUrl, open, onClose, onConfirm }: { d
 }
 
 function NumberField({ label, value, onChange }: { label: string; value: number; onChange: (value: string | number | null) => void }) {
-    return <label className="block space-y-2"><span className="font-medium opacity-75">{label}</span><InputNumber className="w-full" min={1} max={maxGridSize} precision={0} value={value} onChange={onChange} /></label>;
+    return (
+        <label className="block space-y-2">
+            <span className="font-medium opacity-75">{label}</span>
+            <InputNumber className="w-full" min={1} max={maxGridSize} precision={0} value={value} onChange={onChange} />
+        </label>
+    );
 }
 
-function SplitGrid({ rows, columns, horizontalLines, verticalLines, onLineChange, onLineRemove }: { rows: number; columns: number; horizontalLines: number[]; verticalLines: number[]; onLineChange: (axis: "horizontalLines" | "verticalLines", index: number, value: number) => void; onLineRemove: (axis: "horizontalLines" | "verticalLines", index: number) => void }) {
+function SplitGrid({
+    rows,
+    columns,
+    horizontalLines,
+    verticalLines,
+    onLineChange,
+    onLineRemove,
+}: {
+    rows: number;
+    columns: number;
+    horizontalLines: number[];
+    verticalLines: number[];
+    onLineChange: (axis: "horizontalLines" | "verticalLines", index: number, value: number) => void;
+    onLineRemove: (axis: "horizontalLines" | "verticalLines", index: number) => void;
+}) {
     const gridRef = useRef<HTMLDivElement>(null);
     const dragLine = (event: React.PointerEvent<HTMLDivElement>, axis: "horizontalLines" | "verticalLines", index: number) => {
         event.preventDefault();
@@ -106,12 +149,77 @@ function SplitGrid({ rows, columns, horizontalLines, verticalLines, onLineChange
         if (!rect) return;
         onLineChange(axis, index, axis === "horizontalLines" ? (event.clientY - rect.top) / rect.height : (event.clientX - rect.left) / rect.width);
     };
-    return <div ref={gridRef} className="absolute inset-0"><div className="pointer-events-none absolute inset-0">{Array.from({ length: Math.max(0, columns - 1) }).map((_, index) => <div key={`column-${index}`} className="absolute inset-y-0 border-l border-white/90 shadow-[0_0_0_1px_rgba(0,0,0,.35)]" style={{ left: `${((verticalLines[index] ?? (index + 1) / columns) * 100)}%` }} />)}{Array.from({ length: Math.max(0, rows - 1) }).map((_, index) => <div key={`row-${index}`} className="absolute inset-x-0 border-t border-white/90 shadow-[0_0_0_1px_rgba(0,0,0,.35)]" style={{ top: `${((horizontalLines[index] ?? (index + 1) / rows) * 100)}%` }} />)}</div>{verticalLines.map((line, index) => <DraggableLine key={`v-${index}`} axis="verticalLines" value={line} onPointerDown={(event) => dragLine(event, "verticalLines", index)} onPointerMove={(event) => moveLine(event, "verticalLines", index)} onRemove={() => onLineRemove("verticalLines", index)} />)}{horizontalLines.map((line, index) => <DraggableLine key={`h-${index}`} axis="horizontalLines" value={line} onPointerDown={(event) => dragLine(event, "horizontalLines", index)} onPointerMove={(event) => moveLine(event, "horizontalLines", index)} onRemove={() => onLineRemove("horizontalLines", index)} />)}</div>;
+    return (
+        <div ref={gridRef} className="absolute inset-0">
+            <div className="pointer-events-none absolute inset-0">
+                {Array.from({ length: Math.max(0, columns - 1) }).map((_, index) => (
+                    <div key={`column-${index}`} className="absolute inset-y-0 border-l border-white/90 shadow-[0_0_0_1px_rgba(0,0,0,.35)]" style={{ left: `${(verticalLines[index] ?? (index + 1) / columns) * 100}%` }} />
+                ))}
+                {Array.from({ length: Math.max(0, rows - 1) }).map((_, index) => (
+                    <div key={`row-${index}`} className="absolute inset-x-0 border-t border-white/90 shadow-[0_0_0_1px_rgba(0,0,0,.35)]" style={{ top: `${(horizontalLines[index] ?? (index + 1) / rows) * 100}%` }} />
+                ))}
+            </div>
+            {verticalLines.map((line, index) => (
+                <DraggableLine
+                    key={`v-${index}`}
+                    axis="verticalLines"
+                    value={line}
+                    onPointerDown={(event) => dragLine(event, "verticalLines", index)}
+                    onPointerMove={(event) => moveLine(event, "verticalLines", index)}
+                    onRemove={() => onLineRemove("verticalLines", index)}
+                />
+            ))}
+            {horizontalLines.map((line, index) => (
+                <DraggableLine
+                    key={`h-${index}`}
+                    axis="horizontalLines"
+                    value={line}
+                    onPointerDown={(event) => dragLine(event, "horizontalLines", index)}
+                    onPointerMove={(event) => moveLine(event, "horizontalLines", index)}
+                    onRemove={() => onLineRemove("horizontalLines", index)}
+                />
+            ))}
+        </div>
+    );
 }
 
-function DraggableLine({ axis, value, onPointerDown, onPointerMove, onRemove }: { axis: "horizontalLines" | "verticalLines"; value: number; onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void; onPointerMove: (event: React.PointerEvent<HTMLDivElement>) => void; onRemove: () => void }) {
+function DraggableLine({
+    axis,
+    value,
+    onPointerDown,
+    onPointerMove,
+    onRemove,
+}: {
+    axis: "horizontalLines" | "verticalLines";
+    value: number;
+    onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void;
+    onPointerMove: (event: React.PointerEvent<HTMLDivElement>) => void;
+    onRemove: () => void;
+}) {
     const horizontal = axis === "horizontalLines";
-    return <div className={`group absolute z-10 ${horizontal ? "inset-x-[-10px] h-5 -translate-y-1/2 cursor-row-resize" : "inset-y-[-10px] w-5 -translate-x-1/2 cursor-col-resize"}`} style={horizontal ? { top: `${value * 100}%` } : { left: `${value * 100}%` }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={(event) => event.currentTarget.releasePointerCapture(event.pointerId)}><button type="button" className="pointer-events-auto absolute hidden rounded bg-black/65 p-0.5 text-white group-hover:block" style={horizontal ? { right: 0, top: "50%", transform: "translateY(-50%)" } : { right: 0, top: 0 }} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onRemove(); }} aria-label="删除切割线"><Trash2 className="size-3" /></button></div>;
+    return (
+        <div
+            className={`group absolute z-10 ${horizontal ? "inset-x-[-10px] h-5 -translate-y-1/2 cursor-row-resize" : "inset-y-[-10px] w-5 -translate-x-1/2 cursor-col-resize"}`}
+            style={horizontal ? { top: `${value * 100}%` } : { left: `${value * 100}%` }}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={(event) => event.currentTarget.releasePointerCapture(event.pointerId)}
+        >
+            <button
+                type="button"
+                className="pointer-events-auto absolute hidden rounded bg-black/65 p-0.5 text-white group-hover:block"
+                style={horizontal ? { right: 0, top: "50%", transform: "translateY(-50%)" } : { right: 0, top: 0 }}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                    event.stopPropagation();
+                    onRemove();
+                }}
+                aria-label="删除切割线"
+            >
+                <Trash2 className="size-3" />
+            </button>
+        </div>
+    );
 }
 
 function evenLines(count: number) {

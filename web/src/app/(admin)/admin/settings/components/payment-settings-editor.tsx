@@ -43,11 +43,7 @@ export function PaymentSettingsEditor() {
                         </Form.Item>
                     </Col>
                     <Col xs={24} md={12}>
-                        <Form.Item
-                            name={["private", "payment", "merchantKey"]}
-                            label="商户密钥"
-                            extra={keyConfigured ? "已配置；留空则保持不变" : "保存后不会再返回到浏览器"}
-                        >
+                        <Form.Item name={["private", "payment", "merchantKey"]} label="商户密钥" extra={keyConfigured ? "已配置；留空则保持不变" : "保存后不会再返回到浏览器"}>
                             <Input.Password autoComplete="new-password" prefix={<KeyRound className="size-4" />} placeholder={keyConfigured ? "留空则沿用已保存的密钥" : "输入商户密钥"} />
                         </Form.Item>
                     </Col>

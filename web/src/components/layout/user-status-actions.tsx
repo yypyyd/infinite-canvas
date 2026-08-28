@@ -124,11 +124,15 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
         { key: "referrals", icon: <HandCoins className="size-4" />, label: <Link href="/account?tab=referrals">邀请返佣</Link> },
         { key: "api", icon: <Code2 className="size-4" />, label: <Link href="/account?tab=api">API 接入</Link> },
         ...(user?.role === "admin" ? [{ key: "admin", icon: <Shield className="size-4" />, label: <Link href="/admin">管理后台</Link> }] : []),
-        ...(user ? [{
-            key: "purchase",
-            icon: <ShoppingCart className="size-4" />,
-            label: <Link href="/account?tab=balance">充值余额</Link>,
-        }] : []),
+        ...(user
+            ? [
+                  {
+                      key: "purchase",
+                      icon: <ShoppingCart className="size-4" />,
+                      label: <Link href="/account?tab=balance">充值余额</Link>,
+                  },
+              ]
+            : []),
         { key: "redeem", icon: <Gift className="size-4" />, label: "兑换码", onClick: () => setRedeemOpen(true) },
         ...(onOpenShortcuts ? [{ key: "shortcuts", icon: <Keyboard className="size-4" />, label: "快捷键", onClick: onOpenShortcuts }] : []),
         { type: "divider" },

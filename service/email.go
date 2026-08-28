@@ -179,7 +179,9 @@ func sendRegistrationCodeEmail(setting model.EmailSetting, receiver string, code
 
 func SendOrganizationInvitationEmail(receiver string, organizationName string, role model.OrganizationRole) error {
 	settings, err := repository.GetSettings()
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	roleName := map[model.OrganizationRole]string{model.OrganizationRoleAdmin: "管理员", model.OrganizationRoleMember: "成员", model.OrganizationRoleReviewer: "审核人"}[role]
 	organizationName = html.EscapeString(organizationName)
 	action := ""

@@ -58,6 +58,7 @@ export type AgentCanvasContext = {
 export type AgentToolArguments =
     | { summary: string; steps: string[] }
     | { prompt: string; count: number; referenceNodeIds?: string[] }
+    | { nodeId: string; prompt: string; count: number }
     | { nodeIds: string[]; criteria: string }
     | { prompt: string; duration: number; imageNodeId?: string }
     | { nodeId: string; criteria: string }
@@ -69,7 +70,20 @@ export type AgentToolArguments =
     | { kind: "preference" | "fact" | "constraint" | "experience"; key: string; content: string; scope: "project" | "user"; confidence: number; expiresInDays: number }
     | { key: string; scope: "project" | "user" };
 
-export type AgentToolName = "canvas.plan" | "image.generate" | "image.inspect" | "video.generate" | "video.inspect" | "canvas.arrange" | "canvas.add_text" | "canvas.delete" | "canvas.update_text" | "agent.ask_user" | "agent.remember" | "agent.forget";
+export type AgentToolName =
+    | "canvas.plan"
+    | "image.generate"
+    | "image.edit"
+    | "image.inspect"
+    | "video.generate"
+    | "video.inspect"
+    | "canvas.arrange"
+    | "canvas.add_text"
+    | "canvas.delete"
+    | "canvas.update_text"
+    | "agent.ask_user"
+    | "agent.remember"
+    | "agent.forget";
 
 export type AgentToolInspection = {
     status: "passed" | "needs_revision" | "unavailable";
@@ -107,14 +121,70 @@ export function submitAgentMessage(sessionId: string, runId: string, content: st
 
 export type AgentToolResult =
     | { callId: string; status: "success"; plan: { summary: string; steps: string[] }; inspection?: never; images?: never; video?: never; nodeIds?: never; positions?: never; nodeId?: never; text?: never; placement?: never; memory?: never; error?: never }
-    | { callId: string; status: "success"; images: { nodeId: string; storageKey: string }[]; plan?: never; inspection?: never; video?: never; nodeIds?: never; positions?: never; nodeId?: never; text?: never; placement?: never; memory?: never; error?: never }
+    | {
+          callId: string;
+          status: "success";
+          images: { nodeId: string; storageKey: string }[];
+          plan?: never;
+          inspection?: never;
+          video?: never;
+          nodeIds?: never;
+          positions?: never;
+          nodeId?: never;
+          text?: never;
+          placement?: never;
+          memory?: never;
+          error?: never;
+      }
     | { callId: string; status: "success"; inspection: AgentToolInspection; plan?: never; images?: never; video?: never; nodeIds?: never; positions?: never; nodeId?: never; text?: never; placement?: never; memory?: never; error?: never }
-    | { callId: string; status: "success"; video: { nodeId: string; storageKey: string }; plan?: never; inspection?: never; images?: never; nodeIds?: never; positions?: never; nodeId?: never; text?: never; placement?: never; memory?: never; error?: never }
-    | { callId: string; status: "success"; nodeIds: string[]; positions: { nodeId: string; x: number; y: number }[]; plan?: never; inspection?: never; images?: never; video?: never; nodeId?: never; text?: never; placement?: never; memory?: never; error?: never }
+    | {
+          callId: string;
+          status: "success";
+          video: { nodeId: string; storageKey: string };
+          plan?: never;
+          inspection?: never;
+          images?: never;
+          nodeIds?: never;
+          positions?: never;
+          nodeId?: never;
+          text?: never;
+          placement?: never;
+          memory?: never;
+          error?: never;
+      }
+    | {
+          callId: string;
+          status: "success";
+          nodeIds: string[];
+          positions: { nodeId: string; x: number; y: number }[];
+          plan?: never;
+          inspection?: never;
+          images?: never;
+          video?: never;
+          nodeId?: never;
+          text?: never;
+          placement?: never;
+          memory?: never;
+          error?: never;
+      }
     | { callId: string; status: "success"; nodeId: string; placement: "center" | "right_of_selection"; plan?: never; inspection?: never; images?: never; video?: never; nodeIds?: never; positions?: never; text?: never; memory?: never; error?: never }
     | { callId: string; status: "success"; nodeIds: string[]; plan?: never; inspection?: never; images?: never; video?: never; positions?: never; nodeId?: never; text?: never; placement?: never; memory?: never; error?: never }
     | { callId: string; status: "success"; nodeId: string; text: string; plan?: never; inspection?: never; images?: never; video?: never; nodeIds?: never; positions?: never; placement?: never; memory?: never; error?: never }
-    | { callId: string; status: "success"; memory: { id?: string; key: string; status: "active" | "forgotten"; scope: "project" | "user" }; plan?: never; inspection?: never; images?: never; video?: never; nodeIds?: never; positions?: never; nodeId?: never; text?: never; placement?: never; error?: never }
+    | {
+          callId: string;
+          status: "success";
+          memory: { id?: string; key: string; status: "active" | "forgotten"; scope: "project" | "user" };
+          plan?: never;
+          inspection?: never;
+          images?: never;
+          video?: never;
+          nodeIds?: never;
+          positions?: never;
+          nodeId?: never;
+          text?: never;
+          placement?: never;
+          error?: never;
+      }
     | { callId: string; status: "failed"; error: string; plan?: never; inspection?: never; images?: never; video?: never; nodeIds?: never; positions?: never; nodeId?: never; text?: never; placement?: never; memory?: never };
 
 export function submitAgentToolResult(runId: string, executionToken: string, result: AgentToolResult) {

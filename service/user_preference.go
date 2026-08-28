@@ -107,13 +107,19 @@ func validAgentSettingsPreferences(raw json.RawMessage) bool {
 		return false
 	}
 	var configured bool
-	if json.Unmarshal(value["configured"], &configured) != nil { return false }
+	if json.Unmarshal(value["configured"], &configured) != nil {
+		return false
+	}
 	for key := range value {
-		if key != "configured" && key != "autonomy" { return false }
+		if key != "configured" && key != "autonomy" {
+			return false
+		}
 	}
 	if rawAutonomy, exists := value["autonomy"]; exists {
 		var autonomy string
-		if json.Unmarshal(rawAutonomy, &autonomy) != nil || (autonomy != agentAutonomyCautious && autonomy != agentAutonomyStandard && autonomy != agentAutonomyAutonomous) { return false }
+		if json.Unmarshal(rawAutonomy, &autonomy) != nil || (autonomy != agentAutonomyCautious && autonomy != agentAutonomyStandard && autonomy != agentAutonomyAutonomous) {
+			return false
+		}
 	}
 	return true
 }

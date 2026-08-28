@@ -23,13 +23,7 @@ export type VideoGenerationResult = { blob?: Blob; url?: string; storageKey?: st
 export type VideoCreativeMode = "analysis" | "viral";
 export type VideoCreativeResult = { analysis: string; script: string; videoPrompt: string; frames: string[] };
 
-export async function requestVideoCreativeAnalysis(
-    config: AiConfig,
-    sourceUrl: string,
-    mode: VideoCreativeMode,
-    context: { platform: string; audience?: string; sellingPoint?: string },
-    options?: RequestOptions,
-): Promise<VideoCreativeResult> {
+export async function requestVideoCreativeAnalysis(config: AiConfig, sourceUrl: string, mode: VideoCreativeMode, context: { platform: string; audience?: string; sellingPoint?: string }, options?: RequestOptions): Promise<VideoCreativeResult> {
     const frames = await extractVideoKeyFrames(sourceUrl, 6, options?.signal);
     const prompt = buildVideoCreativePrompt(mode, context);
     const messages: ChatCompletionMessage[] = [
@@ -58,17 +52,25 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
         const canUseStorageReferences = references.every(hasStorageKey) && videoReferences.every(hasStorageKey) && audioReferences.every(hasStorageKey);
         let created: VideoResponse;
         if (canUseStorageReferences) {
-            created = unwrapVideoResponse((await axios.post<ApiVideoResponse>("/api/v1/videos", {
-                model,
-                prompt,
-                seconds: String(duration),
-                resolution,
-                size: videoOutputSize(resolution, ratio),
-                generate_audio: capabilities.supportsAudioOutput && config.videoGenerateAudio === "true",
-                input_reference_storage_keys: references.map((reference) => reference.storageKey),
-                reference_videos_storage_keys: videoReferences.map((reference) => reference.storageKey),
-                reference_audios_storage_keys: audioReferences.map((reference) => reference.storageKey),
-            }, { headers: aiHeaders(requestId), signal: options?.signal })).data);
+            created = unwrapVideoResponse(
+                (
+                    await axios.post<ApiVideoResponse>(
+                        "/api/v1/videos",
+                        {
+                            model,
+                            prompt,
+                            seconds: String(duration),
+                            resolution,
+                            size: videoOutputSize(resolution, ratio),
+                            generate_audio: capabilities.supportsAudioOutput && config.videoGenerateAudio === "true",
+                            input_reference_storage_keys: references.map((reference) => reference.storageKey),
+                            reference_videos_storage_keys: videoReferences.map((reference) => reference.storageKey),
+                            reference_audios_storage_keys: audioReferences.map((reference) => reference.storageKey),
+                        },
+                        { headers: aiHeaders(requestId), signal: options?.signal },
+                    )
+                ).data,
+            );
         } else {
             const body = new FormData();
             body.append("model", model);
@@ -212,10 +214,14 @@ function delay(ms: number, signal?: AbortSignal) {
     return new Promise<void>((resolve, reject) => {
         if (signal?.aborted) return reject(new DOMException("Aborted", "AbortError"));
         const timer = setTimeout(resolve, ms);
-        signal?.addEventListener("abort", () => {
-            clearTimeout(timer);
-            reject(new DOMException("Aborted", "AbortError"));
-        }, { once: true });
+        signal?.addEventListener(
+            "abort",
+            () => {
+                clearTimeout(timer);
+                reject(new DOMException("Aborted", "AbortError"));
+            },
+            { once: true },
+        );
     });
 }
 
@@ -291,7 +297,10 @@ function buildVideoCreativePrompt(mode: VideoCreativeMode, context: { platform: 
 }
 
 function parseVideoCreativeResult(answer: string, mode: VideoCreativeMode) {
-    const normalized = answer.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+    const normalized = answer
+        .trim()
+        .replace(/^```(?:json)?\s*/i, "")
+        .replace(/\s*```$/, "");
     if (!normalized) throw new Error("视频解析没有返回内容");
     const jsonCandidate = normalized.startsWith("{") ? normalized : normalized.match(/\{[\s\S]*\}/)?.[0] || normalized;
     let value: { analysis?: unknown; script?: unknown; videoPrompt?: unknown };

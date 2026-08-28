@@ -77,7 +77,13 @@ export function CanvasVideoCreativePanel({
             }
         >
             <div className="mb-5 overflow-hidden rounded-xl border border-border bg-muted/30">
-                {sourceVideo?.metadata?.content ? <video className="aspect-video w-full bg-muted object-cover" src={sourceVideo.metadata.content} muted controls preload="metadata" /> : <div className="grid aspect-video place-items-center text-muted-foreground"><Video className="size-8" /></div>}
+                {sourceVideo?.metadata?.content ? (
+                    <video className="aspect-video w-full bg-muted object-cover" src={sourceVideo.metadata.content} muted controls preload="metadata" />
+                ) : (
+                    <div className="grid aspect-video place-items-center text-muted-foreground">
+                        <Video className="size-8" />
+                    </div>
+                )}
                 <div className="px-4 py-3">
                     <div className="truncate text-sm font-medium">{sourceVideo?.title || "请先在画布中选择一个视频节点"}</div>
                     <div className="mt-1 text-xs leading-5 text-muted-foreground">自动抽取 6 个关键帧，分析开场钩子、镜头节奏、字幕策略与转化结构。</div>
@@ -103,9 +109,7 @@ export function CanvasVideoCreativePanel({
                 ) : null}
             </Form>
 
-            <div className="rounded-xl border border-border bg-muted/30 p-4 text-xs leading-5 text-muted-foreground">
-                “一键爆款”只复用参考视频的方法与节奏，不照搬原品牌、人物和具体台词；生成结果仍可在画布中逐节点修改。
-            </div>
+            <div className="rounded-xl border border-border bg-muted/30 p-4 text-xs leading-5 text-muted-foreground">“一键爆款”只复用参考视频的方法与节奏，不照搬原品牌、人物和具体台词；生成结果仍可在画布中逐节点修改。</div>
         </Drawer>
     );
 }

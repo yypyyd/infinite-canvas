@@ -59,7 +59,7 @@ func RecoverGenerationTask(organizationID, userID, requestID string) (model.Gene
 		RequestID: task.RequestID, Model: task.Model, Modality: task.Modality, Path: task.Path,
 		Status: task.Status, UpstreamTaskID: task.UpstreamTaskID, ErrorMessage: task.ErrorMessage,
 		StorageKeys: task.StorageKeys,
-		CreatedAt: task.CreatedAt, UpdatedAt: task.UpdatedAt,
+		CreatedAt:   task.CreatedAt, UpdatedAt: task.UpdatedAt,
 	}
 	if json.Valid([]byte(task.ResultJSON)) {
 		result.Result = json.RawMessage(task.ResultJSON)
@@ -106,9 +106,15 @@ func BeginGenerationTask(input GenerationTaskInput) (model.GenerationTask, error
 	nowText := now()
 	creditSource := model.CreditSourcePersonal
 	organization, exists, err := repository.GetOrganization(input.OrganizationID)
-	if err != nil { return model.GenerationTask{}, err }
-	if !exists || organization.Status != "active" { return model.GenerationTask{}, safeMessageError{message: "企业不存在或已停用"} }
-	if organization.CreditMode == model.OrganizationCreditModeShared { creditSource = model.CreditSourceOrganization }
+	if err != nil {
+		return model.GenerationTask{}, err
+	}
+	if !exists || organization.Status != "active" {
+		return model.GenerationTask{}, safeMessageError{message: "企业不存在或已停用"}
+	}
+	if organization.CreditMode == model.OrganizationCreditModeShared {
+		creditSource = model.CreditSourceOrganization
+	}
 	input.RequestID = strings.TrimSpace(input.RequestID)
 	if len(input.RequestID) > 191 {
 		return model.GenerationTask{}, safeMessageError{message: "请求编号过长"}
@@ -143,7 +149,9 @@ func BeginGenerationTask(input GenerationTaskInput) (model.GenerationTask, error
 		log = &model.CreditLog{ID: newID("credit"), UserID: input.UserID, OrganizationID: input.OrganizationID, CreditSource: creditSource, Type: model.CreditLogTypeAIConsume, Amount: -input.Credits, Remark: "调用模型 " + input.Model, Extra: string(extra), CreatedAt: nowText}
 	}
 	if task.BatchJobID != "" || task.BatchItemID != "" {
-		if task.BatchJobID == "" || task.BatchItemID == "" { return task, safeMessageError{message: "批量任务扣费关联无效"} }
+		if task.BatchJobID == "" || task.BatchItemID == "" {
+			return task, safeMessageError{message: "批量任务扣费关联无效"}
+		}
 		task, err = repository.CreateBatchGenerationTaskWithCharge(task, log)
 	} else {
 		task, err = repository.CreateGenerationTaskWithCharge(task, log)
@@ -189,7 +197,9 @@ func FinishGenerationTask(task model.GenerationTask, status model.GenerationTask
 // UpdateGenerationTaskChannel records a failover channel before the next upstream request starts.
 func UpdateGenerationTaskChannel(task *model.GenerationTask, channelName string, upstreamModel string) error {
 	updatedAt := now()
-	err := retryGenerationTaskWrite(func() error { return repository.UpdateRunningGenerationTaskChannel(task.ID, channelName, upstreamModel, updatedAt) })
+	err := retryGenerationTaskWrite(func() error {
+		return repository.UpdateRunningGenerationTaskChannel(task.ID, channelName, upstreamModel, updatedAt)
+	})
 	if err == nil {
 		task.ChannelName = channelName
 		task.UpstreamModel = upstreamModel

@@ -22,5 +22,4 @@ export type ReferralDashboard = {
     total: number;
 };
 
-export const fetchReferralDashboard = (token: string, query: { page?: number; pageSize?: number } = {}) =>
-    apiGet<ReferralDashboard>("/api/referrals", compactApiParams(query), token);
+export const fetchReferralDashboard = (token: string, query: { page?: number; pageSize?: number } = {}) => apiGet<ReferralDashboard>("/api/referrals", compactApiParams(query), token);

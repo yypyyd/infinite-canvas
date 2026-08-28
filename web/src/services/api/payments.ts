@@ -53,13 +53,10 @@ export type PaymentSubmission = {
 
 export const fetchPaymentConfig = (token: string) => apiGet<PaymentConfig>("/api/payments/config", undefined, token);
 
-export const createPaymentOrder = (token: string, packageId: string, method: PaymentMethod) =>
-    apiPost<PaymentSubmission>("/api/payments/orders", { packageId, method }, token);
+export const createPaymentOrder = (token: string, packageId: string, method: PaymentMethod) => apiPost<PaymentSubmission>("/api/payments/orders", { packageId, method }, token);
 
-export const exchangeBalanceForCredits = (token: string, amountCents: number) =>
-    apiPost<BalanceExchangeResult>("/api/payments/exchanges", { amountCents }, token);
+export const exchangeBalanceForCredits = (token: string, amountCents: number) => apiPost<BalanceExchangeResult>("/api/payments/exchanges", { amountCents }, token);
 
-export const fetchPaymentOrders = (token: string, query: { page?: number; pageSize?: number } = {}) =>
-    apiGet<PaymentOrderList>("/api/payments/orders", compactApiParams(query), token);
+export const fetchPaymentOrders = (token: string, query: { page?: number; pageSize?: number } = {}) => apiGet<PaymentOrderList>("/api/payments/orders", compactApiParams(query), token);
 
 export const fetchPaymentOrder = (token: string, orderNo: string) => apiGet<PaymentOrder>(`/api/payments/orders/${encodeURIComponent(orderNo)}`, undefined, token);

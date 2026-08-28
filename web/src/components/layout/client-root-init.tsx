@@ -42,7 +42,5 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
 }
 
 function shouldSyncWorkspace(pathname: string) {
-    return ["/account", "/asset-library", "/assets", "/canvas", "/commerce", "/image", "/prompts", "/video"].some(
-        (path) => pathname === path || pathname.startsWith(`${path}/`),
-    );
+    return ["/account", "/asset-library", "/assets", "/canvas", "/commerce", "/image", "/prompts", "/video"].some((path) => pathname === path || pathname.startsWith(`${path}/`));
 }

@@ -12,11 +12,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/yypyyd/infinite-canvas/config"
 	"github.com/yypyyd/infinite-canvas/model"
 	"github.com/yypyyd/infinite-canvas/repository"
 	"github.com/yypyyd/infinite-canvas/service"
-	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -203,7 +203,7 @@ func TestWorkspaceFileCancelCannotCrossUserBoundary(t *testing.T) {
 		t.Fatalf("owner cancel did not remove reservation, ok=%v, err=%v", ok, err)
 	}
 	var deletion model.UserObjectDeletion
-	if err := database.First(&deletion, "id = ?", ticket.ObjectKey).Error; err != nil || deletion.OrganizationID != tenant.Organization.ID || deletion.UserID != tenant.User.ID {
+	if err := database.First(&deletion, "organization_id = ? AND object_key = ?", tenant.Organization.ID, ticket.ObjectKey).Error; err != nil || deletion.UserID != tenant.User.ID {
 		t.Fatalf("unexpected deletion outbox: %#v, err=%v", deletion, err)
 	}
 }
@@ -260,10 +260,10 @@ func seedRouterTestTenant(t *testing.T, suffix string) routerTestTenant {
 		t.Fatal(err)
 	}
 	tenant := routerTestTenant{
-		User: model.User{ID: "user-router-" + suffix, Username: "router-" + suffix, Password: string(password), OrganizationID: "org-router-" + suffix + "-a", Role: model.UserRoleUser, Group: "default", AffCode: "aff-router-" + suffix, Status: model.UserStatusActive, CreatedAt: "1", UpdatedAt: "1"},
+		User:         model.User{ID: "user-router-" + suffix, Username: "router-" + suffix, Password: string(password), OrganizationID: "org-router-" + suffix + "-a", Role: model.UserRoleUser, Group: "default", AffCode: "aff-router-" + suffix, Status: model.UserStatusActive, CreatedAt: "1", UpdatedAt: "1"},
 		Organization: model.Organization{ID: "org-router-" + suffix + "-a", Name: "企业 A", Slug: "router-" + suffix + "-a", Status: "active", Version: 1, CreatedBy: "user-router-" + suffix, CreatedAt: "1", UpdatedAt: "1"},
-		Secondary: model.Organization{ID: "org-router-" + suffix + "-b", Name: "企业 B", Slug: "router-" + suffix + "-b", Status: "active", Version: 1, CreatedBy: "user-router-" + suffix, CreatedAt: "2", UpdatedAt: "2"},
-		Foreign: model.Organization{ID: "org-router-" + suffix + "-foreign", Name: "其他企业", Slug: "router-" + suffix + "-foreign", Status: "active", Version: 1, CreatedBy: "foreign", CreatedAt: "3", UpdatedAt: "3"},
+		Secondary:    model.Organization{ID: "org-router-" + suffix + "-b", Name: "企业 B", Slug: "router-" + suffix + "-b", Status: "active", Version: 1, CreatedBy: "user-router-" + suffix, CreatedAt: "2", UpdatedAt: "2"},
+		Foreign:      model.Organization{ID: "org-router-" + suffix + "-foreign", Name: "其他企业", Slug: "router-" + suffix + "-foreign", Status: "active", Version: 1, CreatedBy: "foreign", CreatedAt: "3", UpdatedAt: "3"},
 	}
 	if err := database.Create(&tenant.User).Error; err != nil {
 		t.Fatal(err)

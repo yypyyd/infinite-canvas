@@ -39,10 +39,10 @@ func TestUserPreferencesHTTPAreAccountScopedAndValidated(t *testing.T) {
 		t.Fatalf("unexpected empty preferences: %#v, value=%#v", empty, preferences)
 	}
 	primaryValue := map[string]any{
-		"theme": "dark",
-		"aiConfig": map[string]string{"imageModel": "router-image", "videoModel": "router-video"},
+		"theme":           "dark",
+		"aiConfig":        map[string]string{"imageModel": "router-image", "videoModel": "router-video"},
 		"imageQuickTools": map[string]any{"ids": []string{"download", "edit"}, "showLabels": true},
-		"agentSettings": map[string]any{"configured": true, "autonomy": "standard"},
+		"agentSettings":   map[string]any{"configured": true, "autonomy": "standard"},
 	}
 	saved := routerTestJSON(t, client, http.MethodPost, baseURL+"/api/preferences", primaryValue, nil)
 	if saved.Code != 0 || json.Unmarshal(saved.Data, &preferences) != nil || string(preferences["theme"]) != `"dark"` {

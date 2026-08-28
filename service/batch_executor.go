@@ -34,8 +34,12 @@ type StandardBatchProductionExecutor struct {
 
 func standardBatchTypedError(err error, category model.BatchProductionErrorCategory, retryable bool) error {
 	var typedError *batchProductionTypedError
-	if errors.As(err, &typedError) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) { return err }
-	if retryable { return transientBatchProductionError(category, err) }
+	if errors.As(err, &typedError) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	if retryable {
+		return transientBatchProductionError(category, err)
+	}
 	return permanentBatchProductionError(category, err)
 }
 
@@ -91,7 +95,9 @@ func (executor StandardBatchProductionExecutor) Execute(ctx context.Context, inp
 		}
 	}
 	deliverySpec := input.Job.DeliverySpec
-	if input.Selection != nil { deliverySpec = input.Selection.DeliverySpec }
+	if input.Selection != nil {
+		deliverySpec = input.Selection.DeliverySpec
+	}
 	generationSize := productionDeliveryGenerationSize(deliverySpec)
 	pricing := standardBatchPricingRequest(modelName, operation, deliverySpec)
 	selection, err := selectStandardBatchModelChannel(pricing, resumeTask, requestID)
@@ -132,7 +138,9 @@ func (executor StandardBatchProductionExecutor) Execute(ctx context.Context, inp
 	})
 	if err != nil {
 		var typedError *batchProductionTypedError
-		if errors.As(err, &typedError) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) { return pendingResult, err }
+		if errors.As(err, &typedError) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return pendingResult, err
+		}
 		if errors.Is(err, repository.ErrGenerationTaskRequestConflict) || strings.Contains(err.Error(), "batch generation request is already settled") {
 			return pendingResult, permanentBatchProductionError(model.BatchProductionErrorUpstreamPermanent, err)
 		}
@@ -156,12 +164,16 @@ func (executor StandardBatchProductionExecutor) Execute(ctx context.Context, inp
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		statusErr := fmt.Errorf("model channel returned HTTP %d", response.StatusCode)
-		if response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= 500 { return pendingResult, transientBatchProductionError(model.BatchProductionErrorUpstreamTransient, statusErr) }
+		if response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= 500 {
+			return pendingResult, transientBatchProductionError(model.BatchProductionErrorUpstreamTransient, statusErr)
+		}
 		return pendingResult, permanentBatchProductionError(model.BatchProductionErrorUpstreamPermanent, statusErr)
 	}
 	result, err := parseStandardBatchResponse(ctx, resultClient, response.Body)
 	result.GenerationTask = &task
-	if err != nil { return result, standardBatchTypedError(err, model.BatchProductionErrorUpstreamPermanent, false) }
+	if err != nil {
+		return result, standardBatchTypedError(err, model.BatchProductionErrorUpstreamPermanent, false)
+	}
 	return result, nil
 }
 
@@ -256,7 +268,9 @@ func beginOrResumeBatchGeneration(input GenerationTaskInput) (model.GenerationTa
 }
 
 func buildStandardBatchRequest(ctx context.Context, client *http.Client, selection ModelChannelSelection, prompt string, references []string, size string) ([]byte, string, error) {
-	if strings.TrimSpace(size) == "" { size = standardBatchImageSize }
+	if strings.TrimSpace(size) == "" {
+		size = standardBatchImageSize
+	}
 	if len(references) == 0 {
 		body, err := json.Marshal(map[string]any{"model": selection.Model.UpstreamModel, "prompt": prompt, "n": 1, "size": size})
 		return body, "application/json", err

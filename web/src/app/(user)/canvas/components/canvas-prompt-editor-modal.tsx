@@ -9,7 +9,23 @@ import { CanvasResourceMentionTextarea } from "./canvas-resource-mention-textare
 import type { CanvasResourceReference } from "../utils/canvas-resource-references";
 import { CanvasNodeType, type CanvasNodeData } from "../types";
 
-export function CanvasPromptEditorModal({ node, open, references, onReferenceSelect, onChange, onGenerate, onClose }: { node: CanvasNodeData | null; open: boolean; references: CanvasResourceReference[]; onReferenceSelect?: (reference: CanvasResourceReference) => void; onChange: (value: string) => void; onGenerate: () => void; onClose: () => void }) {
+export function CanvasPromptEditorModal({
+    node,
+    open,
+    references,
+    onReferenceSelect,
+    onChange,
+    onGenerate,
+    onClose,
+}: {
+    node: CanvasNodeData | null;
+    open: boolean;
+    references: CanvasResourceReference[];
+    onReferenceSelect?: (reference: CanvasResourceReference) => void;
+    onChange: (value: string) => void;
+    onGenerate: () => void;
+    onClose: () => void;
+}) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const prompt = node?.metadata?.promptDraft || "";
     return (
@@ -21,7 +37,9 @@ export function CanvasPromptEditorModal({ node, open, references, onReferenceSel
                             <div className="truncate text-sm font-medium">{node.title || "未命名节点"}</div>
                             <div className="mt-1 text-xs opacity-55">支持输入 @ 引用画布中的节点与素材，Enter 生成，Shift + Enter 换行</div>
                         </div>
-                        <span className="shrink-0 rounded-md px-2 py-1 text-xs" style={{ background: theme.toolbar.itemHover, color: theme.toolbar.item }}>{modeLabel(node)}</span>
+                        <span className="shrink-0 rounded-md px-2 py-1 text-xs" style={{ background: theme.toolbar.itemHover, color: theme.toolbar.item }}>
+                            {modeLabel(node)}
+                        </span>
                     </div>
                     <CanvasResourceMentionTextarea
                         autoFocus
@@ -37,12 +55,18 @@ export function CanvasPromptEditorModal({ node, open, references, onReferenceSel
                     {references.some((reference) => reference.active) ? (
                         <div className="flex flex-wrap items-center gap-2">
                             <span className="text-xs opacity-55">可引用资源</span>
-                            {references.filter((reference) => reference.active).map((reference) => <ReferenceChip key={reference.id} reference={reference} background={theme.toolbar.itemHover} />)}
+                            {references
+                                .filter((reference) => reference.active)
+                                .map((reference) => (
+                                    <ReferenceChip key={reference.id} reference={reference} background={theme.toolbar.itemHover} />
+                                ))}
                         </div>
                     ) : null}
                     <div className="flex justify-end gap-2">
                         <Button onClick={onClose}>关闭</Button>
-                        <Button type="primary" disabled={!prompt.trim()} onClick={onGenerate}>生成</Button>
+                        <Button type="primary" disabled={!prompt.trim()} onClick={onGenerate}>
+                            生成
+                        </Button>
                     </div>
                 </div>
             ) : null}
@@ -63,8 +87,16 @@ function ReferenceIcon({ kind }: { kind: CanvasResourceReference["kind"] }) {
 }
 
 function ReferenceChip({ reference, background }: { reference: CanvasResourceReference; background: string }) {
-    return <span className="inline-flex max-w-52 items-center gap-1.5 rounded-lg px-2 py-1 text-xs" style={{ background }}>
-        {reference.previewUrl && reference.kind === "image" ? <img src={reference.previewUrl} alt="" className="size-5 rounded-none object-cover" /> : reference.previewUrl && reference.kind === "video" ? <video src={reference.previewUrl} className="size-5 rounded-none bg-black object-cover" muted preload="metadata" /> : <ReferenceIcon kind={reference.kind} />}
-        <span className="truncate">{reference.label}</span>
-    </span>;
+    return (
+        <span className="inline-flex max-w-52 items-center gap-1.5 rounded-lg px-2 py-1 text-xs" style={{ background }}>
+            {reference.previewUrl && reference.kind === "image" ? (
+                <img src={reference.previewUrl} alt="" className="size-5 rounded-none object-cover" />
+            ) : reference.previewUrl && reference.kind === "video" ? (
+                <video src={reference.previewUrl} className="size-5 rounded-none bg-black object-cover" muted preload="metadata" />
+            ) : (
+                <ReferenceIcon kind={reference.kind} />
+            )}
+            <span className="truncate">{reference.label}</span>
+        </span>
+    );
 }

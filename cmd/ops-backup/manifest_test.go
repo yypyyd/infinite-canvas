@@ -34,7 +34,7 @@ func TestValidateManifestRejectsDuplicateObjects(t *testing.T) {
 	object := ObjectBackup{Key: key, File: objectBackupFile(key), SHA256: strings.Repeat("a", 64), QiniuHash: "etag"}
 	manifest := BackupManifest{
 		FormatVersion: backupFormatVersion,
-		Database: DatabaseBackup{Driver: "sqlite", File: "database/database.db", SHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		Database:      DatabaseBackup{Driver: "sqlite", File: "database/database.db", SHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
 		ObjectStorage: &ObjectStorageBackup{Provider: "qiniu-kodo", Bucket: "bucket", Objects: []ObjectBackup{object, object}},
 	}
 	if err := validateManifest(root, manifest); err == nil {

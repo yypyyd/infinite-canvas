@@ -16,9 +16,6 @@ export default function nextConfig(phase: string): NextConfig {
     return {
         output: "standalone",
         allowedDevOrigins: isDev ? ["*.*.*.*"] : [],
-        typescript: {
-            ignoreBuildErrors: true,
-        },
         experimental: {
             // Keep the legacy multipart path usable while clients roll over to storage-key JSON.
             proxyClientMaxBodySize: "350mb",

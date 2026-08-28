@@ -10,17 +10,17 @@ export function StorageSettingsEditor() {
         <Card size="small" title="文件存储">
             <Row gutter={16}>
                 <Col span={24}>
-                    <Alert
-                        type="info"
-                        showIcon
-                        title="切换只影响新文件"
-                        description="已有文件按记录中的存储驱动继续读取和删除，不会自动迁移。本地目录需要挂载到持久化磁盘，并由应用进程独占写入。"
-                        style={{ marginBottom: 16 }}
-                    />
+                    <Alert type="info" showIcon title="切换只影响新文件" description="已有文件按记录中的存储驱动继续读取和删除，不会自动迁移。本地目录需要挂载到持久化磁盘，并由应用进程独占写入。" style={{ marginBottom: 16 }} />
                 </Col>
                 <Col xs={24} md={12}>
                     <Form.Item name={["private", "storage", "driver"]} label="存储方式">
-                        <Segmented block options={[{ label: "七牛云", value: "qiniu" }, { label: "本地磁盘", value: "local" }]} />
+                        <Segmented
+                            block
+                            options={[
+                                { label: "七牛云", value: "qiniu" },
+                                { label: "本地磁盘", value: "local" },
+                            ]}
+                        />
                     </Form.Item>
                 </Col>
                 <Col xs={24} md={12}>
@@ -30,7 +30,12 @@ export function StorageSettingsEditor() {
                 </Col>
                 {driver === "local" ? (
                     <Col span={24}>
-                        <Form.Item name={["private", "storage", "localPath"]} label="本地存储目录" rules={[{ required: true, whitespace: true, message: "请输入本地存储目录" }]} extra="生产环境建议使用绝对路径，例如 /app/data/user-files，并为 Docker 挂载持久化卷；不能填写磁盘根目录。">
+                        <Form.Item
+                            name={["private", "storage", "localPath"]}
+                            label="本地存储目录"
+                            rules={[{ required: true, whitespace: true, message: "请输入本地存储目录" }]}
+                            extra="生产环境建议使用绝对路径，例如 /app/data/user-files，并为 Docker 挂载持久化卷；不能填写磁盘根目录。"
+                        >
                             <Input placeholder="/app/data/user-files" />
                         </Form.Item>
                     </Col>
@@ -42,7 +47,7 @@ export function StorageSettingsEditor() {
                             </Form.Item>
                         </Col>
                         <Col xs={24} md={12}>
-                            <Form.Item name={["private", "storage", "qiniuSecretKey"]} label="七牛 Secret Key" rules={[{ validator: (_, value) => value?.trim() || secretConfigured ? Promise.resolve() : Promise.reject(new Error("请输入 Secret Key")) }]}>
+                            <Form.Item name={["private", "storage", "qiniuSecretKey"]} label="七牛 Secret Key" rules={[{ validator: (_, value) => (value?.trim() || secretConfigured ? Promise.resolve() : Promise.reject(new Error("请输入 Secret Key"))) }]}>
                                 <Input.Password placeholder="留空则沿用已保存的 Secret Key" />
                             </Form.Item>
                         </Col>
@@ -62,7 +67,15 @@ export function StorageSettingsEditor() {
                                 label="HTTPS 私有下载域名"
                                 rules={[
                                     { required: true, message: "请输入 HTTPS 下载域名" },
-                                    { validator: (_, value) => { try { return new URL(value).protocol === "https:" ? Promise.resolve() : Promise.reject(new Error("下载域名必须使用 HTTPS")); } catch { return Promise.reject(new Error("请输入有效的 HTTPS 下载域名")); } } },
+                                    {
+                                        validator: (_, value) => {
+                                            try {
+                                                return new URL(value).protocol === "https:" ? Promise.resolve() : Promise.reject(new Error("下载域名必须使用 HTTPS"));
+                                            } catch {
+                                                return Promise.reject(new Error("请输入有效的 HTTPS 下载域名"));
+                                            }
+                                        },
+                                    },
                                 ]}
                             >
                                 <Input placeholder="https://files.example.com" />

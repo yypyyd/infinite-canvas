@@ -46,7 +46,11 @@ export function ChannelModelCapabilitiesEditor({ managedModels }: { managedModel
                 type="info"
                 showIcon
                 title={protocol === "autodl_comfyui" ? "工作流配置与渠道能力分开管理" : "渠道只声明上游能力"}
-                description={protocol === "autodl_comfyui" ? "每个模型绑定一个 AutoDL 工作流和请求模板；任务提交、状态恢复、结果归档与扣费退款仍走系统公共链路。" : "模型售价和对外开放能力仍在模型中心统一维护；这里配置当前渠道实际能处理的类型、操作、比例、分辨率、时长和参考图数量。"}
+                description={
+                    protocol === "autodl_comfyui"
+                        ? "每个模型绑定一个 AutoDL 工作流和请求模板；任务提交、状态恢复、结果归档与扣费退款仍走系统公共链路。"
+                        : "模型售价和对外开放能力仍在模型中心统一维护；这里配置当前渠道实际能处理的类型、操作、比例、分辨率、时长和参考图数量。"
+                }
             />
             <Form.List name="models">
                 {(fields, { remove }) => {
@@ -56,7 +60,9 @@ export function ChannelModelCapabilitiesEditor({ managedModels }: { managedModel
                         <Flex vertical gap={10}>
                             <Flex align="center" gap={12} wrap>
                                 <Input allowClear prefix={<SearchOutlined />} placeholder="搜索模型名称" value={keyword} onChange={(event) => setKeyword(event.target.value)} style={{ flex: "1 1 220px", maxWidth: 320 }} />
-                                <Typography.Text type="secondary">共 {fields.length} 个模型，点击行展开编辑{visibleIndexes ? `，匹配 ${displayFields.length} 个` : ""}</Typography.Text>
+                                <Typography.Text type="secondary">
+                                    共 {fields.length} 个模型，点击行展开编辑{visibleIndexes ? `，匹配 ${displayFields.length} 个` : ""}
+                                </Typography.Text>
                             </Flex>
                             {displayFields.length ? (
                                 <Collapse
@@ -142,7 +148,12 @@ function ModelCapabilityFields({ fieldName, channelModel, managedModel }: { fiel
                 {protocol === "autodl_comfyui" ? (
                     <>
                         <Col span={24}>
-                            <Form.Item name={[fieldName, "workflow", "workflowId"]} label="AutoDL 工作流 ID" rules={[{ required: true, whitespace: true, message: "请输入工作流 ID" }]} extra="对应 AutoDL API 路径中的 workflow_id；只允许字母、数字、点、下划线和短横线。">
+                            <Form.Item
+                                name={[fieldName, "workflow", "workflowId"]}
+                                label="AutoDL 工作流 ID"
+                                rules={[{ required: true, whitespace: true, message: "请输入工作流 ID" }]}
+                                extra="对应 AutoDL API 路径中的 workflow_id；只允许字母、数字、点、下划线和短横线。"
+                            >
                                 <Input placeholder="例如 minimax_h3_lightx2v_v5" />
                             </Form.Item>
                         </Col>

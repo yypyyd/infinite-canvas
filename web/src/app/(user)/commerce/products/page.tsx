@@ -2,13 +2,17 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { App, Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag } from "antd";
+import { Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
 import { commerceQueryKeys } from "@/services/api/commerce-query-keys";
 import { deleteCommerceProduct, fetchCommerceProducts, saveCommerceProduct } from "@/services/api/commerce-products";
-import { fetchBrands, fetchCommerceWorkspace, type Product } from "@/services/api/commerce";
+import { fetchBrands, fetchCommerceWorkspace, type Brand, type Product } from "@/services/api/commerce";
+import type { ProductCopyKind, ProductCopyResult } from "@/services/api/product-copy";
+import { useEffectiveConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
+import { ProductCopyModal } from "./components/product-copy-modal";
 
 export default function CommerceProductsPage() {
     const { message } = App.useApp();
@@ -21,7 +25,10 @@ export default function CommerceProductsPage() {
     const [selected, setSelected] = useState<string[]>([]);
     const [draft, setDraft] = useState<Partial<Product> | null>(null);
     const [working, setWorking] = useState(false);
+    const [copyOpen, setCopyOpen] = useState(false);
     const [form] = Form.useForm();
+    const effectiveConfig = useEffectiveConfig();
+    const copyConfig = { ...effectiveConfig, model: effectiveConfig.textModel || effectiveConfig.model };
     const filters = { keyword, type: status, page, pageSize };
     const query = useQuery({ queryKey: commerceQueryKeys.products(organizationId, filters), queryFn: () => fetchCommerceProducts(filters), enabled: Boolean(organizationId) });
     const brands = useQuery({ queryKey: commerceQueryKeys.brands(organizationId, { page: 1, pageSize: 200 }), queryFn: () => fetchBrands({ page: 1, pageSize: 200 }), enabled: Boolean(organizationId) });
@@ -34,6 +41,13 @@ export default function CommerceProductsPage() {
         const value = item || { status: "draft", sellingPoints: [] };
         setDraft(value);
         form.setFieldsValue({ ...value, sellingPointsText: value.sellingPoints?.join("\n") || "" });
+    }
+    function applyProductCopy(kind: ProductCopyKind, result: ProductCopyResult) {
+        if (kind === "sellingPoints") {
+            form.setFieldValue("sellingPointsText", result.items.join("\n"));
+        } else if (kind === "description") {
+            form.setFieldValue("description", result.detail);
+        }
     }
     async function save() {
         const value = await form.validateFields();
@@ -159,7 +173,21 @@ export default function CommerceProductsPage() {
                     },
                 ]}
             />
-            <Modal title={draft?.id ? "编辑商品" : "新建商品"} open={Boolean(draft)} confirmLoading={working} onCancel={() => setDraft(null)} onOk={() => void save()} width={720}>
+            <Modal
+                title={
+                    <Space>
+                        {draft?.id ? "编辑商品" : "新建商品"}
+                        <Button size="small" icon={<Sparkles size={14} />} disabled={!draft} onClick={() => setCopyOpen(true)}>
+                            AI 文案
+                        </Button>
+                    </Space>
+                }
+                open={Boolean(draft)}
+                confirmLoading={working}
+                onCancel={() => setDraft(null)}
+                onOk={() => void save()}
+                width={720}
+            >
                 <Form form={form} layout="vertical">
                     <div className="grid grid-cols-2 gap-x-4">
                         <Form.Item name="name" label="商品名称" rules={[{ required: true, max: 200 }]}>
@@ -195,6 +223,26 @@ export default function CommerceProductsPage() {
                     </Form.Item>
                 </Form>
             </Modal>
+            <ProductCopyModal
+                open={copyOpen}
+                onClose={() => setCopyOpen(false)}
+                config={copyConfig}
+                context={{
+                    product: {
+                        ...draft,
+                        name: form.getFieldValue("name"),
+                        category: form.getFieldValue("category"),
+                        description: form.getFieldValue("description"),
+                        targetAudience: form.getFieldValue("targetAudience"),
+                        sellingPoints: String(form.getFieldValue("sellingPointsText") || "")
+                            .split("\n")
+                            .map((item: string) => item.trim())
+                            .filter(Boolean),
+                    },
+                    brand: brands.data?.items.find((item: Brand) => item.id === form.getFieldValue("brandId")),
+                }}
+                onApply={applyProductCopy}
+            />
         </Card>
     );
 }

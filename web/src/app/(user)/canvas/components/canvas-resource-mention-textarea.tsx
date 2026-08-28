@@ -96,7 +96,10 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
         const textarea = textareaRef.current;
         if (!textarea || textarea.selectionStart !== textarea.selectionEnd) return false;
         const cursor = textarea.selectionStart;
-        const labels = references.filter((item) => item.active).map((item) => item.label).sort((a, b) => b.length - a.length);
+        const labels = references
+            .filter((item) => item.active)
+            .map((item) => item.label)
+            .sort((a, b) => b.length - a.length);
         let start = cursor;
         let end = cursor;
         if (key === "Backspace") {
@@ -140,7 +143,10 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
         caretColor: theme.node.text,
         ...(showOverlay ? { background: "transparent", backgroundColor: "transparent" } : {}),
     } as CSSProperties;
-    const menu = mention && textareaRef.current ? <MentionMenu textarea={textareaRef.current} references={candidates} hasReferences={references.some((item) => item.active)} activeIndex={Math.max(0, Math.min(activeIndex, candidates.length - 1))} theme={theme} onSelect={insertReference} /> : null;
+    const menu =
+        mention && textareaRef.current ? (
+            <MentionMenu textarea={textareaRef.current} references={candidates} hasReferences={references.some((item) => item.active)} activeIndex={Math.max(0, Math.min(activeIndex, candidates.length - 1))} theme={theme} onSelect={insertReference} />
+        ) : null;
 
     return (
         <div className={`relative h-full w-full ${containerClassName || ""}`}>
@@ -189,7 +195,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
                         const labelStart = value.indexOf(item.label);
                         if (labelStart < 0) return false;
                         const labelEnd = labelStart + item.label.length;
-                        return selectionStart < labelEnd && selectionEnd > labelStart || selectionStart === selectionEnd && selectionStart >= labelStart && selectionStart <= labelEnd;
+                        return (selectionStart < labelEnd && selectionEnd > labelStart) || (selectionStart === selectionEnd && selectionStart >= labelStart && selectionStart <= labelEnd);
                     });
                     if (reference?.previewUrl) {
                         event.preventDefault();
@@ -243,14 +249,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
                 }}
             />
             {menu}
-            {previewUrl ? (
-                <AntImage
-                    src={previewUrl}
-                    alt="引用图片预览"
-                    style={{ display: "none" }}
-                    preview={{ visible: true, src: previewUrl, onVisibleChange: (visible) => !visible && setPreviewUrl(null) }}
-                />
-            ) : null}
+            {previewUrl ? <AntImage src={previewUrl} alt="引用图片预览" style={{ display: "none" }} preview={{ visible: true, src: previewUrl, onVisibleChange: (visible) => !visible && setPreviewUrl(null) }} /> : null}
         </div>
     );
 });
@@ -261,13 +260,11 @@ function MentionHighlightText({ value, labels, references, onPreview, placeholde
     const pattern = new RegExp(`(${labels.map(escapeRegExp).join("|")})`, "g");
     return (
         <>
-            {value.split(pattern).map((part, index) =>
-                labels.includes(part) ? (
-                    <MentionInlineChip key={`${part}-${index}`} reference={references.find((reference) => reference.label === part)} label={part} onPreview={onPreview} />
-                ) : (
-                    <span key={`${part}-${index}`}>{part}</span>
-                ),
-            )}
+            {value
+                .split(pattern)
+                .map((part, index) =>
+                    labels.includes(part) ? <MentionInlineChip key={`${part}-${index}`} reference={references.find((reference) => reference.label === part)} label={part} onPreview={onPreview} /> : <span key={`${part}-${index}`}>{part}</span>,
+                )}
         </>
     );
 }
@@ -291,7 +288,13 @@ function MentionInlineChip({ reference, label, onPreview }: { reference?: Canvas
                 onPreview(reference.previewUrl);
             }}
         >
-            {reference?.previewUrl && reference.kind === "image" ? <img src={reference.previewUrl} alt="" className="size-full rounded-none object-cover" /> : reference?.previewUrl && reference.kind === "video" ? <video src={reference.previewUrl} className="size-full rounded-none bg-black object-cover" muted preload="metadata" /> : <Icon className="size-3.5 shrink-0" />}
+            {reference?.previewUrl && reference.kind === "image" ? (
+                <img src={reference.previewUrl} alt="" className="size-full rounded-none object-cover" />
+            ) : reference?.previewUrl && reference.kind === "video" ? (
+                <video src={reference.previewUrl} className="size-full rounded-none bg-black object-cover" muted preload="metadata" />
+            ) : (
+                <Icon className="size-3.5 shrink-0" />
+            )}
         </span>
     );
 }
@@ -340,32 +343,38 @@ function MentionMenu({
             onMouseDown={stopCanvasInteraction}
             onClick={(event) => event.stopPropagation()}
         >
-            {references.length ? references.map((reference, index) => (
-                <button
-                    key={reference.id}
-                    type="button"
-                    className="flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition"
-                    style={{ background: index === activeIndex ? theme.toolbar.activeBg : "transparent", color: index === activeIndex ? theme.toolbar.activeText : theme.node.text }}
-                    onPointerDown={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        selectReference(reference);
-                    }}
-                    onClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        selectReference(reference);
-                    }}
-                >
-                    <ReferencePreview reference={reference} />
-                    <span className="min-w-0 flex-1">
-                        <span className="block font-medium">{reference.label}</span>
-                        <span className="block truncate opacity-65">{reference.text || reference.title}</span>
-                    </span>
-                </button>
-            )) : (
+            {references.length ? (
+                references.map((reference, index) => (
+                    <button
+                        key={reference.id}
+                        type="button"
+                        className="flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition"
+                        style={{ background: index === activeIndex ? theme.toolbar.activeBg : "transparent", color: index === activeIndex ? theme.toolbar.activeText : theme.node.text }}
+                        onPointerDown={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            selectReference(reference);
+                        }}
+                        onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            selectReference(reference);
+                        }}
+                    >
+                        <ReferencePreview reference={reference} />
+                        <span className="min-w-0 flex-1">
+                            <span className="block font-medium">{reference.label}</span>
+                            <span className="block truncate opacity-65">{reference.text || reference.title}</span>
+                        </span>
+                    </button>
+                ))
+            ) : (
                 <div className="px-3 py-4 text-center">
-                    <div className="mb-2 flex items-center justify-center gap-2 opacity-55"><ImageIcon className="size-4" /><Video className="size-4" /><FileText className="size-4" /></div>
+                    <div className="mb-2 flex items-center justify-center gap-2 opacity-55">
+                        <ImageIcon className="size-4" />
+                        <Video className="size-4" />
+                        <FileText className="size-4" />
+                    </div>
                     <div className="text-xs font-medium">{hasReferences ? "没有匹配的画布资源" : "画布中暂无可引用资源"}</div>
                     <div className="mt-1 text-[11px] opacity-55">{hasReferences ? "换个关键词继续搜索" : "先生成或上传图片、视频，再输入 @ 引用"}</div>
                 </div>

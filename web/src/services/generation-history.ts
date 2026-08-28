@@ -186,7 +186,22 @@ export async function saveGenerationRecord(ownerId: string, kind: GenerationKind
 
 export function saveCanvasImageGenerationRecord(
     ownerId: string,
-    input: { id?: string; prompt: string; model: string; size?: string; quality?: string; images: UploadedImage[]; imageCount?: number; failCount?: number; status?: GenerationRecordStatus; durationMs?: number; canvasId: string; requestIds?: string[]; imageRequestIds?: string[]; failedRequestErrors?: Record<string, string> },
+    input: {
+        id?: string;
+        prompt: string;
+        model: string;
+        size?: string;
+        quality?: string;
+        images: UploadedImage[];
+        imageCount?: number;
+        failCount?: number;
+        status?: GenerationRecordStatus;
+        durationMs?: number;
+        canvasId: string;
+        requestIds?: string[];
+        imageRequestIds?: string[];
+        failedRequestErrors?: Record<string, string>;
+    },
 ) {
     const id = input.id || nanoid();
     const current = imageLogs.get(logKey(ownerId, id));
@@ -274,11 +289,7 @@ export async function applyGenerationRecordSnapshot(ownerId: string, records: Wo
         if (change.deleted) target.delete(change.objectId);
         else target.set(change.objectId, { ...change.data, id: change.objectId, ownerId, version: change.version });
     });
-    const projects = new Map(
-        records
-            .filter((record) => record.domain === "canvas_project" && !record.deleted && record.data)
-            .map((record) => [record.objectId, { ...record.data, id: record.objectId } as CanvasHistoryProject]),
-    );
+    const projects = new Map(records.filter((record) => record.domain === "canvas_project" && !record.deleted && record.data).map((record) => [record.objectId, { ...record.data, id: record.objectId } as CanvasHistoryProject]));
     pending.forEach((change) => {
         if (change.domain !== "canvas_project") return;
         if (change.deleted) projects.delete(change.objectId);
@@ -346,7 +357,7 @@ function canvasNodeGenerationLog(project: CanvasHistoryProject, node: CanvasHist
     const prompt = metadata?.prompt?.trim() || "";
     if (!project.id || !node.id || !storageKey || (!prompt && !metadata?.model) || metadata?.status === "loading" || metadata?.status === "error") return null;
     const createdAt = Date.parse(project.updatedAt || project.createdAt || "") || 0;
-    const shared = { createdAt, title: node.title || prompt.slice(0, 12) || "未命名", prompt, model: metadata?.model || "", durationMs: metadata?.durationMs || 0, status: "成功", canvasId: project.id, source: "canvas" };
+    const shared = { createdAt, title: node.title || prompt.slice(0, 12) || "未命名", prompt, model: metadata?.model || "", durationMs: metadata?.durationMs || 0, status: "成功" as const, canvasId: project.id, source: "canvas" };
     if (node.type === "image") return { ...shared, kind: "image", successCount: 1, failCount: 0, imageCount: 1, size: metadata?.size || "", quality: metadata?.quality || "", images: [{ dataUrl: "", storageKey }] };
     if (node.type === "video") return { ...shared, kind: "video", size: metadata?.size || "", resolution: metadata?.vquality || "", seconds: metadata?.seconds || "", video: { url: "", storageKey } };
     return null;
@@ -441,7 +452,9 @@ async function recoverPendingVideoLog(ownerId: string, log: StoredVideoLog) {
         const task = await waitForGenerationTaskRecovery(log.requestId, (item) => Boolean(item.storageKeys?.length || item.upstreamTaskId));
         const recovered = task.storageKeys?.[0] ? { storageKey: task.storageKeys[0], mimeType: "video/mp4" } : await resumeVideoGeneration(log.model || task.model, log.requestId, task.upstreamTaskId || "");
         const video = await storeGeneratedVideo(recovered);
-        const [width, height] = videoOutputSize(log.resolution || "720p", log.size || "16:9").split("x").map(Number);
+        const [width, height] = videoOutputSize(log.resolution || "720p", log.size || "16:9")
+            .split("x")
+            .map(Number);
         const durationMs = Math.max(log.durationMs || 0, Date.now() - (log.createdAt || Date.now()));
         await saveGenerationRecord(ownerId, "video", {
             ...log,

@@ -127,7 +127,15 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
             </div>
 
             <div className={`mb-2 grid min-w-0 cursor-default items-center gap-2 ${mode === "image" || mode === "video" || mode === "audio" ? "grid-cols-[minmax(0,1fr)_148px]" : "grid-cols-1"}`} onMouseDown={(event) => event.stopPropagation()}>
-                <ModelPicker className="canvas-compact-control h-10" config={config} value={config.model} onChange={(model) => onConfigChange(node.id, mode === "video" ? canvasVideoModelPatch(config, model, managedModels, pricingRules) : { model })} capability={mode} onMissingConfig={() => openConfigDialog(true)} fullWidth />
+                <ModelPicker
+                    className="canvas-compact-control h-10"
+                    config={config}
+                    value={config.model}
+                    onChange={(model) => onConfigChange(node.id, mode === "video" ? canvasVideoModelPatch(config, model, managedModels, pricingRules) : { model })}
+                    capability={mode}
+                    onMissingConfig={() => openConfigDialog(true)}
+                    fullWidth
+                />
                 {mode === "video" ? (
                     <CanvasVideoSettingsPopover
                         config={config}

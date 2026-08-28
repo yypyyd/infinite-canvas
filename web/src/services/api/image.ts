@@ -141,10 +141,7 @@ function parseImagePayload(payload: ImageApiResponse) {
     if (typeof payload.code === "number" && payload.code !== 0) {
         throw new Error(payload.msg || "请求失败");
     }
-    const images =
-        payload.data
-            ?.map(parseStoredImage)
-            .filter((value): value is NonNullable<ReturnType<typeof parseStoredImage>> => Boolean(value)) || [];
+    const images = payload.data?.map(parseStoredImage).filter((value): value is NonNullable<ReturnType<typeof parseStoredImage>> => Boolean(value)) || [];
 
     if (images.length === 0) {
         throw new Error(readImagePayloadError(payload) || "上游没有返回图片");

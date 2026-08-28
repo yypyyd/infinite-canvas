@@ -87,20 +87,40 @@ func TestDataConsistencyRepairsRecheckCurrentState(t *testing.T) {
 		{ID: "consistency-file-state", OrganizationID: "organization-a", UserID: "user-a", StorageKey: "image:consistency-state", ObjectKey: "organizations/organization-a/files/state.png", MimeType: "image/png", Size: 10},
 		{ID: "consistency-file-batch", OrganizationID: "organization-a", UserID: "user-a", StorageKey: "image:consistency-batch", ObjectKey: "organizations/organization-a/batch-results/result.png", MimeType: "image/png", Size: 20, UnreferencedAt: workspaceTestNow},
 	}
-	if err := testDB.Create(&files).Error; err != nil { t.Fatal(err) }
+	if err := testDB.Create(&files).Error; err != nil {
+		t.Fatal(err)
+	}
 	dangling := model.UserFileReference{ID: "consistency-reference-dangling", OrganizationID: "organization-a", Domain: "asset", ObjectID: "asset-missing", StorageKey: "image:missing", CreatedAt: workspaceTestNow}
-	if err := testDB.Create(&dangling).Error; err != nil { t.Fatal(err) }
+	if err := testDB.Create(&dangling).Error; err != nil {
+		t.Fatal(err)
+	}
 	item := model.BatchProductionItem{ID: "consistency-batch-item", OrganizationID: "organization-a", JobID: "consistency-job", Status: model.BatchProductionStatusCompleted, ResultStorageKey: "image:consistency-batch"}
-	if err := testDB.Create(&item).Error; err != nil { t.Fatal(err) }
+	if err := testDB.Create(&item).Error; err != nil {
+		t.Fatal(err)
+	}
 
-	if repaired, err := RepairDanglingFileReference(dangling.ID); err != nil || !repaired { t.Fatalf("repair dangling reference: repaired=%v err=%v", repaired, err) }
-	if repaired, err := RepairUserFileReferenceState(files[0].ID, workspaceTestNow); err != nil || !repaired { t.Fatalf("repair file state: repaired=%v err=%v", repaired, err) }
-	if repaired, err := RepairBatchProductionResultReference(item.ID, workspaceTestNow); err != nil || !repaired { t.Fatalf("repair batch reference: repaired=%v err=%v", repaired, err) }
+	if repaired, err := RepairDanglingFileReference(dangling.ID); err != nil || !repaired {
+		t.Fatalf("repair dangling reference: repaired=%v err=%v", repaired, err)
+	}
+	if repaired, err := RepairUserFileReferenceState(files[0].ID, workspaceTestNow); err != nil || !repaired {
+		t.Fatalf("repair file state: repaired=%v err=%v", repaired, err)
+	}
+	if repaired, err := RepairBatchProductionResultReference(item.ID, workspaceTestNow); err != nil || !repaired {
+		t.Fatalf("repair batch reference: repaired=%v err=%v", repaired, err)
+	}
 
 	var danglingCount, batchReferenceCount int64
-	if err := testDB.Model(&model.UserFileReference{}).Where("id = ?", dangling.ID).Count(&danglingCount).Error; err != nil { t.Fatal(err) }
-	if err := testDB.Model(&model.UserFileReference{}).Where("organization_id = ? AND domain = ? AND object_id = ? AND storage_key = ?", item.OrganizationID, "batch_result", item.ID, item.ResultStorageKey).Count(&batchReferenceCount).Error; err != nil { t.Fatal(err) }
+	if err := testDB.Model(&model.UserFileReference{}).Where("id = ?", dangling.ID).Count(&danglingCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := testDB.Model(&model.UserFileReference{}).Where("organization_id = ? AND domain = ? AND object_id = ? AND storage_key = ?", item.OrganizationID, "batch_result", item.ID, item.ResultStorageKey).Count(&batchReferenceCount).Error; err != nil {
+		t.Fatal(err)
+	}
 	var state model.UserFile
-	if err := testDB.First(&state, "id = ?", files[0].ID).Error; err != nil { t.Fatal(err) }
-	if danglingCount != 0 || batchReferenceCount != 1 || state.UnreferencedAt != workspaceTestNow { t.Fatalf("unexpected repair state: dangling=%d batch=%d file=%#v", danglingCount, batchReferenceCount, state) }
+	if err := testDB.First(&state, "id = ?", files[0].ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if danglingCount != 0 || batchReferenceCount != 1 || state.UnreferencedAt != workspaceTestNow {
+		t.Fatalf("unexpected repair state: dangling=%d batch=%d file=%#v", danglingCount, batchReferenceCount, state)
+	}
 }

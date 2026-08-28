@@ -4,9 +4,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/robfig/cron/v3"
 	"github.com/yypyyd/infinite-canvas/model"
 	"github.com/yypyyd/infinite-canvas/repository"
-	"github.com/robfig/cron/v3"
 )
 
 const defaultPromptSyncCron = "*/5 * * * *"

@@ -91,7 +91,10 @@ function LoginContent() {
                 message.error("两次输入的密码不一致");
                 return;
             }
-            const user = mode === "register" ? await register({ username: values.username, email: values.email || "", code: values.code || "", password: values.password, referralCode: values.referralCode?.trim() || referralFromUrl || undefined }) : await login({ username: values.username, password: values.password });
+            const user =
+                mode === "register"
+                    ? await register({ username: values.username, email: values.email || "", code: values.code || "", password: values.password, referralCode: values.referralCode?.trim() || referralFromUrl || undefined })
+                    : await login({ username: values.username, password: values.password });
             message.success(mode === "register" ? "注册成功" : "登录成功");
             router.replace(redirect);
             router.refresh();
@@ -184,11 +187,7 @@ function LoginContent() {
                                     <Input maxLength={32} autoComplete="off" placeholder="例如：A1B2C3D4" />
                                 </Form.Item>
                             ) : null}
-                            <Form.Item
-                                name="password"
-                                label={<span className="font-medium text-neutral-800 dark:text-neutral-200">密码</span>}
-                                rules={[{ required: true, message: "请输入密码" }]}
-                            >
+                            <Form.Item name="password" label={<span className="font-medium text-neutral-800 dark:text-neutral-200">密码</span>} rules={[{ required: true, message: "请输入密码" }]}>
                                 <Input.Password prefix={<LockOutlined />} autoComplete={mode === "register" ? "new-password" : "current-password"} />
                             </Form.Item>
                             {mode === "register" ? (

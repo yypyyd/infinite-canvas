@@ -175,11 +175,17 @@ export default function VideoPage() {
         const unsupported = selectedFiles.filter((file) => (file.type.startsWith("image/") ? !referenceCapabilities.image : file.type.startsWith("video/") ? !referenceCapabilities.video : isSupportedAudioFile(file) ? !referenceCapabilities.audio : true));
         if (unsupported.length) message.warning("已忽略当前模型不支持的参考素材");
         let remainingMedia = referenceCapabilities.maxMedia > 0 ? Math.max(0, referenceCapabilities.maxMedia - references.length - videoReferences.length - audioReferences.length) : Number.POSITIVE_INFINITY;
-        const imageFiles = referenceCapabilities.image ? selectedFiles.filter((file) => file.type.startsWith("image/") && file.size <= VIDEO_REFERENCE_LIMITS.imageMaxBytes).slice(0, Math.min(Math.max(0, imageReferenceLimit - references.length), remainingMedia)) : [];
+        const imageFiles = referenceCapabilities.image
+            ? selectedFiles.filter((file) => file.type.startsWith("image/") && file.size <= VIDEO_REFERENCE_LIMITS.imageMaxBytes).slice(0, Math.min(Math.max(0, imageReferenceLimit - references.length), remainingMedia))
+            : [];
         remainingMedia -= imageFiles.length;
-        const videoFiles = referenceCapabilities.video ? selectedFiles.filter((file) => file.type.startsWith("video/") && file.size <= VIDEO_REFERENCE_LIMITS.videoMaxBytes).slice(0, Math.min(Math.max(0, referenceCapabilities.maxVideos - videoReferences.length), remainingMedia)) : [];
+        const videoFiles = referenceCapabilities.video
+            ? selectedFiles.filter((file) => file.type.startsWith("video/") && file.size <= VIDEO_REFERENCE_LIMITS.videoMaxBytes).slice(0, Math.min(Math.max(0, referenceCapabilities.maxVideos - videoReferences.length), remainingMedia))
+            : [];
         remainingMedia -= videoFiles.length;
-        const audioFiles = referenceCapabilities.audio ? selectedFiles.filter((file) => isSupportedAudioFile(file) && file.size <= VIDEO_REFERENCE_LIMITS.audioMaxBytes).slice(0, Math.min(Math.max(0, referenceCapabilities.maxAudios - audioReferences.length), remainingMedia)) : [];
+        const audioFiles = referenceCapabilities.audio
+            ? selectedFiles.filter((file) => isSupportedAudioFile(file) && file.size <= VIDEO_REFERENCE_LIMITS.audioMaxBytes).slice(0, Math.min(Math.max(0, referenceCapabilities.maxAudios - audioReferences.length), remainingMedia))
+            : [];
         if (referenceCapabilities.image && selectedFiles.some((file) => file.type.startsWith("image/") && file.size > VIDEO_REFERENCE_LIMITS.imageMaxBytes)) message.warning("已忽略超过 20MB 的参考图");
         if (referenceCapabilities.video && selectedFiles.some((file) => file.type.startsWith("video/") && file.size > VIDEO_REFERENCE_LIMITS.videoMaxBytes)) message.warning("已忽略超过 200MB 的参考视频");
         if (referenceCapabilities.audio && selectedFiles.some((file) => isSupportedAudioFile(file) && file.size > VIDEO_REFERENCE_LIMITS.audioMaxBytes)) message.warning("已忽略超过 50MB 的参考音频");
@@ -649,7 +655,19 @@ export default function VideoPage() {
     );
 }
 
-function GenerationSettings({ config, model, updateConfig, onModelChange, openConfigDialog }: { config: AiConfig; model: string; updateConfig: UpdateAiConfig; onModelChange: (model: string) => void; openConfigDialog: (shouldPromptContinue?: boolean) => void }) {
+function GenerationSettings({
+    config,
+    model,
+    updateConfig,
+    onModelChange,
+    openConfigDialog,
+}: {
+    config: AiConfig;
+    model: string;
+    updateConfig: UpdateAiConfig;
+    onModelChange: (model: string) => void;
+    openConfigDialog: (shouldPromptContinue?: boolean) => void;
+}) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
 
     return (
@@ -795,11 +813,7 @@ function LogPanel({
 
 function LogCard({ log, selected, active, onSelectedChange, onClick }: { log: GenerationLog; selected: boolean; active: boolean; onSelectedChange: (checked: boolean) => void; onClick: () => void }) {
     return (
-        <button
-            type="button"
-            className={`block w-full rounded-md px-2 py-2.5 text-left transition ${active ? "bg-muted text-foreground" : "hover:bg-muted/60"}`}
-            onClick={onClick}
-        >
+        <button type="button" className={`block w-full rounded-md px-2 py-2.5 text-left transition ${active ? "bg-muted text-foreground" : "hover:bg-muted/60"}`} onClick={onClick}>
             <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2">
                 <Checkbox className="mt-0.5" checked={selected} onClick={(event) => event.stopPropagation()} onChange={(event) => onSelectedChange(event.target.checked)} />
                 <div className="min-w-0">
@@ -811,7 +825,11 @@ function LogCard({ log, selected, active, onSelectedChange, onClick }: { log: Ge
                     </div>
                 </div>
                 <div className="grid justify-items-end gap-2">
-                    <Tag icon={log.status === "生成中" ? <LoaderCircle className="size-3 animate-spin" /> : undefined} className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none" color={log.status === "成功" ? "blue" : log.status === "生成中" ? "processing" : "red"}>
+                    <Tag
+                        icon={log.status === "生成中" ? <LoaderCircle className="size-3 animate-spin" /> : undefined}
+                        className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none"
+                        color={log.status === "成功" ? "blue" : log.status === "生成中" ? "processing" : "red"}
+                    >
                         {log.status}
                     </Tag>
                     <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none" color="green">

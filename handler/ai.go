@@ -234,7 +234,13 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		FailError(w, err)
 		return
 	}
-	credits, err := service.CalculateRequestCreditsForGroup(pricingRequest, user.Group)
+	pricingResolver, err := service.NewPricingResolver(user.ID, user.Group)
+	if err != nil {
+		log.Printf("AI proxy load pricing failed: model=%s path=%s err=%v", requestMeta.ModelName, path, err)
+		FailError(w, err)
+		return
+	}
+	pricingResult, err := pricingResolver.Resolve(pricingRequest)
 	if err != nil {
 		log.Printf("AI proxy calculate credits failed: model=%s path=%s err=%v", requestMeta.ModelName, path, err)
 		FailError(w, err)
@@ -256,18 +262,19 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		return
 	}
 	task, err := service.BeginGenerationTask(service.GenerationTaskInput{
-		UserID:         user.ID,
-		OrganizationID: user.OrganizationID,
-		RequestID:      strings.TrimSpace(r.Header.Get("Idempotency-Key")),
-		Model:          requestMeta.ModelName,
-		UpstreamModel:  selection.Model.UpstreamModel,
-		ChannelName:    selection.Channel.Name,
-		Path:           path,
-		Modality:       pricingRequest.Modality,
-		Operation:      pricingRequest.Operation,
-		ResolutionTier: pricingRequest.ResolutionTier,
-		Quantity:       pricingRequest.Quantity,
-		Credits:        credits,
+		UserID:          user.ID,
+		OrganizationID:  user.OrganizationID,
+		RequestID:       strings.TrimSpace(r.Header.Get("Idempotency-Key")),
+		Model:           requestMeta.ModelName,
+		UpstreamModel:   selection.Model.UpstreamModel,
+		ChannelName:     selection.Channel.Name,
+		Path:            path,
+		Modality:        pricingRequest.Modality,
+		Operation:       pricingRequest.Operation,
+		ResolutionTier:  pricingRequest.ResolutionTier,
+		Quantity:        pricingRequest.Quantity,
+		Credits:         pricingResult.Credits,
+		PricingSnapshot: pricingResult.Snapshot,
 	})
 	if err != nil {
 		log.Printf("AI proxy create generation task failed: user=%s model=%s err=%v", user.ID, requestMeta.ModelName, err)

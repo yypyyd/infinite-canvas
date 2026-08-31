@@ -1047,7 +1047,11 @@ func requestAgentCompletion(ctx context.Context, run model.AgentRun, userGroup, 
 	if err != nil {
 		return completion, err
 	}
-	credits, err := CalculateRequestCreditsForGroup(pricingRequest, userGroup)
+	pricingResolver, err := NewPricingResolver(run.UserID, userGroup)
+	if err != nil {
+		return completion, err
+	}
+	pricingResult, err := pricingResolver.Resolve(pricingRequest)
 	if err != nil {
 		return completion, err
 	}
@@ -1055,7 +1059,7 @@ func requestAgentCompletion(ctx context.Context, run model.AgentRun, userGroup, 
 		UserID: run.UserID, OrganizationID: run.OrganizationID, RequestID: requestID,
 		Model: run.Model, UpstreamModel: selection.Model.UpstreamModel, ChannelName: selection.Channel.Name,
 		Path: "/chat/completions", Modality: pricingRequest.Modality, Operation: pricingRequest.Operation,
-		Quantity: pricingRequest.Quantity, Credits: credits,
+		Quantity: pricingRequest.Quantity, Credits: pricingResult.Credits, PricingSnapshot: pricingResult.Snapshot,
 	})
 	if err != nil {
 		return completion, err

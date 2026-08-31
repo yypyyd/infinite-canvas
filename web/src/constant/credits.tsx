@@ -23,8 +23,21 @@ export type PricingRule = {
     enabled?: boolean;
 };
 
-export function requestCreditCost(options: {
+export type UserSpecPricing = {
+    model: string;
+    modality: string;
+    operation: string;
+    unit: string;
+    resolutionTier?: string;
+    ratio: number;
+};
+
+export type UserSpecPricingIndex = Record<string, number>;
+
+type CreditQuoteOptions = {
     pricingRules?: PricingRule[];
+    specPricing?: UserSpecPricing[] | UserSpecPricingIndex;
+    currentGroupRatio?: number | null;
     groupRatios?: Record<string, number>;
     userGroup?: string;
     model: string;
@@ -35,29 +48,33 @@ export function requestCreditCost(options: {
     size?: string;
     resolution?: string;
     resolutionTier?: string;
-}) {
+};
+
+export function requestCreditCost(options: CreditQuoteOptions) {
     const quote = requestCreditQuote(options);
     return quote.matched ? quote.credits : 0;
 }
 
-export function requestCreditQuote(options: {
-    pricingRules?: PricingRule[];
-    groupRatios?: Record<string, number>;
-    userGroup?: string;
-    model: string;
-    modality: string;
-    operation?: string;
-    unit?: string;
-    count?: string | number;
-    size?: string;
-    resolution?: string;
-    resolutionTier?: string;
-}) {
+export function requestCreditQuote(options: CreditQuoteOptions) {
     const request = normalizePricingRequest(options);
     const rule = selectPricingRule(options.pricingRules || [], request);
     if (!rule) return { credits: 0, matched: false };
-    const credits = calculateRuleCredits(rule, request.quantity, groupRatio(options.groupRatios, options.userGroup));
+    const ratio = userSpecRatio(options.specPricing, request) ?? positiveRatio(options.currentGroupRatio) ?? groupRatio(options.groupRatios, options.userGroup);
+    const credits = calculateRuleCredits(rule, request.quantity, ratio);
     return { credits: Math.max(credits, Math.max(0, Number(rule.minCredits) || 0)), matched: true };
+}
+
+export function hasUserSpecPricing(items: UserSpecPricing[] | UserSpecPricingIndex | undefined, rule: Pick<PricingRule, "model" | "modality" | "operation" | "unit" | "resolutionTier">) {
+    return userSpecPricingRatio(items, rule) !== null;
+}
+
+export function userSpecPricingRatio(items: UserSpecPricing[] | UserSpecPricingIndex | undefined, rule: Pick<PricingRule, "model" | "modality" | "operation" | "unit" | "resolutionTier">) {
+    return userSpecRatio(items, normalizeRule(rule as PricingRule));
+}
+
+export function pricingSpecKey(rule: Pick<PricingRule, "model" | "modality" | "operation" | "unit" | "resolutionTier">) {
+    const normalized = normalizeRule(rule as PricingRule);
+    return [normalized.model, normalized.modality, normalized.operation, normalized.unit, normalized.resolutionTier].join("\u0000");
 }
 
 type NormalizedCreditRequest = {
@@ -123,12 +140,31 @@ function calculateRuleCredits(rule: PricingRule, quantity: number, ratio: number
     return Math.ceil((Number(rule.credits) || 0) * quantity * normalizedRatio);
 }
 
+function userSpecRatio(items: UserSpecPricing[] | UserSpecPricingIndex | undefined, request: NormalizedCreditRequest) {
+    if (items && !Array.isArray(items)) {
+        const ratio = Number(items[[request.model, request.modality, request.operation, request.unit, request.resolutionTier].join("\u0000")]);
+        return Number.isFinite(ratio) && ratio > 0 && ratio <= 1 ? ratio : null;
+    }
+    for (const item of items || []) {
+        const ratio = Number(item.ratio);
+        if (!Number.isFinite(ratio) || ratio <= 0 || ratio > 1) continue;
+        const rule = normalizeRule({ ...item, credits: 0 });
+        if (rule.model === request.model && rule.modality === request.modality && rule.operation === request.operation && rule.unit === request.unit && rule.resolutionTier === request.resolutionTier) return ratio;
+    }
+    return null;
+}
+
 function groupRatio(items?: Record<string, number>, userGroup?: string) {
     const group = normalizeToken(userGroup || "default");
     const value = Number(items?.[group]);
     if (value > 0) return value;
     const defaultValue = Number(items?.default);
     return defaultValue > 0 ? defaultValue : 1;
+}
+
+function positiveRatio(value?: number | null) {
+    const ratio = Number(value);
+    return Number.isFinite(ratio) && ratio > 0 ? ratio : null;
 }
 
 function resolutionTierForRequest(modality: string, size: string, resolution: string) {

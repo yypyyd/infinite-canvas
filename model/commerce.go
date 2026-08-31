@@ -358,12 +358,25 @@ const (
 	BatchProductionReviewRejected BatchProductionReviewStatus = "rejected"
 )
 
+const (
+	BatchProductionOperationGeneration = "generation"
+	BatchProductionOperationEdit       = "edit"
+)
+
+func BatchProductionImageOperation(hasReferences bool) string {
+	if hasReferences {
+		return BatchProductionOperationEdit
+	}
+	return BatchProductionOperationGeneration
+}
+
 type BatchProductionJob struct {
 	ID               string                 `json:"id" gorm:"primaryKey"`
 	OrganizationID   string                 `json:"organizationId" gorm:"index;uniqueIndex:idx_organization_batch_request"`
 	RequestID        string                 `json:"requestId" gorm:"uniqueIndex:idx_organization_batch_request"`
 	RequestHash      string                 `json:"-" gorm:"size:64"`
 	ArchiveToken     string                 `json:"-" gorm:"size:64"`
+	Model            string                 `json:"model" gorm:"not null;default:''"`
 	BrandID          string                 `json:"brandId" gorm:"index"`
 	Name             string                 `json:"name"`
 	Kind             BatchProductionKind    `json:"kind" gorm:"size:24;not null;default:image_pack;index"`
@@ -427,7 +440,10 @@ type BatchProductionItem struct {
 	TemplateVersion     int                            `json:"templateVersion"`
 	TemplateType        ProductionTemplateType         `json:"templateType" gorm:"size:32;not null;default:custom;index"`
 	VariantIndex        int                            `json:"variantIndex" gorm:"not null;default:1"`
+	Operation           string                         `json:"operation" gorm:"size:32;not null;default:''"`
+	ResolutionTier      string                         `json:"resolutionTier" gorm:"size:32;not null;default:''"`
 	EstimatedCredits    int                            `json:"estimatedCredits"`
+	PricingSnapshot     PricingSnapshot                `json:"-" gorm:"serializer:json;type:text"`
 	ErrorCode           BatchProductionErrorCategory   `json:"errorCode" gorm:"size:64;index"`
 	Retryable           bool                           `json:"retryable" gorm:"index"`
 	NextAttemptAt       string                         `json:"nextAttemptAt" gorm:"index"`
@@ -454,6 +470,13 @@ type BatchProductionItem struct {
 	ResultMimeType      string                         `json:"resultMimeType" gorm:"-"`
 	ResultSize          int64                          `json:"resultSize" gorm:"-"`
 	QualityContext      *BatchProductionQualityContext `json:"qualityContext,omitempty" gorm:"-"`
+}
+
+type BatchProductionItemPricing struct {
+	Operation        string
+	ResolutionTier   string
+	EstimatedCredits int
+	PricingSnapshot  PricingSnapshot
 }
 
 type BatchProductionQualityContext struct {

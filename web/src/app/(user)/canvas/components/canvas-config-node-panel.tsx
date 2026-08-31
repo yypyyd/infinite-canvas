@@ -8,6 +8,7 @@ import { ModelPicker } from "@/components/model-picker";
 import { defaultConfig, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { CreditSymbol, requestCreditQuote } from "@/constant/credits";
 import { useUserStore } from "@/stores/use-user-store";
+import { usePricingStore } from "@/stores/use-pricing-store";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { normalizeImageCount } from "@/lib/image-utils";
 import { supportsImageReferences } from "@/lib/image-model-capabilities";
@@ -35,6 +36,8 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
     const groupRatios = useConfigStore((state) => state.publicSettings?.modelChannel.groupRatios);
     const managedModels = useConfigStore((state) => state.publicSettings?.modelChannel.models);
     const userGroup = useUserStore((state) => state.user?.group || "default");
+    const specPricing = usePricingStore((state) => state.specPricing);
+    const currentGroupRatio = usePricingStore((state) => state.groupRatio);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const mode = node.metadata?.generationMode || "image";
@@ -48,6 +51,8 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
     const count = normalizeImageCount(config.count);
     const creditQuote = requestCreditQuote({
         pricingRules,
+        specPricing,
+        currentGroupRatio,
         groupRatios,
         userGroup,
         model: config.model,

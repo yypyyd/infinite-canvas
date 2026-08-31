@@ -11,20 +11,21 @@ import (
 )
 
 type GenerationTaskInput struct {
-	UserID         string
-	OrganizationID string
-	RequestID      string
-	BatchJobID     string
-	BatchItemID    string
-	Model          string
-	UpstreamModel  string
-	ChannelName    string
-	Path           string
-	Modality       string
-	Operation      string
-	ResolutionTier string
-	Quantity       int
-	Credits        int
+	UserID          string
+	OrganizationID  string
+	RequestID       string
+	BatchJobID      string
+	BatchItemID     string
+	Model           string
+	UpstreamModel   string
+	ChannelName     string
+	Path            string
+	Modality        string
+	Operation       string
+	ResolutionTier  string
+	Quantity        int
+	Credits         int
+	PricingSnapshot model.PricingSnapshot
 }
 
 func ListGenerationTasks(q model.Query) (model.GenerationTaskList, error) {
@@ -123,30 +124,30 @@ func BeginGenerationTask(input GenerationTaskInput) (model.GenerationTask, error
 		input.RequestID = newID("request")
 	}
 	task := model.GenerationTask{
-		ID:             newID("task"),
-		UserID:         input.UserID,
-		OrganizationID: input.OrganizationID,
-		RequestID:      input.RequestID,
-		BatchJobID:     strings.TrimSpace(input.BatchJobID),
-		BatchItemID:    strings.TrimSpace(input.BatchItemID),
-		Model:          input.Model,
-		UpstreamModel:  input.UpstreamModel,
-		ChannelName:    input.ChannelName,
-		Path:           input.Path,
-		Modality:       input.Modality,
-		Operation:      input.Operation,
-		ResolutionTier: input.ResolutionTier,
-		Quantity:       input.Quantity,
-		Credits:        input.Credits,
-		CreditSource:   creditSource,
-		Status:         model.GenerationTaskStatusRunning,
-		CreatedAt:      nowText,
-		UpdatedAt:      nowText,
+		ID:              newID("task"),
+		UserID:          input.UserID,
+		OrganizationID:  input.OrganizationID,
+		RequestID:       input.RequestID,
+		BatchJobID:      strings.TrimSpace(input.BatchJobID),
+		BatchItemID:     strings.TrimSpace(input.BatchItemID),
+		Model:           input.Model,
+		UpstreamModel:   input.UpstreamModel,
+		ChannelName:     input.ChannelName,
+		Path:            input.Path,
+		Modality:        input.Modality,
+		Operation:       input.Operation,
+		ResolutionTier:  input.ResolutionTier,
+		Quantity:        input.Quantity,
+		Credits:         input.Credits,
+		PricingSnapshot: input.PricingSnapshot,
+		CreditSource:    creditSource,
+		Status:          model.GenerationTaskStatusRunning,
+		CreatedAt:       nowText,
+		UpdatedAt:       nowText,
 	}
 	var log *model.CreditLog
 	if input.Credits > 0 {
-		extra, _ := json.Marshal(map[string]string{"model": input.Model, "path": input.Path})
-		log = &model.CreditLog{ID: newID("credit"), UserID: input.UserID, OrganizationID: input.OrganizationID, CreditSource: creditSource, Type: model.CreditLogTypeAIConsume, Amount: -input.Credits, Remark: "调用模型 " + input.Model, Extra: string(extra), CreatedAt: nowText}
+		log = &model.CreditLog{ID: newID("credit"), UserID: input.UserID, OrganizationID: input.OrganizationID, CreditSource: creditSource, Type: model.CreditLogTypeAIConsume, Amount: -input.Credits, Remark: "调用模型 " + input.Model, Extra: generationTaskCreditExtra(input.Model, input.Path, input.PricingSnapshot), CreatedAt: nowText}
 	}
 	if task.BatchJobID != "" || task.BatchItemID != "" {
 		if task.BatchJobID == "" || task.BatchItemID == "" {
@@ -181,10 +182,9 @@ func FinishGenerationTask(task model.GenerationTask, status model.GenerationTask
 		task.DurationMs = time.Since(startedAt).Milliseconds()
 	}
 	if status == model.GenerationTaskStatusFailed {
-		extra, _ := json.Marshal(map[string]string{"model": task.Model, "path": task.Path})
 		var log *model.CreditLog
 		if task.Credits > 0 {
-			log = &model.CreditLog{ID: newID("credit"), UserID: task.UserID, OrganizationID: task.OrganizationID, CreditSource: task.CreditSource, Type: model.CreditLogTypeAIRefund, Amount: task.Credits, Remark: "模型调用失败返还 " + task.Model, Extra: string(extra), CreatedAt: task.UpdatedAt}
+			log = &model.CreditLog{ID: newID("credit"), UserID: task.UserID, OrganizationID: task.OrganizationID, CreditSource: task.CreditSource, Type: model.CreditLogTypeAIRefund, Amount: task.Credits, Remark: "模型调用失败返还 " + task.Model, Extra: generationTaskCreditExtra(task.Model, task.Path, task.PricingSnapshot), CreatedAt: task.UpdatedAt}
 		}
 		return retryGenerationTaskWrite(func() error {
 			_, err := repository.FailGenerationTaskAndRefund(task, log)
@@ -192,6 +192,16 @@ func FinishGenerationTask(task model.GenerationTask, status model.GenerationTask
 		})
 	}
 	return retryGenerationTaskWrite(func() error { return repository.CompleteGenerationTask(task) })
+}
+
+func generationTaskCreditExtra(modelName string, path string, snapshot model.PricingSnapshot) string {
+	extra := map[string]any{"model": modelName, "path": path}
+	if snapshot.Source != "" {
+		extra["pricingSource"] = snapshot.Source
+		extra["effectiveRatio"] = snapshot.EffectiveRatio
+	}
+	value, _ := json.Marshal(extra)
+	return string(value)
 }
 
 // UpdateGenerationTaskChannel records a failover channel before the next upstream request starts.

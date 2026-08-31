@@ -1,6 +1,6 @@
 "use client";
 
-import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
+import { DeleteOutlined, EditOutlined, PercentageOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { ProTable, type ProColumns } from "@ant-design/pro-components";
 import { Avatar, Button, Card, Col, Divider, Flex, Form, Input, InputNumber, Modal, Row, Select, Space, Tag, Tooltip, Typography } from "antd";
 import dayjs from "dayjs";
@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 
 import type { AdminUser } from "@/services/api/admin";
 import { useConfigStore } from "@/stores/use-config-store";
+import { UserSpecPricingDrawer } from "./components/user-spec-pricing-drawer";
 import { useAdminUsers } from "./use-admin-users";
 
 type UserFormValues = Partial<AdminUser> & { password?: string };
@@ -35,6 +36,7 @@ export default function AdminUsersPage() {
     const [keywordText, setKeywordText] = useState(keyword);
     const [editingUser, setEditingUser] = useState<Partial<AdminUser> | null>(null);
     const [deletingUser, setDeletingUser] = useState<AdminUser | null>(null);
+    const [pricingUser, setPricingUser] = useState<AdminUser | null>(null);
 
     useEffect(() => setKeywordText(keyword), [keyword]);
 
@@ -125,10 +127,13 @@ export default function AdminUsersPage() {
         {
             title: "操作",
             key: "actions",
-            width: 96,
+            width: 190,
             align: "right",
             render: (_, item) => (
                 <Space size={4}>
+                    <Button type="text" size="small" icon={<PercentageOutlined />} onClick={() => setPricingUser(item)}>
+                        规格优惠
+                    </Button>
                     <Tooltip title="编辑">
                         <Button type="text" size="small" icon={<EditOutlined />} onClick={() => setEditingUser(item)} />
                     </Tooltip>
@@ -287,6 +292,8 @@ export default function AdminUsersPage() {
             >
                 确定删除「{deletingUser?.displayName || deletingUser?.username}」吗？删除后该账号将无法继续登录。
             </Modal>
+
+            <UserSpecPricingDrawer user={pricingUser} open={Boolean(pricingUser)} onClose={() => setPricingUser(null)} />
         </main>
     );
 }

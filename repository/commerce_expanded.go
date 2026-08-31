@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-func CreateExpandedBatchProductionJob(job model.BatchProductionJob, scopes []model.BatchProductionProductScope, selections []model.BatchProductionTemplateSelection, itemEstimatedCredits map[string]int, auditLogs ...model.OrganizationAuditLog) (model.BatchProductionJob, error) {
+func CreateExpandedBatchProductionJob(job model.BatchProductionJob, scopes []model.BatchProductionProductScope, selections []model.BatchProductionTemplateSelection, itemPricing map[string]model.BatchProductionItemPricing, auditLogs ...model.OrganizationAuditLog) (model.BatchProductionJob, error) {
 	db, err := DB()
 	if err != nil {
 		return job, err
@@ -73,12 +73,12 @@ func CreateExpandedBatchProductionJob(job model.BatchProductionJob, scopes []mod
 		for _, sku := range selectedSKUs {
 			for selectionIndex := range selections {
 				selection := &selections[selectionIndex]
-				estimatedCredits, ok := itemEstimatedCredits[fmt.Sprintf("%s\x00%d", sku.ID, selection.SelectionIndex)]
-				if !ok {
+				pricing, ok := itemPricing[fmt.Sprintf("%s\x00%d", sku.ID, selection.SelectionIndex)]
+				if !ok || !validBatchProductionItemPricing(job, pricing) {
 					return errors.New("batch production item estimate is missing")
 				}
 				for variant := 1; variant <= selection.Quantity; variant++ {
-					items = append(items, model.BatchProductionItem{ID: fmt.Sprintf("%s-item-%d", job.ID, len(items)+1), OrganizationID: job.OrganizationID, JobID: job.ID, ProductID: sku.ProductID, SKUID: sku.ID, TemplateSelectionID: selection.ID, TemplateID: selection.TemplateID, TemplateVersion: selection.TemplateVersion, TemplateType: selection.TemplateType, VariantIndex: variant, EstimatedCredits: estimatedCredits, Status: model.BatchProductionStatusQueued, RunNumber: 1, CreatedAt: job.CreatedAt, UpdatedAt: job.UpdatedAt})
+					items = append(items, model.BatchProductionItem{ID: fmt.Sprintf("%s-item-%d", job.ID, len(items)+1), OrganizationID: job.OrganizationID, JobID: job.ID, ProductID: sku.ProductID, SKUID: sku.ID, TemplateSelectionID: selection.ID, TemplateID: selection.TemplateID, TemplateVersion: selection.TemplateVersion, TemplateType: selection.TemplateType, VariantIndex: variant, Operation: pricing.Operation, ResolutionTier: pricing.ResolutionTier, EstimatedCredits: pricing.EstimatedCredits, PricingSnapshot: pricing.PricingSnapshot, Status: model.BatchProductionStatusQueued, RunNumber: 1, CreatedAt: job.CreatedAt, UpdatedAt: job.UpdatedAt})
 				}
 			}
 		}
@@ -149,20 +149,32 @@ func CreateExpandedBatchProductionJob(job model.BatchProductionJob, scopes []mod
 			items[index].ProductSnapshotID, items[index].SKUSnapshotID = productSnapshots[items[index].ProductID], skuSnapshots[items[index].SKUID]
 		}
 		inputStorageKeys := []string{}
+		var brand *model.Brand
 		if job.BrandID != "" {
-			var brand model.Brand
-			if err := tx.Where("organization_id = ? AND id = ?", job.OrganizationID, job.BrandID).First(&brand).Error; err != nil {
+			var saved model.Brand
+			if err := tx.Where("organization_id = ? AND id = ?", job.OrganizationID, job.BrandID).First(&saved).Error; err != nil {
 				return err
 			}
-			brandID, err := appendSnapshot("brand", brand.ID, brand)
+			brand = &saved
+			brandID, err := appendSnapshot("brand", saved.ID, saved)
 			if err != nil {
 				return err
 			}
-			if brand.LogoStorageKey != "" {
-				inputStorageKeys = append(inputStorageKeys, brand.LogoStorageKey)
+			if saved.LogoStorageKey != "" {
+				inputStorageKeys = append(inputStorageKeys, saved.LogoStorageKey)
 			}
 			for index := range items {
 				items[index].BrandSnapshotID = brandID
+			}
+		}
+		selectedSKUByID := make(map[string]model.ProductSKU, len(selectedSKUs))
+		for _, sku := range selectedSKUs {
+			selectedSKUByID[sku.ID] = sku
+		}
+		for _, item := range items {
+			sku := selectedSKUByID[item.SKUID]
+			if item.Operation != model.BatchProductionImageOperation(batchProductionHasReferences(brand, &sku)) {
+				return errors.New("batch production input references changed during creation")
 			}
 		}
 		if err := tx.Create(&job).Error; err != nil {

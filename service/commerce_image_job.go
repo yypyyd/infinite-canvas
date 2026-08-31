@@ -26,7 +26,7 @@ func CreateBatchProductionJob(user model.AuthUser, input model.CreateBatchProduc
 	if input.RequestID == "" || len(input.RequestID) > 128 || input.Name == "" || len(input.Name) > 200 {
 		return model.BatchProductionJob{}, safeMessageError{message: "任务请求编号或名称不能为空或过长"}
 	}
-	resolved, err := resolveImageProduction(organization.ID, user.Group, input)
+	resolved, err := resolveImageProduction(organization.ID, user.ID, user.Group, input)
 	if err != nil {
 		return model.BatchProductionJob{}, err
 	}
@@ -55,8 +55,8 @@ func CreateBatchProductionJob(user model.AuthUser, input model.CreateBatchProduc
 		return existing, nil
 	}
 	timestamp, id := now(), newID("batch")
-	job := model.BatchProductionJob{ID: id, OrganizationID: organization.ID, RequestID: input.RequestID, RequestHash: requestHash, ArchiveToken: newID("archive"), BrandID: normalized.BrandID, Name: input.Name, Kind: "image_pack", ProductIDs: normalized.ProductIDs, Status: model.BatchProductionStatusQueued, CreatedBy: user.ID, CreatedAt: timestamp, UpdatedAt: timestamp}
-	result, err := repository.CreateExpandedBatchProductionJob(job, normalized.ProductScopes, resolved.Selections, resolved.ItemEstimatedCredits, newAuditLog(user.ID, organization.ID, "batch.create", "batch_job", id, map[string]any{"name": input.Name, "items": resolved.Preflight.TotalItems}, timestamp))
+	job := model.BatchProductionJob{ID: id, OrganizationID: organization.ID, RequestID: input.RequestID, RequestHash: requestHash, ArchiveToken: newID("archive"), Model: resolved.Model, BrandID: normalized.BrandID, Name: input.Name, Kind: "image_pack", ProductIDs: normalized.ProductIDs, Status: model.BatchProductionStatusQueued, CreatedBy: user.ID, CreatedAt: timestamp, UpdatedAt: timestamp}
+	result, err := repository.CreateExpandedBatchProductionJob(job, normalized.ProductScopes, resolved.Selections, resolved.ItemPricing, newAuditLog(user.ID, organization.ID, "batch.create", "batch_job", id, map[string]any{"name": input.Name, "items": resolved.Preflight.TotalItems}, timestamp))
 	if errors.Is(err, repository.ErrBatchProductionItemsTooLarge) {
 		return result, safeMessageError{message: "单个批量任务最多生成 5000 个生产项"}
 	}

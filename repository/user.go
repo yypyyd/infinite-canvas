@@ -184,6 +184,9 @@ func DeleteUser(id string) error {
 		if err := tx.Where("user_id = ?", id).Delete(&model.UserAPIKey{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("user_id = ?", id).Delete(&model.UserPricingDiscount{}).Error; err != nil {
+			return err
+		}
 		return tx.Delete(&model.User{}, "id = ?", id).Error
 	})
 }

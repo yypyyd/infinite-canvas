@@ -1042,11 +1042,14 @@ func legacyCreateBatchProductionJob(user model.AuthUser, input model.CreateBatch
 	if err != nil {
 		return model.BatchProductionJob{}, err
 	}
+	var brand *model.Brand
 	if input.BrandID != "" {
-		if _, ok, err := repository.GetBrand(organization.ID, input.BrandID); err != nil {
+		if value, ok, err := repository.GetBrand(organization.ID, input.BrandID); err != nil {
 			return model.BatchProductionJob{}, err
 		} else if !ok {
 			return model.BatchProductionJob{}, safeMessageError{message: "任务品牌不存在"}
+		} else {
+			brand = &value
 		}
 	}
 	itemOperations := map[string]string{}
@@ -1065,10 +1068,7 @@ func legacyCreateBatchProductionJob(user model.AuthUser, input model.CreateBatch
 			}
 			totalSKUs += len(skus)
 			for _, sku := range skus {
-				operation := "generation"
-				if len(sku.ImageStorageKeys) > 0 {
-					operation = "edit"
-				}
+				operation, _ := standardBatchOperation(len(standardBatchReferenceStorageKeys(brand, &sku)))
 				itemOperations[productID+"\x00"+sku.ID] = operation
 			}
 			if totalSKUs >= int(total) {
@@ -1076,7 +1076,8 @@ func legacyCreateBatchProductionJob(user model.AuthUser, input model.CreateBatch
 			}
 		}
 		if totalSKUs == 0 {
-			itemOperations[productID+"\x00"] = "generation"
+			operation, _ := standardBatchOperation(len(standardBatchReferenceStorageKeys(brand, nil)))
+			itemOperations[productID+"\x00"] = operation
 		}
 	}
 	settings, err := PublicSettings()
@@ -1087,21 +1088,25 @@ func legacyCreateBatchProductionJob(user model.AuthUser, input model.CreateBatch
 	if modelName == "" {
 		return model.BatchProductionJob{}, safeMessageError{message: "默认图片模型未配置，无法估算任务价格"}
 	}
-	creditsByOperation, itemEstimatedCredits := map[string]int{}, make(map[string]int, len(itemOperations))
+	resolver, err := NewPricingResolver(user.ID, user.Group)
+	if err != nil {
+		return model.BatchProductionJob{}, err
+	}
+	pricingByOperation, itemPricing := map[string]PricingResult{}, make(map[string]model.BatchProductionItemPricing, len(itemOperations))
 	for key, operation := range itemOperations {
-		credits, ok := creditsByOperation[operation]
+		pricing, ok := pricingByOperation[operation]
 		if !ok {
-			credits, err = CalculateRequestCreditsForGroup(standardBatchPricingRequest(modelName, operation, deliverySpec), user.Group)
+			pricing, err = resolver.Resolve(standardBatchPricingRequest(modelName, operation, standardBatchResolutionTier, deliverySpec))
 			if err != nil {
 				return model.BatchProductionJob{}, err
 			}
-			creditsByOperation[operation] = credits
+			pricingByOperation[operation] = pricing
 		}
-		itemEstimatedCredits[key] = credits
+		itemPricing[key] = model.BatchProductionItemPricing{Operation: operation, ResolutionTier: standardBatchResolutionTier, EstimatedCredits: pricing.Credits, PricingSnapshot: pricing.Snapshot}
 	}
 	timestamp, jobID := now(), newID("batch")
-	job := model.BatchProductionJob{ID: jobID, OrganizationID: organization.ID, RequestID: input.RequestID, RequestHash: requestHash, ArchiveToken: newID("archive"), BrandID: input.BrandID, Name: input.Name, PresetID: input.PresetID, PresetVersion: presetVersion, PresetPrompt: presetPrompt, DeliverySpec: deliverySpec, ProductIDs: input.ProductIDs, Status: model.BatchProductionStatusQueued, CreatedBy: user.ID, CreatedAt: timestamp, UpdatedAt: timestamp}
-	result, err := repository.CreateBatchProductionJob(job, itemEstimatedCredits, newAuditLog(user.ID, organization.ID, "batch.create", "batch_job", job.ID, job.Name, timestamp))
+	job := model.BatchProductionJob{ID: jobID, OrganizationID: organization.ID, RequestID: input.RequestID, RequestHash: requestHash, ArchiveToken: newID("archive"), Model: modelName, BrandID: input.BrandID, Name: input.Name, PresetID: input.PresetID, PresetVersion: presetVersion, PresetPrompt: presetPrompt, DeliverySpec: deliverySpec, ProductIDs: input.ProductIDs, Status: model.BatchProductionStatusQueued, CreatedBy: user.ID, CreatedAt: timestamp, UpdatedAt: timestamp}
+	result, err := repository.CreateBatchProductionJob(job, itemPricing, newAuditLog(user.ID, organization.ID, "batch.create", "batch_job", job.ID, job.Name, timestamp))
 	if errors.Is(err, repository.ErrBatchProductionItemsTooLarge) {
 		return model.BatchProductionJob{}, safeMessageError{message: "单个批量任务最多生成 5000 个生产项"}
 	}

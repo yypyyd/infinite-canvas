@@ -1347,7 +1347,7 @@ func GetBatchProductionJobByRequest(organizationID string, requestID string) (mo
 	return item, err == nil, err
 }
 
-func CreateBatchProductionJob(job model.BatchProductionJob, itemEstimatedCredits map[string]int, auditLogs ...model.OrganizationAuditLog) (model.BatchProductionJob, error) {
+func CreateBatchProductionJob(job model.BatchProductionJob, itemPricing map[string]model.BatchProductionItemPricing, auditLogs ...model.OrganizationAuditLog) (model.BatchProductionJob, error) {
 	db, err := DB()
 	if err != nil {
 		return job, err
@@ -1399,11 +1399,11 @@ func CreateBatchProductionJob(job model.BatchProductionJob, itemEstimatedCredits
 			if len(items) >= maxBatchProductionItems {
 				return ErrBatchProductionItemsTooLarge
 			}
-			estimatedCredits, ok := itemEstimatedCredits[productID+"\x00"+skuID]
-			if !ok || estimatedCredits < 0 {
+			pricing, ok := itemPricing[productID+"\x00"+skuID]
+			if !ok || !validBatchProductionItemPricing(job, pricing) {
 				return errors.New("batch production item estimate is missing")
 			}
-			items = append(items, model.BatchProductionItem{ID: job.ID + "-item-" + strconv.Itoa(len(items)), OrganizationID: job.OrganizationID, JobID: job.ID, ProductID: productID, SKUID: skuID, EstimatedCredits: estimatedCredits, Status: model.BatchProductionStatusQueued, RunNumber: 1, CreatedAt: job.CreatedAt, UpdatedAt: job.UpdatedAt})
+			items = append(items, model.BatchProductionItem{ID: job.ID + "-item-" + strconv.Itoa(len(items)), OrganizationID: job.OrganizationID, JobID: job.ID, ProductID: productID, SKUID: skuID, Operation: pricing.Operation, ResolutionTier: pricing.ResolutionTier, EstimatedCredits: pricing.EstimatedCredits, PricingSnapshot: pricing.PricingSnapshot, Status: model.BatchProductionStatusQueued, RunNumber: 1, CreatedAt: job.CreatedAt, UpdatedAt: job.UpdatedAt})
 			return nil
 		}
 		for _, sku := range skus {
@@ -1433,6 +1433,16 @@ func CreateBatchProductionJob(job model.BatchProductionJob, itemEstimatedCredits
 		skuByID := make(map[string]model.ProductSKU, len(skus))
 		for _, sku := range skus {
 			skuByID[sku.ID] = sku
+		}
+		for _, item := range items {
+			var sku *model.ProductSKU
+			if item.SKUID != "" {
+				value := skuByID[item.SKUID]
+				sku = &value
+			}
+			if item.Operation != model.BatchProductionImageOperation(batchProductionHasReferences(brand, sku)) {
+				return errors.New("batch production input references changed during creation")
+			}
 		}
 		snapshots := make([]model.BatchProductionSnapshot, 0, 1+len(products)+len(skuByID))
 		totalSnapshotBytes := 0
@@ -1517,6 +1527,26 @@ func CreateBatchProductionJob(job model.BatchProductionJob, itemEstimatedCredits
 		return saveOrganizationAuditLogs(tx, auditLogs)
 	})
 	return job, err
+}
+
+func validBatchProductionItemPricing(job model.BatchProductionJob, pricing model.BatchProductionItemPricing) bool {
+	snapshot := pricing.PricingSnapshot
+	return strings.TrimSpace(job.Model) != "" && strings.TrimSpace(pricing.Operation) != "" && strings.TrimSpace(pricing.ResolutionTier) != "" && pricing.EstimatedCredits >= 0 &&
+		snapshot.Model == job.Model && snapshot.Modality == "image" && snapshot.Operation == pricing.Operation && snapshot.Unit == "image" && snapshot.ResolutionTier == pricing.ResolutionTier && snapshot.Quantity == 1 && snapshot.EffectiveRatio > 0 && strings.TrimSpace(snapshot.BillingMode) != "" && strings.TrimSpace(snapshot.Source) != "" && snapshot.Credits == pricing.EstimatedCredits
+}
+
+func batchProductionHasReferences(brand *model.Brand, sku *model.ProductSKU) bool {
+	if brand != nil && strings.TrimSpace(brand.LogoStorageKey) != "" {
+		return true
+	}
+	if sku != nil {
+		for _, key := range sku.ImageStorageKeys {
+			if strings.TrimSpace(key) != "" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func GetBatchProductionSnapshots(organizationID string, ids []string) (map[string]model.BatchProductionSnapshot, error) {

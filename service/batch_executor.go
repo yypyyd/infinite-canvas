@@ -12,6 +12,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -22,6 +23,7 @@ import (
 
 const (
 	standardBatchImageSize         = "1024x1024"
+	standardBatchResolutionTier    = "1k"
 	maxStandardBatchReferences     = 4
 	maxStandardBatchReferenceBytes = 20 << 20
 	maxStandardBatchResponseBytes  = 112 << 20
@@ -46,7 +48,9 @@ func standardBatchTypedError(err error, category model.BatchProductionErrorCateg
 func validateStandardBatchGenerationTask(task model.GenerationTask, item model.BatchProductionItem, job model.BatchProductionJob) error {
 	if task.OrganizationID != item.OrganizationID || item.OrganizationID != job.OrganizationID ||
 		task.BatchItemID != item.ID || task.BatchJobID != item.JobID || item.JobID != job.ID ||
-		task.RequestID != standardBatchRequestID(item) {
+		task.RequestID != standardBatchRequestID(item) || task.Model != job.Model ||
+		task.Operation != item.Operation || task.ResolutionTier != item.ResolutionTier ||
+		task.Credits != item.EstimatedCredits || !reflect.DeepEqual(task.PricingSnapshot, item.PricingSnapshot) {
 		return errors.New("batch generation task does not match the current production item")
 	}
 	return nil
@@ -76,36 +80,26 @@ func (executor StandardBatchProductionExecutor) Execute(ctx context.Context, inp
 	if err != nil {
 		return pendingResult, standardBatchTypedError(err, model.BatchProductionErrorValidationInput, false)
 	}
-	operation, path := "generation", "/images/generations"
-	if len(references) > 0 {
-		operation, path = "edit", "/images/edits"
+	operation, path := standardBatchOperation(len(references))
+	if operation != input.Item.Operation {
+		return pendingResult, permanentBatchProductionError(model.BatchProductionErrorValidationInput, errors.New("batch production reference snapshot does not match the frozen operation"))
 	}
-	modelName := ""
+	modelName := strings.TrimSpace(input.Job.Model)
+	if modelName == "" || strings.TrimSpace(input.Item.ResolutionTier) == "" {
+		return pendingResult, permanentBatchProductionError(model.BatchProductionErrorPricingCredit, errors.New("batch production pricing snapshot is incomplete"))
+	}
 	var resumeTask *model.GenerationTask
 	if exists {
-		modelName, resumeTask = existingTask.Model, &existingTask
-	} else {
-		settings, err := PublicSettings()
-		if err != nil {
-			return pendingResult, standardBatchTypedError(err, model.BatchProductionErrorInternal, true)
-		}
-		modelName = strings.TrimSpace(settings.ModelChannel.DefaultImageModel)
-		if modelName == "" {
-			return pendingResult, permanentBatchProductionError(model.BatchProductionErrorValidationInput, errors.New("default image model is not configured"))
-		}
+		resumeTask = &existingTask
 	}
 	deliverySpec := input.Job.DeliverySpec
 	if input.Selection != nil {
 		deliverySpec = input.Selection.DeliverySpec
 	}
 	generationSize := productionDeliveryGenerationSize(deliverySpec)
-	pricing := standardBatchPricingRequest(modelName, operation, deliverySpec)
-	selection, err := selectStandardBatchModelChannel(pricing, resumeTask, requestID)
-	if err != nil {
-		if err.Error() == "original batch model channel is unavailable" || err.Error() == "batch image model has no compatible channel" {
-			return pendingResult, permanentBatchProductionError(model.BatchProductionErrorValidationInput, err)
-		}
-		return pendingResult, standardBatchTypedError(err, model.BatchProductionErrorInternal, true)
+	pricing := standardBatchPricingRequest(modelName, operation, input.Item.ResolutionTier, deliverySpec)
+	if err := validateStandardBatchPricingSnapshot(input.Job, input.Item, pricing); err != nil {
+		return pendingResult, permanentBatchProductionError(model.BatchProductionErrorPricingCredit, err)
 	}
 	user, ok, err := repository.GetUserByID(input.Job.CreatedBy)
 	if err != nil {
@@ -114,16 +108,14 @@ func (executor StandardBatchProductionExecutor) Execute(ctx context.Context, inp
 	if !ok || user.Status != model.UserStatusActive {
 		return pendingResult, permanentBatchProductionError(model.BatchProductionErrorValidationInput, errors.New("batch production creator is unavailable"))
 	}
-	credits := existingTask.Credits
-	if !exists {
-		credits, err = CalculateRequestCreditsForGroup(pricing, user.Group)
-		if err != nil {
-			return pendingResult, permanentBatchProductionError(model.BatchProductionErrorPricingCredit, err)
+	selection, err := selectStandardBatchModelChannel(pricing, resumeTask, requestID)
+	if err != nil {
+		if err.Error() == "batch image model has no compatible channel" {
+			return pendingResult, permanentBatchProductionError(model.BatchProductionErrorValidationInput, err)
 		}
+		return pendingResult, standardBatchTypedError(err, model.BatchProductionErrorInternal, true)
 	}
-	if credits != input.Item.EstimatedCredits {
-		return pendingResult, permanentBatchProductionError(model.BatchProductionErrorPricingCredit, errors.New("batch production item pricing changed after reservation"))
-	}
+	credits := input.Item.EstimatedCredits
 	resultClient, cleanup := executor.standardResultClient()
 	defer cleanup()
 	body, contentType, err := buildStandardBatchRequest(ctx, resultClient, selection, prompt, references, generationSize)
@@ -134,7 +126,7 @@ func (executor StandardBatchProductionExecutor) Execute(ctx context.Context, inp
 		UserID: input.Job.CreatedBy, OrganizationID: input.Job.OrganizationID,
 		RequestID: requestID, BatchJobID: input.Job.ID, BatchItemID: input.Item.ID, Model: modelName,
 		UpstreamModel: selection.Model.UpstreamModel, ChannelName: selection.Channel.Name,
-		Path: path, Modality: "image", Operation: operation, ResolutionTier: "1k", Quantity: 1, Credits: credits,
+		Path: path, Modality: "image", Operation: operation, ResolutionTier: input.Item.ResolutionTier, Quantity: 1, Credits: credits, PricingSnapshot: input.Item.PricingSnapshot,
 	})
 	if err != nil {
 		var typedError *batchProductionTypedError
@@ -148,6 +140,11 @@ func (executor StandardBatchProductionExecutor) Execute(ctx context.Context, inp
 	}
 	if err := validateStandardBatchGenerationTask(task, input.Item, input.Job); err != nil {
 		return BatchProductionResult{}, permanentBatchProductionError(model.BatchProductionErrorUpstreamPermanent, err)
+	}
+	if task.ChannelName != selection.Channel.Name || task.UpstreamModel != selection.Model.UpstreamModel {
+		if err := UpdateGenerationTaskChannel(&task, selection.Channel.Name, selection.Model.UpstreamModel); err != nil {
+			return pendingResult, transientBatchProductionError(model.BatchProductionErrorInternal, err)
+		}
 	}
 	pendingResult.GenerationTask = &task
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, BuildModelChannelURL(selection.Channel, path), bytes.NewReader(body))
@@ -211,8 +208,49 @@ func standardBatchRequestID(item model.BatchProductionItem) string {
 	return fmt.Sprintf("batch:%s:%d", item.ID, item.RunNumber)
 }
 
-func standardBatchPricingRequest(modelName string, operation string, deliverySpec model.ProductionDeliverySpec) PricingRequest {
-	return PricingRequest{Model: modelName, Modality: "image", Operation: operation, Unit: "image", ResolutionTier: "1k", Size: productionDeliveryGenerationSize(deliverySpec), Quantity: 1}
+func standardBatchPricingRequest(modelName string, operation string, resolutionTier string, deliverySpec model.ProductionDeliverySpec) PricingRequest {
+	return normalizePricingRequest(PricingRequest{Model: modelName, Modality: "image", Operation: operation, Unit: "image", ResolutionTier: resolutionTier, Size: productionDeliveryGenerationSize(deliverySpec), Quantity: 1})
+}
+
+func validateStandardBatchPricingSnapshot(job model.BatchProductionJob, item model.BatchProductionItem, request PricingRequest) error {
+	snapshot := item.PricingSnapshot
+	if snapshot.Model != job.Model || snapshot.Model != request.Model || snapshot.Modality != request.Modality || snapshot.Operation != request.Operation || snapshot.Unit != request.Unit || snapshot.ResolutionTier != request.ResolutionTier || snapshot.Quantity != request.Quantity || snapshot.Credits != item.EstimatedCredits {
+		return errors.New("batch production item pricing snapshot does not match the frozen specification")
+	}
+	return nil
+}
+
+func standardBatchOperation(referenceCount int) (string, string) {
+	operation := model.BatchProductionImageOperation(referenceCount > 0)
+	if operation == model.BatchProductionOperationEdit {
+		return operation, "/images/edits"
+	}
+	return operation, "/images/generations"
+}
+
+func standardBatchReferenceStorageKeys(brand *model.Brand, sku *model.ProductSKU) []string {
+	unique := map[string]bool{}
+	if brand != nil {
+		if key := strings.TrimSpace(brand.LogoStorageKey); key != "" {
+			unique[key] = true
+		}
+	}
+	if sku != nil {
+		for _, value := range sku.ImageStorageKeys {
+			if key := strings.TrimSpace(value); key != "" {
+				unique[key] = true
+			}
+		}
+	}
+	keys := make([]string, 0, len(unique))
+	for key := range unique {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	if len(keys) > maxStandardBatchReferences {
+		keys = keys[:maxStandardBatchReferences]
+	}
+	return keys
 }
 
 func selectStandardBatchModelChannel(request PricingRequest, task *model.GenerationTask, key string) (ModelChannelSelection, error) {
@@ -228,7 +266,6 @@ func selectStandardBatchModelChannel(request PricingRequest, task *model.Generat
 				return selection, nil
 			}
 		}
-		return ModelChannelSelection{}, errors.New("original batch model channel is unavailable")
 	}
 	if len(selections) == 0 {
 		return ModelChannelSelection{}, errors.New("batch image model has no compatible channel")

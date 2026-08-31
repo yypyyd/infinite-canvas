@@ -2,6 +2,7 @@ package repository
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/yypyyd/infinite-canvas/model"
@@ -223,6 +224,16 @@ func TestRetryBatchProductionJobStartsNewRunOnlyForFailedItems(t *testing.T) {
 	if err := testDB.Model(&model.BatchProductionItem{}).Where("job_id = ? AND status = ?", "job-a", model.BatchProductionStatusFailed).Updates(map[string]any{"attempts": 5, "estimated_credits": 1, "error_message": "failed", "lease_token": "stale", "lease_expires_at": batchTestExpired}).Error; err != nil {
 		t.Fatalf("seed failed item: %v", err)
 	}
+	var frozen model.BatchProductionItem
+	if err := testDB.First(&frozen, "job_id = ? AND status = ?", "job-a", model.BatchProductionStatusFailed).Error; err != nil {
+		t.Fatalf("load frozen failed item: %v", err)
+	}
+	ratio := 0.5
+	snapshot := model.PricingSnapshot{Model: "image-model", Modality: "image", Operation: "edit", Unit: "image", ResolutionTier: "1k", Quantity: 1, BillingMode: "fixed", RuleCredits: 2, UserGroup: "vip", GroupRatio: 0.8, UserSpecRatio: &ratio, EffectiveRatio: ratio, Source: "user_spec", Credits: 1}
+	frozen.Operation, frozen.ResolutionTier, frozen.PricingSnapshot = "edit", "1k", snapshot
+	if err := testDB.Save(&frozen).Error; err != nil {
+		t.Fatalf("save frozen failed item: %v", err)
+	}
 
 	if err := RetryBatchProductionJob("organization-a", "job-a", workspaceTestNow); err != nil {
 		t.Fatalf("retry job: %v", err)
@@ -239,6 +250,9 @@ func TestRetryBatchProductionJobStartsNewRunOnlyForFailedItems(t *testing.T) {
 		case model.BatchProductionStatusQueued:
 			if item.RunNumber != 2 || item.Attempts != 0 || item.LeaseToken != "" || item.ErrorMessage != "" {
 				t.Fatalf("failed item was not reset for a new run: %#v", item)
+			}
+			if item.Operation != "edit" || item.ResolutionTier != "1k" || !reflect.DeepEqual(item.PricingSnapshot, snapshot) {
+				t.Fatalf("retry changed frozen pricing: %#v", item)
 			}
 		case model.BatchProductionStatusCompleted:
 			if item.RunNumber != 1 {
@@ -267,8 +281,9 @@ func TestCreateBatchProductionJobIsRequestIdempotent(t *testing.T) {
 	if err := testDB.Create(&product).Error; err != nil {
 		t.Fatalf("create product: %v", err)
 	}
-	first := model.BatchProductionJob{ID: "job-a", OrganizationID: "organization-a", RequestID: "request-a", RequestHash: "same-hash", ArchiveToken: "archive-a", Name: "Job A", PresetID: "product-main", ProductIDs: []string{"product-a"}, Status: model.BatchProductionStatusQueued, CreatedBy: "user-a", CreatedAt: workspaceTestNow, UpdatedAt: workspaceTestNow}
-	estimates := map[string]int{"product-a\x00": 1}
+	first := model.BatchProductionJob{ID: "job-a", OrganizationID: "organization-a", RequestID: "request-a", RequestHash: "same-hash", ArchiveToken: "archive-a", Model: "image-model", Name: "Job A", PresetID: "product-main", ProductIDs: []string{"product-a"}, Status: model.BatchProductionStatusQueued, CreatedBy: "user-a", CreatedAt: workspaceTestNow, UpdatedAt: workspaceTestNow}
+	snapshot := model.PricingSnapshot{Model: "image-model", Modality: "image", Operation: "generation", Unit: "image", ResolutionTier: "1k", Quantity: 1, BillingMode: "fixed", RuleCredits: 1, EffectiveRatio: 1, Source: "default", Credits: 1}
+	estimates := map[string]model.BatchProductionItemPricing{"product-a\x00": {Operation: "generation", ResolutionTier: "1k", EstimatedCredits: 1, PricingSnapshot: snapshot}}
 	saved, err := CreateBatchProductionJob(first, estimates)
 	if err != nil {
 		t.Fatalf("create first job: %v", err)
@@ -306,6 +321,13 @@ func TestCreateBatchProductionJobIsRequestIdempotent(t *testing.T) {
 	}
 	if saved.EstimatedCredits != 1 || saved.ReservedCredits != 1 || saved.CreditSource != model.CreditSourceOrganization || organization.ReservedCredits != 1 {
 		t.Fatalf("unexpected batch credit reservation: job=%#v organization=%#v", saved, organization)
+	}
+	var item model.BatchProductionItem
+	if err := testDB.First(&item, "job_id = ?", saved.ID).Error; err != nil {
+		t.Fatalf("load frozen batch item: %v", err)
+	}
+	if item.Operation != "generation" || item.ResolutionTier != "1k" || item.EstimatedCredits != 1 || !reflect.DeepEqual(item.PricingSnapshot, snapshot) {
+		t.Fatalf("unexpected frozen batch pricing: %#v", item)
 	}
 }
 

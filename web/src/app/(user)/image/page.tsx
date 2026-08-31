@@ -25,6 +25,7 @@ import { resolveImageUrl, resolveImageVariantUrl, storeGeneratedImage, uploadIma
 import { workspaceOwnerId } from "@/services/workspace-changes";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useUserStore } from "@/stores/use-user-store";
+import { usePricingStore } from "@/stores/use-pricing-store";
 import type { ReferenceImage } from "@/types/image";
 
 type GeneratedImage = {
@@ -95,6 +96,8 @@ export default function ImagePage() {
     const managedModels = useConfigStore((state) => state.publicSettings?.modelChannel.models);
     const modelAspectRatios = useConfigStore((state) => state.publicSettings?.modelChannel.modelAspectRatios);
     const userGroup = useUserStore((state) => state.user?.group || "default");
+    const specPricing = usePricingStore((state) => state.specPricing);
+    const currentGroupRatio = usePricingStore((state) => state.groupRatio);
     const historyOwnerId = useUserStore((state) => (state.user ? workspaceOwnerId(state.user.id, state.user.organizationId) : "guest"));
     const addAsset = useAssetStore((state) => state.addAsset);
     const [prompt, setPrompt] = useState("");
@@ -121,6 +124,8 @@ export default function ImagePage() {
     const generationCount = normalizeImageCount(config.count, 10);
     const creditQuote = requestCreditQuote({
         pricingRules,
+        specPricing,
+        currentGroupRatio,
         groupRatios,
         userGroup,
         model,

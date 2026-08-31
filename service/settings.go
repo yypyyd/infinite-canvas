@@ -261,28 +261,12 @@ func CalculateRequestCredits(request PricingRequest) (int, error) {
 }
 
 func CalculateRequestCreditsForGroup(request PricingRequest, userGroup string) (int, error) {
-	settings, err := repository.GetSettings()
+	resolver, err := NewPricingResolver("", userGroup)
 	if err != nil {
 		return 0, err
 	}
-	request = normalizePricingRequest(request)
-	if request.Model == "" || request.Modality == "" || request.Operation == "" || request.Unit == "" {
-		return 0, safeMessageError{message: "模型计费参数不完整"}
-	}
-	public := normalizePublicSetting(settings.Public)
-	rule, ok := selectPricingRule(public.ModelChannel.PricingRules, request)
-	if !ok {
-		return 0, safeMessageError{message: "该模型或当前规格未设置价格"}
-	}
-	quantity := request.Quantity
-	if quantity < 1 {
-		quantity = 1
-	}
-	credits := calculateRuleCredits(rule, quantity, groupRatio(public.ModelChannel.GroupRatios, userGroup))
-	if rule.MinCredits > credits {
-		credits = rule.MinCredits
-	}
-	return credits, nil
+	result, err := resolver.Resolve(request)
+	return result.Credits, err
 }
 
 func calculateRuleCredits(rule model.PricingRule, quantity int, ratio float64) int {

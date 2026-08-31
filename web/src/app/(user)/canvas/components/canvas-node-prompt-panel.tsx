@@ -8,6 +8,7 @@ import { ModelPicker } from "@/components/model-picker";
 import { defaultConfig, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { CreditSymbol, requestCreditQuote } from "@/constant/credits";
 import { useUserStore } from "@/stores/use-user-store";
+import { usePricingStore } from "@/stores/use-pricing-store";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { normalizeImageCount } from "@/lib/image-utils";
 import { supportsImageReferences } from "@/lib/image-model-capabilities";
@@ -56,6 +57,8 @@ export function CanvasNodePromptPanel({
     const groupRatios = useConfigStore((state) => state.publicSettings?.modelChannel.groupRatios);
     const managedModels = useConfigStore((state) => state.publicSettings?.modelChannel.models);
     const userGroup = useUserStore((state) => state.user?.group || "default");
+    const specPricing = usePricingStore((state) => state.specPricing);
+    const currentGroupRatio = usePricingStore((state) => state.groupRatio);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const mode = defaultMode(node.type);
@@ -72,6 +75,8 @@ export function CanvasNodePromptPanel({
     const [prompt, setPrompt] = useState(node.metadata?.promptDraft ?? (isEditingExistingContent ? "" : node.metadata?.prompt || ""));
     const creditQuote = requestCreditQuote({
         pricingRules,
+        specPricing,
+        currentGroupRatio,
         groupRatios,
         userGroup,
         model: config.model,

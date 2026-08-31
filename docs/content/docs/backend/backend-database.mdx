@@ -20,6 +20,7 @@ description: 当前后端主要数据表与字段说明
 当前启动时执行 `AutoMigrate`，自动维护以下表：
 
 - `users`
+- `user_pricing_discounts`
 - `user_api_keys`
 - `organizations`
 - `organization_members`
@@ -125,7 +126,7 @@ Agent 的长期记忆表。记忆同时绑定企业、用户和可选画布项�
 
 ### batch_production_jobs / batch_production_template_selections / batch_production_items / batch_production_snapshots
 
-企业批量生产任务及任务项。新图片包请求使用商品范围（全部有效 SKU 或指定 SKU）和多个模板选择；`batch_production_template_selections` 冻结模板 ID/版本/类型、数量、提示词、规格 JSON 和交付规格，任务项按 `SKU × 模板选择 × variant_index` 展开，由服务端在单事务中按确定性 Item ID 写入，配合父任务 `organization_id + request_id` 幂等唯一键防止重复展开。父任务新增图片包类型、排队/运行计数和 `pending_review`、`partial_success` 聚合状态；旧单模板字段保留兼容读取。创建接口要求客户端生成 `request_id`，并通过 `organization_id + request_id` 联合唯一索引保证超时重试、双击和代理重放只创建一次任务；`request_hash` 保存规范化名称、品牌、模板编号与版本、渠道交付规格和商品集合的 SHA-256 摘要，同请求号只有摘要一致时才返回已有任务，不同内容会返回冲突。每个任务还保存仅服务端可见的随机 `archive_token`、`preset_version`、创建时的 `preset_prompt` 和以 `delivery_` 为前缀嵌入的交付规格快照，分别用于隔离 Worker 归档文件命名空间、冻结本次生产模板，以及固定平台、名称、宽高、格式、质量和文件命名规则。幂等查询在商品和 SKU 展开前完成，成功响应丢失后的重试不会受后续主数据变化影响。首次创建会先锁定企业和所选商品，再在同一事务读取并展开完整 SKU 集合；没有 SKU 的商品按 SPU 创建任务项，因此并发新增 SKU 不会落在事务读取与任务写入之间。`batch_production_snapshots` 按任务分别保存一份品牌快照、每个商品快照和每个 SKU 快照，任务项只保存三个快照 ID，避免为每个生产项重复存储整包输入；单任务最多 5000 个生产项，单企业处于 `queued` 或 `running` 的生产项合计最多 10000 个，创建和人工重试均在企业锁内检查上限。去重后的快照总量限制为 16MB，后续主数据修改不会改变已经提交的生产输入。
+企业批量生产任务及任务项。新图片包请求使用商品范围（全部有效 SKU 或指定 SKU）和多个模板选择；`batch_production_template_selections` 冻结模板 ID/版本/类型、数量、提示词、规格 JSON 和交付规格，任务项按 `SKU × 模板选择 × variant_index` 展开，由服务端在单事务中按确定性 Item ID 写入，配合父任务 `organization_id + request_id` 幂等唯一键防止重复展开。父任务新增图片包类型、排队/运行计数和 `pending_review`、`partial_success` 聚合状态；旧单模板字段保留兼容读取。创建接口要求客户端生成 `request_id`，并通过 `organization_id + request_id` 联合唯一索引保证超时重试、双击和代理重放只创建一次任务；`request_hash` 保存规范化名称、品牌、模板编号与版本、渠道交付规格和商品集合的 SHA-256 摘要，同请求号只有摘要一致时才返回已有任务，不同内容会返回冲突。每个任务还保存仅服务端可见的随机 `archive_token`、`model`、`preset_version`、创建时的 `preset_prompt` 和以 `delivery_` 为前缀嵌入的交付规格快照；每个任务项保存创建时确定的操作、分辨率档、预计算力和完整计价快照，分别用于隔离 Worker 归档文件命名空间、冻结本次模型与计价规格、冻结生产模板，以及固定平台、名称、宽高、格式、质量和文件命名规则。幂等查询在商品和 SKU 展开前完成，成功响应丢失后的重试不会受后续主数据变化影响。首次创建会先锁定企业和所选商品，再在同一事务读取并展开完整 SKU 集合；没有 SKU 的商品按 SPU 创建任务项，因此并发新增 SKU 不会落在事务读取与任务写入之间。`batch_production_snapshots` 按任务分别保存一份品牌快照、每个商品快照和每个 SKU 快照，任务项只保存三个快照 ID，避免为每个生产项重复存储整包输入；单任务最多 5000 个生产项，单企业处于 `queued` 或 `running` 的生产项合计最多 10000 个，创建和人工重试均在企业锁内检查上限。去重后的快照总量限制为 16MB，后续主数据修改不会改变已经提交的生产输入。
 
 ### video_projects / video_project_versions
 
@@ -133,7 +134,7 @@ Agent 的长期记忆表。记忆同时绑定企业、用户和可选画布项�
 
 任务项支持 `queued`、`running`、`completed`、`failed`、`cancelled` 状态、不可伪造的 `lease_token`、`lease_expires_at`、尝试次数、结果地址和错误信息；完成项还保存 `pending`、`approved`、`rejected` 审核状态、批注、审核人、审核时间和主图标记。同一任务内每个商品最多一个主图；失败项或已驳回项重新生成时递增 `run_number`，清空旧结果和审核信息并解除旧文件引用，审核、重试和主图选择都提交当前生产轮次以拒绝旧页面覆盖新结果。
 
-独立 `batch-worker` 进程通过数据库条件更新原子领取，每 2 分钟续租。默认内置标准执行器读取任务创建时固化的品牌、商品和 SKU 快照，按 `preset_id` 组装固定电商模板，并复用后台默认图片模型、渠道能力和用户组计费规则；没有参考图时调用 OpenAI 兼容生图接口，存在参考图时最多读取 4 张、单张不超过 20MB 的 Kodo 私有图片并通过 `image[]` 调用编辑接口。GPT Image 的 `b64_json` 和 DALL·E 类短期 URL 结果都会在 Worker 内限制大小、识别真实图片类型并归档，生成任务从预扣开始覆盖上游调用、结果下载、Kodo 归档和任务项完成，任一阶段失败均使用原有事务规则退款。配置 `BATCH_WORKER_EXECUTOR_URL` 与 `BATCH_WORKER_TOKEN` 后可切换到外部执行器，外部执行器接收快照、模板、任务项及 30 分钟私有媒体地址，并返回 `resultUrl`、`mimeType` 和 `size`。两类执行器的结果都在 Worker 公共归档边界按任务快照执行居中裁切、缩放和 JPEG/PNG 转码；需要变换的外部结果先通过拒绝私网解析、受限重定向、声明大小和真实 MIME 校验下载，因此外部执行器不需要自行实现渠道后处理。
+独立 `batch-worker` 进程通过数据库条件更新原子领取，每 2 分钟续租。默认内置标准执行器读取任务创建时固化的品牌、商品和 SKU 快照，按 `preset_id` 组装固定电商模板，并严格使用父任务固化的公开模型以及任务项固化的操作、分辨率档和价格；Worker 只重新选择支持同一公开规格的可用渠道，不读取当前默认模型、用户组倍率、专属优惠或全局价格。品牌 Logo、SKU 图片和最终实际提交的其他参考图共同决定创建时的生成/编辑操作；没有参考图时调用 OpenAI 兼容生图接口，存在参考图时最多读取 4 张、单张不超过 20MB 的私有图片并通过 `image[]` 调用编辑接口。原渠道不可用时可切换兼容渠道，没有兼容渠道则失败并按固化算力退款；重试继续使用原规格和原价格。GPT Image 的 `b64_json` 和 DALL·E 类短期 URL 结果都会在 Worker 内限制大小、识别真实图片类型并归档，生成任务从预扣开始覆盖上游调用、结果下载、文件归档和任务项完成，任一阶段失败均使用原有事务规则退款。配置 `BATCH_WORKER_EXECUTOR_URL` 与 `BATCH_WORKER_TOKEN` 后可切换到外部执行器；外部调用开始前同样按任务项固化价格创建生成任务，失败时通过该任务幂等退款。外部执行器接收快照、模板、任务项及 30 分钟私有媒体地址，并返回 `resultUrl`、`mimeType` 和 `size`。两类执行器的结果都在 Worker 公共归档边界按任务快照执行居中裁切、缩放和 JPEG/PNG 转码；需要变换的外部结果先通过拒绝私网解析、受限重定向、声明大小和真实 MIME 校验下载，因此外部执行器不需要自行实现渠道后处理。
 
 领取按企业最近领取游标轮转，再在企业内按创建顺序领取，避免单个大租户长期占满全局 FIFO；候选企业使用索引顺序和相关 `EXISTS` 判断，不再为每个生产项聚合、排序全局队列。领取、续租、取消、完成和超时归档统一先锁企业；`BATCH_WORKER_TENANT_CONCURRENCY` 限制单企业同时运行数量，默认 2 且不会超过 `BATCH_WORKER_CONCURRENCY`。标准执行器和外部执行器均使用“任务项 ID + `run_number`”派生稳定请求号，同一轮租约接管保持幂等，人工重试递增轮次后允许真正重跑；携带 API Key 或 Bearer Token 的请求完全禁止跟随重定向。Worker 在归档前同步确认租约，外部结果和标准执行器 URL 结果均通过拒绝私网解析、限制重定向和任务 Context 控制的读取获取；七牛上传凭证强制精确大小、媒体类型和对象键。归档文件使用“任务随机 `archive_token` + 任务项 ID + `run_number`”确定的稳定 `storageKey`，`batch-result-` 前缀禁止从用户上传入口创建，进程在文件确认后、任务完成前退出时，租约重投递会复用已校验结果而不是重复占用企业额度。校验成功后结果写入 `organizations/{organizationId}/batch-results/`，在企业额度事务中确认文件，并让任务项保存 `result_storage_key` 和事务型文件引用。任务项只持久化固定安全错误文案，服务日志只记录任务项和错误类型，不保存外部 URL、签名参数、内部地址或上游错误原文。连续 5 次租约超时会自动失败，人工重试会开启新的尝试周期；取消会清空租约并中止仍在进行的结果读取或上传。可通过 Docker Compose `worker` profile 启动；正式环境应让 API 与 Worker 共用 MySQL 或 PostgreSQL，不使用 SQLite 承载多进程生产队列。租约和业务时间统一保存为固定九位小数的 UTC RFC3339，保证字符串条件比较与时间先后一致。
 
@@ -168,6 +169,24 @@ Agent 的长期记忆表。记忆同时绑定企业、用户和可选画布项�
 | `updated_at` | string | 更新时间 |
 
 用户注册时可通过邀请码绑定一名邀请人；绑定关系只在注册事务中写入一次，`aff_count` 作为邀请数量冗余统计，实际列表以 `inviter_id` 查询为准。用户被邀请后的首笔充值成功时，返佣记录写入 `referral_commissions`，并与邀请人的 `balance_logs`、充值订单结算处于同一事务；后续充值和重复支付回调都不会再次返佣。
+
+### user_pricing_discounts
+
+账号级专属规格倍率表。每条记录使用 `user_id + model + modality + operation + unit + resolution_tier` 联合唯一索引，精确对应一条全局启用计费规则；图片生成与编辑、图片各分辨率档及视频各分辨率档分别保存，视频时长仍作为数量乘以该分辨率的每秒价格。`ratio` 必须满足 `0 < ratio <= 1` 且最多四位小数，单个用户最多保存 500 条；不支持免费、固定价或模型通配规则。专属倍率命中时覆盖用户组倍率，不叠乘也不自动取较低值；企业共享算力仍按发起成员的账号优惠计算，再从企业余额扣除。全局规格停用或删除后记录保留为失效项但不参与计价，只允许管理员原样保留或删除；删除用户时在同一事务删除其全部记录。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 主键 |
+| `user_id` | string | 优惠归属账号 ID |
+| `model` | string | 公开模型 ID |
+| `modality` | string | 模型类型 |
+| `operation` | string | 操作类型 |
+| `unit` | string | 计费单位 |
+| `resolution_tier` | string | 分辨率价格档；非图片/视频规格为空 |
+| `ratio` | number | 专属倍率 |
+| `remark` | string | 管理员备注，最多 255 字符 |
+| `created_at` | string | 创建时间 |
+| `updated_at` | string | 更新时间 |
 
 ### referral_commissions
 
@@ -461,6 +480,7 @@ Agent 的长期记忆表。记忆同时绑定企业、用户和可选画布项�
 | `resolution_tier` | string | 命中的分辨率档 |
 | `quantity` | number | 计费数量，例如图片张数或视频秒数 |
 | `credits` | number | 本次预扣算力点 |
+| `pricing_snapshot` | text/json | 创建时固化的全局规则、数量、用户组、分组倍率、专属倍率、有效倍率、来源和最终算力，仅服务端使用 |
 | `credit_source` | string | 创建任务时固化的扣费来源：`personal` 或 `organization` |
 | `status` | string | 状态：`running`、`success`、`failed` |
 | `upstream_task_id` | string | 异步图片或视频在原渠道中的任务 ID，仅服务端使用 |
@@ -471,7 +491,7 @@ Agent 的长期记忆表。记忆同时绑定企业、用户和可选画布项�
 | `created_at` | string | 创建时间 |
 | `updated_at` | string | 更新时间 |
 
-创建任务时会按企业当时的 `credit_mode` 固化 `credit_source`。`generation_tasks`、个人或企业算力预扣和 `ai_consume` 流水在同一事务中提交，任一步失败都会整体回滚；共享模式同时检查企业算力与月度预算，消费流水的 `related_id` 保存任务 ID。客户端可通过 `Idempotency-Key` 提交稳定请求编号，同一企业、用户和请求编号只能创建一个任务，重复请求不会再次扣费。任务失败时，失败终态、原扣费来源算力返还和 `ai_refund` 流水同样在一个事务中提交，并只允许 `running` 任务进入失败终态，因此切换扣费模式或重复失败回调不会退错算力账本或重复退款。同月退款减少当月用量，跨月退款只增加共享算力。
+创建任务时会按企业当时的 `credit_mode` 固化 `credit_source`，并固化最终 `credits` 与 `pricing_snapshot`。`generation_tasks`、个人或企业算力预扣和 `ai_consume` 流水在同一事务中提交，任一步失败都会整体回滚；共享模式同时检查企业算力与月度预算，消费流水的 `related_id` 保存任务 ID，并在扩展信息中记录有效倍率和命中来源。客户端可通过 `Idempotency-Key` 提交稳定请求编号，同一企业、用户和请求编号只能创建一个任务，重复请求不会再次扣费。任务失败时，失败终态、原扣费来源算力返还和 `ai_refund` 流水同样在一个事务中提交，并只允许 `running` 任务进入失败终态；退款严格使用任务固化的算力和扣费来源，不重新读取当前全局价格、用户组或专属优惠，因此切换扣费模式或重复失败回调不会退错算力账本或重复退款。同月退款减少当月用量，跨月退款只增加共享算力。
 
 图片和视频请求会在任务表中保存稳定请求编号、原渠道、上游任务 ID、可恢复响应和已归档文件编号。生成成功后由后端直接写入七牛，并以生成任务 ID 构造稳定文件编号；重复轮询和刷新恢复复用同一文件，不再要求浏览器下载后重新上传。浏览器刷新后从服务端工作区读取“生成中”记录，再按请求编号接管原任务；视频状态和内容查询固定使用任务创建时的渠道，明确失败时才进入失败终态，避免刷新后改选渠道、重复提交、重复扣费或丢失结果。恢复接口按当前企业和用户双重隔离，不返回渠道密钥；生成记录成功写入工作区后，前端确认消费恢复结果，服务端清空临时响应和文件编号并把文件引用交给正式生成记录。
 

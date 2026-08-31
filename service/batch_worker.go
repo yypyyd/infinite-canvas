@@ -129,6 +129,29 @@ func (executor HTTPBatchProductionExecutor) Execute(ctx context.Context, input B
 	if !validHTTPSURL(executor.URL) {
 		return BatchProductionResult{}, permanentBatchProductionError(model.BatchProductionErrorValidationInput, errors.New("batch production executor URL must use HTTPS"))
 	}
+	deliverySpec := input.Job.DeliverySpec
+	if input.Selection != nil {
+		deliverySpec = input.Selection.DeliverySpec
+	}
+	pricing := standardBatchPricingRequest(input.Job.Model, input.Item.Operation, input.Item.ResolutionTier, deliverySpec)
+	if err := validateStandardBatchPricingSnapshot(input.Job, input.Item, pricing); err != nil {
+		return BatchProductionResult{}, permanentBatchProductionError(model.BatchProductionErrorPricingCredit, err)
+	}
+	references, err := standardBatchReferenceURLs(input.MediaURLs)
+	if err != nil {
+		return BatchProductionResult{}, permanentBatchProductionError(model.BatchProductionErrorValidationInput, err)
+	}
+	operation, path := standardBatchOperation(len(references))
+	if operation != input.Item.Operation {
+		return BatchProductionResult{}, permanentBatchProductionError(model.BatchProductionErrorValidationInput, errors.New("batch production reference snapshot does not match the frozen operation"))
+	}
+	user, ok, err := repository.GetUserByID(input.Job.CreatedBy)
+	if err != nil {
+		return BatchProductionResult{}, transientBatchProductionError(model.BatchProductionErrorInternal, err)
+	}
+	if !ok || user.Status != model.UserStatusActive {
+		return BatchProductionResult{}, permanentBatchProductionError(model.BatchProductionErrorValidationInput, errors.New("batch production creator is unavailable"))
+	}
 	body, err := json.Marshal(input)
 	if err != nil {
 		return BatchProductionResult{}, transientBatchProductionError(model.BatchProductionErrorInternal, err)
@@ -142,6 +165,20 @@ func (executor HTTPBatchProductionExecutor) Execute(ctx context.Context, input B
 	if strings.TrimSpace(executor.Token) != "" {
 		request.Header.Set("Authorization", "Bearer "+strings.TrimSpace(executor.Token))
 	}
+	task, err := beginOrResumeBatchGeneration(GenerationTaskInput{
+		UserID: input.Job.CreatedBy, OrganizationID: input.Job.OrganizationID,
+		RequestID: standardBatchRequestID(input.Item), BatchJobID: input.Job.ID, BatchItemID: input.Item.ID,
+		Model: input.Job.Model, UpstreamModel: input.Job.Model, ChannelName: "external-batch-executor",
+		Path: path, Modality: "image", Operation: operation, ResolutionTier: input.Item.ResolutionTier,
+		Quantity: 1, Credits: input.Item.EstimatedCredits, PricingSnapshot: input.Item.PricingSnapshot,
+	})
+	if err != nil {
+		return BatchProductionResult{}, transientBatchProductionError(model.BatchProductionErrorInternal, err)
+	}
+	if err := validateStandardBatchGenerationTask(task, input.Item, input.Job); err != nil {
+		return BatchProductionResult{}, permanentBatchProductionError(model.BatchProductionErrorUpstreamPermanent, err)
+	}
+	result := BatchProductionResult{GenerationTask: &task}
 	client := http.Client{}
 	if executor.Client != nil {
 		client = *executor.Client
@@ -152,21 +189,20 @@ func (executor HTTPBatchProductionExecutor) Execute(ctx context.Context, input B
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	response, err := client.Do(request)
 	if err != nil {
-		return BatchProductionResult{}, transientBatchProductionError(model.BatchProductionErrorUpstreamTransient, err)
+		return result, transientBatchProductionError(model.BatchProductionErrorUpstreamTransient, err)
 	}
 	defer response.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(response.Body, 64<<10))
 	if err != nil {
-		return BatchProductionResult{}, transientBatchProductionError(model.BatchProductionErrorUpstreamTransient, err)
+		return result, transientBatchProductionError(model.BatchProductionErrorUpstreamTransient, err)
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		statusErr := fmt.Errorf("executor returned HTTP %d", response.StatusCode)
 		if response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= 500 {
-			return BatchProductionResult{}, transientBatchProductionError(model.BatchProductionErrorUpstreamTransient, statusErr)
+			return result, transientBatchProductionError(model.BatchProductionErrorUpstreamTransient, statusErr)
 		}
-		return BatchProductionResult{}, permanentBatchProductionError(model.BatchProductionErrorUpstreamPermanent, statusErr)
+		return result, permanentBatchProductionError(model.BatchProductionErrorUpstreamPermanent, statusErr)
 	}
-	var result BatchProductionResult
 	if err := json.Unmarshal(data, &result); err != nil {
 		return result, permanentBatchProductionError(model.BatchProductionErrorUpstreamPermanent, err)
 	}
@@ -636,13 +672,7 @@ func batchProductionExecution(item model.BatchProductionItem, job model.BatchPro
 		}
 		execution.SKU = &sku
 	}
-	storageKeys := []string{}
-	if execution.Brand != nil && execution.Brand.LogoStorageKey != "" {
-		storageKeys = append(storageKeys, execution.Brand.LogoStorageKey)
-	}
-	if execution.SKU != nil {
-		storageKeys = append(storageKeys, execution.SKU.ImageStorageKeys...)
-	}
+	storageKeys := standardBatchReferenceStorageKeys(execution.Brand, execution.SKU)
 	if len(storageKeys) > 0 {
 		execution.MediaURLs = make(map[string]string, len(storageKeys))
 		for _, storageKey := range storageKeys {

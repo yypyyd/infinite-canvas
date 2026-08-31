@@ -25,6 +25,7 @@ import { useAssetStore } from "@/stores/use-asset-store";
 import { useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useUserStore } from "@/stores/use-user-store";
+import { usePricingStore } from "@/stores/use-pricing-store";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 
@@ -92,6 +93,8 @@ export default function VideoPage() {
     const groupRatios = useConfigStore((state) => state.publicSettings?.modelChannel.groupRatios);
     const addAsset = useAssetStore((state) => state.addAsset);
     const userGroup = useUserStore((state) => state.user?.group || "default");
+    const specPricing = usePricingStore((state) => state.specPricing);
+    const currentGroupRatio = usePricingStore((state) => state.groupRatio);
     const historyOwnerId = useUserStore((state) => (state.user ? workspaceOwnerId(state.user.id, state.user.organizationId) : "guest"));
     const [prompt, setPrompt] = useState("");
     const [references, setReferences] = useState<ReferenceImage[]>([]);
@@ -119,6 +122,8 @@ export default function VideoPage() {
     const canGenerate = Boolean(prompt.trim());
     const creditQuote = requestCreditQuote({
         pricingRules,
+        specPricing,
+        currentGroupRatio,
         groupRatios,
         userGroup,
         model,

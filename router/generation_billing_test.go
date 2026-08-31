@@ -190,6 +190,35 @@ func TestImageGenerationHTTPBillingAndIdempotency(t *testing.T) {
 			t.Fatalf("upstream calls = %d, want 5", upstreamCalls.Load())
 		}
 	})
+
+	t.Run("shared mode uses initiating member exact spec discount", func(t *testing.T) {
+		tenant := seedRouterTestTenant(t, "generation-shared-user-pricing")
+		setRouterTestCredits(t, tenant.User.ID, 10)
+		setRouterTestOrganizationCredits(t, tenant.Organization.ID, 10, 100, 0)
+		if _, err := service.ReplaceUserPricingDiscounts(tenant.User.ID, []model.UserPricingDiscount{{Model: "router-image-model", Modality: "image", Operation: "generation", Unit: "image", ResolutionTier: "1k", Ratio: 0.5}}); err != nil {
+			t.Fatal(err)
+		}
+		client, baseURL := loginRouterTestClient(t, tenant.User.Username)
+		status, body := routerTestImageGeneration(t, client, baseURL, tenant.Organization.ID, "router-generation-shared-user-pricing", "success")
+		if status != http.StatusOK || !bytes.Contains(body, []byte(`"data"`)) {
+			t.Fatalf("shared user pricing response: status=%d body=%s", status, body)
+		}
+		assertRouterTestSharedGenerationAccounting(t, tenant, 10, 8, 2, model.GenerationTaskStatusSuccess)
+		var task model.GenerationTask
+		database, err := repository.DB()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := database.Where("organization_id = ? AND user_id = ?", tenant.Organization.ID, tenant.User.ID).First(&task).Error; err != nil {
+			t.Fatal(err)
+		}
+		if task.PricingSnapshot.Source != "user_spec" || task.PricingSnapshot.EffectiveRatio != 0.5 || task.PricingSnapshot.Credits != 2 {
+			t.Fatalf("unexpected shared user pricing snapshot: %#v", task.PricingSnapshot)
+		}
+		if upstreamCalls.Load() != 6 {
+			t.Fatalf("upstream calls = %d, want 6", upstreamCalls.Load())
+		}
+	})
 }
 
 func setRouterTestOrganizationCredits(t *testing.T, organizationID string, credits int, budget int, used int) {

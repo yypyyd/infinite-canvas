@@ -34,6 +34,20 @@ export type AdminUserListResponse = {
     total: number;
 };
 
+export type AdminUserPricingDiscount = {
+    id?: string;
+    userId?: string;
+    model: string;
+    modality: string;
+    operation: string;
+    unit: string;
+    resolutionTier: string;
+    ratio: number;
+    remark: string;
+    createdAt?: string;
+    updatedAt?: string;
+};
+
 export type AdminCreditLog = {
     id: string;
     userId: string;
@@ -162,6 +176,14 @@ export async function adjustAdminUserCredits(token: string, id: string, credits:
 
 export async function deleteAdminUser(token: string, id: string) {
     return apiDelete<boolean>(`/api/admin/users/${encodeURIComponent(id)}`, token);
+}
+
+export async function fetchAdminUserPricingDiscounts(token: string, id: string) {
+    return apiGet<AdminUserPricingDiscount[]>(`/api/admin/users/${encodeURIComponent(id)}/pricing-discounts`, undefined, token);
+}
+
+export async function saveAdminUserPricingDiscounts(token: string, id: string, items: AdminUserPricingDiscount[]) {
+    return apiPost<AdminUserPricingDiscount[]>(`/api/admin/users/${encodeURIComponent(id)}/pricing-discounts`, { items }, token);
 }
 
 export async function fetchAdminCreditLogs(token: string, query: AdminUserQuery = {}) {

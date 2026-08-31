@@ -7,15 +7,19 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { useCopyText } from "@/hooks/use-copy-text";
+import { hasUserSpecPricing, requestCreditQuote, userSpecPricingRatio, type UserSpecPricingIndex } from "@/constant/credits";
 import { videoOutputSize } from "@/lib/video-format";
 import type { AdminManagedModel, AdminPricingRule } from "@/services/api/admin";
 import { useConfigStore } from "@/stores/use-config-store";
+import { usePricingStore } from "@/stores/use-pricing-store";
+import { useUserStore } from "@/stores/use-user-store";
 
 type ModelModality = "image" | "video" | "audio";
 type ModelOperation = "generation" | "edit" | "speech";
 type ModalityFilter = "all" | ModelModality;
 type OperationFilter = "all" | ModelOperation;
 type MarketplaceModel = AdminManagedModel & { modality: ModelModality };
+type PricingContext = { specPricing: UserSpecPricingIndex; currentGroupRatio: number | null; groupRatios?: Record<string, number>; userGroup: string };
 
 const pageSize = 12;
 const modalityMeta: Record<ModelModality, { label: string; description: string; icon: LucideIcon }> = {
@@ -31,6 +35,9 @@ export default function ModelSquarePage() {
     const modelChannel = useConfigStore((state) => state.publicSettings?.modelChannel || null);
     const isLoading = useConfigStore((state) => state.isPublicSettingsLoading);
     const loadPublicSettings = useConfigStore((state) => state.loadPublicSettings);
+    const specPricing = usePricingStore((state) => state.specPricing);
+    const currentGroupRatio = usePricingStore((state) => state.groupRatio);
+    const userGroup = useUserStore((state) => state.user?.group || "default");
     const [endpoint, setEndpoint] = useState("/api/v1");
     const [keyword, setKeyword] = useState("");
     const [modality, setModality] = useState<ModalityFilter>("all");
@@ -83,6 +90,7 @@ export default function ModelSquarePage() {
     const selectedOperations = selectedModel ? modelOperations(selectedModel) : [];
     const activeOperation = selectedOperations.includes(selectedOperation) ? selectedOperation : selectedOperations[0];
     const selectedRules = selectedModel ? enabledPricingRules(modelChannel?.pricingRules || [], selectedModel.id, activeOperation) : [];
+    const pricingContext = { specPricing, currentGroupRatio, groupRatios: modelChannel?.groupRatios, userGroup };
     const hasFilters = modality !== "all" || operation !== "all";
 
     const chooseModel = (model: MarketplaceModel) => {
@@ -215,7 +223,14 @@ export default function ModelSquarePage() {
                             <>
                                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                                     {pagedModels.map((model) => (
-                                        <ModelCard key={model.id} model={model} rules={enabledPricingRules(modelChannel.pricingRules || [], model.id)} onDetails={() => chooseModel(model)} onCopy={() => copyText(model.id, "模型 ID 已复制")} />
+                                        <ModelCard
+                                            key={model.id}
+                                            model={model}
+                                            rules={enabledPricingRules(modelChannel.pricingRules || [], model.id)}
+                                            pricing={pricingContext}
+                                            onDetails={() => chooseModel(model)}
+                                            onCopy={() => copyText(model.id, "模型 ID 已复制")}
+                                        />
                                     ))}
                                 </div>
                                 {visibleModels.length > pageSize ? (
@@ -247,6 +262,7 @@ export default function ModelSquarePage() {
                     <ModelDetails
                         model={selectedModel}
                         rules={selectedRules}
+                        pricing={pricingContext}
                         endpoint={endpoint}
                         operation={activeOperation}
                         operations={selectedOperations}
@@ -284,7 +300,7 @@ function FilterChip({ label, count, active, icon: Icon, onClick }: { label: stri
     );
 }
 
-function ModelCard({ model, rules, onDetails, onCopy }: { model: MarketplaceModel; rules: AdminPricingRule[]; onDetails: () => void; onCopy: () => void }) {
+function ModelCard({ model, rules, pricing, onDetails, onCopy }: { model: MarketplaceModel; rules: AdminPricingRule[]; pricing: PricingContext; onDetails: () => void; onCopy: () => void }) {
     const meta = modalityMeta[model.modality];
     const Icon = meta.icon;
     const tags = capabilityTags(model);
@@ -311,7 +327,8 @@ function ModelCard({ model, rules, onDetails, onCopy }: { model: MarketplaceMode
             <div className="mt-5 flex items-end justify-between gap-3 border-b border-border pb-4">
                 <div>
                     <div className="text-[11px] text-muted-foreground">调用价格</div>
-                    <div className="mt-1 font-mono text-sm font-semibold text-primary">{pricingSummary(rules)}</div>
+                    <div className="mt-1 font-mono text-sm font-semibold text-primary">{pricingSummary(rules, pricing)}</div>
+                    {rules.some((rule) => hasUserSpecPricing(pricing.specPricing, rule)) ? <div className="mt-1 text-[10px] font-medium text-primary">含专属规格优惠</div> : null}
                 </div>
                 <span className="rounded-md bg-muted px-2 py-1 text-[11px] font-medium text-muted-foreground">{meta.label}模型</span>
             </div>
@@ -340,6 +357,7 @@ function ModelCard({ model, rules, onDetails, onCopy }: { model: MarketplaceMode
 function ModelDetails({
     model,
     rules,
+    pricing,
     endpoint,
     operation,
     operations,
@@ -350,6 +368,7 @@ function ModelDetails({
 }: {
     model: MarketplaceModel;
     rules: AdminPricingRule[];
+    pricing: PricingContext;
     endpoint: string;
     operation?: ModelOperation;
     operations: ModelOperation[];
@@ -386,7 +405,7 @@ function ModelDetails({
                 {rules.length ? (
                     <div className="mt-3 grid gap-3 sm:grid-cols-2">
                         {rules.map((rule, index) => (
-                            <PriceCard key={`${rule.operation}-${rule.resolutionTier}-${index}`} rule={rule} />
+                            <PriceCard key={`${rule.operation}-${rule.resolutionTier}-${index}`} rule={rule} pricing={pricing} />
                         ))}
                     </div>
                 ) : (
@@ -459,7 +478,10 @@ function ModelDetails({
     );
 }
 
-function PriceCard({ rule }: { rule: AdminPricingRule }) {
+function PriceCard({ rule, pricing }: { rule: AdminPricingRule; pricing: PricingContext }) {
+    const quote = effectiveRuleQuote(rule, pricing);
+    const hasExclusivePricing = hasUserSpecPricing(pricing.specPricing, rule);
+    const exclusiveRatio = hasExclusivePricing ? userSpecPricingRatio(pricing.specPricing, rule) : undefined;
     return (
         <div className="rounded-xl bg-primary/[.055] p-3.5 ring-1 ring-primary/15">
             <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
@@ -467,9 +489,10 @@ function PriceCard({ rule }: { rule: AdminPricingRule }) {
                 <span>{operationLabel(rule.operation)}</span>
             </div>
             <div className="mt-2 font-mono text-lg font-semibold text-primary">
-                {rule.billingMode === "ratio" ? `${rule.modelRatio}×` : rule.credits == null ? "未设置价格" : rule.credits}
+                {quote.matched ? quote.credits : "未设置价格"}
                 <span className="ml-1.5 font-sans text-[11px] font-normal text-muted-foreground">算力 / {unitLabel(rule.unit)}</span>
             </div>
+            {hasExclusivePricing ? <div className="mt-1 text-[11px] font-medium text-primary">专属 {exclusiveRatio}×</div> : null}
             {rule.minCredits > 0 ? <div className="mt-1 text-[11px] text-muted-foreground">单次最低 {rule.minCredits} 算力</div> : null}
         </div>
     );
@@ -498,12 +521,27 @@ function enabledPricingRules(rules: AdminPricingRule[], modelId: string, operati
     return rules.filter((rule) => rule.enabled && rule.model === modelId && (!operation || rule.operation === operation));
 }
 
-function pricingSummary(rules: AdminPricingRule[]) {
+function pricingSummary(rules: AdminPricingRule[], pricing: PricingContext) {
     if (!rules.length) return "暂未定价";
-    const fixedRules = rules.filter((rule) => rule.billingMode === "fixed" && rule.credits != null);
-    if (!fixedRules.length) return `${rules[0].modelRatio}× 倍率`;
-    const lowest = fixedRules.reduce((value, rule) => Math.min(value, Number(rule.credits)), Number.POSITIVE_INFINITY);
-    return `${fixedRules.length > 1 ? "最低 " : ""}${lowest} 算力 / ${unitLabel(fixedRules.find((rule) => Number(rule.credits) === lowest)?.unit || "request")}`;
+    const quotes = rules.map((rule) => ({ rule, quote: effectiveRuleQuote(rule, pricing) })).filter((item) => item.quote.matched);
+    if (!quotes.length) return "暂未定价";
+    const lowest = quotes.reduce((value, item) => (item.quote.credits < value.quote.credits ? item : value), quotes[0]);
+    return `${quotes.length > 1 ? "最低 " : ""}${lowest.quote.credits} 算力 / ${unitLabel(lowest.rule.unit)}`;
+}
+
+function effectiveRuleQuote(rule: AdminPricingRule, pricing: PricingContext) {
+    return requestCreditQuote({
+        pricingRules: [rule],
+        specPricing: pricing.specPricing,
+        currentGroupRatio: pricing.currentGroupRatio,
+        groupRatios: pricing.groupRatios,
+        userGroup: pricing.userGroup,
+        model: rule.model,
+        modality: rule.modality,
+        operation: rule.operation,
+        unit: rule.unit,
+        resolutionTier: rule.resolutionTier,
+    });
 }
 
 function capabilityTags(model: MarketplaceModel) {

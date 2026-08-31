@@ -94,7 +94,9 @@ description: settings 表中 public 和 private 配置结构说明
 | `modelRatio` | number | 倍率计费模式下的模型倍率 |
 | `completionRatio` | number | 补全倍率，预留给后续 token usage 结算 |
 
-用户端统一请求同源后端 `/api/v1/*`，后端按模型名、类型、操作、比例、分辨率档和视频时长匹配 `private.value.channels` 中的可用渠道。计费规则不按视频时长拆档，未命中管理员显式配置的价格时直接拒绝请求并提示未设置价格。浏览器不保存上游 Base URL 或 API Key。
+用户端统一请求同源后端 `/api/v1/*`，后端按模型名、类型、操作、比例、分辨率档和视频时长匹配 `private.value.channels` 中的可用渠道。`pricingRules` 是全局基础计费规则；请求先精确命中规则，再按“账号专属规格倍率 → 用户组倍率 → `default` → `1`”选择一个有效倍率，专属倍率直接覆盖分组倍率而不叠乘。最终算力为 `max(minCredits, ceil(基础计费 × 数量 × 有效倍率))`，视频时长只作为同分辨率每秒价格的数量。未命中管理员显式配置价格的规格直接拒绝，不会因为存在专属优惠而开放未定价规格。
+
+账号专属优惠单独保存在 `user_pricing_discounts`，不进入公开 `/api/settings`。认证接口 `GET /api/v1/pricing` 只返回当前登录账号或 API Key 所属账号对每条启用规格的有效倍率和来源，不返回备注、其他账号规则或内部价格快照；前端仅在内存中建立复合规格索引用于报价展示，实际扣费始终由服务端请求级计价 Resolver 决定。浏览器不保存上游 Base URL、API Key 或账号价格资料。
 
 `auth` 字段：
 

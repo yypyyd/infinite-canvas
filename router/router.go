@@ -132,6 +132,7 @@ func New() *gin.Engine {
 	v1 := api.Group("/v1", middleware.APIAuth, middleware.OrganizationAuth)
 	v1.GET("/models", gin.WrapF(handler.AIModels))
 	v1.GET("/credits", gin.WrapF(handler.APICreditSummary))
+	v1.GET("/pricing", gin.WrapF(handler.Pricing))
 	v1.GET("/generation-tasks/recovery", gin.WrapF(handler.RecoverAPIGenerationTask))
 	v1.POST("/images/generations", gin.WrapF(handler.AIImagesGenerations))
 	v1.POST("/images/edits", gin.WrapF(handler.AIImagesEdits))
@@ -198,6 +199,12 @@ func New() *gin.Engine {
 	admin.POST("/operations/data-consistency/repair", gin.WrapF(handler.AdminRepairDataConsistency))
 	admin.GET("/generation-tasks", gin.WrapF(handler.AdminGenerationTasks))
 	admin.POST("/users", gin.WrapF(handler.AdminSaveUser))
+	admin.GET("/users/:id/pricing-discounts", func(c *gin.Context) {
+		handler.AdminUserPricingDiscounts(c.Writer, c.Request, c.Param("id"))
+	})
+	admin.POST("/users/:id/pricing-discounts", func(c *gin.Context) {
+		handler.AdminReplaceUserPricingDiscounts(c.Writer, c.Request, c.Param("id"))
+	})
 	admin.POST("/users/:id/credits", func(c *gin.Context) {
 		handler.AdminAdjustUserCredits(c.Writer, c.Request, c.Param("id"))
 	})

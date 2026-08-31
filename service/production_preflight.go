@@ -10,11 +10,12 @@ import (
 )
 
 type resolvedImageProduction struct {
-	Preflight            model.ProductionPreflight
-	Products             map[string]model.Product
-	SKUs                 map[string][]model.ProductSKU
-	Selections           []model.BatchProductionTemplateSelection
-	ItemEstimatedCredits map[string]int
+	Preflight   model.ProductionPreflight
+	Model       string
+	Products    map[string]model.Product
+	SKUs        map[string][]model.ProductSKU
+	Selections  []model.BatchProductionTemplateSelection
+	ItemPricing map[string]model.BatchProductionItemPricing
 }
 
 func PreflightImageProduction(user model.AuthUser, input model.CreateBatchProductionJobInput) (model.ProductionPreflight, error) {
@@ -22,11 +23,11 @@ func PreflightImageProduction(user model.AuthUser, input model.CreateBatchProduc
 	if err != nil {
 		return model.ProductionPreflight{}, err
 	}
-	resolved, err := resolveImageProduction(organization.ID, user.Group, input)
+	resolved, err := resolveImageProduction(organization.ID, user.ID, user.Group, input)
 	return resolved.Preflight, err
 }
 
-func resolveImageProduction(organizationID string, userGroup string, input model.CreateBatchProductionJobInput) (resolvedImageProduction, error) {
+func resolveImageProduction(organizationID string, userID string, userGroup string, input model.CreateBatchProductionJobInput) (resolvedImageProduction, error) {
 	input.Name, input.BrandID, input.PreviewSKUID = strings.TrimSpace(input.Name), strings.TrimSpace(input.BrandID), strings.TrimSpace(input.PreviewSKUID)
 	issues := []model.ProductionPreflightIssue{}
 	if len(input.ProductScopes) == 0 && len(input.ProductIDs) > 0 {
@@ -42,6 +43,17 @@ func resolveImageProduction(organizationID string, userGroup string, input model
 	}
 	if len(input.TemplateSelections) == 0 {
 		return resolvedImageProduction{}, safeMessageError{message: "请至少选择一个图片模板"}
+	}
+	var brand *model.Brand
+	if input.BrandID != "" {
+		value, ok, err := repository.GetBrand(organizationID, input.BrandID)
+		if err != nil {
+			return resolvedImageProduction{}, err
+		}
+		if !ok {
+			return resolvedImageProduction{}, safeMessageError{message: "任务品牌不存在"}
+		}
+		brand = &value
 	}
 	scopeByProduct := map[string]model.BatchProductionProductScope{}
 	for _, scope := range input.ProductScopes {
@@ -164,7 +176,7 @@ func resolveImageProduction(organizationID string, userGroup string, input model
 		resolvedSelections = append(resolvedSelections, resolvedSelection{input: selected, selection: model.BatchProductionTemplateSelection{TemplateID: selected.TemplateID, TemplateVersion: version, TemplateType: templateType, Quantity: selected.Quantity, Prompt: prompt, SpecJSON: specJSON, DeliverySpec: delivery}})
 		for productID, skuItems := range skusByProduct {
 			for _, sku := range skuItems {
-				if spec.RequireReference && len(sku.ImageStorageKeys) == 0 {
+				if spec.RequireReference && len(standardBatchReferenceStorageKeys(brand, &sku)) == 0 {
 					issues = append(issues, model.ProductionPreflightIssue{Severity: "error", Code: "REFERENCE_REQUIRED", ProductID: productID, SKUID: sku.ID, TemplateID: selected.TemplateID, Field: "imageStorageKeys", Message: "该 SKU 缺少模板要求的参考图"})
 				}
 				if spec.RequireSellingPoints && len(products[productID].SellingPoints) == 0 {
@@ -214,21 +226,22 @@ func resolveImageProduction(organizationID string, userGroup string, input model
 	if modelName == "" {
 		return resolvedImageProduction{}, safeMessageError{message: "默认图片模型未配置，无法估算任务价格"}
 	}
-	itemEstimatedCredits := make(map[string]int, totalSKUs*len(selections))
+	resolver, err := NewPricingResolver(userID, userGroup)
+	if err != nil {
+		return resolvedImageProduction{}, err
+	}
+	itemPricing := make(map[string]model.BatchProductionItemPricing, totalSKUs*len(selections))
 	estimatedCredits := 0
 	for _, skuItems := range skusByProduct {
 		for _, sku := range skuItems {
-			operation := "generation"
-			if len(sku.ImageStorageKeys) > 0 {
-				operation = "edit"
-			}
+			operation, _ := standardBatchOperation(len(standardBatchReferenceStorageKeys(brand, &sku)))
 			for _, selection := range selections {
-				credits, err := CalculateRequestCreditsForGroup(standardBatchPricingRequest(modelName, operation, selection.DeliverySpec), userGroup)
+				pricing, err := resolver.Resolve(standardBatchPricingRequest(modelName, operation, standardBatchResolutionTier, selection.DeliverySpec))
 				if err != nil {
 					return resolvedImageProduction{}, err
 				}
-				itemEstimatedCredits[imageProductionEstimateKey(sku.ID, selection.SelectionIndex)] = credits
-				estimatedCredits += credits * selection.Quantity
+				itemPricing[imageProductionEstimateKey(sku.ID, selection.SelectionIndex)] = model.BatchProductionItemPricing{Operation: operation, ResolutionTier: standardBatchResolutionTier, EstimatedCredits: pricing.Credits, PricingSnapshot: pricing.Snapshot}
+				estimatedCredits += pricing.Credits * selection.Quantity
 			}
 		}
 	}
@@ -240,8 +253,8 @@ func resolveImageProduction(organizationID string, userGroup string, input model
 			}
 			for _, selection := range selections {
 				job := model.BatchProductionJob{PresetPrompt: selection.Prompt, DeliverySpec: selection.DeliverySpec}
-				prompt, _ := batchProductionPrompt(BatchProductionExecution{Job: job, Product: products[productID], SKU: &sku})
-				previews = append(previews, model.ProductionPreflightPreview{SKUID: sku.ID, TemplateID: selection.TemplateID, TemplateVersion: selection.TemplateVersion, Prompt: prompt, ReferenceStorageKeys: sku.ImageStorageKeys, DeliverySpec: selection.DeliverySpec})
+				prompt, _ := batchProductionPrompt(BatchProductionExecution{Job: job, Brand: brand, Product: products[productID], SKU: &sku})
+				previews = append(previews, model.ProductionPreflightPreview{SKUID: sku.ID, TemplateID: selection.TemplateID, TemplateVersion: selection.TemplateVersion, Prompt: prompt, ReferenceStorageKeys: standardBatchReferenceStorageKeys(brand, &sku), DeliverySpec: selection.DeliverySpec})
 			}
 			if len(previews) > 0 {
 				break
@@ -252,7 +265,7 @@ func resolveImageProduction(organizationID string, userGroup string, input model
 		}
 	}
 	result := model.ProductionPreflight{NormalizedInput: input, SKUCount: totalSKUs, TemplateCount: len(selections), TotalItems: totalItems, EstimatedCredits: estimatedCredits, CanSubmit: len(issues) == 0 && totalItems > 0, Issues: issues, Previews: previews}
-	return resolvedImageProduction{Preflight: result, Products: products, SKUs: skusByProduct, Selections: selections, ItemEstimatedCredits: itemEstimatedCredits}, nil
+	return resolvedImageProduction{Preflight: result, Model: modelName, Products: products, SKUs: skusByProduct, Selections: selections, ItemPricing: itemPricing}, nil
 }
 
 func imageProductionEstimateKey(skuID string, selectionIndex int) string {

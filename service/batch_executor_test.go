@@ -152,6 +152,37 @@ func TestStandardBatchReferenceURLsAreStableAndLimited(t *testing.T) {
 	}
 }
 
+func TestStandardBatchReferenceSpecIncludesBrandLogoAndSKUImages(t *testing.T) {
+	brand := &model.Brand{LogoStorageKey: "logo-z"}
+	sku := &model.ProductSKU{ImageStorageKeys: []string{"sku-b", "sku-a", "logo-z", "sku-c", "sku-d"}}
+	keys := standardBatchReferenceStorageKeys(brand, sku)
+	if len(keys) != maxStandardBatchReferences || strings.Join(keys, ",") != "logo-z,sku-a,sku-b,sku-c" {
+		t.Fatalf("unexpected frozen reference keys: %#v", keys)
+	}
+	operation, path := standardBatchOperation(len(keys))
+	if operation != "edit" || path != "/images/edits" {
+		t.Fatalf("unexpected reference operation: %s %s", operation, path)
+	}
+	operation, path = standardBatchOperation(0)
+	if operation != "generation" || path != "/images/generations" {
+		t.Fatalf("unexpected reference-free operation: %s %s", operation, path)
+	}
+}
+
+func TestValidateStandardBatchPricingSnapshotRejectsSpecificationDrift(t *testing.T) {
+	snapshot := model.PricingSnapshot{Model: "image-model", Modality: "image", Operation: "edit", Unit: "image", ResolutionTier: "1k", Quantity: 1, BillingMode: "fixed", RuleCredits: 4, EffectiveRatio: 0.5, Source: "user_spec", Credits: 2}
+	job := model.BatchProductionJob{Model: "image-model"}
+	item := model.BatchProductionItem{Operation: "edit", ResolutionTier: "1k", EstimatedCredits: 2, PricingSnapshot: snapshot}
+	request := standardBatchPricingRequest(job.Model, item.Operation, item.ResolutionTier, model.ProductionDeliverySpec{})
+	if err := validateStandardBatchPricingSnapshot(job, item, request); err != nil {
+		t.Fatalf("valid frozen snapshot rejected: %v", err)
+	}
+	item.EstimatedCredits = 3
+	if err := validateStandardBatchPricingSnapshot(job, item, request); err == nil {
+		t.Fatal("expected changed reserved credits to be rejected")
+	}
+}
+
 func TestStandardBatchRequestIDIsStableWithinRun(t *testing.T) {
 	item := model.BatchProductionItem{ID: "item-a", RunNumber: 2}
 	requestID := standardBatchRequestID(item)
@@ -188,14 +219,39 @@ func TestSelectStandardBatchModelChannelKeepsOriginalChannel(t *testing.T) {
 	}
 }
 
+func TestSelectStandardBatchModelChannelFallsBackForSameFrozenSpec(t *testing.T) {
+	saved, err := repository.GetSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings := saved
+	settings.Private.Channels = []model.ModelChannel{
+		{Name: "replacement", BaseURL: "https://replacement.example.com", APIKey: "key", Weight: 1, Enabled: true, Models: []model.ChannelModel{{Model: "image-model", UpstreamModel: "replacement-upstream", Operations: []string{"edit"}, ResolutionTiers: []string{"2k"}}}},
+		{Name: "wrong-spec", BaseURL: "https://wrong.example.com", APIKey: "key", Weight: 100, Enabled: true, Models: []model.ChannelModel{{Model: "image-model", UpstreamModel: "wrong-upstream", Operations: []string{"generation"}, ResolutionTiers: []string{"1k"}}}},
+	}
+	if _, err := repository.SaveSettings(settings, "batch-channel-fallback"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = repository.SaveSettings(saved, "batch-channel-fallback-cleanup") })
+	task := model.GenerationTask{Model: "image-model", ChannelName: "removed", UpstreamModel: "removed-upstream"}
+	selection, err := selectStandardBatchModelChannel(PricingRequest{Model: "image-model", Modality: "image", Operation: "edit", Unit: "image", ResolutionTier: "2k", Quantity: 1}, &task, "request-fallback")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selection.Channel.Name != "replacement" || selection.Model.UpstreamModel != "replacement-upstream" {
+		t.Fatalf("unexpected fallback selection: %#v", selection)
+	}
+}
+
 func TestStandardBatchExecutorReturnsResumedTaskOnPreflightFailure(t *testing.T) {
 	user, _, organization := seedTenant(t, "batch-resume-preflight")
-	job := model.BatchProductionJob{ID: "job-batch-resume-preflight", OrganizationID: organization.ID, CreatedBy: user.ID}
-	item := model.BatchProductionItem{ID: "item-batch-resume-preflight", OrganizationID: organization.ID, JobID: job.ID, RunNumber: 1}
+	snapshot := model.PricingSnapshot{Model: "image-model", Modality: "image", Operation: "generation", Unit: "image", ResolutionTier: "1k", Quantity: 1, BillingMode: "fixed", RuleCredits: 2, EffectiveRatio: 1, Source: "default", Credits: 2}
+	job := model.BatchProductionJob{ID: "job-batch-resume-preflight", OrganizationID: organization.ID, CreatedBy: user.ID, Model: "image-model"}
+	item := model.BatchProductionItem{ID: "item-batch-resume-preflight", OrganizationID: organization.ID, JobID: job.ID, RunNumber: 1, Operation: "generation", ResolutionTier: "1k", EstimatedCredits: 2, PricingSnapshot: snapshot}
 	task := model.GenerationTask{
 		ID: "task-batch-resume-preflight", UserID: user.ID, OrganizationID: organization.ID, RequestID: standardBatchRequestID(item),
 		BatchJobID: job.ID, BatchItemID: item.ID, Model: "image-model", UpstreamModel: "upstream-image", ChannelName: "channel-a",
-		Path: "/images/generations", Modality: "image", Operation: "generation", ResolutionTier: "1k", Quantity: 1, Credits: 2,
+		Path: "/images/generations", Modality: "image", Operation: "generation", ResolutionTier: "1k", Quantity: 1, Credits: 2, PricingSnapshot: snapshot,
 		CreditSource: model.CreditSourcePersonal, Status: model.GenerationTaskStatusRunning, CreatedAt: "1", UpdatedAt: "1",
 	}
 	database, err := repository.DB()

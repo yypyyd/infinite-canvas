@@ -15,6 +15,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/yypyyd/infinite-canvas/model"
 	"github.com/yypyyd/infinite-canvas/service"
 )
 
@@ -138,6 +139,60 @@ func TestReplaceAIRequestModel(t *testing.T) {
 	}
 }
 
+func TestBuildAIUpstreamRequestUsesHuantuAsyncImageTasks(t *testing.T) {
+	incoming := httptest.NewRequest(http.MethodPost, "/api/v1/images/generations", nil)
+	selection := service.ModelChannelSelection{
+		Channel: model.ModelChannel{BaseURL: "https://api.huantu.xyz/v1", APIKey: "secret"},
+		Model:   model.ChannelModel{UpstreamModel: "gpt-image-2"},
+	}
+	request, err := buildAIUpstreamRequest(incoming, "/images/generations", []byte(`{"model":"image","prompt":"test"}`), "application/json", selection, "request-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request.Header.Get("Prefer") != "respond-async" {
+		t.Fatalf("Prefer = %q, want respond-async", request.Header.Get("Prefer"))
+	}
+	if request.Header.Get("Idempotency-Key") != "request-1" {
+		t.Fatalf("Idempotency-Key = %q", request.Header.Get("Idempotency-Key"))
+	}
+	selection.Channel.BaseURL = "https://example.com/v1"
+	request, err = buildAIUpstreamRequest(incoming, "/images/generations", []byte(`{"model":"image","prompt":"test"}`), "application/json", selection, "request-2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request.Header.Get("Prefer") != "" {
+		t.Fatalf("unrelated upstream Prefer = %q, want empty", request.Header.Get("Prefer"))
+	}
+}
+
+func TestRecoverAcceptedImageTask(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/images/tasks" || r.URL.Query().Get("request_id") != "request-1" {
+			t.Fatalf("unexpected poll URL %s", r.URL.String())
+		}
+		if r.Header.Get("Authorization") != "Bearer secret" {
+			t.Fatalf("Authorization = %q", r.Header.Get("Authorization"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"status":"completed","created":123,"data":[{"b64_json":"aW1hZ2U="}]}`)
+	}))
+	t.Cleanup(server.Close)
+
+	request, err := http.NewRequest(http.MethodPost, server.URL+"/v1/images/generations", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer secret")
+	request.Header.Set("Idempotency-Key", "request-1")
+	body, message, state := recoverImageTask(httptest.NewRecorder(), request, true)
+	if state != imageTaskRecoveryHandled || message != "" {
+		t.Fatalf("state=%d message=%q", state, message)
+	}
+	if got := aiImageResponseError(body); got != "" {
+		t.Fatalf("recovered body error = %q, body=%s", got, body)
+	}
+}
+
 func TestReplaceMultipartAIRequestModel(t *testing.T) {
 	var source strings.Builder
 	writer := multipart.NewWriter(&source)
@@ -165,6 +220,9 @@ func TestAdaptVividAIImageRequestDoesNotTreatQualityAsResolution(t *testing.T) {
 	}
 	if payload["size"] != "1024x1024" {
 		t.Fatalf("size = %q, want 1024x1024", payload["size"])
+	}
+	if payload["quality"] != "high" {
+		t.Fatalf("quality = %q, want high", payload["quality"])
 	}
 }
 
@@ -210,6 +268,9 @@ func TestAdaptAIRequestBodyUsesHuantu4KImageAdapter(t *testing.T) {
 	}
 	if payload["size"] != "3072x4096" {
 		t.Fatalf("size = %q, want 3072x4096", payload["size"])
+	}
+	if payload["quality"] != "high" {
+		t.Fatalf("quality = %q, want high", payload["quality"])
 	}
 }
 

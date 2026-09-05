@@ -38,6 +38,8 @@ type aiRetryPolicy struct {
 	Delay      time.Duration
 }
 
+var imageTaskHTTPClient = &http.Client{Timeout: 20 * time.Second}
+
 var videoGenerationCache = struct {
 	sync.Mutex
 	items map[string]cachedVideoGeneration
@@ -296,8 +298,10 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 	for {
 		response, responseBody, requestErr := doAIRequestWithRetry(request, nil)
 		timeoutRecovery := imageTaskRecoveryUnavailable
-		if requestErr == nil && response != nil && isAIImageGatewayTimeout(response.StatusCode) && !isAIContentPolicyRejection(responseBody) {
-			recoveredBody, message, recovery := recoverGatewayTimedOutImageTask(w, request)
+		asyncAccepted := requestErr == nil && isAsyncImageTaskAccepted(path, response)
+		shouldRecover := asyncAccepted || requestErr == nil && response != nil && isAIImageGatewayTimeout(response.StatusCode) && !isAIContentPolicyRejection(responseBody)
+		if shouldRecover {
+			recoveredBody, message, recovery := recoverImageTask(w, request, asyncAccepted)
 			timeoutRecovery = recovery
 			if recovery == imageTaskRecoveryHandled {
 				_ = response.Body.Close()
@@ -320,6 +324,13 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 				w.Header().Set("Content-Type", "application/json; charset=utf-8")
 				_, _ = w.Write(recoveredBody)
 				finishTask(model.GenerationTaskStatusSuccess, "")
+				return
+			}
+			if asyncAccepted {
+				_ = response.Body.Close()
+				message := "AI 接口请求失败：上游异步任务查询不可用"
+				finishTask(model.GenerationTaskStatusFailed, message)
+				Fail(w, message)
 				return
 			}
 		}
@@ -493,6 +504,9 @@ func buildAIUpstreamRequest(r *http.Request, path string, body []byte, contentTy
 		return nil, err
 	}
 	request.Header.Set("Authorization", "Bearer "+selection.Channel.APIKey)
+	if supportsAsyncImageTasks(selection.Channel.BaseURL, path) {
+		request.Header.Set("Prefer", "respond-async")
+	}
 	if requestID := strings.TrimSpace(r.Header.Get("X-Request-ID")); requestID != "" {
 		request.Header.Set("X-Request-ID", requestID)
 	}
@@ -702,6 +716,18 @@ func isDefiniteAIConnectionFailure(err error) bool {
 	return errors.As(err, &operationError) && strings.EqualFold(operationError.Op, "dial")
 }
 
+func supportsAsyncImageTasks(baseURL string, path string) bool {
+	if path != "/images/generations" && path != "/images/edits" {
+		return false
+	}
+	parsed, err := url.Parse(strings.TrimSpace(baseURL))
+	return err == nil && strings.EqualFold(parsed.Hostname(), "api.huantu.xyz")
+}
+
+func isAsyncImageTaskAccepted(path string, response *http.Response) bool {
+	return response != nil && response.StatusCode == http.StatusAccepted && (path == "/images/generations" || path == "/images/edits")
+}
+
 type chatGPT2APIImageTask struct {
 	ID     string           `json:"id"`
 	Status string           `json:"status"`
@@ -874,7 +900,7 @@ func normalizeChatGPT2APIImageTaskData(baseURL string, apiKey string, data []map
 	return result
 }
 
-func recoverGatewayTimedOutImageTask(w http.ResponseWriter, request *http.Request) ([]byte, string, imageTaskRecoveryState) {
+func recoverImageTask(w http.ResponseWriter, request *http.Request, knownSupported bool) ([]byte, string, imageTaskRecoveryState) {
 	requestID := strings.TrimSpace(request.Header.Get("Idempotency-Key"))
 	path := request.URL.Path
 	if requestID == "" || (!strings.HasSuffix(path, "/images/generations") && !strings.HasSuffix(path, "/images/edits")) {
@@ -892,7 +918,7 @@ func recoverGatewayTimedOutImageTask(w http.ResponseWriter, request *http.Reques
 	baseURL := request.URL.Scheme + "://" + request.URL.Host
 	apiKey := strings.TrimSpace(strings.TrimPrefix(request.Header.Get("Authorization"), "Bearer "))
 	deadline := time.Now().Add(7 * time.Minute)
-	supported := false
+	supported := knownSupported
 
 	for {
 		pollRequest, err := http.NewRequest(http.MethodGet, taskURL.String(), nil)
@@ -900,7 +926,7 @@ func recoverGatewayTimedOutImageTask(w http.ResponseWriter, request *http.Reques
 			return nil, "", imageTaskRecoveryUnavailable
 		}
 		pollRequest.Header.Set("Authorization", request.Header.Get("Authorization"))
-		response, err := http.DefaultClient.Do(pollRequest)
+		response, err := imageTaskHTTPClient.Do(pollRequest)
 		if err != nil {
 			if !supported {
 				return nil, "", imageTaskRecoveryUnavailable
@@ -919,6 +945,9 @@ func recoverGatewayTimedOutImageTask(w http.ResponseWriter, request *http.Reques
 					return nil, "", imageTaskRecoveryUnavailable
 				}
 				return nil, "AI 接口请求失败：上游任务不存在", imageTaskRecoveryHandled
+			}
+			if response.StatusCode >= http.StatusBadRequest && response.StatusCode < http.StatusInternalServerError && response.StatusCode != http.StatusTooManyRequests {
+				return nil, "AI 接口请求失败：上游任务查询失败", imageTaskRecoveryHandled
 			}
 			if readErr == nil && response.StatusCode < http.StatusBadRequest {
 				var task recoverableImageTask
@@ -1021,7 +1050,7 @@ func writeAIResponse(w http.ResponseWriter, request *http.Request, response *htt
 
 	if response.StatusCode >= http.StatusBadRequest {
 		if isAIImageGatewayTimeout(response.StatusCode) && !isAIContentPolicyRejection(body) {
-			if recoveredBody, message, recovery := recoverGatewayTimedOutImageTask(w, request); recovery == imageTaskRecoveryHandled {
+			if recoveredBody, message, recovery := recoverImageTask(w, request, false); recovery == imageTaskRecoveryHandled {
 				if message != "" {
 					if onFailure != nil {
 						onFailure(message)
@@ -1689,6 +1718,7 @@ func adaptVividAIImageRequestBody(body []byte, contentType string) ([]byte, stri
 	result := map[string]any{}
 	copyStringField(result, payload, "model", "model")
 	copyStringField(result, payload, "prompt", "prompt")
+	copyStringField(result, payload, "quality", "quality")
 	if size := vividAIImageSize(payloadString(payload, "size", "ratio"), payloadString(payload, "resolution", "resolution_name", "resolutionTier")); size != "" {
 		result["size"] = size
 	}
@@ -1709,6 +1739,9 @@ func adaptVividAIImageMultipartBody(body []byte, contentType string) ([]byte, st
 	writer := multipart.NewWriter(&buffer)
 	_ = writer.WriteField("model", firstFormValue(form, "model"))
 	_ = writer.WriteField("prompt", firstFormValue(form, "prompt"))
+	if quality := firstFormValue(form, "quality"); quality != "" {
+		_ = writer.WriteField("quality", quality)
+	}
 	if size := vividAIImageSize(firstFormValue(form, "size", "ratio"), firstFormValue(form, "resolution", "resolution_name", "resolutionTier")); size != "" {
 		_ = writer.WriteField("size", size)
 	}

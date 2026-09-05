@@ -219,10 +219,10 @@ function refreshRemoteUser(_config: AiConfig) {
     void useUserStore.getState().hydrateUser();
 }
 
-async function recoverGatewayTimedOutImages(error: unknown, config: AiConfig, options?: RequestOptions) {
+async function recoverInterruptedImages(error: unknown, config: AiConfig, options?: RequestOptions) {
     const requestId = options?.idempotencyKey;
     const status = axios.isAxiosError(error) ? error.response?.status : undefined;
-    if (!requestId || !status || !RECOVERABLE_GATEWAY_STATUSES.has(status)) return null;
+    if (!requestId || axios.isCancel(error) || (status !== undefined && !RECOVERABLE_GATEWAY_STATUSES.has(status))) return null;
 
     const task = await waitForGenerationTaskRecovery(requestId, (current) => current.status === "success" && current.result !== undefined, options.signal);
     const images = parseRecoveredImageGeneration(task.result);
@@ -239,6 +239,8 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
     const n = normalizeImageCount(config.count);
     const quality = normalizeQuality(config.quality);
     const requestSize = resolveRequestSize(config.size);
+    const requestId = options?.idempotencyKey || crypto.randomUUID();
+    const recoveryOptions = { ...options, idempotencyKey: requestId };
     try {
         const response = await axios.post<ImageApiResponse>(
             aiApiUrl(config, "/images/generations"),
@@ -252,7 +254,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
                 output_format: IMAGE_OUTPUT_FORMAT,
             },
             {
-                headers: aiHeaders(config, "application/json", options?.idempotencyKey),
+                headers: aiHeaders(config, "application/json", requestId),
                 signal: options?.signal,
             },
         );
@@ -261,7 +263,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
         return images;
     } catch (error) {
         try {
-            const recovered = await recoverGatewayTimedOutImages(error, config, options);
+            const recovered = await recoverInterruptedImages(error, config, recoveryOptions);
             if (recovered) return recovered;
         } catch (recoveryError) {
             throw new Error(readAxiosError(recoveryError, "请求失败"));
@@ -274,6 +276,8 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     const n = normalizeImageCount(config.count);
     const quality = normalizeQuality(config.quality);
     const requestSize = resolveRequestSize(config.size);
+    const requestId = options?.idempotencyKey || crypto.randomUUID();
+    const recoveryOptions = { ...options, idempotencyKey: requestId };
     const requestPrompt = buildImageReferencePromptText(prompt, references);
     const formData = new FormData();
     formData.set("model", config.model);
@@ -292,13 +296,13 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     if (mask) formData.set("mask", dataUrlToFile(mask));
 
     try {
-        const response = await axios.post<ImageApiResponse>(aiApiUrl(config, "/images/edits"), formData, { headers: aiHeaders(config, undefined, options?.idempotencyKey), signal: options?.signal });
+        const response = await axios.post<ImageApiResponse>(aiApiUrl(config, "/images/edits"), formData, { headers: aiHeaders(config, undefined, requestId), signal: options?.signal });
         const images = parseImagePayload(response.data);
         refreshRemoteUser(config);
         return images;
     } catch (error) {
         try {
-            const recovered = await recoverGatewayTimedOutImages(error, config, options);
+            const recovered = await recoverInterruptedImages(error, config, recoveryOptions);
             if (recovered) return recovered;
         } catch (recoveryError) {
             throw new Error(readAxiosError(recoveryError, "请求失败"));

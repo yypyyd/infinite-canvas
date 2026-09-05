@@ -1,7 +1,7 @@
 "use client";
 
 import { DeleteOutlined, EditOutlined, PlusOutlined, SyncOutlined } from "@ant-design/icons";
-import { App, AutoComplete, Button, Card, Col, Drawer, Empty, Flex, Form, Input, InputNumber, Row, Segmented, Select, Space, Switch, Table, Tag, Typography } from "antd";
+import { App, AutoComplete, Button, Card, Col, Drawer, Empty, Flex, Form, Input, InputNumber, Row, Segmented, Select, Space, Switch, Table, Tag, theme, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
 
 import type { AdminChannelModel, AdminManagedModel, AdminPricingRule } from "@/services/api/admin";
@@ -31,6 +31,7 @@ type Props = {
 
 export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPricingRulesChange, candidateModels, channelModels }: Props) {
     const { message, modal } = App.useApp();
+    const { token } = theme.useToken();
     const [form] = Form.useForm<AdminManagedModel>();
     const [keyword, setKeyword] = useState("");
     const [modality, setModality] = useState("all");
@@ -463,7 +464,7 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
                             </Typography.Text>
                         </div>
                         <Space wrap>
-                            <Tag color="primary">
+                            <Tag color={token.colorPrimary} className="m-0 min-w-24 whitespace-nowrap text-center font-medium">
                                 {capabilityLabel(selectedOperations)} · 按{unitLabel[defaultUnit(selectedModality)]}
                             </Tag>
                             {selectedModality === "image" || selectedModality === "video" ? (
@@ -501,7 +502,7 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
                                     {selectedModality === "image" || selectedModality === "video" ? (
                                         <Col span={4}>
                                             <Form.Item label="分辨率">
-                                                <Tag color="primary">{rule.resolutionTier.toUpperCase()}</Tag>
+                                                <Tag color={token.colorPrimary}>{rule.resolutionTier.toUpperCase()}</Tag>
                                             </Form.Item>
                                         </Col>
                                     ) : null}

@@ -91,8 +91,11 @@ func refreshRecoveredImageURLs(user model.AuthUser, task model.GenerationTask) j
 		if strings.TrimSpace(storageKey) == "" {
 			continue
 		}
-		if _, hasBase64 := item["b64_json"].(string); hasBase64 {
-			delete(item, "url")
+		if encoded, _ := item["b64_json"].(string); strings.TrimSpace(encoded) != "" {
+			if _, hasURL := item["url"]; hasURL {
+				delete(item, "url")
+				changed = true
+			}
 			continue
 		}
 		if fileURL, ok := UserWorkspaceFileURL(user, storageKey, ""); ok {

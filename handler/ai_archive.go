@@ -69,7 +69,9 @@ func archiveImageGenerationResponseWithOptions(ctx context.Context, user model.A
 
 func setArchivedImageDelivery(item map[string]any, data []byte, responseFormat, archivedURL string) {
 	if strings.EqualFold(strings.TrimSpace(responseFormat), "b64_json") || archivedURL == "" {
-		item["b64_json"] = base64.StdEncoding.EncodeToString(data)
+		if encoded, _ := item["b64_json"].(string); strings.TrimSpace(encoded) == "" {
+			item["b64_json"] = base64.StdEncoding.EncodeToString(data)
+		}
 		delete(item, "url")
 		return
 	}

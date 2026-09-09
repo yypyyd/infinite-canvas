@@ -31,8 +31,6 @@ func TestProtectedHTTPRoutesRejectUnauthenticatedRequests(t *testing.T) {
 		{method: http.MethodPost, path: "/api/redeem-codes/redeem", body: map[string]any{"code": "forbidden"}},
 		{method: http.MethodGet, path: "/api/admin/users"},
 		{method: http.MethodGet, path: "/api/admin/operations/health"},
-		{method: http.MethodGet, path: "/api/admin/operations/data-consistency"},
-		{method: http.MethodPost, path: "/api/admin/operations/data-consistency/repair", body: map[string]any{"issueId": "forged"}},
 		{method: http.MethodGet, path: "/api/admin/settings"},
 	}
 	for _, request := range requests {
@@ -46,7 +44,7 @@ func TestProtectedHTTPRoutesRejectUnauthenticatedRequests(t *testing.T) {
 func TestAdminRoutesRejectUsersAndBannedSessionsLoseAccess(t *testing.T) {
 	tenant := seedRouterTestTenant(t, "access-control")
 	client, baseURL := loginRouterTestClient(t, tenant.User.Username)
-	for _, path := range []string{"/api/admin/users", "/api/admin/operations/health", "/api/admin/operations/data-consistency", "/api/admin/settings"} {
+	for _, path := range []string{"/api/admin/users", "/api/admin/operations/health", "/api/admin/settings"} {
 		if response := routerTestJSON(t, client, http.MethodGet, baseURL+path, nil, nil); response.Code != 1 {
 			t.Fatalf("non-admin %s response: %#v", path, response)
 		}

@@ -83,6 +83,10 @@ description: settings 表中 public 和 private 配置结构说明
 
 `pricingRules` 每项字段：
 
+价格按对外模型 ID 维护，与渠道的 `upstreamModel` 分开。同一对外 ID 的多个渠道共用基础价格；不同渠道需要不同售价时，创建不同对外 ID 并分别配置价格，再映射到各渠道的上游模型名。例如 `gpt-image-2-standard` 与 `gpt-image-2-premium` 可以同时映射到上游 `gpt-image-2`。账号专属规格优惠按对外 ID 匹配，不随模型复制。
+
+后台新建价格使用固定单价，已有倍率规则仍按原配置计费，可在编辑器中明确改为固定单价并重新填写价格。最低消费、用户组与账号优惠规则仍生效。
+
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `model` | string | 模型名称 |
@@ -113,7 +117,7 @@ description: settings 表中 public 和 private 配置结构说明
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `blockChina` | boolean | 是否限制中国大陆访问，默认关闭；开启后入口层会根据国家码请求头或 APNIC IP 段返回 451 访问受限页 |
+| `blockChina` | boolean | 是否限制中国大陆访问网站页面，默认关闭；开启后入口层会根据国家码请求头或 APNIC IP 段返回 451 访问受限页；`/api` 和 `/api/*` 不受地区限制，接口原有鉴权、权限与计费规则仍然生效 |
 
 `announcements` 字段：
 

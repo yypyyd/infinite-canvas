@@ -211,7 +211,7 @@ export function AccessAndRegistrationSettingsEditor() {
                     </Space>
                 }
             >
-                <Form.Item name={["public", "access", "blockChina"]} label="限制中国大陆访问" extra="开启后，中国大陆 IP 访问页面和接口时会返回访问受限提示；关闭后正常放行" valuePropName="checked" style={{ marginBottom: 0 }}>
+                <Form.Item name={["public", "access", "blockChina"]} label="限制中国大陆访问网站" extra="开启后，仅限制中国大陆 IP 访问网站页面；API 接口不受此开关影响，仍需正常鉴权并按规则计费" valuePropName="checked" style={{ marginBottom: 0 }}>
                     <Switch checkedChildren="已限制" unCheckedChildren="已放行" />
                 </Form.Item>
             </Card>

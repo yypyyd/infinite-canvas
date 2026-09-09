@@ -1,10 +1,11 @@
 "use client";
 
 import { DeleteOutlined, EditOutlined, PlusOutlined, SyncOutlined } from "@ant-design/icons";
-import { App, AutoComplete, Button, Card, Col, Drawer, Empty, Flex, Form, Input, InputNumber, Row, Segmented, Select, Space, Switch, Table, Tag, theme, Typography } from "antd";
+import { Alert, App, AutoComplete, Button, Card, Col, Drawer, Dropdown, Empty, Flex, Form, Input, InputNumber, Row, Segmented, Select, Space, Switch, Table, Tag, theme, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
 
-import type { AdminChannelModel, AdminManagedModel, AdminPricingRule } from "@/services/api/admin";
+import type { AdminChannelModel, AdminManagedModel, AdminModelChannel, AdminPricingRule } from "@/services/api/admin";
+import { collectChannelModels } from "../model-channels";
 import { allowedModelOperations, inferModelModality, inferModelOperations, normalizeModelOperations } from "../../model-capabilities";
 
 const modalityOptions = [
@@ -21,22 +22,29 @@ const operationLabel: Record<string, string> = { generation: "生成", edit: "�
 const unitLabel: Record<string, string> = { image: "张", second: "秒", request: "次", token: "Token" };
 
 type Props = {
-    value?: AdminManagedModel[];
-    onChange?: (value: AdminManagedModel[]) => void;
+    value: AdminManagedModel[];
     pricingRules: AdminPricingRule[];
-    onPricingRulesChange: (value: AdminPricingRule[]) => void;
-    candidateModels: string[];
-    channelModels: AdminChannelModel[];
+    channels: AdminModelChannel[];
+    isSaving: boolean;
+    onSave: (models: AdminManagedModel[], rules: AdminPricingRule[]) => Promise<boolean>;
+    onOpenChannel: (index: number) => void;
+    requestedModel: string | null;
+    onModelOpened: () => void;
 };
 
-export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPricingRulesChange, candidateModels, channelModels }: Props) {
+export function ModelCatalogEditor({ value, pricingRules, channels, isSaving, onSave, onOpenChannel, requestedModel, onModelOpened }: Props) {
     const { message, modal } = App.useApp();
     const { token } = theme.useToken();
     const [form] = Form.useForm<AdminManagedModel>();
+    const channelModels = useMemo(() => collectChannelModels(channels), [channels]);
+    const candidateModels = useMemo(() => Array.from(new Set(channels.flatMap((channel) => channel.models.map((model) => model.model)))), [channels]);
+    const [relatedModel, setRelatedModel] = useState<string | null>(null);
+    const [onlyUnpriced, setOnlyUnpriced] = useState(false);
     const [keyword, setKeyword] = useState("");
     const [modality, setModality] = useState("all");
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [editingModel, setEditingModel] = useState<string | null>(null);
+    const [copiedFrom, setCopiedFrom] = useState<string | null>(null);
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [draftRules, setDraftRules] = useState<AdminPricingRule[]>([]);
     const [pricingTierInput, setPricingTierInput] = useState("");
@@ -45,7 +53,7 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
     const selectedResolutionTiers = (Form.useWatch("resolutionTiers", form) || []) as string[];
     const models = useMemo(() => normalizeModels(value), [value]);
     const channelModelMap = useMemo(() => new Map(channelModels.map((item) => [item.model, item])), [channelModels]);
-    const channelModelSet = useMemo(() => new Set(channelModelMap.keys()), [channelModelMap]);
+    const channelModelSet = useMemo(() => new Set(candidateModels), [candidateModels]);
     const rulesByModel = useMemo(() => {
         const result = new Map<string, AdminPricingRule[]>();
         for (const rule of pricingRules) result.set(rule.model, [...(result.get(rule.model) || []), rule]);
@@ -53,26 +61,28 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
     }, [pricingRules]);
     const filteredModels = useMemo(() => {
         const search = keyword.trim().toLowerCase();
-        return models.filter((model) => (modality === "all" || model.modality === modality) && (!search || model.id.toLowerCase().includes(search) || model.name.toLowerCase().includes(search)));
-    }, [keyword, modality, models]);
-    const unconfiguredCount = models.filter((model) => !(rulesByModel.get(model.id) || []).some((rule) => rule.enabled && (model.modality === "image" || model.modality === "video" ? Boolean(rule.resolutionTier) : !rule.resolutionTier))).length;
+        return models.filter((model) => (modality === "all" || model.modality === modality) && (!onlyUnpriced || !hasPricing(model, rulesByModel.get(model.id) || [])) && (!search || model.id.toLowerCase().includes(search) || model.name.toLowerCase().includes(search)));
+    }, [keyword, modality, models, onlyUnpriced, rulesByModel]);
+    const unconfiguredCount = models.filter((model) => !hasPricing(model, rulesByModel.get(model.id) || [])).length;
 
     useEffect(() => {
         setSelectedIds((current) => current.filter((id) => models.some((model) => model.id === id)));
     }, [models]);
 
-    const updateModels = (next: AdminManagedModel[]) => onChange?.(normalizeModels(next));
+    const updateModels = (next: AdminManagedModel[], rules = pricingRules) => onSave(normalizeModels(next), rules);
     const openCreate = (modelID = "") => {
+        setCopiedFrom(null);
         const nextModality = inferModelModality(modelID);
         setEditingModel(null);
         form.resetFields();
-        const model = createModel(modelID, nextModality, models.length);
+        const model = { ...createModel(modelID, nextModality, models.length, channelModelMap.get(modelID)), enabled: false };
         form.setFieldsValue(model);
         setDraftRules([]);
         setPricingTierInput("");
         setDrawerOpen(true);
     };
     const openEdit = (model: AdminManagedModel) => {
+        setCopiedFrom(null);
         const rules = rulesByModel.get(model.id) || [];
         const nextModel = { ...model, resolutionTiers: unique([...model.resolutionTiers, ...rules.map((rule) => rule.resolutionTier)]) };
         setEditingModel(model.id);
@@ -81,15 +91,28 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
         setPricingTierInput("");
         setDrawerOpen(true);
     };
+    const openCopy = (source: AdminManagedModel) => {
+        const resolutionTiers = unique([...source.resolutionTiers, ...(rulesByModel.get(source.id) || []).map((rule) => rule.resolutionTier)]);
+        setEditingModel(null);
+        setCopiedFrom(source.id);
+        form.resetFields();
+        form.setFieldsValue({ ...source, id: "", name: "", enabled: false, sort: models.length, resolutionTiers });
+        const tiers = source.modality === "image" || source.modality === "video" ? resolutionTiers : [""];
+        setDraftRules(tiers.map((tier) => createPricingRule("", source.modality, tier)));
+        setPricingTierInput("");
+        setDrawerOpen(true);
+    };
     const closeDrawer = () => {
         setDrawerOpen(false);
         setEditingModel(null);
+        setCopiedFrom(null);
         form.resetFields();
         setDraftRules([]);
         setPricingTierInput("");
     };
     const saveModel = async () => {
-        const fields = await form.validateFields();
+        let fields: AdminManagedModel;
+        try { fields = await form.validateFields(); } catch { return; }
         const model = normalizeModels([{ ...fields, id: fields.id.trim() }])[0];
         if (!model) return;
         if (!editingModel && models.some((item) => item.id === model.id)) {
@@ -100,10 +123,9 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
             message.warning("请填写已启用计费规则的单价；单价可以设置为 0");
             return;
         }
-        updateModels(editingModel ? models.map((item) => (item.id === editingModel ? model : item)) : [...models, model]);
+        const nextModels = editingModel ? models.map((item) => (item.id === editingModel ? model : item)) : [...models, model];
         const replaced = pricingRules.filter((rule) => rule.model !== (editingModel || model.id));
-        onPricingRulesChange([...replaced, ...expandPricingTiers(draftRules, model)]);
-        closeDrawer();
+        if (await updateModels(nextModels, [...replaced, ...expandPricingTiers(draftRules, model)])) closeDrawer();
     };
     const removeModel = (model: AdminManagedModel) => {
         if (channelModelSet.has(model.id)) {
@@ -119,10 +141,9 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
             onOk: () => deleteModels([model.id]),
         });
     };
-    const deleteModels = (ids: string[]) => {
+    const deleteModels = async (ids: string[]) => {
         const removed = new Set(ids);
-        updateModels(models.filter((item) => !removed.has(item.id)));
-        onPricingRulesChange(pricingRules.filter((rule) => !removed.has(rule.model)));
+        if (!await updateModels(models.filter((item) => !removed.has(item.id)), pricingRules.filter((rule) => !removed.has(rule.model)))) throw new Error("删除失败");
     };
     const removeSelectedModels = () => {
         const deletable = selectedIds.filter((id) => !channelModelSet.has(id));
@@ -141,40 +162,33 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
         });
     };
     const syncChannelModels = () => {
-        const orphans = models.filter((model) => !channelModelSet.has(model.id));
-        const apply = (removeOrphans: boolean) => {
-            const kept = removeOrphans ? models.filter((model) => channelModelSet.has(model.id)) : models;
-            const existing = new Set(kept.map((model) => model.id));
-            const additions = channelModels.filter((item) => !existing.has(item.model)).map((item, index) => createModel(item.model, item.modality || inferModelModality(item.model), kept.length + index, item));
-            const synced = kept.map((model) => syncModelCapabilities(model, channelModelMap.get(model.id)));
-            updateModels([...synced, ...additions]);
-            if (removeOrphans) {
-                const removed = new Set(orphans.map((model) => model.id));
-                onPricingRulesChange(pricingRules.filter((rule) => !removed.has(rule.model)));
-            }
-            const parts = ["渠道模型能力已同步"];
-            if (additions.length) parts.push(`新增 ${additions.length} 个模型，价格需单独设置`);
-            if (removeOrphans) parts.push(`删除 ${orphans.length} 个已不在渠道中的模型`);
-            message.success(parts.join("；"));
-        };
-        if (!orphans.length) {
-            apply(false);
-            return;
-        }
+        const existing = new Set(models.map((model) => model.id));
+        const additions = channelModels.filter((item) => !existing.has(item.model)).map((item, index) => ({ ...createModel(item.model, item.modality || inferModelModality(item.model), models.length + index, item), enabled: false }));
+        const synced = models.map((model) => syncModelCapabilities(model, channelModelMap.get(model.id)));
+        const changes = synced.filter((model, index) => JSON.stringify(model) !== JSON.stringify(models[index]));
+        if (!additions.length && !changes.length) { message.info("没有需要导入或更新的模型"); return; }
         modal.confirm({
-            title: `${orphans.length} 个模型已不在任何渠道中`,
-            content: `${orphans
-                .slice(0, 8)
-                .map((model) => model.id)
-                .join("、")}${orphans.length > 8 ? ` 等 ${orphans.length} 个` : ""}。删除会一并移除其计费规则；手动添加且尚未接入渠道的模型也在其中，请选择保留。`,
-            okText: `删除 ${orphans.length} 个`,
-            okButtonProps: { danger: true },
-            cancelText: "保留",
-            onOk: () => apply(true),
-            onCancel: () => apply(false),
+            title: `新增 ${additions.length} 个模型，更新 ${changes.length} 个模型能力`,
+            width: 600,
+            content: <Flex vertical gap={8}>
+                <Typography.Text>同一模型 ID 合并为一个对外模型，各渠道映射分别保留。已有价格与开放状态不变，新增模型默认关闭。</Typography.Text>
+                <div className="max-h-64 overflow-y-auto">
+                    {additions.map((model) => <div key={model.id}>新增：{model.id}</div>)}
+                    {changes.map((model) => <div key={model.id}>更新：{model.id} · {capabilitySummary(model)}</div>)}
+                </div>
+            </Flex>,
+            okText: "确认导入并保存",
+            cancelText: "取消",
+            onOk: async () => { if (!await updateModels([...synced, ...additions])) throw new Error("保存失败"); },
         });
     };
     const setModelEnabled = (id: string, enabled: boolean) => updateModels(models.map((model) => (model.id === id ? { ...model, enabled } : model)));
+    useEffect(() => {
+        if (!requestedModel) return;
+        const model = models.find((item) => item.id === requestedModel);
+        if (model) openEdit(model); else openCreate(requestedModel);
+        onModelOpened();
+    }, [requestedModel]);
     const setRuleField = <K extends keyof AdminPricingRule>(index: number, key: K, nextValue: AdminPricingRule[K]) =>
         setDraftRules((current) => current.map((rule, ruleIndex) => (ruleIndex === index ? normalizeRule({ ...rule, [key]: nextValue }) : rule)));
     const changeModality = (next: string) => {
@@ -204,35 +218,24 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
     };
 
     return (
-        <Card
-            size="small"
-            title={
-                <div>
-                    <Typography.Text strong>模型中心</Typography.Text>
-                    <Typography.Text type="secondary" className="ml-3 text-xs font-normal">
-                        模型信息和计费在这里统一维护，渠道只负责上游连接。
-                    </Typography.Text>
-                </div>
-            }
-            extra={
-                <Space>
-                    <Button icon={<SyncOutlined />} onClick={syncChannelModels}>
-                        同步渠道模型
-                    </Button>
-                    <Button type="primary" icon={<PlusOutlined />} onClick={() => openCreate()}>
-                        添加模型
-                    </Button>
+        <>
+            <Flex justify="space-between" align="center" gap={12} wrap className="mb-4">
+                <Space wrap>
+                    <Button type="text" onClick={() => setOnlyUnpriced(false)} disabled={!onlyUnpriced}>全部 {models.length}</Button>
+                    <Button type={onlyUnpriced ? "link" : "text"} onClick={() => setOnlyUnpriced(!onlyUnpriced)}>待定价 {unconfiguredCount}</Button>
                 </Space>
-            }
-        >
+                <Space wrap>
+                    <Button href="/admin/settings">默认与分组设置</Button>
+                    <Button icon={<SyncOutlined />} disabled={isSaving} onClick={syncChannelModels}>从渠道导入</Button>
+                    <Button type="primary" icon={<PlusOutlined />} disabled={isSaving} onClick={() => openCreate()}>添加模型</Button>
+                </Space>
+            </Flex>
             <Flex vertical gap={14}>
                 <Flex justify="space-between" align="center" gap={12} wrap>
                     <Space wrap>
-                        <Tag>{models.length} 个模型</Tag>
-                        <Tag color="success">{models.filter((model) => model.enabled).length} 个已开放</Tag>
-                        {unconfiguredCount ? <Tag color="warning">{unconfiguredCount} 个待计费</Tag> : null}
+
                         {selectedIds.length ? (
-                            <Button danger size="small" icon={<DeleteOutlined />} onClick={removeSelectedModels}>
+                            <Button danger size="small" disabled={isSaving} icon={<DeleteOutlined />} onClick={removeSelectedModels}>
                                 删除选中（{selectedIds.length}）
                             </Button>
                         ) : null}
@@ -244,6 +247,7 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
                 </Flex>
                 <Table
                     rowKey="id"
+                    loading={isSaving}
                     size="small"
                     pagination={{ pageSize: 20, hideOnSinglePage: true }}
                     dataSource={filteredModels}
@@ -255,42 +259,32 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
                             dataIndex: "id",
                             render: (_: unknown, model: AdminManagedModel) => (
                                 <Flex vertical gap={2}>
-                                    <Typography.Text strong>{model.name || model.id}</Typography.Text>
-                                    <Typography.Text type="secondary" copyable={{ text: model.id }} className="text-xs">
-                                        {model.id}
-                                    </Typography.Text>
-                                </Flex>
-                            ),
-                        },
-                        {
-                            title: "类型",
-                            dataIndex: "modality",
-                            width: 96,
-                            render: (value: string, model: AdminManagedModel) => (
-                                <Flex vertical gap={4} align="flex-start">
-                                    <Tag color={modalityColor(value)} className="m-0">
-                                        {modalityLabel[value] || value}
-                                    </Tag>
-                                    <Typography.Text type="secondary" className="text-xs">
-                                        {channelModelSet.has(model.id) ? "渠道同步" : "手动添加"}
-                                    </Typography.Text>
+                                    <Typography.Link strong onClick={() => openEdit(model)}>{model.name || model.id}</Typography.Link>
+                                    {model.name !== model.id ? <Typography.Text type="secondary" copyable={{ text: model.id }} className="text-xs">{model.id}</Typography.Text> : null}
+                                    <Typography.Text type="secondary" className="text-xs">{modalityLabel[model.modality] || model.modality}</Typography.Text>
                                 </Flex>
                             ),
                         },
                         {
                             title: "计费",
                             width: 280,
-                            render: (_: unknown, model: AdminManagedModel) => <RuleSummary rules={rulesByModel.get(model.id) || []} />,
+                            render: (_: unknown, model: AdminManagedModel) => <Flex vertical gap={4}>
+                                <RuleSummary rules={rulesByModel.get(model.id) || []} />
+                                {(rulesByModel.get(model.id) || []).length > 0 && !hasPricing(model, rulesByModel.get(model.id) || []) ? <Typography.Text type="warning" className="text-xs">计费规格未配齐</Typography.Text> : null}
+                            </Flex>,
                         },
                         {
-                            title: "能力",
-                            render: (_: unknown, model: AdminManagedModel) => (
-                                <Typography.Text type="secondary" className="text-xs">
-                                    {capabilitySummary(model)}
-                                </Typography.Text>
-                            ),
+                            title: "接入渠道",
+                            width: 150,
+                            render: (_: unknown, model: AdminManagedModel) => {
+                                const related = channels.filter((channel) => channel.models.some((item) => item.model === model.id));
+                                return related.length ? <Flex vertical gap={2}>
+                                    <Typography.Link onClick={() => setRelatedModel(model.id)}>{related.length} 个渠道 →</Typography.Link>
+                                    {!related.some((channel) => channel.enabled) ? <Typography.Text type="warning" className="text-xs">渠道均已停用</Typography.Text> : null}
+                                </Flex> : <Typography.Text type="warning">未接入渠道</Typography.Text>;
+                            },
                         },
-                        { title: "开放", dataIndex: "enabled", width: 76, render: (enabled: boolean, model: AdminManagedModel) => <Switch size="small" checked={enabled} onChange={(checked) => setModelEnabled(model.id, checked)} /> },
+                        { title: "开放", dataIndex: "enabled", width: 76, render: (enabled: boolean, model: AdminManagedModel) => <Switch size="small" checked={enabled} disabled={isSaving} onChange={(checked) => void setModelEnabled(model.id, checked)} /> },
                         {
                             title: "操作",
                             width: 112,
@@ -300,7 +294,12 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
                                     <Button type="text" size="small" icon={<EditOutlined />} onClick={() => openEdit(model)}>
                                         编辑
                                     </Button>
-                                    <Button type="text" danger size="small" icon={<DeleteOutlined />} onClick={() => removeModel(model)} />
+                                    <Dropdown menu={{ items: [
+                                        { key: "copy", label: "复制为独立定价模型", disabled: isSaving, onClick: () => openCopy(model) },
+                                        { key: "delete", label: "删除模型", danger: true, disabled: isSaving || channelModelSet.has(model.id), onClick: () => removeModel(model) },
+                                    ] }} trigger={["click"]}>
+                                        <Button type="text" size="small" aria-label="更多模型操作">···</Button>
+                                    </Dropdown>
                                 </Space>
                             ),
                         },
@@ -310,15 +309,15 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
             </Flex>
 
             <Drawer
-                title={editingModel ? "编辑模型与计费" : "添加模型与计费"}
-                width={720}
+                title={editingModel ? "编辑模型与计费" : copiedFrom ? "复制为独立定价模型" : "添加模型与计费"}
+                width="min(720px, 100vw)"
                 open={drawerOpen}
-                onClose={closeDrawer}
+                onClose={() => { if (!isSaving) closeDrawer(); }}
                 destroyOnHidden
                 extra={
                     <Space>
-                        <Button onClick={closeDrawer}>取消</Button>
-                        <Button type="primary" onClick={() => void saveModel()}>
+                        <Button disabled={isSaving} onClick={closeDrawer}>取消</Button>
+                        <Button type="primary" loading={isSaving} onClick={() => void saveModel()}>
                             保存模型
                         </Button>
                     </Space>
@@ -326,6 +325,7 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
             >
                 <Form
                     form={form}
+                    disabled={isSaving}
                     layout="vertical"
                     requiredMark={false}
                     onValuesChange={(changed) => {
@@ -333,14 +333,19 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
                         if (changed.resolutionTiers) changeResolutionTiers(changed.resolutionTiers);
                     }}
                 >
-                    <Typography.Title level={5}>基本信息</Typography.Title>
+                    <Flex justify="space-between" align="center" className="mb-4">
+                        <Typography.Text type="secondary">保存后直接生效，无需再次保存整页。</Typography.Text>
+                        {editingModel ? <Button type="link" onClick={() => setRelatedModel(editingModel)}>查看关联渠道</Button> : null}
+                    </Flex>
+                    {copiedFrom ? <Alert className="mb-4" type="info" showIcon title={`已复制 ${copiedFrom} 的模型能力`} description="填写新的对外 ID、显示名称和售价。保存后在目标渠道选择此 ID，并填写原上游模型名；新模型默认关闭，接入渠道后再开放。" /> : null}
+                    <Typography.Title level={5}>基本信息与能力</Typography.Title>
                     <Row gutter={16}>
                         <Col span={16}>
                             <Form.Item
                                 name="id"
-                                label="模型 ID"
+                                label="对外模型 ID"
                                 rules={[{ required: true, whitespace: true, message: "请输入模型 ID" }]}
-                                extra={editingModel ? "模型 ID 保存后不允许修改，避免渠道和历史规则失联。" : "可从已有渠道选择，也可直接输入任意模型 ID。"}
+                                extra={editingModel ? "同一 ID 的各渠道共用售价；不同售价请复制为新的对外模型。" : "不同售价使用不同 ID，例如 gpt-image-2-standard、gpt-image-2-premium。"}
                             >
                                 {editingModel ? (
                                     <Input disabled />
@@ -348,6 +353,7 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
                                     <AutoComplete
                                         options={candidateModels.filter((model) => !models.some((item) => item.id === model)).map((model) => ({ value: model }))}
                                         onChange={(modelID) => {
+                                            if (copiedFrom) return;
                                             const next = inferModelModality(modelID);
                                             const model = createModel(modelID, next, models.length, channelModelMap.get(modelID));
                                             form.setFieldsValue({
@@ -460,7 +466,7 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
                                 计费规则
                             </Typography.Title>
                             <Typography.Text type="secondary" className="text-xs">
-                                仅保存手动添加的价格；图片和视频按分辨率精确匹配，视频单价按实际生成秒数计算。
+                                按对外模型 ID 统一定价，切换渠道不改变基础单价；图片按张、视频按秒，账号优惠按现有规则生效。
                             </Typography.Text>
                         </div>
                         <Space wrap>
@@ -506,38 +512,28 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
                                             </Form.Item>
                                         </Col>
                                     ) : null}
-                                    <Col span={selectedModality === "image" || selectedModality === "video" ? 6 : 7}>
-                                        <Form.Item label="计费方式">
-                                            <Segmented
-                                                block
-                                                value={rule.billingMode}
-                                                options={[
-                                                    { label: "固定单价", value: "fixed" },
-                                                    { label: "倍率", value: "ratio" },
-                                                ]}
-                                                onChange={(value) => setRuleField(index, "billingMode", value as AdminPricingRule["billingMode"])}
-                                            />
-                                        </Form.Item>
-                                    </Col>
                                     {rule.billingMode === "fixed" ? (
-                                        <Col span={selectedModality === "image" || selectedModality === "video" ? 6 : 7}>
+                                        <Col span={selectedModality === "image" || selectedModality === "video" ? 11 : 15}>
                                             <Form.Item label={`单价（算力点/${unitLabel[defaultUnit(selectedModality)]}）`}>
                                                 <InputNumber min={0} precision={0} className="!w-full" placeholder="未设置" value={rule.credits} onChange={(value) => setRuleField(index, "credits", value == null ? null : Number(value))} />
                                             </Form.Item>
                                         </Col>
                                     ) : (
-                                        <Col span={selectedModality === "image" || selectedModality === "video" ? 6 : 7}>
-                                            <Form.Item label="模型倍率">
-                                                <InputNumber min={0.0001} step={0.1} className="!w-full" value={rule.modelRatio} onChange={(value) => setRuleField(index, "modelRatio", Number(value) || 1)} />
+                                        <Col span={selectedModality === "image" || selectedModality === "video" ? 11 : 15}>
+                                            <Form.Item label="当前使用倍率计费">
+                                                <Space wrap>
+                                                    <Typography.Text>模型倍率 ×{rule.modelRatio}</Typography.Text>
+                                                    <Button size="small" onClick={() => setDraftRules((current) => current.map((item, ruleIndex) => ruleIndex === index ? { ...item, billingMode: "fixed", credits: null } : item))}>改为固定单价</Button>
+                                                </Space>
                                             </Form.Item>
                                         </Col>
                                     )}
-                                    <Col span={selectedModality === "image" || selectedModality === "video" ? 5 : 6}>
-                                        <Form.Item label="最低消费">
+                                    <Col span={6}>
+                                        <Form.Item label="最低消费" extra="0 表示不限">
                                             <InputNumber min={0} precision={0} className="!w-full" value={rule.minCredits} onChange={(value) => setRuleField(index, "minCredits", Number(value) || 0)} />
                                         </Form.Item>
                                     </Col>
-                                    <Col span={selectedModality === "image" || selectedModality === "video" ? 3 : 4}>
+                                    <Col span={3}>
                                         <Form.Item label="启用">
                                             <Switch checked={rule.enabled} onChange={(checked) => setRuleField(index, "enabled", checked)} />
                                         </Form.Item>
@@ -548,19 +544,35 @@ export function ModelCatalogEditor({ value = [], onChange, pricingRules, onPrici
                     </Flex>
                 </Form>
             </Drawer>
-        </Card>
+            <Drawer title={`${relatedModel || "模型"} · 接入渠道`} width="min(640px, 100vw)" open={relatedModel !== null} onClose={() => setRelatedModel(null)}>
+                <Typography.Paragraph type="secondary">以下为各渠道实际支持的能力。请求先匹配操作和规格，再按渠道权重选路；对外价格统一维护。</Typography.Paragraph>
+                {channels.map((channel, index) => {
+                    const model = channel.models.find((item) => item.model === relatedModel);
+                    if (!model) return null;
+                    return <div key={index} className="py-4" style={{ borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
+                        <Flex justify="space-between" gap={12}>
+                            <Space><Typography.Text strong>{channel.name}</Typography.Text><Tag color={channel.enabled ? "success" : "default"}>{channel.enabled ? "已启用" : "已停用"}</Tag></Space>
+                            <Button type="link" onClick={() => { setRelatedModel(null); closeDrawer(); onOpenChannel(index); }}>渠道配置 →</Button>
+                        </Flex>
+                        <Typography.Paragraph type="secondary" className="!mb-1">上游模型：{model.upstreamModel || model.model} · 渠道权重 {channel.weight}</Typography.Paragraph>
+                        <Typography.Text>{capabilitySummary(model)}</Typography.Text>
+                    </div>;
+                })}
+                {!channels.some((channel) => channel.models.some((model) => model.model === relatedModel)) ? <Empty description="尚未接入渠道" /> : null}
+            </Drawer>
+        </>
     );
 }
 
 function RuleSummary({ rules }: { rules: AdminPricingRule[] }) {
     const enabled = uniquePricingTiers(rules.filter((rule) => rule.enabled && (rule.modality === "image" || rule.modality === "video" ? Boolean(rule.resolutionTier) : !rule.resolutionTier)));
-    if (!enabled.length) return <Tag color="warning">待设置</Tag>;
+    if (!enabled.length) return <Typography.Text type="warning">待设置价格</Typography.Text>;
     return (
         <Space size={[4, 4]} wrap>
             {enabled.slice(0, 3).map((rule, index) => (
-                <Tag key={`${index}-${rule.resolutionTier}`} color={rule.billingMode === "ratio" ? "blue" : "green"}>
-                    {pricingTierLabel(rule, rule.modality, false)} · {rule.billingMode === "ratio" ? `×${rule.modelRatio}` : rule.credits == null ? "未设置价格" : `${rule.credits} 点/${unitLabel[rule.unit] || rule.unit}`}
-                </Tag>
+                <Typography.Text key={`${index}-${rule.resolutionTier}`} type={rule.billingMode === "fixed" && rule.credits == null ? "warning" : undefined}>
+                    {pricingTierLabel(rule, rule.modality, false)} · {rule.billingMode === "ratio" ? `×${rule.modelRatio}` : rule.credits == null ? "未设置价格" : rule.credits === 0 && !rule.minCredits ? "免费" : `${rule.credits} 点/${unitLabel[rule.unit] || rule.unit}`}{rule.minCredits > 0 ? `（最低 ${rule.minCredits} 点）` : ""}
+                </Typography.Text>
             ))}
             {enabled.length > 3 ? <Tag>+{enabled.length - 3}</Tag> : null}
         </Space>
@@ -706,7 +718,7 @@ function capabilityLabel(operations: string[]) {
     return operations.map((operation) => operationLabel[operation] || operation).join(" + ");
 }
 
-function capabilitySummary(model: AdminManagedModel) {
+export function capabilitySummary(model: AdminManagedModel | AdminChannelModel) {
     return [
         capabilityLabel(model.operations),
         model.aspectRatios.length ? `比例 ${model.aspectRatios.length}` : "",
@@ -753,4 +765,10 @@ function unique(items: string[] = []) {
 
 function uniqueNumbers(items: number[] = []) {
     return Array.from(new Set(items.map((item) => Math.floor(Number(item))).filter((item) => item > 0))).sort((a, b) => a - b);
+}
+
+export function hasPricing(model: AdminManagedModel, rules: AdminPricingRule[]) {
+    const enabled = rules.filter((rule) => rule.enabled && (rule.billingMode === "ratio" || rule.credits != null));
+    const tiers = model.modality === "image" || model.modality === "video" ? model.resolutionTiers : [""];
+    return tiers.length > 0 && tiers.every((tier) => model.operations.every((operation) => enabled.some((rule) => rule.operation === operation && rule.resolutionTier === tier)));
 }

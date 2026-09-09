@@ -5,12 +5,11 @@ import { json } from "@codemirror/lang-json";
 import { App, Button, Card, Col, Flex, Form, Input, InputNumber, Row, Segmented, Select, Space, Switch, Table, Tabs, Tag, Typography } from "antd";
 import dynamic from "next/dynamic";
 import { Activity, Boxes, HandCoins, HardDrive, Mail, Megaphone, RefreshCw, ShieldCheck, WalletCards } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { EditorView } from "@uiw/react-codemirror";
 
 import { fetchAdminSettings, saveAdminSettings, type AdminChannelModel, type AdminManagedModel, type AdminModelChannel, type AdminPricingRule, type AdminSettings } from "@/services/api/admin";
 import { useUserStore } from "@/stores/use-user-store";
-import { ModelCatalogEditor } from "./components/model-catalog-editor";
 import { AccessAndRegistrationSettingsEditor, OperationsAlertSettingsEditor, OperationSettingsEditor } from "./components/operation-settings-editor";
 import { EmailSettingsEditor } from "./components/email-settings-editor";
 import { PaymentSettingsEditor } from "./components/payment-settings-editor";
@@ -82,7 +81,7 @@ const settingsTabs = [
         label: (
             <span className="inline-flex items-center gap-2">
                 <Boxes className="size-4" />
-                模型与计费
+                模型默认设置
             </span>
         ),
     },
@@ -167,15 +166,11 @@ export default function AdminSettingsPage() {
     const [activeSection, setActiveSection] = useState<SettingsSectionKey>("models");
     const [editorMode, setEditorMode] = useState<Record<SettingsTabKey, EditorMode>>({ public: "visual", private: "visual" });
     const [jsonText, setJsonText] = useState<Record<SettingsTabKey, string>>({ public: "", private: "" });
-    const [channels, setChannels] = useState<AdminModelChannel[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
-    const [pricingRules, setPricingRules] = useState<AdminPricingRule[]>([]);
-    const [knownModels, setKnownModels] = useState<string[]>([]);
-    const rawPublicModels = Form.useWatch(["public", "modelChannel", "availableModels"], form) || [];
-    const managedModels = Form.useWatch(["public", "modelChannel", "models"], form) || [];
+    const rawPublicModels = Form.useWatch(["public", "modelChannel", "availableModels"], { form, preserve: true }) || [];
+    const managedModels = Form.useWatch(["public", "modelChannel", "models"], { form, preserve: true }) || [];
     const publicModels = enabledManagedModelIds(managedModels).length ? enabledManagedModelIds(managedModels) : rawPublicModels;
-    const channelModels = useMemo(() => collectChannelModels(channels), [channels]);
     const activeTab: SettingsTabKey = activeSection === "payment" || activeSection === "referral" || activeSection === "storage" || activeSection === "monitoring" || activeSection === "email" || activeSection === "sync" ? "private" : "public";
     const activeMode = editorMode[activeTab];
     const activeJsonText = jsonText[activeTab];
@@ -187,9 +182,6 @@ export default function AdminSettingsPage() {
         try {
             const data = normalizeSettings(await fetchAdminSettings(token));
             form.setFieldsValue(data);
-            setChannels(data.private.channels);
-            setPricingRules(data.public.modelChannel.pricingRules);
-            setKnownModels(collectKnownModels(data));
             setJsonText({
                 public: JSON.stringify(data.public, null, 2),
                 private: JSON.stringify(data.private, null, 2),
@@ -219,13 +211,18 @@ export default function AdminSettingsPage() {
         }
         setIsSaving(true);
         try {
-            values.private.channels = (await fetchAdminSettings(token)).private.channels;
+            const latest = await fetchAdminSettings(token);
+            values.private.channels = latest.private.channels;
+            values.public.modelChannel = {
+                ...values.public.modelChannel,
+                models: latest.public.modelChannel.models,
+                pricingRules: latest.public.modelChannel.pricingRules,
+                availableModels: latest.public.modelChannel.availableModels,
+                modelAspectRatios: latest.public.modelChannel.modelAspectRatios,
+            };
             const saved = normalizeSettings(await saveAdminSettings(token, values));
             const merged = mergeChannelApiKeys(values.private.channels, saved);
             form.setFieldsValue(merged);
-            setChannels(merged.private.channels);
-            setPricingRules(merged.public.modelChannel.pricingRules);
-            rememberKnownModels(merged);
             setJsonText({
                 public: JSON.stringify(merged.public, null, 2),
                 private: JSON.stringify(merged.private, null, 2),
@@ -253,9 +250,6 @@ export default function AdminSettingsPage() {
             return;
         }
         form.setFieldsValue({ [tab]: parsed } as Partial<AdminSettings>);
-        if (tab === "private") setChannels((parsed as AdminSettings["private"]).channels);
-        if (tab === "public") setPricingRules((parsed as AdminSettings["public"]).modelChannel.pricingRules);
-        rememberKnownModels({ ...normalizeSettings(form.getFieldsValue(true) as AdminSettings), [tab]: parsed });
         setEditorMode((current) => ({ ...current, [tab]: nextMode }));
     };
 
@@ -265,20 +259,11 @@ export default function AdminSettingsPage() {
             message.error("JSON 格式不正确");
             return;
         }
-        if (tab === "public") setPricingRules((parsed as AdminSettings["public"]).modelChannel.pricingRules);
         setJsonText((current) => ({
             ...current,
             [tab]: JSON.stringify(parsed, null, 2),
         }));
     };
-
-    function rememberModels(models: string[]) {
-        setKnownModels((current) => uniqueModels([...current, ...models]));
-    }
-
-    function rememberKnownModels(settings: AdminSettings) {
-        rememberModels(collectKnownModels(settings));
-    }
 
     return (
         <main style={{ padding: 24 }}>
@@ -326,7 +311,9 @@ export default function AdminSettingsPage() {
                     </Flex>
 
                     {activeMode === "json" ? (
-                        <div style={{ overflow: "hidden", border: "1px solid var(--ant-color-border)", borderRadius: 6 }}>
+                        <div>
+                            <Typography.Paragraph type="secondary">模型目录、价格与渠道请在“模型管理”保存；这里保存其他系统配置。</Typography.Paragraph>
+                            <div style={{ overflow: "hidden", border: "1px solid var(--ant-color-border)", borderRadius: 6 }}>
                             <CodeMirror
                                 value={activeJsonText}
                                 height="520px"
@@ -336,20 +323,14 @@ export default function AdminSettingsPage() {
                                 onChange={(value) => setJsonText((current) => ({ ...current, [activeTab]: value }))}
                                 style={{ fontSize: 13 }}
                             />
+                            </div>
                         </div>
                     ) : (
                         <Form form={form} layout="vertical" initialValues={emptySettings} requiredMark={false}>
                             {activeSection === "models" ? (
                                 <Row gutter={16}>
-                                    <Col span={24}>
-                                        <Form.Item name={["public", "modelChannel", "models"]} style={{ marginBottom: 16 }}>
-                                            <ModelCatalogEditor
-                                                candidateModels={uniqueModels([...channelModels.map((item) => item.model), ...knownModels])}
-                                                channelModels={channelModels}
-                                                pricingRules={pricingRules}
-                                                onPricingRulesChange={(items) => setPricingRulesValue(form, setPricingRules, items)}
-                                            />
-                                        </Form.Item>
+                                    <Col span={24} className="mb-4">
+                                        <Button href="/admin/models">管理模型、计费与上游渠道 →</Button>
                                     </Col>
                                     <Col span={24}>
                                         <Form.Item name={["public", "modelChannel", "groupRatios"]} label="用户分组倍率" extra="最终扣费会乘以用户所属分组倍率；未命中的分组会使用 default。">
@@ -605,14 +586,6 @@ function enabledManagedModelIds(items: Partial<AdminManagedModel>[] = []) {
         .map((item) => item.id || "");
 }
 
-function modelAspectRatiosFromManagedModels(items: AdminManagedModel[], fallback: Record<string, string[]>) {
-    const result = { ...fallback };
-    for (const item of items) {
-        if (item.id && item.aspectRatios.length) result[item.id] = item.aspectRatios;
-    }
-    return normalizeModelAspectRatios(result);
-}
-
 function inferModelAspectRatios(modelName: string) {
     const model = modelName.toLowerCase();
     if (!model) return [];
@@ -763,16 +736,6 @@ function defaultResolutionTiers(modality: string) {
     return [];
 }
 
-function channelModelNames(items: AdminChannelModel[]) {
-    return uniqueModels(items.map((item) => item.model));
-}
-
-function setPricingRulesValue(form: any, setPricingRules: (items: AdminPricingRule[]) => void, items: AdminPricingRule[]) {
-    const normalized = normalizePricingRules(items);
-    form.setFieldValue(["public", "modelChannel", "pricingRules"], normalized);
-    setPricingRules(normalized);
-}
-
 function normalizePricingToken(value: string) {
     return value.trim().toLowerCase();
 }
@@ -807,47 +770,6 @@ function mergeChannelApiKeys(currentChannels: AdminModelChannel[], saved: AdminS
     };
 }
 
-function collectChannelModels(channels: AdminModelChannel[]) {
-    const models = new Map<string, AdminChannelModel>();
-    for (const item of channels.filter((channel) => channel.enabled).flatMap((channel) => channel.models || [])) {
-        const current = models.get(item.model);
-        const useIncomingReference = !!current && (item.maxReferenceImages > current.maxReferenceImages || (item.maxReferenceImages === current.maxReferenceImages && current.referenceMode === "none" && item.referenceMode !== "none"));
-        models.set(
-            item.model,
-            current
-                ? {
-                      ...current,
-                      modality: current.modality || item.modality,
-                      operations: Array.from(new Set([...current.operations, ...item.operations])),
-                      aspectRatios: Array.from(new Set([...current.aspectRatios, ...item.aspectRatios])),
-                      resolutionTiers: Array.from(new Set([...current.resolutionTiers, ...item.resolutionTiers])),
-                      durations: normalizeDurations([...current.durations, ...item.durations]),
-                      maxReferenceImages: Math.max(current.maxReferenceImages, item.maxReferenceImages),
-                      maxReferenceVideos: Math.max(current.maxReferenceVideos, item.maxReferenceVideos),
-                      maxReferenceAudios: Math.max(current.maxReferenceAudios, item.maxReferenceAudios),
-                      maxReferenceMedia: Math.max(current.maxReferenceMedia, item.maxReferenceMedia),
-                      supportsAudioOutput: current.supportsAudioOutput || item.supportsAudioOutput,
-                      referenceMode: useIncomingReference ? item.referenceMode : current.referenceMode,
-                  }
-                : item,
-        );
-    }
-    return [...models.values()];
-}
-
-function collectKnownModels(settings: AdminSettings) {
-    return uniqueModels([
-        ...(settings.public.modelChannel.availableModels || []),
-        ...(settings.public.modelChannel.models || []).map((item) => item.id),
-        ...(settings.public.modelChannel.pricingRules || []).map((item) => item.model),
-        ...Object.keys(settings.public.modelChannel.modelAspectRatios || {}),
-        ...settings.private.channels.flatMap((channel) => channelModelNames(channel.models || [])),
-    ]);
-}
-
-function uniqueModels(models: string[]) {
-    return Array.from(new Set(models.filter(Boolean)));
-}
 
 function parseTabJson(tab: "public", value: string): AdminSettings["public"] | null;
 function parseTabJson(tab: "private", value: string): AdminSettings["private"] | null;
@@ -878,13 +800,6 @@ async function collectSettings(form: any, editorMode: Record<SettingsTabKey, Edi
         }
         values.private = privateSetting;
     }
-    values.public.modelChannel.models = normalizeManagedModels(
-        values.public.modelChannel.models || [],
-        collectChannelModels(values.private.channels).map((item) => item.model),
-        values.public.modelChannel.modelAspectRatios,
-    );
-    values.public.modelChannel.availableModels = enabledManagedModelIds(values.public.modelChannel.models);
-    values.public.modelChannel.modelAspectRatios = modelAspectRatiosFromManagedModels(values.public.modelChannel.models, values.public.modelChannel.modelAspectRatios);
     return normalizeSettings(values);
 }
 

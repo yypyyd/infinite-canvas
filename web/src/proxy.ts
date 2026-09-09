@@ -9,6 +9,8 @@ let accessPolicy = { blockChina: false, expiresAt: 0 };
 let accessPolicyRequest: Promise<boolean> | null = null;
 
 export async function proxy(request: NextRequest) {
+    const pathname = request.nextUrl.pathname;
+    if (pathname === "/api" || pathname.startsWith("/api/")) return NextResponse.next();
     if (!isChinaRequest(request) || !(await blockChinaAccess())) return NextResponse.next();
     return new NextResponse(directAccessBlockedHtml, {
         status: 451,

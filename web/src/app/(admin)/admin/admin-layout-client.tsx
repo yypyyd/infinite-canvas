@@ -1,6 +1,6 @@
 "use client";
 
-import { ApiOutlined, AuditOutlined, BarChartOutlined, CloudServerOutlined, FileTextOutlined, HomeOutlined, KeyOutlined, LogoutOutlined, PictureOutlined, SettingOutlined, TransactionOutlined, UserOutlined } from "@ant-design/icons";
+import { ApiOutlined, BarChartOutlined, CloudServerOutlined, FileTextOutlined, HomeOutlined, KeyOutlined, LogoutOutlined, PictureOutlined, SettingOutlined, TransactionOutlined, UserOutlined } from "@ant-design/icons";
 import { ProConfigProvider } from "@ant-design/pro-components";
 import { App, Button, Flex, Layout, Menu, Spin, Typography, theme } from "antd";
 import { usePathname, useRouter } from "next/navigation";
@@ -28,8 +28,7 @@ const adminMenus: AdminMenuItem[] = [
     { key: "/admin/redeem-codes", icon: <KeyOutlined />, label: "兑换码" },
     { key: "/admin/prompts", icon: <FileTextOutlined />, label: "提示词管理" },
     { key: "/admin/assets", icon: <PictureOutlined />, label: "素材库" },
-    { key: "/admin/channels", icon: <ApiOutlined />, label: "模型渠道" },
-    { key: "/admin/operations", icon: <AuditOutlined />, label: "数据巡检" },
+    { key: "/admin/models", icon: <ApiOutlined />, label: "模型管理" },
     { key: "/admin/settings", icon: <SettingOutlined />, label: "系统设置" },
 ];
 
@@ -41,8 +40,7 @@ const pageTitles: Record<string, string> = {
     "/admin/redeem-codes": "兑换码",
     "/admin/prompts": "提示词管理",
     "/admin/assets": "素材库管理",
-    "/admin/channels": "模型渠道",
-    "/admin/operations": "数据一致性巡检",
+    "/admin/models": "模型管理",
     "/admin/settings": "系统设置",
 };
 

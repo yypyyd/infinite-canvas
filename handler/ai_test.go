@@ -427,3 +427,23 @@ func TestSafeUpstreamTextTruncates(t *testing.T) {
 		t.Fatalf("truncated rune length = %d", len([]rune(got)))
 	}
 }
+
+func TestSetArchivedImageDelivery(t *testing.T) {
+	item := map[string]any{"url": "https://upstream.example/protected", "b64_json": "upstream"}
+	setArchivedImageDelivery(item, []byte("image"), "url", "https://example.com/signed")
+	if item["url"] != "https://example.com/signed" || item["b64_json"] != nil {
+		t.Fatalf("url response = %#v", item)
+	}
+
+	item = map[string]any{"url": "https://upstream.example/protected"}
+	setArchivedImageDelivery(item, []byte("image"), "b64_json", "https://example.com/signed")
+	if item["url"] != nil || item["b64_json"] != "aW1hZ2U=" {
+		t.Fatalf("base64 response = %#v", item)
+	}
+
+	item = map[string]any{"url": "https://upstream.example/protected"}
+	setArchivedImageDelivery(item, []byte("image"), "url", "")
+	if item["url"] != nil || item["b64_json"] != "aW1hZ2U=" {
+		t.Fatalf("unsigned fallback response = %#v", item)
+	}
+}

@@ -53,6 +53,8 @@ func archiveImageGenerationResponseWithOptions(ctx context.Context, user model.A
 			continue
 		}
 		item["storage_key"], item["mime_type"], item["bytes"] = file.StorageKey, file.MimeType, file.Size
+		archivedURL, _ := service.UserWorkspaceFileURL(user, file.StorageKey, "")
+		setArchivedImageDelivery(item, data, responseFormat, archivedURL)
 		storageKeys = append(storageKeys, file.StorageKey)
 	}
 	if !transformed && len(storageKeys) == 0 {
@@ -63,6 +65,16 @@ func archiveImageGenerationResponseWithOptions(ctx context.Context, user model.A
 		return body, nil
 	}
 	return archived, storageKeys
+}
+
+func setArchivedImageDelivery(item map[string]any, data []byte, responseFormat, archivedURL string) {
+	if strings.EqualFold(strings.TrimSpace(responseFormat), "b64_json") || archivedURL == "" {
+		item["b64_json"] = base64.StdEncoding.EncodeToString(data)
+		delete(item, "url")
+		return
+	}
+	item["url"] = archivedURL
+	delete(item, "b64_json")
 }
 
 func generatedArchiveContext(parent context.Context) (context.Context, context.CancelFunc) {

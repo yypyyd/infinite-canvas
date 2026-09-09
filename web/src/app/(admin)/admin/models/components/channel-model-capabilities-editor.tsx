@@ -1,7 +1,7 @@
 "use client";
 
 import { DeleteOutlined, SearchOutlined } from "@ant-design/icons";
-import { Alert, Button, Col, Collapse, Empty, Flex, Form, Input, InputNumber, Row, Select, Switch, Tag, Typography } from "antd";
+import { Alert, AutoComplete, Button, Col, Collapse, Empty, Flex, Form, Input, InputNumber, Row, Select, Switch, Tag, Typography } from "antd";
 import { useMemo, useState } from "react";
 
 import type { AdminChannelModel, AdminManagedModel } from "@/services/api/admin";
@@ -49,7 +49,7 @@ export function ChannelModelCapabilitiesEditor({ managedModels }: { managedModel
                 description={
                     protocol === "autodl_comfyui"
                         ? "每个模型绑定一个 AutoDL 工作流和请求模板；任务提交、状态恢复、结果归档与扣费退款仍走系统公共链路。"
-                        : "模型售价和对外开放能力仍在模型中心统一维护；这里配置当前渠道实际能处理的类型、操作、比例、分辨率、时长和参考图数量。"
+                        : "同一对外 ID 的多个渠道共用售价。不同渠道需要不同售价时，先在“模型与计费”中复制为独立定价模型，再将不同 ID 映射到各渠道的上游模型名。"
                 }
             />
             <Form.List name="models">
@@ -102,7 +102,7 @@ export function ChannelModelCapabilitiesEditor({ managedModels }: { managedModel
                                                     移除
                                                 </Button>
                                             ),
-                                            children: <ModelCapabilityFields fieldName={field.name} channelModel={channelModel} managedModel={managedModel} />,
+                                            children: <ModelCapabilityFields fieldName={field.name} channelModel={channelModel} managedModel={managedModel} managedModels={managedModels} />,
                                         };
                                     })}
                                 />
@@ -117,7 +117,8 @@ export function ChannelModelCapabilitiesEditor({ managedModels }: { managedModel
     );
 }
 
-function ModelCapabilityFields({ fieldName, channelModel, managedModel }: { fieldName: number; channelModel?: AdminChannelModel; managedModel?: AdminManagedModel }) {
+function ModelCapabilityFields({ fieldName, channelModel, managedModel, managedModels }: { fieldName: number; channelModel?: AdminChannelModel; managedModel?: AdminManagedModel; managedModels: AdminManagedModel[] }) {
+    const form = Form.useFormInstance();
     const protocol = Form.useWatch("protocol") || "openai";
     const modelName = channelModel?.model || "";
     const modality = channelModel?.modality || managedModel?.modality || inferModelModality(modelName);
@@ -133,15 +134,21 @@ function ModelCapabilityFields({ fieldName, channelModel, managedModel }: { fiel
 
     return (
         <>
-            <Form.Item name={[fieldName, "model"]} hidden>
-                <Input />
-            </Form.Item>
             <Form.Item name={[fieldName, "modality"]} hidden>
                 <Input />
             </Form.Item>
             <Row gutter={12}>
                 <Col xs={24} md={12}>
-                    <Form.Item name={[fieldName, "upstreamModel"]} label="上游模型名" rules={[{ required: true, whitespace: true, message: "请输入上游模型名" }]} extra="请求发往该渠道时使用的真实模型名">
+                    <Form.Item name={[fieldName, "model"]} label="对外模型 ID" extra="相同 ID 共用售价，不同售价选择不同 ID；同一渠道内 ID 不可重复。"
+                        rules={[
+                            { required: true, whitespace: true, message: "请输入对外模型 ID" },
+                            { validator: (_, value: string) => ((form.getFieldValue("models") || []) as AdminChannelModel[]).some((model, index) => index !== fieldName && model.model?.trim() === value?.trim()) ? Promise.reject(new Error("当前渠道已关联该模型")) : Promise.resolve() },
+                        ]}>
+                        <AutoComplete options={managedModels.filter((model) => model.modality === modality).map((model) => ({ value: model.id, label: model.name && model.name !== model.id ? `${model.name} · ${model.id}` : model.id }))} placeholder="选择已有模型或输入新 ID" />
+                    </Form.Item>
+                </Col>
+                <Col xs={24} md={12}>
+                    <Form.Item name={[fieldName, "upstreamModel"]} label="上游模型名" rules={[{ required: true, whitespace: true, message: "请输入上游模型名" }]} extra="渠道实际接收的模型名。例如对外 ID 为 gpt-image-2-premium，上游仍可填写 gpt-image-2。">
                         <Input />
                     </Form.Item>
                 </Col>

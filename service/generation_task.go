@@ -63,9 +63,51 @@ func RecoverGenerationTask(organizationID, userID, requestID string) (model.Gene
 		CreatedAt:   task.CreatedAt, UpdatedAt: task.UpdatedAt,
 	}
 	if json.Valid([]byte(task.ResultJSON)) {
-		result.Result = json.RawMessage(task.ResultJSON)
+		result.Result = refreshRecoveredImageURLs(model.AuthUser{ID: userID, OrganizationID: organizationID}, task)
 	}
 	return result, nil
+}
+
+func refreshRecoveredImageURLs(user model.AuthUser, task model.GenerationTask) json.RawMessage {
+	result := json.RawMessage(task.ResultJSON)
+	if task.Modality != "image" || len(task.StorageKeys) == 0 {
+		return result
+	}
+	var payload map[string]any
+	if json.Unmarshal(result, &payload) != nil {
+		return result
+	}
+	items, ok := payload["data"].([]any)
+	if !ok {
+		return result
+	}
+	changed := false
+	for _, raw := range items {
+		item, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		storageKey, _ := item["storage_key"].(string)
+		if strings.TrimSpace(storageKey) == "" {
+			continue
+		}
+		if _, hasBase64 := item["b64_json"].(string); hasBase64 {
+			delete(item, "url")
+			continue
+		}
+		if fileURL, ok := UserWorkspaceFileURL(user, storageKey, ""); ok {
+			item["url"] = fileURL
+			changed = true
+		}
+	}
+	if !changed {
+		return result
+	}
+	refreshed, err := json.Marshal(payload)
+	if err != nil {
+		return result
+	}
+	return refreshed
 }
 
 func UserGenerationTaskByRequest(organizationID, userID, requestID string) (model.GenerationTask, error) {

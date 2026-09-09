@@ -28,30 +28,3 @@ type OperationsAlert struct {
 	Value     int64  `json:"value"`
 	Threshold int64  `json:"threshold"`
 }
-
-type DataConsistencyIssue struct {
-	ID             string `json:"id"`
-	Category       string `json:"category"`
-	Code           string `json:"code"`
-	Severity       string `json:"severity"`
-	OrganizationID string `json:"organizationId"`
-	ResourceType   string `json:"resourceType"`
-	ResourceID     string `json:"resourceId"`
-	Message        string `json:"message"`
-	RepairAction   string `json:"repairAction,omitempty"`
-	Target         string `json:"-"`
-}
-
-type DataConsistencyReport struct {
-	CheckedAt     string                 `json:"checkedAt"`
-	StorageStatus string                 `json:"storageStatus"`
-	TotalIssues   int                    `json:"totalIssues"`
-	Repairable    int                    `json:"repairable"`
-	Truncated     bool                   `json:"truncated"`
-	Summary       map[string]int         `json:"summary"`
-	Issues        []DataConsistencyIssue `json:"issues"`
-}
-
-type RepairDataConsistencyInput struct {
-	IssueID string `json:"issueId"`
-}

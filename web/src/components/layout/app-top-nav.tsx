@@ -15,7 +15,7 @@ import { useState } from "react";
 export function AppTopNav() {
     const pathname = usePathname();
     const [mobileNavOpen, setMobileNavOpen] = useState(false);
-    const hideHeader = /^\/canvas\/[^/]+/.test(pathname);
+    const hideHeader = pathname === "/login" || /^\/canvas\/[^/]+/.test(pathname);
     const slug = pathname.split("/").filter(Boolean)[0];
     const activeToolSlug = navigationTools.some((tool) => tool.slug === slug) ? (slug as NavigationToolSlug) : undefined;
 

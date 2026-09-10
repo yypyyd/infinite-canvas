@@ -72,7 +72,7 @@ export function CanvasNodePromptPanel({
     const hasTextContent = node.type === CanvasNodeType.Text && Boolean(node.metadata?.content?.trim());
     const hasImageContent = node.type === CanvasNodeType.Image && Boolean(node.metadata?.content);
     const isEditingExistingContent = hasTextContent || hasImageContent;
-    const [prompt, setPrompt] = useState(node.metadata?.promptDraft ?? (isEditingExistingContent ? "" : node.metadata?.prompt || ""));
+    const [prompt, setPrompt] = useState(() => resolvePromptDraft(node, isEditingExistingContent));
     const creditQuote = requestCreditQuote({
         pricingRules,
         specPricing,
@@ -89,8 +89,10 @@ export function CanvasNodePromptPanel({
     });
 
     useEffect(() => {
-        setPrompt(node.metadata?.promptDraft ?? (isEditingExistingContent ? "" : node.metadata?.prompt || ""));
-    }, [isEditingExistingContent, node.id, node.metadata?.prompt, node.metadata?.promptDraft]);
+        setPrompt(resolvePromptDraft(node, isEditingExistingContent));
+        // 只在切换节点或草稿本身变化时同步，生成开始写入的 metadata.prompt 不能反过来重置输入框
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [node.id, node.metadata?.promptDraft]);
 
     const updatePrompt = (value: string) => {
         setPrompt(value);
@@ -101,8 +103,6 @@ export function CanvasNodePromptPanel({
         const text = prompt.trim();
         if (!text || isRunning) return;
         onGenerate(node.id, mode, text);
-        setPrompt("");
-        onPromptChange(node.id, "");
     };
 
     return (
@@ -219,6 +219,10 @@ function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: Can
         audioInstructions: node.metadata?.audioInstructions || globalConfig.audioInstructions || defaultConfig.audioInstructions,
         count: String(node.metadata?.count || (mode === "image" ? globalConfig.canvasImageCount || globalConfig.count : globalConfig.count) || defaultConfig.count),
     };
+}
+
+function resolvePromptDraft(node: CanvasNodeData, isEditingExistingContent: boolean) {
+    return node.metadata?.promptDraft ?? (isEditingExistingContent ? "" : node.metadata?.prompt || "");
 }
 
 function promptPlaceholder(mode: CanvasNodeGenerationMode, hasImageContent: boolean, hasTextContent: boolean, imageSupportsReferences: boolean) {

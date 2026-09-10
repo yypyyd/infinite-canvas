@@ -492,9 +492,10 @@ function TextContent({ node, theme, isEditingContent, textareaRef, mentionRefere
                     onMouseDown={(event) => event.stopPropagation()}
                     onPointerDown={(event) => event.stopPropagation()}
                     onWheel={(event) => event.stopPropagation()}
+                    data-canvas-no-zoom
                 />
             ) : (
-                <div className="thin-scrollbar block h-full w-full overflow-y-auto whitespace-pre-wrap break-words bg-transparent pl-4 pr-14 pt-0 pb-4 font-mono" style={textStyle} onWheel={(event) => event.stopPropagation()}>
+                <div className="thin-scrollbar block h-full w-full overflow-y-auto whitespace-pre-wrap break-words bg-transparent pl-4 pr-14 pt-0 pb-4 font-mono" style={textStyle} onWheel={(event) => event.stopPropagation()} data-canvas-no-zoom>
                     {node.metadata?.content || <span style={{ color: theme.node.placeholder }}>双击编辑文字</span>}
                 </div>
             )}

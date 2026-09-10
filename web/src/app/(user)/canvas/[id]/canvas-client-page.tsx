@@ -2016,7 +2016,15 @@ function InfiniteCanvasPage() {
     }, []);
 
     const handleNodePromptChange = useCallback((nodeId: string, prompt: string) => {
-        setNodes((prev) => prev.map((node) => (node.id === nodeId ? { ...node, metadata: { ...node.metadata, promptDraft: prompt || undefined } } : node)));
+        setNodes((prev) => prev.map((node) => (node.id === nodeId ? { ...node, metadata: { ...node.metadata, promptDraft: prompt } } : node)));
+    }, []);
+
+    const clearNodePromptDraft = useCallback((nodeId: string) => {
+        setNodes((prev) => prev.map((node) => (node.id === nodeId && node.metadata?.promptDraft !== undefined ? { ...node, metadata: { ...node.metadata, promptDraft: undefined } } : node)));
+    }, []);
+
+    const restoreNodePromptDraft = useCallback((nodeId: string, prompt: string) => {
+        setNodes((prev) => prev.map((node) => (node.id === nodeId && node.metadata?.promptDraft === undefined ? { ...node, metadata: { ...node.metadata, promptDraft: prompt } } : node)));
     }, []);
 
     const handleConfigNodeChange = useCallback((nodeId: string, patch: Partial<CanvasNodeData["metadata"]>) => {
@@ -2552,6 +2560,7 @@ function InfiniteCanvasPage() {
             let pendingChildIds: string[] = [];
             let activeImageRecord: { id: string; count: number; startedAt: number } | undefined;
             let activeVideoRecord: { id: string; startedAt: number } | undefined;
+            clearNodePromptDraft(nodeId);
             if (markSourceStatus) setNodes((prev) => prev.map((node) => (node.id === nodeId ? { ...node, metadata: { ...node.metadata, prompt: statusPrompt, status: NODE_STATUS_LOADING, errorDetails: undefined } } : node)));
 
             try {
@@ -2714,12 +2723,14 @@ function InfiniteCanvasPage() {
                     if (runController.signal.aborted) {
                         if (isUserGenerationAbort(runController.signal)) await finishImageGenerationRecord(imageRecord.id, effectivePrompt, generationConfig, successfulImages, count, count - successfulImages.length, generationStartedAt, recordResult);
                         activeImageRecord = undefined;
+                        if (!hasSuccess) restoreNodePromptDraft(nodeId, prompt);
                         setNodes((prev) => prev.map((node) => (node.id === nodeId && isConfigNode && node.metadata?.status === NODE_STATUS_LOADING ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_IDLE, errorDetails: undefined } } : node)));
                         return;
                     }
                     await finishImageGenerationRecord(imageRecord.id, effectivePrompt, generationConfig, successfulImages, count, count - successfulImages.length, generationStartedAt, recordResult);
                     activeImageRecord = undefined;
                     if (hasFailure) message.error(hasSuccess ? "部分图片生成失败" : "全部图片生成失败");
+                    if (!hasSuccess) restoreNodePromptDraft(nodeId, prompt);
                     setNodes((prev) =>
                         prev.map((node) =>
                             node.id === nodeId && isConfigNode
@@ -2887,7 +2898,10 @@ function InfiniteCanvasPage() {
                             .finally(() => finishGenerationRequest(targetNodeId, runController));
                     }),
                 );
-                if (runController.signal.aborted) return;
+                if (runController.signal.aborted) {
+                    restoreNodePromptDraft(nodeId, prompt);
+                    return;
+                }
                 const answerByNodeId = new Map(answers.map((item) => [item.nodeId, item.content]));
                 setNodes((prev) =>
                     prev.map((node) =>
@@ -2903,6 +2917,7 @@ function InfiniteCanvasPage() {
             } catch (error) {
                 const errorDetails = error instanceof Error ? error.message : "生成失败";
                 const canceled = isGenerationCanceled(error, runController.signal);
+                restoreNodePromptDraft(nodeId, prompt);
                 if (activeImageRecord && (!canceled || isUserGenerationAbort(runController.signal)))
                     await finishImageGenerationRecord(activeImageRecord.id, effectivePrompt, generationConfig, [], activeImageRecord.count, activeImageRecord.count, activeImageRecord.startedAt, {
                         failedRequestErrors: imageGenerationFailureErrors(activeImageRecord.id, activeImageRecord.count, errorDetails),
@@ -2919,6 +2934,7 @@ function InfiniteCanvasPage() {
             }
         },
         [
+            clearNodePromptDraft,
             clearRunningNodeId,
             effectiveConfig,
             finishGenerationRequest,
@@ -2927,6 +2943,7 @@ function InfiniteCanvasPage() {
             managedModels,
             openConfigDialog,
             pricingRules,
+            restoreNodePromptDraft,
             startGenerationRequest,
             startImageGenerationRecord,
             startVideoGenerationRecord,
@@ -4100,7 +4117,6 @@ function InfiniteCanvasPage() {
                         onGenerate={() => {
                             const mode: CanvasNodeGenerationMode = promptEditorNode.type === CanvasNodeType.Text ? "text" : promptEditorNode.type === CanvasNodeType.Video ? "video" : promptEditorNode.type === CanvasNodeType.Audio ? "audio" : "image";
                             const prompt = promptEditorNode.metadata?.promptDraft || "";
-                            handleNodePromptChange(promptEditorNode.id, "");
                             void handleGenerateNode(promptEditorNode.id, mode, prompt);
                             setPromptEditorNodeId(null);
                         }}

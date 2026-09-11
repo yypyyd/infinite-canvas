@@ -1,7 +1,7 @@
 "use client";
 
 import { Button, Drawer, Empty, Input, Pagination, Segmented, Skeleton, type InputRef } from "antd";
-import { AudioLines, ChevronRight, Coins, Copy, ImageIcon, KeyRound, LayoutGrid, RefreshCw, RotateCcw, Search, Sparkles, Video } from "lucide-react";
+import { AudioLines, BookOpen, ChevronRight, Coins, Copy, ImageIcon, KeyRound, LayoutGrid, RefreshCw, RotateCcw, Search, Sparkles, Video } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -120,6 +120,16 @@ export default function ModelSquarePage() {
                         本站当前共开放 <span className="font-semibold text-foreground tabular-nums">{models.length}</span> 个模型
                     </p>
                     <p className="mx-auto mt-2 max-w-2xl text-xs leading-6 text-muted-foreground/80 sm:text-sm">发现可用的图片、视频与音频模型，比较实时价格和能力，选择适合你的模型。</p>
+                    <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+                        <Link href="/account?tab=api" className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-primary px-3.5 text-sm font-medium text-primary-foreground transition hover:bg-primary/90">
+                            <KeyRound className="size-4" />
+                            创建 API Key
+                        </Link>
+                        <Link href="/api-docs/integration" className="inline-flex min-h-9 items-center gap-2 rounded-lg px-3.5 text-sm font-medium text-foreground transition hover:bg-muted">
+                            <BookOpen className="size-4" />
+                            对接文档
+                        </Link>
+                    </div>
                     <div className="relative mx-auto mt-6 max-w-2xl">
                         <Input
                             ref={searchRef}
@@ -432,7 +442,7 @@ function ModelDetails({
                 <div className="flex flex-col gap-3 border-b border-border bg-muted/35 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                         <h3 className="text-sm font-semibold">API 调用示例</h3>
-                        <p className="mt-1 text-xs text-muted-foreground">替换 API Key 和提示词即可调用</p>
+                        <p className="mt-1 text-xs text-muted-foreground">替换 API Key 和提示词即可调用。任务号只在 id，没有 task_id。</p>
                     </div>
                     {operations.length > 1 ? <Segmented<ModelOperation> size="small" value={operation} options={operations.map((item) => ({ label: operationMeta[item], value: item }))} onChange={onOperationChange} /> : null}
                 </div>
@@ -442,6 +452,10 @@ function ModelDetails({
                         <Button type="text" size="small" icon={<Copy className="size-3.5" />} onClick={onCopyEndpoint} />
                     </div>
                     <code className="mt-1 block break-all text-xs">{endpoint}</code>
+                </div>
+                <div className="border-b border-border px-4 py-3">
+                    <div className="text-xs font-medium text-foreground">先看返回体</div>
+                    <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-all text-[11px] leading-5 text-muted-foreground">{responseExample(model.modality)}</pre>
                 </div>
                 {operation ? (
                     <div className="bg-muted/45">
@@ -472,6 +486,10 @@ function ModelDetails({
                 <Link href="/account?tab=api" className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-primary px-3.5 text-sm font-medium text-primary-foreground transition hover:bg-primary/90">
                     <KeyRound className="size-4" />
                     创建 API Key
+                </Link>
+                <Link href="/api-docs/integration" className="inline-flex min-h-9 items-center gap-2 rounded-lg px-3.5 text-sm font-medium text-foreground ring-1 ring-border transition hover:bg-muted">
+                    <BookOpen className="size-4" />
+                    对接文档
                 </Link>
             </div>
         </div>
@@ -602,7 +620,7 @@ function buildCompleteSnippet(endpoint: string, model: MarketplaceModel, operati
     if (model.modality !== "video") return snippet;
     return `${snippet}
 
-# 返回中的 id 保存为 VIDEO_TASK_ID；每 2-3 秒查询，直到 status=completed
+# 保存响应里的 id（没有 task_id）；失败时先看 code/msg。每 2-3 秒查询，直到 status=completed
 curl "${endpoint}/videos/VIDEO_TASK_ID?model=${model.id}" \\
   -H "Authorization: Bearer YOUR_API_KEY"
 
@@ -610,6 +628,26 @@ curl "${endpoint}/videos/VIDEO_TASK_ID?model=${model.id}" \\
 curl "${endpoint}/videos/VIDEO_TASK_ID/content?model=${model.id}" \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   --output result.mp4`;
+}
+
+function responseExample(modality: ModelModality) {
+    if (modality === "video") {
+        return `成功创建
+{ "id": "video_abc123", "status": "queued" }
+
+失败（没有 id / task_id）
+{ "code": 1, "data": null, "msg": "错误原因" }`;
+    }
+    if (modality === "image") {
+        return `成功
+{ "created": 1760000000, "data": [{ "b64_json": "..." }] }
+
+失败
+{ "code": 1, "data": null, "msg": "错误原因" }`;
+    }
+    return `成功时直接返回音频二进制。
+若 Content-Type 是 application/json，按失败解析：
+{ "code": 1, "data": null, "msg": "错误原因" }`;
 }
 
 function imageOutputSize(ratio: string) {

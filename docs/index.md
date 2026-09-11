@@ -17,6 +17,7 @@
 ## API 接入
 
 - [API 对接指南](/docs/api/integration)
+- 站内页面：`/api-docs/integration`
 
 ## 开发文档
 

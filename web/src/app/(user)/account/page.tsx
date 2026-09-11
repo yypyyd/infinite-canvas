@@ -37,7 +37,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { CreditSymbol } from "@/constant/credits";
-import { DOCS_URL } from "@/constant/env";
 import { useCopyText } from "@/hooks/use-copy-text";
 import { useOpenMedia } from "@/hooks/use-open-media";
 import { formatDuration } from "@/lib/image-utils";
@@ -1486,7 +1485,7 @@ function APIKeySection() {
   -H "Idempotency-Key: YOUR_UNIQUE_REQUEST_ID" \\
   -H "Content-Type: application/json" \\
   -d '{"model":"YOUR_IMAGE_MODEL","prompt":"生成一张商品主图","size":"1024x1024","n":1}'`;
-    const videoCurlExample = `# 1. 创建任务，保存响应中的 id
+    const videoCurlExample = `# 1. 创建任务，保存响应里的 id（没有 task_id）
 curl -X POST "${endpoint}/videos" \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Idempotency-Key: YOUR_UNIQUE_REQUEST_ID" \\
@@ -1590,6 +1589,16 @@ curl "${endpoint}/videos/VIDEO_TASK_ID/content?model=YOUR_VIDEO_MODEL" \\
                         </div>
                         <p className="mt-2 text-sm leading-6 text-muted-foreground">使用 Bearer 鉴权访问图片、视频和音频模型。Key 自动绑定当前企业，无需传企业编号。</p>
                         <div className="mt-5 rounded-lg bg-muted/70 p-4">
+                            <div className="text-xs font-medium text-foreground">先看返回体</div>
+                            <p className="mt-1 text-xs leading-5 text-muted-foreground">失败也经常是 HTTP 200。看到非零 <code className="text-foreground">code</code> 就读 <code className="text-foreground">msg</code>，不要再找任务号。</p>
+                            <pre className="mt-3 overflow-x-auto whitespace-pre-wrap break-all text-[11px] leading-5">{`成功创建视频
+{ "id": "video_abc123", "status": "queued" }
+
+失败（没有 id / task_id）
+{ "code": 1, "data": null, "msg": "错误原因" }`}</pre>
+                            <p className="mt-2 text-[11px] leading-5 text-muted-foreground">任务号只在 <code className="text-foreground">id</code>，没有 <code className="text-foreground">task_id</code>。创建视频用 <code className="text-foreground">POST /videos</code>，不要打 <code className="text-foreground">/videos/generations</code>。</p>
+                        </div>
+                        <div className="mt-3 rounded-lg bg-muted/70 p-4">
                             <div className="flex items-center justify-between gap-3">
                                 <span className="text-xs text-muted-foreground">API Endpoint</span>
                                 <Button type="text" size="small" icon={<Copy className="size-3.5" />} onClick={() => copyText(endpoint, "接口地址已复制")} />
@@ -1636,9 +1645,9 @@ curl "${endpoint}/videos/VIDEO_TASK_ID/content?model=YOUR_VIDEO_MODEL" \\
                             <ShieldCheck className="mt-0.5 size-3.5 shrink-0" />
                             <div>
                                 <div>模型列表不会返回文本模型；Key 不能登录账号、管理企业或进入后台。</div>
-                                <a href={`${DOCS_URL.replace(/\/$/, "")}/docs/api/integration`} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 font-medium text-primary hover:text-primary/80">
-                                    查看完整 API 接入文档 <ExternalLink className="size-3" />
-                                </a>
+                                <Link href="/api-docs/integration" className="mt-2 inline-flex items-center gap-1 font-medium text-primary hover:text-primary/80">
+                                    查看完整 API 接入文档
+                                </Link>
                             </div>
                         </div>
                     </aside>

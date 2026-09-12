@@ -3,6 +3,9 @@
   "root": true,
   "defaultOpen": true,
   "pages": [
-    "integration"
+    "integration",
+    "image",
+    "video",
+    "audio"
   ]
 }

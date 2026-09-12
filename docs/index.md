@@ -17,7 +17,10 @@
 ## API 接入
 
 - [API 对接指南](/docs/api/integration)
-- 站内页面：`/api-docs/integration`
+- [图片对接](/docs/api/image)
+- [视频对接](/docs/api/video)
+- [音频对接](/docs/api/audio)
+- 站内页面：`/api-docs/integration`、`/api-docs/integration/image`、`/api-docs/integration/video`、`/api-docs/integration/audio`
 
 ## 开发文档
 

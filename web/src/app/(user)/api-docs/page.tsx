@@ -427,10 +427,10 @@ function ModelDetails({
                 <h3 className="text-sm font-semibold">模型能力</h3>
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
                     <Capability label="开放操作" values={modelOperations(model).map((item) => operationMeta[item])} fallback="未配置" />
-                    <Capability label="宽高比" values={model.aspectRatios} fallback="未公布限制" />
-                    <Capability label="分辨率" values={model.resolutionTiers.map((item) => item.toUpperCase())} fallback="未公布限制" />
-                    <Capability label="视频时长" values={model.durations.map((item) => `${item} 秒`)} fallback={model.modality === "video" ? "未公布限制" : "不适用"} />
-                    <Capability label="参考图" values={referenceCapabilityValues(model)} fallback="不支持" />
+                    {model.modality !== "audio" ? <Capability label="宽高比" values={model.aspectRatios} fallback="未公布限制" /> : null}
+                    {model.modality !== "audio" ? <Capability label="分辨率" values={model.resolutionTiers.map((item) => item.toUpperCase())} fallback="未公布限制" /> : null}
+                    {model.modality === "video" ? <Capability label="视频时长" values={model.durations.map((item) => `${item} 秒`)} fallback="未公布限制" /> : null}
+                    {model.modality !== "audio" ? <Capability label="参考图" values={referenceCapabilityValues(model)} fallback="不支持" /> : null}
                     {model.modality === "video" ? <Capability label="参考视频" values={model.maxReferenceVideos ? [`最多 ${model.maxReferenceVideos} 个`] : []} fallback="不支持" /> : null}
                     {model.modality === "video" ? <Capability label="参考音频" values={model.maxReferenceAudios ? [`最多 ${model.maxReferenceAudios} 个`] : []} fallback="不支持" /> : null}
                     {model.modality === "video" ? <Capability label="参考素材合计" values={model.maxReferenceMedia ? [`最多 ${model.maxReferenceMedia} 个`] : []} fallback="不额外限制" /> : null}
@@ -441,8 +441,8 @@ function ModelDetails({
             <section className="mt-7 overflow-hidden rounded-xl border border-border">
                 <div className="flex flex-col gap-3 border-b border-border bg-muted/35 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                        <h3 className="text-sm font-semibold">API 调用示例</h3>
-                        <p className="mt-1 text-xs text-muted-foreground">替换 API Key 和提示词即可调用。任务号只在 id，没有 task_id。</p>
+                        <h3 className="text-sm font-semibold">{meta.label}调用示例</h3>
+                        <p className="mt-1 text-xs text-muted-foreground">{model.modality === "image" ? "图片是同步接口，成功后直接读 data[]。" : model.modality === "video" ? "视频是异步任务：保存顶层 id，再查询，completed 后下载。" : "音频成功时直接返回文件，不是 JSON。"}</p>
                     </div>
                     {operations.length > 1 ? <Segmented<ModelOperation> size="small" value={operation} options={operations.map((item) => ({ label: operationMeta[item], value: item }))} onChange={onOperationChange} /> : null}
                 </div>
@@ -487,9 +487,9 @@ function ModelDetails({
                     <KeyRound className="size-4" />
                     创建 API Key
                 </Link>
-                <Link href="/api-docs/integration" className="inline-flex min-h-9 items-center gap-2 rounded-lg px-3.5 text-sm font-medium text-foreground ring-1 ring-border transition hover:bg-muted">
+                <Link href={`/api-docs/integration/${model.modality}`} className="inline-flex min-h-9 items-center gap-2 rounded-lg px-3.5 text-sm font-medium text-foreground ring-1 ring-border transition hover:bg-muted">
                     <BookOpen className="size-4" />
-                    对接文档
+                    {meta.label}对接文档
                 </Link>
             </div>
         </div>
@@ -589,7 +589,6 @@ function buildSnippet(endpoint: string, model: MarketplaceModel, operation: Mode
             "prompt=保留商品主体，把背景改成夜晚霓虹街道",
             "image=@./reference.png",
             ...(ratio ? [`size=${imageOutputSize(ratio)}`] : []),
-            ...(resolution ? [`quality=${imageQuality(resolution)}`] : []),
             "n=1",
             "response_format=b64_json",
         ];
@@ -598,7 +597,6 @@ function buildSnippet(endpoint: string, model: MarketplaceModel, operation: Mode
     if (model.modality === "image") {
         const payload: Record<string, string | number> = { model: model.id, prompt: "生成一张白色背景的商品主图", n: 1 };
         if (ratio) payload.size = imageOutputSize(ratio);
-        if (resolution) payload.quality = imageQuality(resolution);
         return `curl -X POST "${endpoint}/images/generations" \\\n  -H "Authorization: Bearer YOUR_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -H "Idempotency-Key: YOUR_UNIQUE_REQUEST_ID" \\\n  -d '${JSON.stringify(payload, null, 2)}'`;
     }
     if (model.modality === "video") {
@@ -620,7 +618,7 @@ function buildCompleteSnippet(endpoint: string, model: MarketplaceModel, operati
     if (model.modality !== "video") return snippet;
     return `${snippet}
 
-# 保存响应里的 id（没有 task_id）；失败时先看 code/msg。每 2-3 秒查询，直到 status=completed
+# 保存响应里的 id；失败时先看 code/msg。每 2-3 秒查询，直到 status=completed
 curl "${endpoint}/videos/VIDEO_TASK_ID?model=${model.id}" \\
   -H "Authorization: Bearer YOUR_API_KEY"
 
@@ -635,7 +633,7 @@ function responseExample(modality: ModelModality) {
         return `成功创建
 { "id": "video_abc123", "status": "queued" }
 
-失败（没有 id / task_id）
+失败
 { "code": 1, "data": null, "msg": "错误原因" }`;
     }
     if (modality === "image") {
@@ -655,10 +653,6 @@ function imageOutputSize(ratio: string) {
     if (!width || !height) return "1024x1024";
     const longSide = Math.max(1024, Math.round((1024 * Math.max(width, height)) / Math.min(width, height) / 16) * 16);
     return width >= height ? `${longSide}x1024` : `1024x${longSide}`;
-}
-
-function imageQuality(resolution: string) {
-    return resolution.toLowerCase() === "4k" ? "high" : resolution.toLowerCase() === "2k" ? "medium" : "low";
 }
 
 function referenceCapabilityValues(model: MarketplaceModel) {

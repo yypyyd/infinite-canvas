@@ -1,0 +1,52 @@
+---
+title: 音频对接
+description: 成功时响应体就是音频文件
+---
+
+# 音频对接
+
+音频是同步接口。成功时响应体就是文件，不是 JSON，也没有任务号。站内页在 [/api-docs/integration/audio](/api-docs/integration/audio)。
+
+## 1. 准备
+
+```text
+https://huantu.xyz/api/v1
+Authorization: Bearer ic_live_...
+```
+
+先拉模型列表，只用 `modality=audio` 的项。不要传企业编号。
+
+```bash
+curl "https://huantu.xyz/api/v1/models" \
+  -H "Authorization: Bearer YOUR_API_KEY"
+```
+
+## 2. 调用
+
+```bash
+curl -X POST "https://huantu.xyz/api/v1/audio/speech" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: speech-$(date +%s)" \
+  -d '{
+    "model": "AUDIO_MODEL_ID",
+    "input": "欢迎使用道生画境开放接口。",
+    "voice": "alloy",
+    "response_format": "mp3"
+  }' \
+  --output speech.mp3
+```
+
+## 3. 失败怎么认
+
+若 `Content-Type` 变成 `application/json`，按失败解析。也经常是 HTTP 200。
+
+```json
+{
+  "code": 1,
+  "data": null,
+  "msg": "模型 AUDIO_MODEL_ID 没有支持当前操作或规格的可用渠道"
+}
+```
+
+超时不要换 `Idempotency-Key`，用原编号恢复。

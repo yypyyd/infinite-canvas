@@ -1,0 +1,93 @@
+---
+title: 图片对接
+description: 同步出图，一次请求结束就返回图片
+---
+
+# 图片对接
+
+图片是同步接口。一次请求结束就返回图片，没有任务号，也不要去轮询。站内页在 [/api-docs/integration/image](/api-docs/integration/image)。
+
+## 1. 准备
+
+```text
+https://huantu.xyz/api/v1
+Authorization: Bearer ic_live_...
+```
+
+先拉模型列表，只用 `modality=image` 的项。不要传企业编号。
+
+```bash
+curl "https://huantu.xyz/api/v1/models" \
+  -H "Authorization: Bearer YOUR_API_KEY"
+```
+
+## 2. 成功长什么样
+
+读 `data[0].b64_json` 或 `data[0].url`。这里没有任务号。
+
+```json
+{
+  "created": 1760000000,
+  "data": [
+    {
+      "b64_json": "iVBORw0KGgoAAA...",
+      "storage_key": "image:generated-generation_xxx-1",
+      "mime_type": "image/png",
+      "bytes": 123456
+    }
+  ]
+}
+```
+
+失败也经常是 HTTP 200。看到非零 `code` 就停。
+
+```json
+{
+  "code": 1,
+  "data": null,
+  "msg": "该模型或当前规格未设置价格"
+}
+```
+
+## 3. 生成一张图
+
+`size` 的像素决定 1K / 2K / 4K。计费和选渠道看 `size`，不看 `quality`。
+
+```bash
+curl -X POST "https://huantu.xyz/api/v1/images/generations" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: image-$(date +%s)" \
+  -d '{
+    "model": "IMAGE_MODEL_ID",
+    "prompt": "生成一张白色背景的运动鞋商品主图",
+    "size": "1024x1024",
+    "n": 1,
+    "response_format": "b64_json"
+  }'
+```
+
+## 4. 编辑一张图
+
+参考图用同名 `image` 重复上传。返回体和生成一样。
+
+```bash
+curl -X POST "https://huantu.xyz/api/v1/images/edits" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Idempotency-Key: image-edit-$(date +%s)" \
+  -F "model=IMAGE_EDIT_MODEL_ID" \
+  -F "prompt=保留鞋子造型，把背景改成夜晚霓虹街道" \
+  -F "image=@./shoe.png" \
+  -F "size=1024x1024" \
+  -F "response_format=b64_json"
+```
+
+## 5. 超时了怎么办
+
+超时不要换 `Idempotency-Key`，用原编号恢复。
+
+```bash
+curl "https://huantu.xyz/api/v1/generation-tasks/recovery" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Idempotency-Key: YOUR_ORIGINAL_REQUEST_ID"
+```

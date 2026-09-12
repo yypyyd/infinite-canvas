@@ -1,0 +1,99 @@
+---
+title: 视频对接
+description: 创建任务、查询 id、完成后下载
+---
+
+# 视频对接
+
+视频是异步任务：创建 → 用 `id` 查询 → `completed` 后再下载。不要打 `/videos/generations`。站内页在 [/api-docs/integration/video](/api-docs/integration/video)。
+
+## 1. 准备
+
+```text
+https://huantu.xyz/api/v1
+Authorization: Bearer ic_live_...
+```
+
+先拉模型列表，只用 `modality=video` 的项。不要传企业编号。
+
+```bash
+curl "https://huantu.xyz/api/v1/models" \
+  -H "Authorization: Bearer YOUR_API_KEY"
+```
+
+## 2. 就这三步
+
+| 步骤 | 接口 | 成功时看什么 |
+| --- | --- | --- |
+| 创建 | `POST /videos` | 顶层 `id` |
+| 查询 | `GET /videos/{id}?model=模型ID` | `status`，必须带 `model` |
+| 下载 | `GET /videos/{id}/content?model=模型ID` | MP4 二进制 |
+
+## 3. 创建任务
+
+`seconds` 必须在模型 `durations` 里，不传会按 1 秒匹配。`size` 必须同时符合比例和分辨率。
+
+```bash
+curl -X POST "https://huantu.xyz/api/v1/videos" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Idempotency-Key: video-$(date +%s)" \
+  -F "model=VIDEO_MODEL_ID" \
+  -F "prompt=一双运动鞋在雨夜街头缓慢旋转，电影级光影" \
+  -F "seconds=5" \
+  -F "size=1280x720"
+```
+
+创建成功只表示拿到任务号，不是视频地址。
+
+```json
+{
+  "id": "video_abc123",
+  "status": "queued"
+}
+```
+
+```python
+payload = response.json()
+if payload.get("code"):
+    raise RuntimeError(payload.get("msg") or "创建失败")
+video_id = payload["id"]
+```
+
+有非零 `code` 就停。这时没有任务号，再读 `id` 或 `task_id` 就会空。
+
+```json
+{
+  "code": 1,
+  "data": null,
+  "msg": "模型 dola-seedance-2.5 没有支持当前操作或规格的可用渠道"
+}
+```
+
+## 4. 查询状态
+
+每 2–3 秒查一次，必须带创建时同一个模型 ID。只有 `completed` 才能下载。
+
+```bash
+curl "https://huantu.xyz/api/v1/videos/video_abc123?model=VIDEO_MODEL_ID" \
+  -H "Authorization: Bearer YOUR_API_KEY"
+```
+
+## 5. 下载视频
+
+成功是 MP4。若 `Content-Type` 是 `application/json`，按失败解析。
+
+```bash
+curl "https://huantu.xyz/api/v1/videos/video_abc123/content?model=VIDEO_MODEL_ID" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  --output result.mp4
+```
+
+## 6. 最容易接错的地方
+
+1. 失败体被当成成功，继续找任务号。
+2. 去读 `task_id`，本站任务号是 `id`。
+3. 打了 `/videos/generations`。
+4. 规格不在模型列表里。
+5. 查询或下载漏了 `?model=`。
+
+已经拿到 `id` 就继续查视频接口。还没拿到时，用原 `Idempotency-Key` 恢复。

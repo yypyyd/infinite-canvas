@@ -25,7 +25,7 @@ description: 业务接口统一响应结构与前端处理约定
 
 ## 用户 API Key
 
-面向外部调用方的模型发现、图片、视频和音频完整示例见 [API 对接指南](/docs/api/integration)。对外生成成功体保持 OpenAI 兼容结构：视频任务号在顶层 `id`，**没有 `task_id`**；平台拦截的失败仍是 `{ code, data, msg }`，且经常 HTTP 200。下游必须先看非零 `code`，再读 `id`。
+面向外部调用方的完整示例按类型分开：[图片对接](/docs/api/image)、[视频对接](/docs/api/video)、[音频对接](/docs/api/audio)。平台拦截的失败仍是 `{ code, data, msg }`，且经常 HTTP 200。下游必须先看非零 `code`，再按类型读结果。
 
 登录用户可在当前企业内管理自己的 API Key：
 

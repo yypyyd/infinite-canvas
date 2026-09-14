@@ -20,6 +20,8 @@ var agentToolRegistry = []agentToolDefinition{
 	{Name: "video.inspect", Alias: "video_inspect"},
 	{Name: "canvas.arrange", Alias: "canvas_arrange", Retryable: true, Revertible: true},
 	{Name: "canvas.add_text", Alias: "canvas_add_text", Retryable: true, Revertible: true},
+	{Name: "canvas.add_config", Alias: "canvas_add_config", Retryable: true, Revertible: true},
+	{Name: "canvas.connect", Alias: "canvas_connect", Retryable: true, Revertible: true},
 	{Name: "canvas.delete", Alias: "canvas_delete", RequiresConfirmation: true, Revertible: true},
 	{Name: "canvas.update_text", Alias: "canvas_update_text", RequiresConfirmation: true, Revertible: true},
 	{Name: "agent.ask_user", Alias: "agent_ask_user", RequiresConfirmation: true},

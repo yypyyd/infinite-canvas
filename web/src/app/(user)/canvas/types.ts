@@ -147,7 +147,32 @@ export type CanvasAssistantAskUser = {
     status: "pending" | "answering" | "answered" | "skipped" | "failed";
 };
 
-export type CanvasAssistantStageKind = "plan" | "ask" | "observe" | "inspect" | "image" | "image_edit" | "video" | "arrange" | "text" | "delete" | "update_text" | "remember" | "forget";
+export type AgentCanvasPlacement = "center" | "right_of_selection" | "below_selection" | "viewport";
+
+export type CanvasAssistantStageKind = "plan" | "ask" | "observe" | "inspect" | "image" | "image_edit" | "video" | "arrange" | "text" | "config" | "connect" | "delete" | "update_text" | "remember" | "forget";
+
+export type CanvasAgentOverlayPrompt =
+    | {
+          kind: "confirm";
+          title: string;
+          detail: string;
+          danger?: boolean;
+          status: "pending" | "approving" | "failed";
+          nodeIds: string[];
+      }
+    | {
+          kind: "ask";
+          question: string;
+          options: string[];
+          status: "pending" | "answering" | "failed";
+          nodeIds?: string[];
+      };
+
+export type CanvasAgentOverlayState = {
+    prompt: CanvasAgentOverlayPrompt;
+    onApprove: (answer?: string) => void;
+    onReject: () => void;
+} | null;
 
 export type CanvasAssistantStage = {
     callId?: string;

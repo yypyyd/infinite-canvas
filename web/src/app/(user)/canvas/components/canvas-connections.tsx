@@ -9,6 +9,7 @@ export const ConnectionPath = memo(function ConnectionPath({
     from,
     to,
     active,
+    growing,
     onSelect,
     onContextMenu,
 }: {
@@ -16,6 +17,7 @@ export const ConnectionPath = memo(function ConnectionPath({
     from: CanvasNodeData;
     to: CanvasNodeData;
     active: boolean;
+    growing?: boolean;
     onSelect: (connectionId: string) => void;
     onContextMenu?: (event: ReactMouseEvent<SVGPathElement>, connectionId: string) => void;
 }) {
@@ -49,12 +51,20 @@ export const ConnectionPath = memo(function ConnectionPath({
             />
             <path
                 d={pathD}
+                pathLength={1}
                 stroke={active ? theme.node.activeStroke : theme.node.muted}
                 strokeWidth={active ? 3 : 2}
                 strokeOpacity={active ? 1 : 0.82}
                 fill="none"
-                style={{ filter: active ? `drop-shadow(0 0 8px ${theme.node.activeStroke}66)` : undefined, pointerEvents: "none" }}
+                style={{
+                    filter: active ? `drop-shadow(0 0 8px ${theme.node.activeStroke}66)` : undefined,
+                    pointerEvents: "none",
+                    strokeDasharray: growing ? 1 : undefined,
+                    strokeDashoffset: growing ? 0 : undefined,
+                    animation: growing ? "canvas-connection-grow 320ms ease-out both" : undefined,
+                }}
             />
+            {growing ? <style>{`@keyframes canvas-connection-grow { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }`}</style> : null}
         </g>
     );
 });

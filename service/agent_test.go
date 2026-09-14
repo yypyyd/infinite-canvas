@@ -8,6 +8,41 @@ import (
 	"github.com/yypyyd/infinite-canvas/model"
 )
 
+func TestParseExplicitAddConfigRequest(t *testing.T) {
+	canvas := AgentCanvasContext{
+		SelectedNodeIDs: []string{"text-1"},
+		VisibleNodeIDs:  []string{"text-1", "image-1"},
+		Nodes: []AgentCanvasNode{
+			{ID: "text-1", Type: "text", Title: "文案", X: 0},
+			{ID: "image-1", Type: "image", Title: "主图", X: 400},
+		},
+	}
+	sources, placement, ok := parseExplicitAddConfigRequest("给画布上的文本节点添加一个配置节点并连上，不要生图", canvas)
+	if !ok || placement != "right_of_selection" || len(sources) != 1 || sources[0] != "text-1" {
+		t.Fatalf("expected selected text source, got ok=%v placement=%q sources=%v", ok, placement, sources)
+	}
+	if _, _, ok := parseExplicitAddConfigRequest("生成图片并添加配置节点", canvas); ok {
+		t.Fatal("compound generate+config should stay in planner")
+	}
+	unselected := canvas
+	unselected.SelectedNodeIDs = nil
+	unselected.FocusNodeIDs = nil
+	left, _, ok := parseExplicitAddConfigRequest("给视口最左边那张图添加配置并连上", unselected)
+	if !ok || len(left) != 1 || left[0] != "text-1" {
+		t.Fatalf("expected leftmost visible node, got ok=%v sources=%v", ok, left)
+	}
+}
+
+func TestSanitizeAgentUserFacingText(t *testing.T) {
+	got := sanitizeAgentUserFacingText("**目标完成**：已为画布上的文本节点（id: text-1789248805391-97cfc）添加配置节点（config-1789248869566-aif4z），并通过连线关联，无图像生成。")
+	if strings.Contains(got, "text-") || strings.Contains(got, "config-") || strings.Contains(got, "目标完成") || strings.Contains(got, "**") {
+		t.Fatalf("expected ids and goal prefix stripped, got %q", got)
+	}
+	if !strings.Contains(got, "添加配置节点") {
+		t.Fatalf("expected remaining canvas sentence, got %q", got)
+	}
+}
+
 func TestSimpleAgentMediaCommandRejectsCompoundWorkflows(t *testing.T) {
 	for _, content := range []string{"生成一张红色运动鞋海报", "制作咖啡机旋转展示视频", "策划一张夏季饮料海报", "生成一张先进科技风海报"} {
 		if !simpleAgentMediaCommand(content) {
@@ -237,5 +272,98 @@ func TestAgentMediaRevisionLimitStopsSecondAdjustment(t *testing.T) {
 	standardRun := model.AgentRun{Context: `{"autonomy":"standard"}`}
 	if !agentMediaRevisionLimitReached(standardRun, videoSteps[:2], "video.generate") {
 		t.Fatal("standard mode should report inspection issues without regenerating")
+	}
+}
+
+func TestCanvasNativeAgentToolsAuthorizeAndValidate(t *testing.T) {
+	authorization := agentNodeAuthorization{
+		NodeIDs:       map[string]struct{}{"text-1": {}, "image-1": {}, "image-2": {}, "video-1": {}, "audio-1": {}, "config-1": {}, "config-2": {}},
+		ImageNodeIDs:  map[string]struct{}{"image-1": {}, "image-2": {}},
+		VideoNodeIDs:  map[string]struct{}{"video-1": {}},
+		AudioNodeIDs:  map[string]struct{}{"audio-1": {}},
+		TextNodeIDs:   map[string]struct{}{"text-1": {}},
+		ConfigNodeIDs: map[string]struct{}{"config-1": {}, "config-2": {}},
+	}
+	videoArgs, _, err := decodeAgentToolArguments("video.generate", `{"prompt":"咖啡机旋转展示","imageNodeIds":["image-1","image-2"],"videoNodeIds":["video-1"],"audioNodeIds":["audio-1"]}`, authorization)
+	if err != nil {
+		t.Fatal(err)
+	}
+	video, ok := videoArgs.(videoGenerateArguments)
+	if !ok || video.ImageNodeID != "image-1" || len(video.ImageNodeIDs) != 2 || len(video.VideoNodeIDs) != 1 || len(video.AudioNodeIDs) != 1 {
+		t.Fatalf("video arguments = %#v", videoArgs)
+	}
+	if _, _, err := decodeAgentToolArguments("video.generate", `{"prompt":"咖啡机旋转展示","imageNodeIds":["image-9"]}`, authorization); err == nil {
+		t.Fatal("expected unauthorized video image rejection")
+	}
+
+	configArgs, _, err := decodeAgentToolArguments("canvas.add_config", `{"sourceNodeIds":["text-1","image-1"]}`, authorization)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, ok := configArgs.(canvasAddConfigArguments)
+	if !ok || config.Placement != "right_of_selection" || len(config.SourceNodeIDs) != 2 {
+		t.Fatalf("config arguments = %#v", configArgs)
+	}
+	if err := validateAgentToolSuccess("canvas.add_config", config, &SubmitAgentToolResultRequest{Status: "success", NodeID: "config-new", Placement: "right_of_selection"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, err := decodeAgentToolArguments("canvas.connect", `{"fromNodeId":"config-1","toNodeId":"config-2"}`, authorization); err == nil {
+		t.Fatal("expected config-to-config rejection")
+	}
+	connectArgs, _, err := decodeAgentToolArguments("canvas.connect", `{"fromNodeId":"image-1","toNodeId":"config-1"}`, authorization)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateAgentToolSuccess("canvas.connect", connectArgs, &SubmitAgentToolResultRequest{Status: "success", FromNodeID: "image-1", ToNodeID: "config-1"}); err != nil {
+		t.Fatal(err)
+	}
+
+	textArgs, _, err := decodeAgentToolArguments("canvas.add_text", `{"text":"卖点","placement":"below_selection"}`, authorization)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateAgentToolSuccess("canvas.add_text", textArgs, &SubmitAgentToolResultRequest{Status: "success", NodeID: "text-new", Placement: "below_selection"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNormalizeAgentCanvasContextKeepsVisibleNodeIDs(t *testing.T) {
+	context, err := normalizeAgentCanvasContext(AgentCanvasContext{
+		Autonomy: agentAutonomyStandard, SelectedNodeIDs: []string{"image-1"}, VisibleNodeIDs: []string{"image-1", "image-1", "missing", "text-1"},
+		Nodes: []AgentCanvasNode{
+			{ID: "image-1", Type: "image", Title: "图", X: 0, Y: 0, Width: 100, Height: 100, StorageKey: "secret/a"},
+			{ID: "text-1", Type: "text", Title: "文", X: 200, Y: 0, Width: 100, Height: 50},
+		},
+	})
+	if err != nil || len(context.VisibleNodeIDs) != 2 || context.VisibleNodeIDs[0] != "image-1" || context.VisibleNodeIDs[1] != "text-1" {
+		t.Fatalf("visible = %#v err=%v", context.VisibleNodeIDs, err)
+	}
+	raw, _ := json.Marshal(context)
+	modelContext, err := agentModelCanvasContext(string(raw), nil)
+	if err != nil || !strings.Contains(modelContext, `"visibleNodeIds"`) || !strings.Contains(modelContext, `"text-1"`) || strings.Contains(modelContext, "secret/a") {
+		t.Fatalf("unsafe visible context: %v %s", err, modelContext)
+	}
+	messages := attachAgentPlanningPreviews([]agentChatMessage{{Role: "user", Content: "看当前画面"}}, "org-1", string(raw))
+	encoded, _ := json.Marshal(messages)
+	if strings.Contains(string(encoded), "secret/a") || strings.Contains(string(encoded), "storageKey") || strings.Contains(string(encoded), "/api/media/storage/") {
+		t.Fatalf("planning preview leaked storage: %s", encoded)
+	}
+	if !unfetchableAgentPreviewURL("https://huantu.xyz/api/media/storage/file-1?expires=1&signature=x") || unfetchableAgentPreviewURL("https://cdn.example/thumb.webp") {
+		t.Fatal("self-hosted preview URL filter failed")
+	}
+}
+
+func TestNormalizeAuthorizedNodeIDsAndPlacement(t *testing.T) {
+	allowed := map[string]struct{}{"a": {}, "b": {}}
+	ids, err := normalizeAuthorizedNodeIDs([]string{" a ", "a", "b"}, allowed, 3, "ids")
+	if err != nil || len(ids) != 2 || ids[0] != "a" || ids[1] != "b" {
+		t.Fatalf("ids=%v err=%v", ids, err)
+	}
+	if _, err := normalizeAuthorizedNodeIDs([]string{"c"}, allowed, 3, "ids"); err == nil {
+		t.Fatal("expected unauthorized rejection")
+	}
+	if !validAgentPlacement("viewport") || validAgentPlacement("stack") {
+		t.Fatal("placement validation failed")
 	}
 }

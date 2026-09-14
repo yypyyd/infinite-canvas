@@ -4,6 +4,11 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 已有镜像标签，例如 v0.2.18 或 latest。只部署、不构建。
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -11,6 +16,7 @@ permissions:
 
 jobs:
   build:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -42,3 +48,47 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  deploy:
+    needs: [build]
+    if: always() && (github.event_name == 'workflow_dispatch' || needs.build.result == 'success')
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Deploy production container
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          USER: ${{ secrets.DEPLOY_USER }}
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          TAG: ${{ github.event.inputs.image_tag || github.ref_name }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$HOST"
+          test -n "$USER"
+          test -n "$SSH_KEY"
+          test -n "$TAG"
+          mkdir -p ~/.ssh
+          install -m 600 /dev/null ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          def sh_quote(value: str) -> str:
+              return "'" + value.replace("'", "'\"'\"'") + "'"
+
+          Path("/tmp/infinite-canvas-deploy.env").write_text(
+              "".join(
+                  f"{key}={sh_quote(os.environ.get(key, ''))}\n"
+                  for key in ("TAG", "GHCR_USERNAME", "GHCR_READ_TOKEN")
+              ),
+              encoding="utf-8",
+          )
+          PY
+          scp scripts/deploy-production.sh /tmp/infinite-canvas-deploy.env "$USER@$HOST:/tmp/"
+          ssh "$USER@$HOST" 'install -d -m 755 /opt/infinite-canvas && install -m 755 /tmp/deploy-production.sh /opt/infinite-canvas/deploy-production.sh && set -a && . /tmp/infinite-canvas-deploy.env && rm -f /tmp/infinite-canvas-deploy.env && /opt/infinite-canvas/deploy-production.sh'

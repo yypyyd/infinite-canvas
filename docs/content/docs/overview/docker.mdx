@@ -82,6 +82,28 @@ Worker 默认使用内置标准执行器：根据任务创建时固化的品牌�
 
 如需使用自有生产服务，可同时配置 `BATCH_WORKER_EXECUTOR_URL` 和 `BATCH_WORKER_TOKEN` 切换到外部执行器模式。外部执行器必须按请求中的 `Idempotency-Key` 幂等处理，并返回 `resultUrl`、`mimeType` 和 `size`。
 
+## 生产自动部署
+
+线上站点由 Nginx 反代本机 `127.0.0.1:3050`，数据在 `/opt/infinite-canvas/data`，环境变量在 `/opt/infinite-canvas/.env`。不要用仓库根目录的 Compose 去占用 3000。
+
+打 `v*` 标签后，GitHub Actions 会构建 `ghcr.io/yypyyd/infinite-canvas:<tag>`，再 SSH 到生产机执行 `scripts/deploy-production.sh`：拉取镜像、备份当前 SQLite、把旧容器改名为 `infinite-canvas-rollback`、新容器以固定名 `infinite-canvas` 占 3050，健康检查失败则切回。
+
+仓库 Actions 需要这些 Secret：
+
+- `DEPLOY_HOST`：生产机地址
+- `DEPLOY_USER`：SSH 用户
+- `DEPLOY_SSH_KEY`：仅用于部署的私钥
+- `GHCR_READ_TOKEN`：镜像私有时填写只读 token；公开镜像可留空
+- `GHCR_USERNAME`：可选，默认仓库所有者
+
+GitHub 环境名是 `production`，需要人工确认时在该环境打开 Required reviewers。回滚或热修走 Actions 的 `workflow_dispatch`，填写已有镜像标签即可，不会重新构建。
+
+首次接通：本机生成 ed25519 密钥，公钥写入生产机 `authorized_keys`，私钥放进 `DEPLOY_SSH_KEY`。生产机先能 `docker pull` 对应镜像，再手动跑一次：
+
+```bash
+TAG=v0.2.17 /opt/infinite-canvas/deploy-production.sh
+```
+
 ## 备份
 
 应用镜像内置数据库与七牛 Kodo 备份恢复命令；本地文件存储需要同时备份挂载的数据目录。生产操作前必须停止应用和批量 Worker，完整命令、校验规则和恢复演练见[备份与恢复](./backup-restore)。

@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpRight, Layers3, Play, Sparkles } from "lucide-react";
+import { ArrowUpRight, Layers3, Sparkles } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import Link from "next/link";
 import NextImage from "next/image";
@@ -44,21 +44,15 @@ export default function IndexPage() {
         <main className="h-full overflow-y-auto bg-background text-foreground">
             <section className="overflow-hidden border-b border-border px-4 pb-8 pt-8 sm:px-8 lg:px-12">
                 <div className="mx-auto max-w-[1320px]">
-                    <motion.div initial={reducedMotion ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="grid items-end gap-7 lg:grid-cols-[.8fr_1.2fr]">
-                        <div>
-                            <p className="text-xs font-medium uppercase tracking-[.2em] text-primary">电商上新 AI 工作台</p>
-                            <h1 className="mt-3 text-4xl font-semibold tracking-[-.07em] sm:text-5xl">
-                                一张实拍，
-                                <br />
-                                出整套上新图。
-                            </h1>
-                            <p className="mt-3 text-sm leading-6 text-muted-foreground">上传商品图，生成白底主图、场景种草、卖点详情和 SKU 套图，直接用于上架。</p>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-4 lg:justify-end">
+                    <motion.div initial={reducedMotion ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="max-w-3xl">
+                        <p className="text-xs font-medium uppercase tracking-[.2em] text-primary">电商上新 AI 工作台</p>
+                        <h1 className="mt-3 text-[34px] font-semibold leading-[1.12] tracking-[-.05em] sm:text-[44px]">一张实拍，出整套上新图。</h1>
+                        <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">上传商品图，生成白底主图、场景种草、卖点详情和 SKU 套图，直接用于上架。</p>
+                        <div className="mt-6 flex flex-wrap items-center gap-4">
                             <Link
                                 href="/image?preset=product-main"
                                 prefetch={false}
-                                className="flex min-h-14 min-w-0 flex-1 items-center gap-3 rounded-xl border border-border bg-card px-4 text-sm text-muted-foreground transition hover:border-primary/30 sm:min-w-[360px] sm:flex-none"
+                                className="flex min-h-12 min-w-0 items-center gap-3 rounded-xl border border-border bg-card px-4 text-sm text-muted-foreground transition hover:border-primary/30 sm:min-w-[360px]"
                             >
                                 <Sparkles className="size-4 shrink-0 text-primary" />
                                 <span className="flex-1">上传商品图，先出一张白底主图</span>
@@ -110,12 +104,10 @@ export default function IndexPage() {
             </section>
 
             <section className="mx-auto max-w-[1360px] px-5 py-20 sm:px-8 lg:px-12">
-                <div className="mb-10 flex flex-wrap items-end justify-between gap-5">
-                    <div>
-                        <p className="text-xs font-medium uppercase tracking-[.18em] text-primary">精选作品</p>
-                        <h2 className="mt-4 text-4xl font-semibold tracking-[-.06em] sm:text-5xl">一件商品，不止一张图。</h2>
-                    </div>
-                    <p className="max-w-sm text-sm leading-6 text-muted-foreground">看看不同品类、材质和风格的成品效果，点击任意一张，用同款方式做你的商品。</p>
+                <div className="mb-8 max-w-2xl">
+                    <p className="text-xs font-medium uppercase tracking-[.18em] text-primary">精选作品</p>
+                    <h2 className="mt-3 text-3xl font-semibold tracking-[-.04em] sm:text-4xl">一件商品，不止一张图。</h2>
+                    <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">看看不同品类、材质和风格的成品效果，点击任意一张，用同款方式做你的商品。</p>
                 </div>
                 <div className="grid grid-cols-2 items-start gap-3 overflow-hidden sm:grid-cols-3 lg:grid-cols-5">
                     {galleryColumns.map((column, columnIndex) => (
@@ -159,19 +151,14 @@ export default function IndexPage() {
                 </div>
             </section>
 
-            <motion.section initial={reducedMotion ? false : { opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.18 }} transition={{ duration: 0.7 }} className="mx-auto max-w-[1360px] px-5 py-24 sm:px-8 lg:px-12">
-                <div className="grid gap-12 lg:grid-cols-[.82fr_1.18fr]">
-                    <div>
-                        <p className="text-xs font-medium uppercase tracking-[.18em] text-primary">使用场景</p>
-                        <h2 className="mt-5 text-4xl font-semibold leading-[1.03] tracking-[-.06em] sm:text-6xl">
-                            选择任务，
-                            <br />
-                            马上开始。
-                        </h2>
-                        <p className="mt-5 max-w-sm text-sm leading-6 text-muted-foreground">每个入口都预设好对应的提示词和参数，不用从空白开始。</p>
-                    </div>
-                    <div className="grid gap-5 lg:grid-cols-[.8fr_1.2fr]">
-                        <div className="divide-y divide-border border-y border-border">
+            <motion.section initial={reducedMotion ? false : { opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.18 }} transition={{ duration: 0.7 }} className="mx-auto max-w-[1360px] px-5 py-20 sm:px-8 lg:px-12">
+                <div className="mb-8 max-w-2xl">
+                    <p className="text-xs font-medium uppercase tracking-[.18em] text-primary">使用场景</p>
+                    <h2 className="mt-3 text-3xl font-semibold tracking-[-.04em] sm:text-4xl">选择任务，马上开始。</h2>
+                    <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">每个入口都预设好对应的提示词和参数，不用从空白开始。</p>
+                </div>
+                <div className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)] lg:gap-8">
+                    <div className="divide-y divide-border border-y border-border">
                             {commercePresets.map((preset, index) => (
                                 <button
                                     key={preset.id}
@@ -210,7 +197,6 @@ export default function IndexPage() {
                                 </motion.div>
                             </AnimatePresence>
                         </div>
-                    </div>
                 </div>
             </motion.section>
 
@@ -222,14 +208,9 @@ export default function IndexPage() {
                     transition={{ duration: 0.65 }}
                     className="mx-auto max-w-[1360px] px-5 py-16 sm:px-8 sm:py-20 lg:px-12"
                 >
-                    <div className="grid items-center gap-10 lg:grid-cols-[.78fr_1.22fr] lg:gap-14">
-                        <div>
-                            <div className="mb-5 flex size-9 items-center justify-center rounded-full bg-muted text-primary">
-                                <Play className="size-4" />
-                            </div>
-                            <h2 className="text-3xl font-semibold tracking-[-.05em] sm:text-4xl">三步，完成一次上新。</h2>
-                        </div>
-                        <div className="relative grid gap-8 sm:grid-cols-3 sm:gap-6">
+                    <p className="text-xs font-medium uppercase tracking-[.18em] text-primary">上新流程</p>
+                    <h2 className="mt-3 text-3xl font-semibold tracking-[-.04em] sm:text-4xl">三步，完成一次上新。</h2>
+                    <div className="relative mt-10 grid gap-8 sm:grid-cols-3 sm:gap-6">
                             <div className="pointer-events-none absolute left-[8%] right-[8%] top-4 hidden border-t border-border sm:block" />
                             {workflow.map((item, index) => (
                                 <motion.div
@@ -246,7 +227,6 @@ export default function IndexPage() {
                                     <p className="mt-2 max-w-[210px] text-sm leading-6 text-muted-foreground">{item.detail}</p>
                                 </motion.div>
                             ))}
-                        </div>
                     </div>
                 </motion.div>
             </section>
@@ -259,10 +239,10 @@ export default function IndexPage() {
                     transition={{ duration: 0.65 }}
                     className="mx-auto max-w-[1360px] px-5 py-24 sm:px-8 lg:px-12"
                 >
-                    <div className="mb-9 flex flex-wrap items-end justify-between gap-4">
+                    <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
                         <div>
                             <p className="text-xs font-medium uppercase tracking-[.18em] text-primary">灵感流</p>
-                            <h2 className="mt-5 text-4xl font-semibold tracking-[-.06em] sm:text-5xl">看看别人如何开始。</h2>
+                            <h2 className="mt-3 text-3xl font-semibold tracking-[-.04em] sm:text-4xl">看看别人如何开始。</h2>
                         </div>
                         <Link href="/prompts" prefetch={false} className="inline-flex items-center gap-1 text-sm text-muted-foreground transition hover:text-foreground">
                             查看全部 <ArrowUpRight className="size-4" />

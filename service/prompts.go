@@ -17,6 +17,9 @@ func ListPrompts(q model.Query) (model.PromptList, error) {
 		return model.PromptList{}, err
 	}
 	categories := promptCategoryCodes(ListPromptCategories())
+	for i := range items {
+		rewriteJoeSaiPromptURLs(&items[i])
+	}
 	return model.PromptList{Items: items, Tags: tags, Categories: categories, Total: int(total)}, nil
 }
 

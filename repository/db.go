@@ -23,7 +23,7 @@ import (
 
 var promptCategories = []model.PromptCategory{
 	{Category: "jeremy-product-photography", Name: "商品摄影灵感 · CC0", Description: "JeremyGDM 整理的商品主图、细节、场景、食品与营销海报提示词", GithubURL: "https://github.com/JeremyGDM/awesome-ai-product-photography-prompts", Remote: true},
-	{Category: "joesai-commercial-prompts", Name: "商业商品图 · GPT Image 2", Description: "JoeSai 整理的 MIT 商业商品图、行业视觉与电商转化提示词", GithubURL: "https://github.com/JoeSai/awesome-gpt-image-2-commercial-prompts", Remote: true},
+	{Category: "joesai-commercial-prompts", Name: "商业商品图 · GPT Image 2", Description: "JoeSai 整理的 MIT 商业商品图、行业视觉与电商转化提示词", GithubURL: "https://github.com/a245800347-max/awesome-gpt-image-2-commercial-prompts", Remote: true},
 }
 
 var (

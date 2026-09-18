@@ -25,7 +25,9 @@ const (
 	seedanceRawBase                 = "https://raw.githubusercontent.com/ZeroLu/awesome-seedance/main"
 	wuyoscarGptImage2RawBase        = "https://raw.githubusercontent.com/wuyoscar/GPT-Image2-Skill/main"
 	jeremyProductPhotographyRawBase = "https://raw.githubusercontent.com/JeremyGDM/awesome-ai-product-photography-prompts/master"
-	joesaiCommercialPromptsRawBase  = "https://raw.githubusercontent.com/JoeSai/awesome-gpt-image-2-commercial-prompts/main"
+	joesaiCommercialPromptsRepo     = "a245800347-max/awesome-gpt-image-2-commercial-prompts"
+	joesaiCommercialPromptsRawBase  = "https://raw.githubusercontent.com/" + joesaiCommercialPromptsRepo + "/main"
+	joesaiCommercialPromptsLegacyRepo = "JoeSai/awesome-gpt-image-2-commercial-prompts"
 )
 
 var jeremyProductPhotographyFiles = []string{"prompts/product-photography.md", "prompts/food-and-drink.md", "prompts/poster-design.md"}
@@ -214,6 +216,14 @@ func buildJoeSaiCommercialPrompts() ([]model.Prompt, error) {
 		return nil, errors.New("商业商品图提示词库未找到提示词")
 	}
 	return items, nil
+}
+
+func rewriteJoeSaiPromptURLs(item *model.Prompt) {
+	legacyRaw := "https://raw.githubusercontent.com/" + joesaiCommercialPromptsLegacyRepo
+	currentRaw := "https://raw.githubusercontent.com/" + joesaiCommercialPromptsRepo
+	item.CoverURL = strings.ReplaceAll(item.CoverURL, legacyRaw, currentRaw)
+	item.Preview = strings.ReplaceAll(item.Preview, legacyRaw, currentRaw)
+	item.GithubURL = strings.ReplaceAll(item.GithubURL, "https://github.com/"+joesaiCommercialPromptsLegacyRepo, "https://github.com/"+joesaiCommercialPromptsRepo)
 }
 
 func extractJoeSaiPrompt(markdown string) string {

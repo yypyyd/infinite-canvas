@@ -1,6 +1,6 @@
 # 来源与署名声明
 
-道生画境（infinite-canvas）当前仓库由 `yypyyd/infinite-canvas` 维护，基于以下上游项目持续开发：
+幻图（infinite-canvas）当前仓库由 `yypyyd/infinite-canvas` 维护，基于以下上游项目持续开发：
 
 - 上游项目：[basketikun/infinite-canvas](https://github.com/basketikun/infinite-canvas)
 - 上游作者：basketikun 及上游项目历次贡献者

@@ -109,7 +109,7 @@ export function AdminLayoutClient({ children }: { children: ReactNode }) {
                     <Flex align="center" gap={12} style={{ height: adminLayoutStyle.brandHeight, padding: "0 20px", borderBottom: `1px solid ${antToken.colorBorderSecondary}` }}>
                         <img src="/logo.png" alt="" style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover" }} />
                         <Typography.Text strong style={{ fontSize: 18, letterSpacing: 0 }}>
-                            道生画境
+                            幻图
                         </Typography.Text>
                     </Flex>
                     <Menu

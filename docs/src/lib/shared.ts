@@ -1,4 +1,4 @@
-export const appName = '道生画境';
+export const appName = '幻图';
 export const docsRoute = '/docs';
 export const docsContentRoute = '/llms.mdx/docs';
 

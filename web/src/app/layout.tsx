@@ -7,9 +7,17 @@ import "antd/dist/reset.css";
 import "./globals.css";
 import React from "react";
 
+const siteTitle = "幻图 - 一张实拍，出整套电商上新图";
+const siteDescription = "上传一张商品实拍，AI 生成白底主图、场景种草图、卖点详情图、SKU 套图和营销视频。面向淘宝、拼多多、抖店卖家与电商运营的 AI 视觉工作台。";
+const ogImage = { url: "/og.png", width: 1200, height: 630, alt: siteTitle };
+
 export const metadata: Metadata = {
-    title: "道生画境 - AI 电商视觉工作台",
-    description: "面向电商上新的 AI 商品图、详情页视觉与营销视频工作台",
+    metadataBase: new URL(process.env.PUBLIC_BASE_URL || "https://huantu.xyz"),
+    title: siteTitle,
+    description: siteDescription,
+    keywords: ["幻图", "AI 商品图", "电商主图生成", "白底图", "场景图", "详情页", "SKU 套图", "营销视频", "AI 电商工具"],
+    openGraph: { type: "website", locale: "zh_CN", url: "/", siteName: "幻图", title: siteTitle, description: siteDescription, images: [ogImage] },
+    twitter: { card: "summary_large_image", title: siteTitle, description: siteDescription, images: [ogImage] },
 };
 
 export default async function RootLayout({

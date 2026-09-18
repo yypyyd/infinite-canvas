@@ -54,8 +54,8 @@ const emptySettings: AdminSettings = {
         channels: [],
         storage: { driver: "local", retentionDays: 0, localPath: "data/user-files", qiniuAccessKey: "", qiniuSecretKey: "", qiniuBucket: "", qiniuRegion: "as0", qiniuDownloadDomain: "", qiniuSecretKeyConfigured: false },
         promptSync: { enabled: true, cron: "*/5 * * * *" },
-        email: { smtpHost: "", smtpPort: 587, smtpUsername: "", smtpPassword: "", smtpFromEmail: "", smtpFromName: "道生画境", smtpSecurity: "starttls", passwordConfigured: false },
-        payment: { enabled: false, gatewayUrl: "https://www.ezfpy.cn", merchantId: "", merchantKey: "", merchantKeyConfigured: false, siteName: "道生画境", productName: "余额充值", methods: ["alipay", "wxpay"], packages: [], creditsPerYuan: 0 },
+        email: { smtpHost: "", smtpPort: 587, smtpUsername: "", smtpPassword: "", smtpFromEmail: "", smtpFromName: "幻图", smtpSecurity: "starttls", passwordConfigured: false },
+        payment: { enabled: false, gatewayUrl: "https://www.ezfpy.cn", merchantId: "", merchantKey: "", merchantKeyConfigured: false, siteName: "幻图", productName: "余额充值", methods: ["alipay", "wxpay"], packages: [], creditsPerYuan: 0 },
         referral: { enabled: false, commissionRate: 0 },
         operationsAlerts: {
             enabled: true,
@@ -644,7 +644,7 @@ function normalizePrivateSetting(setting: Partial<AdminSettings["private"]> = {}
             smtpUsername: setting.email?.smtpUsername?.trim() || "",
             smtpPassword: setting.email?.smtpPassword || "",
             smtpFromEmail: setting.email?.smtpFromEmail?.trim().toLowerCase() || "",
-            smtpFromName: setting.email?.smtpFromName?.trim() || "道生画境",
+            smtpFromName: setting.email?.smtpFromName?.trim() || "幻图",
             smtpSecurity: setting.email?.smtpSecurity === "ssl" || setting.email?.smtpSecurity === "none" ? setting.email.smtpSecurity : "starttls",
             passwordConfigured: setting.email?.passwordConfigured === true,
         },
@@ -654,7 +654,7 @@ function normalizePrivateSetting(setting: Partial<AdminSettings["private"]> = {}
             merchantId: setting.payment?.merchantId?.trim() || "",
             merchantKey: setting.payment?.merchantKey || "",
             merchantKeyConfigured: setting.payment?.merchantKeyConfigured === true,
-            siteName: setting.payment?.siteName?.trim() || "道生画境",
+            siteName: setting.payment?.siteName?.trim() || "幻图",
             productName: setting.payment?.productName?.trim() || "余额充值",
             methods: (setting.payment?.methods || []).filter((item) => item === "alipay" || item === "wxpay" || item === "qqpay"),
             packages: (setting.payment?.packages || [])

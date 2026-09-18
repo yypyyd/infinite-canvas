@@ -20,9 +20,9 @@ const galleryRatios = ["aspect-[3/4]", "aspect-square", "aspect-[4/5]", "aspect-
 const galleryOffsets = ["pt-0", "pt-8", "pt-16", "pt-5", "pt-11"];
 const capabilityNames = ["图片生成", "营销视频", "无限画布", "灵感模板", "商品素材", "模型广场"];
 const workflow = [
-    { step: "01", title: "上传参考", detail: "商品图、包装、Logo 或品牌素材。" },
-    { step: "02", title: "描述画面", detail: "告诉画布你想要的场景和风格。" },
-    { step: "03", title: "继续创作", detail: "挑选结果，组合成完整的上新素材。" },
+    { step: "01", title: "上传实拍", detail: "一张商品图就够，包装、Logo 和品牌素材可选。" },
+    { step: "02", title: "选择用途", detail: "白底主图、场景图或详情图，也可以自己描述画面。" },
+    { step: "03", title: "挑选交付", detail: "选出满意的图直接下载上架，或继续出整套。" },
 ];
 
 export default function IndexPage() {
@@ -46,9 +46,13 @@ export default function IndexPage() {
                 <div className="mx-auto max-w-[1320px]">
                     <motion.div initial={reducedMotion ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="grid items-end gap-7 lg:grid-cols-[.8fr_1.2fr]">
                         <div>
-                            <p className="text-xs font-medium uppercase tracking-[.2em] text-primary">AI 视觉创作空间</p>
-                            <h1 className="mt-3 text-4xl font-semibold tracking-[-.07em] sm:text-5xl">今天想创造什么？</h1>
-                            <p className="mt-3 text-sm leading-6 text-muted-foreground">从一张商品图开始，继续生成、编辑和交付。</p>
+                            <p className="text-xs font-medium uppercase tracking-[.2em] text-primary">电商上新 AI 工作台</p>
+                            <h1 className="mt-3 text-4xl font-semibold tracking-[-.07em] sm:text-5xl">
+                                一张实拍，
+                                <br />
+                                出整套上新图。
+                            </h1>
+                            <p className="mt-3 text-sm leading-6 text-muted-foreground">上传商品图，生成白底主图、场景种草、卖点详情和 SKU 套图，直接用于上架。</p>
                         </div>
                         <div className="flex flex-wrap items-center gap-4 lg:justify-end">
                             <Link
@@ -57,7 +61,7 @@ export default function IndexPage() {
                                 className="flex min-h-14 min-w-0 flex-1 items-center gap-3 rounded-xl border border-border bg-card px-4 text-sm text-muted-foreground transition hover:border-primary/30 sm:min-w-[360px] sm:flex-none"
                             >
                                 <Sparkles className="size-4 shrink-0 text-primary" />
-                                <span className="flex-1">描述你想创造的商品画面...</span>
+                                <span className="flex-1">上传商品图，先出一张白底主图</span>
                                 <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground">
                                     <ArrowUpRight className="size-4" />
                                 </span>
@@ -109,9 +113,9 @@ export default function IndexPage() {
                 <div className="mb-10 flex flex-wrap items-end justify-between gap-5">
                     <div>
                         <p className="text-xs font-medium uppercase tracking-[.18em] text-primary">精选作品</p>
-                        <h2 className="mt-4 text-4xl font-semibold tracking-[-.06em] sm:text-5xl">灵感不应该只有几张。</h2>
+                        <h2 className="mt-4 text-4xl font-semibold tracking-[-.06em] sm:text-5xl">一件商品，不止一张图。</h2>
                     </div>
-                    <p className="max-w-sm text-sm leading-6 text-muted-foreground">浏览不同商品、材质和风格，点击任意作品开始自己的创作。</p>
+                    <p className="max-w-sm text-sm leading-6 text-muted-foreground">看看不同品类、材质和风格的成品效果，点击任意一张，用同款方式做你的商品。</p>
                 </div>
                 <div className="grid grid-cols-2 items-start gap-3 overflow-hidden sm:grid-cols-3 lg:grid-cols-5">
                     {galleryColumns.map((column, columnIndex) => (
@@ -164,7 +168,7 @@ export default function IndexPage() {
                             <br />
                             马上开始。
                         </h2>
-                        <p className="mt-5 max-w-sm text-sm leading-6 text-muted-foreground">每一个入口都带入对应的专业配置，不需要面对空白页面。</p>
+                        <p className="mt-5 max-w-sm text-sm leading-6 text-muted-foreground">每个入口都预设好对应的提示词和参数，不用从空白开始。</p>
                     </div>
                     <div className="grid gap-5 lg:grid-cols-[.8fr_1.2fr]">
                         <div className="divide-y divide-border border-y border-border">
@@ -291,9 +295,9 @@ export default function IndexPage() {
 
             <motion.section initial={reducedMotion ? false : { opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="border-t border-border px-6 py-24 text-center sm:px-10">
                 <Sparkles className="mx-auto size-5 text-primary" />
-                <h2 className="mx-auto mt-5 max-w-2xl text-4xl font-semibold tracking-[-.06em] sm:text-5xl">准备好开始下一张图了吗？</h2>
+                <h2 className="mx-auto mt-5 max-w-2xl text-4xl font-semibold tracking-[-.06em] sm:text-5xl">下一款新品，从一张实拍开始。</h2>
                 <Link href="/image?preset=product-main" prefetch={false} className="mt-8 inline-flex min-h-11 items-center gap-2 rounded-lg bg-primary px-6 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90">
-                    开始创作 <ArrowUpRight className="size-4" />
+                    上传商品图开始 <ArrowUpRight className="size-4" />
                 </Link>
             </motion.section>
 

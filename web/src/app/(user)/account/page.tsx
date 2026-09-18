@@ -1506,7 +1506,7 @@ curl "${endpoint}/videos/VIDEO_TASK_ID/content?model=YOUR_VIDEO_MODEL" \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Idempotency-Key: YOUR_UNIQUE_REQUEST_ID" \\
   -H "Content-Type: application/json" \\
-  -d '{"model":"YOUR_AUDIO_MODEL","input":"欢迎使用道生画境开放接口。","voice":"alloy","response_format":"mp3"}' \\
+  -d '{"model":"YOUR_AUDIO_MODEL","input":"欢迎使用幻图开放接口。","voice":"alloy","response_format":"mp3"}' \\
   --output speech.mp3`;
     const recoveryCurlExample = `curl "${endpoint}/generation-tasks/recovery" \\
   -H "Authorization: Bearer YOUR_API_KEY" \\

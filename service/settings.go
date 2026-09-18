@@ -955,7 +955,7 @@ func normalizePaymentSetting(setting model.PaymentSetting) model.PaymentSetting 
 		setting.GatewayURL = "https://www.ezfpy.cn"
 	}
 	if setting.SiteName == "" {
-		setting.SiteName = "道生画境"
+		setting.SiteName = "幻图"
 	}
 	if setting.ProductName == "" {
 		setting.ProductName = "余额充值"

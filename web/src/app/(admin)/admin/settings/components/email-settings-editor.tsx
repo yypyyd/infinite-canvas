@@ -64,7 +64,7 @@ export function EmailSettingsEditor() {
                     </Col>
                     <Col xs={24} md={12}>
                         <Form.Item name={["private", "email", "smtpFromName"]} label="发件人名称">
-                            <Input placeholder="道生画境" />
+                            <Input placeholder="幻图" />
                         </Form.Item>
                     </Col>
                 </Row>

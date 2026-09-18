@@ -54,7 +54,7 @@ export function PaymentSettingsEditor() {
                     </Col>
                     <Col xs={24} md={12}>
                         <Form.Item name={["private", "payment", "siteName"]} label="网站名称" extra="支付收银台展示的网站名">
-                            <Input placeholder="道生画境" />
+                            <Input placeholder="幻图" />
                         </Form.Item>
                     </Col>
                     <Col xs={24} md={12}>

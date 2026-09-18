@@ -47,7 +47,7 @@ func TestAgentMemoryIsScopedAndOverwritable(t *testing.T) {
 	if err != nil || len(memories) != 1 || memories[0].Content != "插画" {
 		t.Fatalf("updated memories = %#v err=%v", memories, err)
 	}
-	if _, err := SaveAgentMemory(model.AgentMemory{ID: "memory-2", OrganizationID: "organization-a", UserID: "user-a", ProjectID: "", Kind: model.AgentMemoryKindFact, Key: "brand-name", Content: "道生画境", Confidence: 0.9, Status: model.AgentMemoryStatusActive, CreatedAt: workspaceTestNow, UpdatedAt: workspaceTestNow}); err != nil {
+	if _, err := SaveAgentMemory(model.AgentMemory{ID: "memory-2", OrganizationID: "organization-a", UserID: "user-a", ProjectID: "", Kind: model.AgentMemoryKindFact, Key: "brand-name", Content: "幻图", Confidence: 0.9, Status: model.AgentMemoryStatusActive, CreatedAt: workspaceTestNow, UpdatedAt: workspaceTestNow}); err != nil {
 		t.Fatal(err)
 	}
 	memories, err = ListActiveAgentMemories("organization-a", "user-a", "project-a", 10)

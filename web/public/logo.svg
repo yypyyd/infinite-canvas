@@ -1,4 +1,12 @@
-<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <path d="M32 8L58 54H46L32 29L18 54H6L32 8Z" fill="currentColor"/>
-  <path d="M32 40L40 54H24L32 40Z" fill="currentColor"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="huantu" x1="8" y1="4" x2="58" y2="60" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6D28D9"/>
+      <stop offset=".52" stop-color="#8B5CF6"/>
+      <stop offset="1" stop-color="#C084FC"/>
+    </linearGradient>
+  </defs>
+  <circle cx="32" cy="32" r="32" fill="url(#huantu)"/>
+  <text x="32" y="42" text-anchor="middle" fill="#fff" font-family="Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="34" font-weight="800">幻</text>
+  <path fill="#fff" d="M49.2 14.2c.28 2.28 1.68 3.68 3.96 3.96-2.28.28-3.68 1.68-3.96 3.96-.28-2.28-1.68-3.68-3.96-3.96 2.28-.28 3.68-1.68 3.96-3.96Z"/>
 </svg>

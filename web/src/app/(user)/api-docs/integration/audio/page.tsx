@@ -17,7 +17,7 @@ export default function AudioIntegrationPage() {
                 <p className="text-sm leading-7 text-muted-foreground">
                     接口是 <code className="text-foreground">POST /audio/speech</code>。成功时直接把响应写成文件。
                 </p>
-                <CodeBlock>{`curl -X POST "${endpoint}/audio/speech" \\\n  -H "Authorization: Bearer YOUR_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -H "Idempotency-Key: speech-$(date +%s)" \\\n  -d '{\n    "model": "AUDIO_MODEL_ID",\n    "input": "欢迎使用道生画境开放接口。",\n    "voice": "alloy",\n    "response_format": "mp3"\n  }' \\\n  --output speech.mp3`}</CodeBlock>
+                <CodeBlock>{`curl -X POST "${endpoint}/audio/speech" \\\n  -H "Authorization: Bearer YOUR_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -H "Idempotency-Key: speech-$(date +%s)" \\\n  -d '{\n    "model": "AUDIO_MODEL_ID",\n    "input": "欢迎使用幻图开放接口。",\n    "voice": "alloy",\n    "response_format": "mp3"\n  }' \\\n  --output speech.mp3`}</CodeBlock>
             </Section>
 
             <Section title="3. 失败怎么认">

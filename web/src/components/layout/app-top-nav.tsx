@@ -27,7 +27,7 @@ export function AppTopNav() {
                         <div className="flex min-w-0 items-center">
                             <Link href="/" prefetch={false} className="flex h-full shrink-0 items-center gap-2 text-sm font-semibold leading-none tracking-[-.01em] text-foreground transition hover:opacity-70">
                                 <img src="/logo.png" alt="" className="size-6 shrink-0 rounded-full object-cover" />
-                                <span className="text-[15px] font-semibold">道生画境</span>
+                                <span className="text-[15px] font-semibold">幻图</span>
                             </Link>
 
                             <OrganizationSwitcher />

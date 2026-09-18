@@ -610,7 +610,7 @@ function buildSnippet(endpoint: string, model: MarketplaceModel, operation: Mode
         ];
         return `curl -X POST "${endpoint}/videos" \\\n  -H "Authorization: Bearer YOUR_API_KEY" \\\n  -H "Idempotency-Key: YOUR_UNIQUE_REQUEST_ID" \\\n  -F "model=${model.id}" \\\n  -F "prompt=商品在柔和光影中缓慢旋转"${fields.length ? ` \\\n${fields.map((field) => `  -F "${field}"`).join(" \\\n")}` : ""}`;
     }
-    return `curl -X POST "${endpoint}/audio/speech" \\\n  -H "Authorization: Bearer YOUR_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -H "Idempotency-Key: YOUR_UNIQUE_REQUEST_ID" \\\n  -d '${JSON.stringify({ model: model.id, input: "欢迎使用道生画境开放接口。", voice: "alloy", response_format: "mp3" }, null, 2)}' \\\n  --output speech.mp3`;
+    return `curl -X POST "${endpoint}/audio/speech" \\\n  -H "Authorization: Bearer YOUR_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -H "Idempotency-Key: YOUR_UNIQUE_REQUEST_ID" \\\n  -d '${JSON.stringify({ model: model.id, input: "欢迎使用幻图开放接口。", voice: "alloy", response_format: "mp3" }, null, 2)}' \\\n  --output speech.mp3`;
 }
 
 function buildCompleteSnippet(endpoint: string, model: MarketplaceModel, operation: ModelOperation) {

@@ -59,16 +59,16 @@ export default function CanvasPage() {
     return (
         <main className="h-full overflow-auto bg-background text-foreground">
             <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-10 px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
-                <header className="hero-atmosphere flex flex-wrap items-end justify-between gap-6 py-8 sm:py-10 dark:border-b dark:border-border">
+                <header className="flex flex-col gap-5 border-b border-border py-6">
                     <div>
-                        <p className="flex items-center gap-2 text-sm font-medium text-primary">
+                        <p className="flex items-center gap-2 text-xs font-medium uppercase tracking-[.18em] text-primary">
                             <span className="size-1.5 rounded-full bg-primary" />
                             商品创作空间
                         </p>
-                        <h1 className="mt-3 text-5xl font-semibold tracking-[-.045em] sm:text-6xl">每个商品，都有自己的画布。</h1>
-                        <p className="mt-4 max-w-2xl text-base leading-7 text-muted-foreground">按商品或活动管理参考图、生成过程与最终交付素材。</p>
+                        <h1 className="mt-3 text-3xl font-semibold tracking-[-.04em] sm:text-4xl">每个商品，都有自己的画布。</h1>
+                        <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">按商品或活动管理参考图、生成过程与最终交付素材。</p>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                         {selectedIds.length ? (
                             <>
                                 <Button

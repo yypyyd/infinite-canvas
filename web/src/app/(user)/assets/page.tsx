@@ -197,8 +197,8 @@ export default function AssetsPage() {
                             <span className="size-1.5 rounded-full bg-primary" />
                             商品内容库
                         </div>
-                        <h1 className="text-5xl font-semibold tracking-[-.045em] sm:text-6xl">每份素材，都为上新准备。</h1>
-                        <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-muted-foreground">集中管理商品实拍、品牌参考、卖点文案与生成结果。</p>
+                        <h1 className="text-3xl font-semibold tracking-[-.04em] sm:text-4xl">每份素材，都为上新准备。</h1>
+                        <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-muted-foreground">集中管理商品实拍、品牌参考、卖点文案与生成结果。</p>
                     </div>
 
                     <div className="mx-auto mt-9 w-full max-w-2xl rounded-xl border border-border bg-card p-1.5">

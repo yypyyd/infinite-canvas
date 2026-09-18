@@ -54,8 +54,8 @@ export default function PromptsPage() {
                             <span className="size-1.5 rounded-full bg-primary" />
                             创意灵感库
                         </div>
-                        <h1 className="text-5xl font-semibold tracking-[-.045em] sm:text-6xl">为商品找到更好的表达。</h1>
-                        <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-muted-foreground">从 {totalPrompts} 条视觉模板中，按标题、标签与分类找到适合商品的创作方向。</p>
+                        <h1 className="text-3xl font-semibold tracking-[-.04em] sm:text-4xl">为商品找到更好的表达。</h1>
+                        <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-muted-foreground">从 {totalPrompts} 条视觉模板中，按标题、标签与分类找到适合商品的创作方向。</p>
                     </div>
                     {query.isLoading ? (
                         <div className="flex h-60 items-center justify-center">

@@ -1124,13 +1124,13 @@ export default function CommercePage() {
     return (
         <div className="bg-background">
             <div className="mx-auto max-w-[1440px] px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
-                <header className="hero-atmosphere mb-9 flex min-h-64 flex-wrap items-end justify-between gap-6 rounded-xl border border-border bg-card p-7 sm:p-10 dark:rounded-none dark:border-b dark:border-border dark:bg-transparent dark:p-0 dark:py-12 dark:sm:py-14">
+                <header className="mb-8 flex flex-col gap-4 border-b border-border pb-6 sm:flex-row sm:items-end sm:justify-between">
                     <div>
-                        <div className="mb-3 inline-flex items-center gap-2 text-sm font-medium text-primary">
+                        <div className="mb-3 inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[.18em] text-primary">
                             <Building2 className="size-4" /> 企业电商工作区
                         </div>
-                        <h1 className="text-5xl font-semibold tracking-[-.045em] sm:text-6xl">{workspace?.organization.name || "企业中心"}</h1>
-                        <p className="mt-4 max-w-2xl text-base leading-7 text-muted-foreground">品牌资产、商品主数据与视觉生产任务，在一个工作区持续协作。</p>
+                        <h1 className="text-3xl font-semibold tracking-[-.04em] sm:text-4xl">{workspace?.organization.name || "企业中心"}</h1>
+                        <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">品牌资产、商品主数据与视觉生产任务，在一个工作区持续协作。</p>
                     </div>
                     <Button icon={<RefreshCw className="size-4" />} onClick={() => void invalidate()}>
                         刷新数据

@@ -115,7 +115,7 @@ export default function ModelSquarePage() {
                     <div className="mx-auto flex size-11 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/15">
                         <Sparkles className="size-5" />
                     </div>
-                    <h1 className="mt-4 text-3xl font-semibold tracking-[-.045em] sm:text-5xl">模型广场</h1>
+                    <h1 className="mt-4 text-3xl font-semibold tracking-[-.04em] sm:text-4xl">模型广场</h1>
                     <p className="mt-3 text-sm text-muted-foreground sm:text-base">
                         本站当前共开放 <span className="font-semibold text-foreground tabular-nums">{models.length}</span> 个模型
                     </p>

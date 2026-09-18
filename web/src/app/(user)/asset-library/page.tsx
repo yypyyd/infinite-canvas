@@ -112,8 +112,8 @@ export default function AssetLibraryPage() {
                             <span className="size-1.5 rounded-full bg-primary" />
                             团队精选
                         </div>
-                        <h1 className="text-5xl font-semibold tracking-[-.045em] sm:text-6xl">好素材，让创作更快开始。</h1>
-                        <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-muted-foreground">挑选团队素材，加入我的素材后继续编辑和使用。</p>
+                        <h1 className="text-3xl font-semibold tracking-[-.04em] sm:text-4xl">好素材，让创作更快开始。</h1>
+                        <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-muted-foreground">挑选团队素材，加入我的素材后继续编辑和使用。</p>
                     </div>
                     <div className="mx-auto mt-9 w-full max-w-2xl rounded-xl border border-border bg-card p-1.5">
                         <Input

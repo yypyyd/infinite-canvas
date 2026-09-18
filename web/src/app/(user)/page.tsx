@@ -5,10 +5,14 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import Link from "next/link";
 import NextImage from "next/image";
 import { useEffect, useState } from "react";
-import { App, Image } from "antd";
+import { App } from "antd";
 
+import { PromptDetailDialog } from "@/components/prompts/prompt-detail-dialog";
 import { commercePresets } from "@/constant/commerce-presets";
+import { useCopyText } from "@/hooks/use-copy-text";
 import { fetchPrompts, type Prompt } from "@/services/api/prompts";
+import { useAssetStore } from "@/stores/use-asset-store";
+import { useUserStore } from "@/stores/use-user-store";
 
 const media = Array.from({ length: 27 }, (_, index) => `/home-gallery/home-v3-${String(index + 1).padStart(2, "0")}.webp`);
 const heroCount = Math.min(6, Math.max(3, Math.ceil(media.length * 0.35)));
@@ -27,10 +31,13 @@ const workflow = [
 
 export default function IndexPage() {
     const { message } = App.useApp();
+    const copyText = useCopyText();
+    const user = useUserStore((state) => state.user);
+    const addAsset = useAssetStore((state) => state.addAsset);
+    const canSaveAsset = Boolean(user && user.role !== "guest");
     const reducedMotion = useReducedMotion();
     const [promptShowcase, setPromptShowcase] = useState<Prompt[]>([]);
-    const [previewIndex, setPreviewIndex] = useState(0);
-    const [previewOpen, setPreviewOpen] = useState(false);
+    const [selectedPrompt, setSelectedPrompt] = useState<Prompt | null>(null);
     const [activePreset, setActivePreset] = useState(0);
     const [tickerPaused, setTickerPaused] = useState(false);
 
@@ -239,14 +246,14 @@ export default function IndexPage() {
                     transition={{ duration: 0.65 }}
                     className="mx-auto max-w-[1360px] px-5 py-24 sm:px-8 lg:px-12"
                 >
-                    <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
-                        <div>
+                    <div className="mb-8">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
                             <p className="text-xs font-medium uppercase tracking-[.18em] text-primary">灵感流</p>
-                            <h2 className="mt-3 text-3xl font-semibold tracking-[-.04em] sm:text-4xl">看看别人如何开始。</h2>
+                            <Link href="/prompts" prefetch={false} className="inline-flex items-center gap-1 text-sm text-muted-foreground transition hover:text-foreground">
+                                查看全部 <ArrowUpRight className="size-4" />
+                            </Link>
                         </div>
-                        <Link href="/prompts" prefetch={false} className="inline-flex items-center gap-1 text-sm text-muted-foreground transition hover:text-foreground">
-                            查看全部 <ArrowUpRight className="size-4" />
-                        </Link>
+                        <h2 className="mt-3 text-3xl font-semibold tracking-[-.04em] sm:text-4xl">看看别人如何开始。</h2>
                     </div>
                     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                         {promptShowcase.map((item, index) => (
@@ -257,15 +264,15 @@ export default function IndexPage() {
                                 whileInView={{ opacity: 1, y: 0 }}
                                 viewport={{ once: true }}
                                 transition={{ delay: index * 0.06, duration: 0.45 }}
-                                onClick={() => {
-                                    setPreviewIndex(index);
-                                    setPreviewOpen(true);
-                                }}
+                                onClick={() => setSelectedPrompt(item)}
                                 className="group relative aspect-[4/3] overflow-hidden rounded-[18px] bg-card text-left ring-1 ring-border transition hover:-translate-y-1 hover:ring-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                             >
                                 <img src={item.coverUrl} alt={item.title} loading="lazy" decoding="async" className="size-full object-cover transition duration-700 group-hover:scale-[1.04]" />
                                 <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent p-5 pt-16 text-white">
                                     <h3 className="text-sm font-medium">{item.title}</h3>
+                                    <span className="mt-2 inline-flex items-center gap-1 text-xs text-white/80">
+                                        查看提示词 <ArrowUpRight className="size-3.5" />
+                                    </span>
                                 </div>
                             </motion.button>
                         ))}
@@ -273,15 +280,27 @@ export default function IndexPage() {
                 </motion.section>
             ) : null}
 
-            <motion.section initial={reducedMotion ? false : { opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="border-t border-border px-6 py-24 text-center sm:px-10">
+            <motion.section initial={reducedMotion ? false : { opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="border-t border-border px-6 py-16 text-center sm:px-10 sm:py-20">
                 <Sparkles className="mx-auto size-5 text-primary" />
-                <h2 className="mx-auto mt-5 max-w-2xl text-4xl font-semibold tracking-[-.06em] sm:text-5xl">下一款新品，从一张实拍开始。</h2>
+                <h2 className="mx-auto mt-4 max-w-2xl text-3xl font-semibold tracking-[-.04em] sm:text-4xl">下一款新品，从一张实拍开始。</h2>
                 <Link href="/image?preset=product-main" prefetch={false} className="mt-8 inline-flex min-h-11 items-center gap-2 rounded-lg bg-primary px-6 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90">
                     上传商品图开始 <ArrowUpRight className="size-4" />
                 </Link>
             </motion.section>
 
-            {previewOpen ? <Image.PreviewGroup items={promptShowcase.map((item) => ({ src: item.coverUrl, alt: item.title }))} preview={{ open: previewOpen, current: previewIndex, onOpenChange: setPreviewOpen, onChange: setPreviewIndex }} /> : null}
+            <PromptDetailDialog
+                prompt={selectedPrompt}
+                onClose={() => setSelectedPrompt(null)}
+                onCopy={(prompt) => copyText(prompt, "提示词已复制")}
+                onSaveAsset={
+                    canSaveAsset
+                        ? (item) => {
+                              addAsset({ kind: "text", title: item.title, coverUrl: item.coverUrl, tags: item.tags, source: item.category, data: { content: item.prompt }, metadata: { source: "prompt-library", promptId: item.id, githubUrl: item.githubUrl } });
+                              message.success("已加入商品素材");
+                          }
+                        : undefined
+                }
+            />
         </main>
     );
 }

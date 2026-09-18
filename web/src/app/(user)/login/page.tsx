@@ -1,8 +1,7 @@
 "use client";
 
-import { LockOutlined, MailOutlined, SafetyCertificateOutlined, UserOutlined } from "@ant-design/icons";
 import { App, Button, Form, Input, Space } from "antd";
-import { motion, useReducedMotion } from "motion/react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 
@@ -19,14 +18,13 @@ type LoginFormValues = {
     referralCode?: string;
 };
 
-const galleryColumns = [
-    { images: [1, 5, 9, 13, 17, 21], duration: 48, direction: 1, offset: "-mt-10" },
-    { images: [2, 6, 10, 14, 18, 22], duration: 62, direction: -1, offset: "-mt-28" },
-    { images: [3, 7, 11, 15, 19, 23], duration: 54, direction: 1, offset: "-mt-4" },
-    { images: [4, 8, 12, 16, 20, 24], duration: 70, direction: -1, offset: "-mt-20" },
-].map((column) => ({ ...column, srcs: column.images.map((index) => `/home-gallery/home-v3-${String(index).padStart(2, "0")}.webp`) }));
+const highlights = [
+    { color: "bg-[#2dd4bf]", text: "一张实拍生成白底主图、场景图和详情图" },
+    { color: "bg-[#38bdf8]", text: "无限画布里继续改图、连线和批量交付" },
+    { color: "bg-[#a78bfa]", text: "图片与营销视频共用同一套账号与算力" },
+];
 
-const capabilities = ["商品主图", "场景视觉", "详情页", "营销视频", "无限画布"];
+const inputClass = "!h-11 !rounded-[10px]";
 
 // 仅放行站内相对路径，拦截开放重定向。浏览器会忽略 URL 中的 Tab/换行/回车，并把
 // //host 或 /\host 解析为协议相对的跨站地址，因此先剥离控制字符，再拒绝 // 与 /\ 前缀。
@@ -51,7 +49,6 @@ function LoginContent() {
     const [form] = Form.useForm<LoginFormValues>();
     const router = useRouter();
     const searchParams = useSearchParams();
-    const reducedMotion = useReducedMotion();
     const login = useUserStore((state) => state.login);
     const register = useUserStore((state) => state.register);
     const isLoading = useUserStore((state) => state.isLoading);
@@ -115,154 +112,119 @@ function LoginContent() {
         }
     };
 
-    const reveal = (delay: number) => ({
-        initial: reducedMotion ? false : { opacity: 0, y: 16 },
-        animate: { opacity: 1, y: 0 },
-        transition: { duration: 0.6, delay, ease: [0.22, 1, 0.36, 1] as const },
-    });
-
     return (
-        <main className="grid h-full min-h-0 overflow-hidden bg-background text-foreground lg:grid-cols-[minmax(0,1.2fr)_460px]">
-            <section className="relative hidden overflow-hidden bg-[#120c1c] lg:block">
-                <div className="absolute inset-0 z-0 flex gap-3 p-3" aria-hidden>
-                    {galleryColumns.map((column, columnIndex) => (
-                        <motion.div
-                            key={columnIndex}
-                            className={`flex min-w-0 flex-1 flex-col gap-3 ${column.offset} ${columnIndex === 3 ? "hidden xl:flex" : ""}`}
-                            animate={reducedMotion ? undefined : { y: column.direction > 0 ? ["0%", "-50%"] : ["-50%", "0%"] }}
-                            transition={{ duration: column.duration, ease: "linear", repeat: Infinity }}
-                        >
-                            {[...column.srcs, ...column.srcs].map((src, index) => (
-                                <div key={`${src}-${index}`} className={`relative w-full shrink-0 overflow-hidden rounded-2xl ${index % 3 === 1 ? "aspect-[4/5]" : index % 3 === 2 ? "aspect-[3/4]" : "aspect-square"}`}>
-                                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                                    <img src={src} alt="" className="size-full object-cover" loading="lazy" draggable={false} />
-                                </div>
-                            ))}
-                        </motion.div>
-                    ))}
-                </div>
-                <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-56 bg-gradient-to-t from-black/80 to-transparent" />
-                <div className="absolute inset-x-0 bottom-0 z-20 p-8 xl:p-10">
-                    <motion.div {...reveal(0.18)} className="max-w-[420px] rounded-3xl border border-white/12 bg-black/45 p-6 text-white backdrop-blur-md">
-                        <p className="mb-2 text-[11px] font-medium tracking-[.22em] text-[#e9d5ff]">AI 视觉创作空间</p>
-                        <h1 className="text-[28px] font-semibold leading-[1.2] tracking-[-.03em] xl:text-[32px]">
-                            从一张商品图，
+        <main className="relative flex h-full min-h-0 overflow-y-auto bg-[#f4faf8] px-4 py-8 text-foreground dark:bg-background sm:px-6">
+            <div
+                aria-hidden
+                className="pointer-events-none absolute inset-0 bg-[radial-gradient(90%_70%_at_50%_-10%,rgba(186,230,253,.55),transparent_58%),radial-gradient(70%_50%_at_80%_110%,rgba(167,243,208,.35),transparent_52%)] dark:bg-[radial-gradient(80%_50%_at_50%_-8%,rgba(192,132,252,.16),transparent_55%),radial-gradient(60%_40%_at_85%_110%,rgba(45,212,191,.08),transparent_50%)]"
+            />
+            <section className="relative m-auto grid w-full max-w-[960px] overflow-hidden rounded-[28px] bg-card shadow-[0_28px_80px_-28px_rgba(15,23,42,.45)] ring-1 ring-black/5 dark:shadow-[0_28px_80px_-24px_rgba(0,0,0,.72)] dark:ring-white/10 lg:grid-cols-2">
+                <aside className="relative hidden min-h-[520px] flex-col justify-between overflow-hidden bg-[#07131f] px-10 py-10 text-white lg:flex">
+                    <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(90%_70%_at_0%_0%,rgba(56,189,248,.28),transparent_42%),radial-gradient(80%_60%_at_100%_100%,rgba(139,92,246,.22),transparent_46%),linear-gradient(165deg,#07111c_0%,#0b1c2e_52%,#0a1624_100%)]" />
+                    <div aria-hidden className="pointer-events-none absolute -left-16 top-24 size-64 rounded-full bg-cyan-400/10 blur-3xl" />
+                    <div aria-hidden className="pointer-events-none absolute -right-10 bottom-10 size-56 rounded-full bg-violet-500/20 blur-3xl" />
+                    <Link href="/" prefetch={false} className="relative inline-flex items-center gap-3 self-start">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src="/brand-mark.png" alt="" className="size-9 rounded-[10px] object-cover" />
+                        <span className="text-[17px] font-semibold tracking-[-.02em]">幻图</span>
+                    </Link>
+                    <div className="relative">
+                        <h1 className="max-w-[280px] text-[34px] font-semibold leading-[1.18] tracking-[-.04em]">
+                            一张实拍，
                             <br />
-                            到整套上新素材。
+                            出整套上新图。
                         </h1>
-                        <p className="mt-3 text-sm leading-6 text-white/72">品牌、电商运营与设计团队，在同一块画布上持续生成、编辑与交付。</p>
-                        <ul className="mt-4 flex flex-wrap gap-2">
-                            {capabilities.map((item) => (
-                                <li key={item} className="rounded-full border border-white/12 bg-white/8 px-3 py-1 text-xs text-white/85">
-                                    {item}
+                        <ul className="mt-8 space-y-3.5 text-[13px] leading-6 text-white/72">
+                            {highlights.map((item) => (
+                                <li key={item.text} className="flex items-start gap-2.5">
+                                    <span className={`mt-[8px] size-1.5 shrink-0 rounded-full ${item.color}`} />
+                                    <span>{item.text}</span>
                                 </li>
                             ))}
                         </ul>
-                    </motion.div>
-                </div>
-            </section>
+                    </div>
+                    <p className="relative text-[11px] tracking-[.18em] text-white/35">IMAGE · VIDEO · CANVAS</p>
+                </aside>
 
-            <section className="flex h-full min-h-0 flex-col overflow-y-auto bg-background px-6 py-8 sm:px-10">
-                <div className="mx-auto flex w-full max-w-[360px] flex-1 flex-col justify-center">
-                    <motion.a {...reveal(0.05)} href="/" className="mb-10 inline-flex items-center gap-2.5 self-start text-sm font-semibold tracking-[-.02em]">
+                <div className="flex flex-col px-6 py-8 sm:px-10 lg:py-10">
+                    <Link href="/" prefetch={false} className="mb-8 inline-flex items-center gap-2.5 self-start text-sm font-semibold lg:hidden">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src="/brand-mark.png" alt="" className="size-8 rounded-full object-cover" />
+                        <img src="/brand-mark.png" alt="" className="size-8 rounded-[10px] object-cover" />
                         幻图
-                    </motion.a>
-
-                    <motion.div {...reveal(0.14)} className="mb-7">
-                        <p className="mb-2 text-[11px] font-medium tracking-[.18em] text-primary">{isRegister ? "新账号" : "欢迎回来"}</p>
-                        <h2 className="text-[28px] font-semibold leading-tight tracking-[-.04em]">{isRegister ? "开始你的第一块画布" : "登录创作空间"}</h2>
-                        <p className="mt-2 text-sm leading-6 text-muted-foreground">{isRegister ? "几秒钟完成注册，立刻生成商品图与营销素材。" : "继续上次未完成的画布，或从灵感模板重新开始。"}</p>
-                    </motion.div>
-
-                        <motion.div {...reveal(0.26)}>
-                            <Form<LoginFormValues> form={form} layout="vertical" size="large" requiredMark={false} onFinish={submit}>
-                                {allowRegister ? (
-                                    <Form.Item className="!mb-6">
-                                        <div className="grid grid-cols-2 rounded-full border border-border bg-muted p-1">
-                                            {(
-                                                [
-                                                    ["login", "登录"],
-                                                    ["register", "注册"],
-                                                ] as const
-                                            ).map(([value, label]) => (
-                                                <button
-                                                    key={value}
-                                                    type="button"
-                                                    className={`h-9 rounded-full text-sm transition ${mode === value ? "bg-primary font-medium text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
-                                                    onClick={() => setMode(value)}
-                                                >
-                                                    {label}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </Form.Item>
-                                ) : null}
-                                <Form.Item name="username" label={isRegister ? "用户名" : "用户名或邮箱"} rules={[{ required: true, message: isRegister ? "请输入用户名" : "请输入用户名或邮箱" }]}>
-                                    <Input prefix={<UserOutlined className="text-muted-foreground" />} autoComplete="username" placeholder={isRegister ? "设置用户名" : "输入用户名或邮箱"} />
+                    </Link>
+                    <div className="mb-7">
+                        <h2 className="text-[26px] font-semibold tracking-[-.04em]">{isRegister ? "创建账号" : "欢迎回来"}</h2>
+                        <p className="mt-1.5 text-sm text-muted-foreground">{isRegister ? "几秒钟完成注册，立刻开始出图。" : "登录后继续生成商品图与营销素材。"}</p>
+                    </div>
+                    <Form<LoginFormValues> form={form} layout="vertical" requiredMark={false} onFinish={submit} className="[&_.ant-form-item]:!mb-4 [&_.ant-form-item-label>label]:!h-auto [&_.ant-form-item-label>label]:!text-[13px] [&_.ant-form-item-label>label]:!text-muted-foreground">
+                        <Form.Item name="username" label={isRegister ? "用户名" : "账号"} rules={[{ required: true, message: isRegister ? "请输入用户名" : "请输入用户名或邮箱" }]}>
+                            <Input className={inputClass} autoComplete="username" placeholder={isRegister ? "设置用户名" : "用户名或邮箱"} />
+                        </Form.Item>
+                        {isRegister ? (
+                            <>
+                                <Form.Item
+                                    name="email"
+                                    label="电子邮箱"
+                                    extra={emailDomainRestriction && emailDomains?.length ? `支持：${emailDomains.join("、")}` : "用于接收注册验证码"}
+                                    rules={[
+                                        { required: true, message: "请输入电子邮箱" },
+                                        { type: "email", message: "请输入有效的电子邮箱" },
+                                    ]}
+                                >
+                                    <Input className={inputClass} autoComplete="email" placeholder="name@example.com" />
                                 </Form.Item>
-                                {isRegister ? (
-                                    <>
+                                <Form.Item label="邮箱验证码">
+                                    <Space.Compact block>
                                         <Form.Item
-                                            name="email"
-                                            label="电子邮箱"
-                                            extra={emailDomainRestriction && emailDomains?.length ? `支持：${emailDomains.join("、")}` : "用于接收注册验证码"}
+                                            name="code"
+                                            noStyle
                                             rules={[
-                                                { required: true, message: "请输入电子邮箱" },
-                                                { type: "email", message: "请输入有效的电子邮箱" },
+                                                { required: true, message: "请输入邮箱验证码" },
+                                                { pattern: /^\d{6}$/, message: "请输入 6 位数字验证码" },
                                             ]}
                                         >
-                                            <Input prefix={<MailOutlined className="text-muted-foreground" />} autoComplete="email" placeholder="name@example.com" />
+                                            <Input className={inputClass} inputMode="numeric" autoComplete="one-time-code" maxLength={6} placeholder="6 位验证码" />
                                         </Form.Item>
-                                        <Form.Item label="邮箱验证码">
-                                            <Space.Compact block>
-                                                <Form.Item
-                                                    name="code"
-                                                    noStyle
-                                                    rules={[
-                                                        { required: true, message: "请输入邮箱验证码" },
-                                                        { pattern: /^\d{6}$/, message: "请输入 6 位数字验证码" },
-                                                    ]}
-                                                >
-                                                    <Input prefix={<SafetyCertificateOutlined className="text-muted-foreground" />} inputMode="numeric" autoComplete="one-time-code" maxLength={6} placeholder="6 位验证码" />
-                                                </Form.Item>
-                                                <Button htmlType="button" loading={isSendingCode} disabled={codeCountdown > 0} onClick={() => void sendCode()}>
-                                                    {codeCountdown > 0 ? `${codeCountdown} 秒后重发` : "发送验证码"}
-                                                </Button>
-                                            </Space.Compact>
-                                        </Form.Item>
-                                        <Form.Item name="referralCode" label="邀请码（可选）" extra="填写邀请人的邀请码，注册后将自动建立邀请关系">
-                                            <Input maxLength={32} autoComplete="off" placeholder="例如：A1B2C3D4" />
-                                        </Form.Item>
-                                    </>
-                                ) : null}
-                                <Form.Item name="password" label="密码" rules={[{ required: true, message: "请输入密码" }]}>
-                                    <Input.Password prefix={<LockOutlined className="text-muted-foreground" />} autoComplete={isRegister ? "new-password" : "current-password"} placeholder={isRegister ? "至少 8 位，建议包含字母与数字" : "输入密码"} />
+                                        <Button htmlType="button" className="!h-11" loading={isSendingCode} disabled={codeCountdown > 0} onClick={() => void sendCode()}>
+                                            {codeCountdown > 0 ? `${codeCountdown} 秒后重发` : "发送验证码"}
+                                        </Button>
+                                    </Space.Compact>
                                 </Form.Item>
-                                {isRegister ? (
-                                    <Form.Item name="confirmPassword" label="确认密码" rules={[{ required: true, message: "请再次输入密码" }]}>
-                                        <Input.Password prefix={<LockOutlined className="text-muted-foreground" />} autoComplete="new-password" placeholder="再次输入密码" />
-                                    </Form.Item>
-                                ) : null}
-                                <Button block type="primary" htmlType="submit" loading={isLoading} className="!mt-1 !h-12 !rounded-full !text-[15px] !font-medium !shadow-[0_16px_40px_-18px_rgb(139_92_246/.85)]">
-                                    {isRegister ? "创建账号" : "进入创作空间"}
-                                </Button>
-                            </Form>
-                        </motion.div>
-
-                        <motion.p {...reveal(0.4)} className="mt-8 text-center text-xs text-muted-foreground">
-                            {isRegister ? "已有账号？" : "还没有账号？"}
-                            {allowRegister ? (
-                                <button type="button" className="ml-1 font-medium text-primary underline-offset-4 transition hover:underline" onClick={() => setMode(isRegister ? "login" : "register")}>
-                                    {isRegister ? "直接登录" : "免费注册"}
-                                </button>
-                            ) : (
-                                <span className="ml-1">请联系管理员开通</span>
-                            )}
-                        </motion.p>
-                    </div>
-                </section>
-            </main>
-        );
+                                <Form.Item name="referralCode" label="邀请码（可选）" extra="填写邀请人的邀请码，注册后将自动建立邀请关系">
+                                    <Input className={inputClass} maxLength={32} autoComplete="off" placeholder="例如：A1B2C3D4" />
+                                </Form.Item>
+                            </>
+                        ) : null}
+                        <Form.Item name="password" label="密码" rules={[{ required: true, message: "请输入密码" }]}>
+                            <Input.Password className={inputClass} autoComplete={isRegister ? "new-password" : "current-password"} placeholder={isRegister ? "至少 8 位，建议包含字母与数字" : "输入密码"} />
+                        </Form.Item>
+                        {isRegister ? (
+                            <Form.Item name="confirmPassword" label="确认密码" rules={[{ required: true, message: "请再次输入密码" }]}>
+                                <Input.Password className={inputClass} autoComplete="new-password" placeholder="再次输入密码" />
+                            </Form.Item>
+                        ) : null}
+                        <Button
+                            block
+                            htmlType="submit"
+                            loading={isLoading}
+                            className="!mt-1 !h-11 !rounded-[10px] !border-0 !bg-foreground !font-medium !text-background hover:!opacity-90"
+                        >
+                            {isRegister ? "创建账号" : "登录"}
+                        </Button>
+                    </Form>
+                    <p className="mt-6 text-center text-xs leading-5 text-muted-foreground">
+                        {isRegister ? "已有账号？" : "还没有账号？"}
+                        {allowRegister ? (
+                            <button type="button" className="ml-1 font-medium text-foreground underline-offset-4 transition hover:underline" onClick={() => setMode(isRegister ? "login" : "register")}>
+                                {isRegister ? "直接登录" : "免费注册"}
+                            </button>
+                        ) : (
+                            <span className="ml-1">请联系管理员开通</span>
+                        )}
+                    </p>
+                    <p className="mt-3 text-center text-[11px] leading-5 text-muted-foreground/80">本会话使用 HttpOnly Cookie 鉴权，关闭浏览器不会自动退出。</p>
+                </div>
+            </section>
+        </main>
+    );
 }

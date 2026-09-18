@@ -5,6 +5,8 @@ description: 当前版本已实现但仍需人工或自动化验证的变更项
 
 # 待测试
 
+- 顶栏、登录页和浏览器图标改为 `/brand-mark.png`，绕过 Cloudflare 对旧 `logo.png` 的长期缓存。需要验证 `https://huantu.xyz/brand-mark.png` 返回紫色「幻」字标，顶栏不再显示太极旧 Logo；硬刷新后浏览器标签图标更新。
+
 - 对外品牌名从「道生画境」改为「幻图」：导航、登录页、后台侧栏、浏览器标题、分享卡片、邮件默认发件名/主题、支付站点名占位、画布默认项目名与导出文件名、README 与文档站 `appName` 均显示「幻图」；`web/public/logo.png`、`docs/public/logo.png`、`web/src/app/icon.png` 与 `favicon.ico` 换成紫色「幻」字标，`og.png` 分享图同步新品牌。需要验证浅色/深色主题下顶栏与登录页 Logo 圆形裁切、浏览器标签图标、飞书/X 粘贴 `https://huantu.xyz` 的分享标题为「幻图」；后台若已保存旧发件名或支付站点名，需在系统设置里改成「幻图」后新邮件和新订单才生效。已有画布项目标题不会自动改名。
 
 - 首页文案与分享卡片改为电商上新话术：首屏改为「一张实拍，出整套上新图。」，主 CTA 改为「上传商品图，先出一张白底主图」，精选作品、使用场景、三步流程和底部 CTA 同步改为商家视角；站点标题与描述补充电商主图、套图关键词，新增 Open Graph 与 Twitter 大图卡片及 `web/public/og.png`（1200×630）分享图，`metadataBase` 读取 `PUBLIC_BASE_URL`，未配置时回退 `https://huantu.xyz`。需要验证：首页浅色/深色主题与移动端下两行标题、副标题和 CTA 不溢出，各入口仍跳转到对应预设；线上用微信、飞书、X、Telegram 等粘贴 `https://huantu.xyz` 时显示新标题、描述和分享图，`og:image` 为绝对地址；`PUBLIC_BASE_URL` 配置为其他域名时分享图地址随之变化。

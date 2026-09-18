@@ -18,6 +18,7 @@ export const metadata: Metadata = {
     keywords: ["幻图", "AI 商品图", "电商主图生成", "白底图", "场景图", "详情页", "SKU 套图", "营销视频", "AI 电商工具"],
     openGraph: { type: "website", locale: "zh_CN", url: "/", siteName: "幻图", title: siteTitle, description: siteDescription, images: [ogImage] },
     twitter: { card: "summary_large_image", title: siteTitle, description: siteDescription, images: [ogImage] },
+    icons: { icon: [{ url: "/brand-mark.png", type: "image/png" }], apple: "/brand-mark.png" },
 };
 
 export default async function RootLayout({

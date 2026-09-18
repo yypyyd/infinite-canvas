@@ -166,7 +166,7 @@ function LoginContent() {
                 <div className="mx-auto flex w-full max-w-[360px] flex-1 flex-col justify-center">
                     <motion.a {...reveal(0.05)} href="/" className="mb-10 inline-flex items-center gap-2.5 self-start text-sm font-semibold tracking-[-.02em]">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src="/logo.png" alt="" className="size-8 rounded-full object-cover" />
+                        <img src="/brand-mark.png" alt="" className="size-8 rounded-full object-cover" />
                         幻图
                     </motion.a>
 

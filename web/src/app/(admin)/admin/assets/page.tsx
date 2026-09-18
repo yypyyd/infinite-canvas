@@ -85,7 +85,7 @@ export default function AdminAssetsPage() {
             title: "封面",
             dataIndex: "coverUrl",
             width: 88,
-            render: (_, item) => <Image src={item.coverUrl || item.url || "/logo.png"} alt={item.title} width={56} height={42} style={{ objectFit: "cover", borderRadius: 6 }} preview={{ mask: "放大" }} fallback="/logo.png" />,
+            render: (_, item) => <Image src={item.coverUrl || item.url || "/brand-mark.png"} alt={item.title} width={56} height={42} style={{ objectFit: "cover", borderRadius: 6 }} preview={{ mask: "放大" }} fallback="/brand-mark.png" />,
         },
         {
             title: "标题",
@@ -261,7 +261,7 @@ export default function AdminAssetsPage() {
                 {detailAsset ? (
                     <Flex vertical gap={14}>
                         <Flex gap={14} align="start">
-                            <Image src={detailAsset.coverUrl || detailAsset.url || "/logo.png"} alt={detailAsset.title} width={116} height={84} style={{ objectFit: "cover", borderRadius: 8 }} preview={{ mask: "放大" }} fallback="/logo.png" />
+                            <Image src={detailAsset.coverUrl || detailAsset.url || "/brand-mark.png"} alt={detailAsset.title} width={116} height={84} style={{ objectFit: "cover", borderRadius: 8 }} preview={{ mask: "放大" }} fallback="/brand-mark.png" />
                             <Flex vertical gap={8} style={{ minWidth: 0 }}>
                                 <Typography.Title level={5} style={{ margin: 0 }}>
                                     {detailAsset.title}

@@ -25,6 +25,22 @@ const highlights = [
 ];
 
 const inputClass = "!h-11 !rounded-[10px]";
+const loginGrain =
+    "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='4' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>\")";
+
+function LoginBackdrop() {
+    return (
+        <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+            <div className="absolute -top-36 left-1/2 h-[560px] w-[78%] -translate-x-1/2 rounded-full bg-[radial-gradient(closest-side,rgb(139_92_246/.38),transparent)] blur-2xl dark:bg-[radial-gradient(closest-side,rgb(192_132_252/.3),transparent)]" />
+            <div className="absolute -bottom-32 -right-20 size-[520px] rounded-full bg-[radial-gradient(closest-side,rgb(56_189_248/.22),transparent)] blur-3xl" />
+            <div className="absolute -left-24 top-[36%] size-[380px] rounded-full bg-[radial-gradient(closest-side,rgb(45_212_191/.14),transparent)] blur-3xl" />
+            <div className="absolute inset-0 bg-[conic-gradient(from_210deg_at_50%_-8%,transparent_38%,rgb(139_92_246/.09),transparent_68%)]" />
+            <div className="absolute inset-0 opacity-[0.22] [background-image:linear-gradient(rgb(255_255_255/.07)_1px,transparent_1px),linear-gradient(90deg,rgb(255_255_255/.07)_1px,transparent_1px)] [background-size:56px_56px] [mask-image:radial-gradient(ellipse_at_center,black_16%,transparent_72%)]" />
+            <div className="absolute inset-0 opacity-[0.22] mix-blend-overlay" style={{ backgroundImage: loginGrain }} />
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_36%,rgb(0_0_0/.58)_100%)]" />
+        </div>
+    );
+}
 
 // 仅放行站内相对路径，拦截开放重定向。浏览器会忽略 URL 中的 Tab/换行/回车，并把
 // //host 或 /\host 解析为协议相对的跨站地址，因此先剥离控制字符，再拒绝 // 与 /\ 前缀。
@@ -113,12 +129,9 @@ function LoginContent() {
     };
 
     return (
-        <main className="relative flex h-full min-h-0 overflow-y-auto bg-[#f4faf8] px-4 py-8 text-foreground dark:bg-background sm:px-6">
-            <div
-                aria-hidden
-                className="pointer-events-none absolute inset-0 bg-[radial-gradient(90%_70%_at_50%_-10%,rgba(186,230,253,.55),transparent_58%),radial-gradient(70%_50%_at_80%_110%,rgba(167,243,208,.35),transparent_52%)] dark:bg-[radial-gradient(80%_50%_at_50%_-8%,rgba(192,132,252,.16),transparent_55%),radial-gradient(60%_40%_at_85%_110%,rgba(45,212,191,.08),transparent_50%)]"
-            />
-            <section className="relative m-auto grid w-full max-w-[960px] overflow-hidden rounded-[28px] bg-card shadow-[0_28px_80px_-28px_rgba(15,23,42,.45)] ring-1 ring-black/5 dark:shadow-[0_28px_80px_-24px_rgba(0,0,0,.72)] dark:ring-white/10 lg:grid-cols-2">
+        <main className="relative flex h-full min-h-0 overflow-y-auto bg-[#09080f] px-4 py-8 text-foreground sm:px-6">
+            <LoginBackdrop />
+            <section className="relative m-auto grid w-full max-w-[960px] overflow-hidden rounded-[28px] bg-card shadow-[0_40px_140px_-28px_rgba(0,0,0,.78),0_0_90px_-28px_rgba(139,92,246,.38)] ring-1 ring-white/10 lg:grid-cols-2">
                 <aside className="relative hidden min-h-[520px] flex-col justify-between overflow-hidden bg-[#07131f] px-10 py-10 text-white lg:flex">
                     <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(90%_70%_at_0%_0%,rgba(56,189,248,.28),transparent_42%),radial-gradient(80%_60%_at_100%_100%,rgba(139,92,246,.22),transparent_46%),linear-gradient(165deg,#07111c_0%,#0b1c2e_52%,#0a1624_100%)]" />
                     <div aria-hidden className="pointer-events-none absolute -left-16 top-24 size-64 rounded-full bg-cyan-400/10 blur-3xl" />
@@ -212,17 +225,16 @@ function LoginContent() {
                             {isRegister ? "创建账号" : "登录"}
                         </Button>
                     </Form>
-                    <p className="mt-6 text-center text-xs leading-5 text-muted-foreground">
+                    <p className="mt-8 border-t border-border pt-6 text-center text-[15px] text-muted-foreground">
                         {isRegister ? "已有账号？" : "还没有账号？"}
                         {allowRegister ? (
-                            <button type="button" className="ml-1 font-medium text-foreground underline-offset-4 transition hover:underline" onClick={() => setMode(isRegister ? "login" : "register")}>
+                            <button type="button" className="ml-1.5 font-semibold text-primary underline underline-offset-[5px] transition hover:opacity-80" onClick={() => setMode(isRegister ? "login" : "register")}>
                                 {isRegister ? "直接登录" : "免费注册"}
                             </button>
                         ) : (
-                            <span className="ml-1">请联系管理员开通</span>
+                            <span className="ml-1.5">请联系管理员开通</span>
                         )}
                     </p>
-                    <p className="mt-3 text-center text-[11px] leading-5 text-muted-foreground/80">本会话使用 HttpOnly Cookie 鉴权，关闭浏览器不会自动退出。</p>
                 </div>
             </section>
         </main>

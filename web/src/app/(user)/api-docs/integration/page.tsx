@@ -1,14 +1,13 @@
 "use client";
 
-import { AudioLines, ChevronRight, ImageIcon, Video } from "lucide-react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
-import { GuideShell } from "./guide-ui";
+import { DocsIntro, EndpointIndex, GuideShell, Sample, useApiEndpoint } from "./guide-ui";
 
 export default function ApiIntegrationIndexPage() {
     const router = useRouter();
+    const endpoint = useApiEndpoint();
 
     useEffect(() => {
         const topic = new URLSearchParams(window.location.search).get("topic");
@@ -18,28 +17,37 @@ export default function ApiIntegrationIndexPage() {
     }, [router]);
 
     return (
-        <GuideShell title="API 对接指南" lead="先确认地址和鉴权，再选类型。带模型 ID 的请求到模型广场复制。" current="index">
-            <div className="mt-10 grid gap-4 sm:grid-cols-3">
-                <ChapterCard href="/api-docs/integration/image" icon={ImageIcon} title="图片" summary="同步出图。一次请求结束就返回图片，没有任务号。" />
-                <ChapterCard href="/api-docs/integration/video" icon={Video} title="视频" summary="异步任务。先创建，再查 id，completed 后下载。" />
-                <ChapterCard href="/api-docs/integration/audio" icon={AudioLines} title="音频" summary="同步接口。成功时响应体就是音频文件。" />
+        <GuideShell current="index">
+            <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+                <DocsIntro title="API 参考" lead="鉴权用 Bearer Key，不要传企业编号。官方 SDK 的 base_url 设成下面的地址。模型 ID 到模型广场复制。" endpoint={endpoint} />
+                <Sample code={`curl ${endpoint}/models \\\n  -H "Authorization: Bearer ic_live_..."`} />
             </div>
+            <EndpointIndex
+                groups={[
+                    {
+                        title: "图片",
+                        href: "/api-docs/integration/image",
+                        rows: [
+                            { method: "POST", path: "/images/generations", text: "同步返回图片，读 data[]" },
+                            { method: "POST", path: "/images/edits", text: "上传参考图后编辑" },
+                        ],
+                    },
+                    {
+                        title: "视频",
+                        href: "/api-docs/integration/video",
+                        rows: [
+                            { method: "POST", path: "/videos", text: "创建任务，返回 id" },
+                            { method: "GET", path: "/videos/{id}", text: "查询 status，带 model" },
+                            { method: "GET", path: "/videos/{id}/content", text: "completed 后下载 MP4" },
+                        ],
+                    },
+                    {
+                        title: "音频",
+                        href: "/api-docs/integration/audio",
+                        rows: [{ method: "POST", path: "/audio/speech", text: "成功时响应体就是音频文件" }],
+                    },
+                ]}
+            />
         </GuideShell>
-    );
-}
-
-function ChapterCard({ href, icon: Icon, title, summary }: { href: string; icon: typeof ImageIcon; title: string; summary: string }) {
-    return (
-        <Link href={href} className="group flex flex-col rounded-xl border border-border bg-card p-5 transition hover:border-primary/30">
-            <span className="flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/15">
-                <Icon className="size-5" />
-            </span>
-            <h2 className="mt-4 text-lg font-semibold tracking-[-.03em]">{title}</h2>
-            <p className="mt-2 flex-1 text-sm leading-6 text-muted-foreground">{summary}</p>
-            <span className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-primary">
-                看{title}教程
-                <ChevronRight className="size-4 transition group-hover:translate-x-0.5" />
-            </span>
-        </Link>
     );
 }

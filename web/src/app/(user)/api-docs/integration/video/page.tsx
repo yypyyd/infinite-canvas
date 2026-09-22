@@ -1,33 +1,29 @@
 "use client";
 
-import { GuideShell, GuideTable, Section } from "../guide-ui";
+import { DocsIntro, Endpoint, GuideShell, useApiEndpoint } from "../guide-ui";
 
 export default function VideoIntegrationPage() {
+    const endpoint = useApiEndpoint();
     return (
-        <GuideShell title="视频对接" lead="视频是异步任务。创建拿到 id，查到 completed，再下载。路径是 /videos，不是 /video，也不是 /videos/generations。" current="video">
-            <Section title="三步">
-                <GuideTable
-                    headers={["步骤", "接口", "成功时看什么"]}
-                    rows={[
-                        ["创建", "POST /videos", "顶层 id。这还不是视频地址"],
-                        ["查询", "GET /videos/{id}?model=模型ID", "status。必须带创建时的模型 ID"],
-                        ["下载", "GET /videos/{id}/content?model=模型ID", "MP4。Content-Type 若是 JSON，就是失败"],
-                    ]}
-                />
-                <p className="text-sm leading-7 text-muted-foreground">
-                    每 2–3 秒查一次。只有 <code className="text-foreground">completed</code> 才能下载。任务号是 <code className="text-foreground">id</code>。HTTP 状态码大于等于 400 就停，读 <code className="text-foreground">error.message</code>。
-                </p>
-            </Section>
-            <Section title="参数从哪来">
-                <p className="text-sm leading-7 text-muted-foreground">
-                    <code className="text-foreground">seconds</code> 必须在该模型的时长里，不传会按 1 秒匹配。<code className="text-foreground">size</code> 必须同时符合比例和分辨率。这些都显示在模型广场的该模型详情里，请求也从那里复制。
-                </p>
-            </Section>
-            <Section title="还没拿到 id">
-                <p className="text-sm leading-7 text-muted-foreground">
-                    创建响应丢失时，不要换 <code className="text-foreground">Idempotency-Key</code>。用原编号调用 <code className="text-foreground">GET /generation-tasks/recovery</code>。已经拿到 <code className="text-foreground">id</code> 就继续查视频接口。
-                </p>
-            </Section>
+        <GuideShell current="video">
+            <DocsIntro title="视频" lead="先创建拿到 id，查到 completed，再下载 MP4。路径是 /videos。seconds 和 size 以模型广场里该模型的能力为准。" endpoint={endpoint} />
+            <Endpoint
+                method="POST"
+                path="/videos"
+                title="创建任务"
+                sample={`curl ${endpoint}/videos \\\n  -H "Authorization: Bearer ic_live_..." \\\n  -H "Idempotency-Key: video-001" \\\n  -F "model=模型广场里的 ID" \\\n  -F "prompt=运动鞋在雨夜街头旋转" \\\n  -F "seconds=5" \\\n  -F "size=1280x720"`}
+            >
+                <p>成功只返回任务号，字段是 id。这还不是视频地址。状态码大于等于 400 就停，读 error.message。</p>
+            </Endpoint>
+            <Endpoint method="GET" path="/videos/{id}" title="查询状态" sample={`curl "${endpoint}/videos/video_abc123?model=模型广场里的 ID" \\\n  -H "Authorization: Bearer ic_live_..."`}>
+                <p>每 2–3 秒查一次，必须带创建时的模型 ID。只有 completed 才能下载。</p>
+            </Endpoint>
+            <Endpoint method="GET" path="/videos/{id}/content" title="下载视频" sample={`curl "${endpoint}/videos/video_abc123/content?model=模型广场里的 ID" \\\n  -H "Authorization: Bearer ic_live_..." \\\n  --output result.mp4`}>
+                <p>成功是 MP4。Content-Type 若是 JSON，就是失败，不要存成视频文件。</p>
+            </Endpoint>
+            <Endpoint method="GET" path="/generation-tasks/recovery" title="还没拿到 id" sample={`curl ${endpoint}/generation-tasks/recovery \\\n  -H "Authorization: Bearer ic_live_..." \\\n  -H "Idempotency-Key: video-001"`}>
+                <p>创建响应丢失时不要换号。已经拿到 id 就继续查视频接口。</p>
+            </Endpoint>
         </GuideShell>
     );
 }

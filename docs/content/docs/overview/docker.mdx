@@ -86,7 +86,7 @@ Worker 默认使用内置标准执行器：根据任务创建时固化的品牌�
 
 线上站点由 Nginx 反代本机 `127.0.0.1:3050`，数据在 `/opt/infinite-canvas/data`，环境变量在 `/opt/infinite-canvas/.env`。不要用仓库根目录的 Compose 去占用 3000。
 
-打 `v*` 标签后，GitHub Actions 会构建 `ghcr.io/yypyyd/infinite-canvas:<tag>`，再 SSH 到生产机执行 `scripts/deploy-production.sh`：拉取镜像、备份当前 SQLite、把旧容器改名为 `infinite-canvas-rollback`、新容器以固定名 `infinite-canvas` 占 3050，健康检查失败则切回。部署成功后只保留当前和回滚这两份幻图镜像，更旧的版本镜像会删掉；SQLite 部署备份只留最近两份。
+推送到 `main` 或打 `v*` 标签后，GitHub Actions 会构建 `ghcr.io/yypyyd/infinite-canvas`，再 SSH 到生产机执行 `scripts/deploy-production.sh`：拉取镜像、备份当前 SQLite、把旧容器改名为 `infinite-canvas-rollback`、新容器以固定名 `infinite-canvas` 占 3050，健康检查失败则切回。`main` 部署镜像标签是 `main`，版本标签部署同名版本。部署成功后只保留当前和回滚这两份幻图镜像，更旧的版本镜像会删掉；SQLite 部署备份只留最近两份。
 
 仓库 Actions 需要这些 Secret：
 

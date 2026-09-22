@@ -47,6 +47,14 @@ async function proxy(request: NextRequest, context: RouteContext) {
         });
     } catch (error) {
         console.error("Failed to proxy", target, error);
+        const authorization = request.headers.get("authorization") || "";
+        const token = authorization.replace(/^Bearer\s+/i, "").trim();
+        if (path[0] === "v1" && token.startsWith("ic_live_")) {
+            return Response.json(
+                { error: { message: "接口连接失败，请确认后端服务已启动", type: "api_error", param: null, code: "upstream_error" } },
+                { status: 502 },
+            );
+        }
         return Response.json({ code: 1, data: null, msg: "接口连接失败，请确认后端服务已启动" }, { status: 502 });
     }
 }

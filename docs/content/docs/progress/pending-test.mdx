@@ -5,13 +5,17 @@ description: 当前版本已实现但仍需人工或自动化验证的变更项
 
 # 待测试
 
+- 对接说明收成一条线：模型广场详情里复制带真实模型 ID 的请求，并写明鉴权、失败时读 `error.message`、超时用原 `Idempotency-Key` 调 `GET /generation-tasks/recovery`；视频示例包含创建、查询、下载。`/api-docs/integration` 每页顶部固定地址、`base_url` 和失败格式，正文只讲图片、视频、音频的差别，不再放占位模型示例。个人中心 API 页只管理 Key，并链到模型广场。需要验证浅色/深色、桌面/窄屏、复制请求和恢复示例、从广场进类型说明、从个人中心进广场。
+
+- API Key 调用 `/api/v1/*` 失败时改为 OpenAI 错误体和真实 HTTP 状态码。需要验证：无效 Key 返回 401，`error.code` 为 `invalid_api_key`；伪造 `X-Organization-ID` 返回 403 `organization_mismatch`；未定价返回 400 `model_not_priced`，无可用渠道返回 404 `model_not_found`，算力不足返回 429 `insufficient_quota`，上游失败返回 502。响应里没有顶层 `code`、`data`、`msg`。图片、视频、音频和模型列表的成功响应不变，视频路径仍是 `/videos`。同一路由用登录会话失败时仍是 HTTP 200 的 `{ code, data, msg }`，站内生图、视频和计价不受影响。
+
 - 顶栏、登录页和浏览器图标改为 `/brand-mark.png`，绕过 Cloudflare 对旧 `logo.png` 的长期缓存。需要验证 `https://huantu.xyz/brand-mark.png` 返回紫色「幻」字标，顶栏不再显示太极旧 Logo；硬刷新后浏览器标签图标更新。
 
 - 对外品牌名从「道生画境」改为「幻图」：导航、登录页、后台侧栏、浏览器标题、分享卡片、邮件默认发件名/主题、支付站点名占位、画布默认项目名与导出文件名、README 与文档站 `appName` 均显示「幻图」；`web/public/logo.png`、`docs/public/logo.png`、`web/src/app/icon.png` 与 `favicon.ico` 换成紫色「幻」字标，`og.png` 分享图同步新品牌。需要验证浅色/深色主题下顶栏与登录页 Logo 圆形裁切、浏览器标签图标、飞书/X 粘贴 `https://huantu.xyz` 的分享标题为「幻图」；后台若已保存旧发件名或支付站点名，需在系统设置里改成「幻图」后新邮件和新订单才生效。已有画布项目标题不会自动改名。
 
 - 首页文案与分享卡片改为电商上新话术：首屏改为「一张实拍，出整套上新图。」，主 CTA 改为「上传商品图，先出一张白底主图」，精选作品、使用场景、三步流程和底部 CTA 同步改为商家视角；站点标题与描述补充电商主图、套图关键词，新增 Open Graph 与 Twitter 大图卡片及 `web/public/og.png`（1200×630）分享图，`metadataBase` 读取 `PUBLIC_BASE_URL`，未配置时回退 `https://huantu.xyz`。需要验证：首页浅色/深色主题与移动端下标题、副标题和 CTA 叠放且不溢出，各入口仍跳转到对应预设；线上用微信、飞书、X、Telegram 等粘贴 `https://huantu.xyz` 时显示新标题、描述和分享图，`og:image` 为绝对地址；`PUBLIC_BASE_URL` 配置为其他域名时分享图地址随之变化。
 
-- 生产自动部署：打 `v*` 标签后 GitHub 构建 `ghcr.io/yypyyd/infinite-canvas` 并 SSH 切换 `127.0.0.1:3050` 容器。需要验证首次接通 Secret、健康检查通过、失败回滚、`workflow_dispatch` 只部署已有标签，以及 Nginx、`.env` 和 `/opt/infinite-canvas/data` 不被覆盖。
+- 生产自动部署：打 `v*` 标签后 GitHub 构建 `ghcr.io/yypyyd/infinite-canvas` 并 SSH 切换 `127.0.0.1:3050` 容器。需要验证首次接通 Secret、健康检查通过、失败回滚、`workflow_dispatch` 只部署已有标签，以及 Nginx、`.env` 和 `/opt/infinite-canvas/data` 不被覆盖。部署成功后机器上应只剩当前容器、一个回滚容器，以及对应的两份幻图镜像，更旧的 `v*` 镜像被删掉；`/opt/infinite-canvas/deploy-backups` 只留最近两份 SQLite。
 
 - 画布助手改为画布原住民：侧栏只负责说话，结果落在节点和连线上。需要验证 `canvas.add_config` 会在选区右侧/下方或当前视口创建配置节点并从来源连线；`canvas.connect` 能连接本轮授权节点且两个配置节点不能互连；文本/配置落位支持 `right_of_selection`、`below_selection`、`viewport`、`center`；删除和改文本只需本轮授权、不再要求此刻仍选中。视频生成应把画布上最多 9 张图、3 个视频、3 个音频作为参考提交。确认和澄清应出现在画布浮层（深浅主题、`ESC` 只退出跟镜头），侧栏只提示“请在画布上确认”。排列时节点滑移、新连线生长，最终坐标立刻写入，中间帧不进撤销历史。提交时带上当前视口节点，模型 JSON 会包含这些节点的标题与位置但不得出现 `storageKey` 或签名地址；视口预览改为最多 4 张内联 JPEG 缩略图发给上游，本站签名地址不再作为图片 URL。需要再验：给选中/视口图片添加配置并连上不再报「助手请求失败」，配置落在选区右侧且不自动弹出设置面板；明确「添加配置并连上」应直接落在画布上，侧栏只说一句短中文，不出现节点 id、「目标完成」和「执行状态已检查」，也不再把这句总结插入画布。指挥中心会话只留在当前页面：打开画布不再恢复旧对话，「根据画布」建议只出现在空对话，开始说话后不再钉在侧栏顶部。
 - 对外 API 对接说明改为站内分章教程：`/api-docs/integration` 只做目录，图片、视频、音频各有独立页。需要验证目录三张卡片、章节导航、浅色/深色、桌面/窄屏、复制示例，以及模型广场和个人中心入口进入对应类型页。

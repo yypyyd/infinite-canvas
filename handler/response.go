@@ -20,6 +20,11 @@ func OK(w http.ResponseWriter, data any) {
 }
 
 func Fail(w http.ResponseWriter, msg string) {
+	if isOpenAIResponse(w) {
+		status, errType, code, param := classifyOpenAIError(msg)
+		writeOpenAIError(w, status, msg, errType, code, param)
+		return
+	}
 	writeJSON(w, response{Code: 1, Data: nil, Msg: msg})
 }
 

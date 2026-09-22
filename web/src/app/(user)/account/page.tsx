@@ -65,7 +65,6 @@ type AccountTab = "profile" | "balance" | "tasks" | "history" | "credits" | "ref
 type ProfileFormValues = { displayName: string; avatarUrl: string };
 type PasswordFormValues = { currentPassword: string; newPassword: string; confirmPassword: string };
 type APIKeyFormValues = { name: string };
-type APIExampleType = "models" | "image" | "video" | "audio" | "recovery";
 
 const historyPageSize = 12;
 const creditPageSize = 12;
@@ -1450,8 +1449,6 @@ function APIKeySection() {
     const [form] = Form.useForm<APIKeyFormValues>();
     const [createOpen, setCreateOpen] = useState(false);
     const [createdKey, setCreatedKey] = useState<CreatedUserAPIKey | null>(null);
-    const [endpoint, setEndpoint] = useState("/api/v1");
-    const [exampleType, setExampleType] = useState<APIExampleType>("models");
     const queryKey = ["user-api-keys", organizationId];
     const keysQuery = useQuery({
         queryKey,
@@ -1478,74 +1475,6 @@ function APIKeySection() {
         onError: (error) => message.error(error instanceof Error ? error.message : "删除失败"),
     });
     const activeCount = keysQuery.data?.filter((item) => item.status === "active").length || 0;
-    const modelCurlExample = `curl "${endpoint}/models" \\
-  -H "Authorization: Bearer YOUR_API_KEY"`;
-    const imageCurlExample = `curl -X POST "${endpoint}/images/generations" \\
-  -H "Authorization: Bearer YOUR_API_KEY" \\
-  -H "Idempotency-Key: YOUR_UNIQUE_REQUEST_ID" \\
-  -H "Content-Type: application/json" \\
-  -d '{"model":"YOUR_IMAGE_MODEL","prompt":"生成一张商品主图","size":"1024x1024","n":1}'`;
-    const videoCurlExample = `# 1. 创建任务，保存响应里的 id
-curl -X POST "${endpoint}/videos" \\
-  -H "Authorization: Bearer YOUR_API_KEY" \\
-  -H "Idempotency-Key: YOUR_UNIQUE_REQUEST_ID" \\
-  -F "model=YOUR_VIDEO_MODEL" \\
-  -F "prompt=商品在柔和光影中缓慢旋转" \\
-  -F "seconds=5" \\
-  -F "size=1280x720"
-
-# 2. 每 2-3 秒查询，直到 status=completed
-curl "${endpoint}/videos/VIDEO_TASK_ID?model=YOUR_VIDEO_MODEL" \\
-  -H "Authorization: Bearer YOUR_API_KEY"
-
-# 3. 下载 MP4
-curl "${endpoint}/videos/VIDEO_TASK_ID/content?model=YOUR_VIDEO_MODEL" \\
-  -H "Authorization: Bearer YOUR_API_KEY" \\
-  --output result.mp4`;
-    const audioCurlExample = `curl -X POST "${endpoint}/audio/speech" \\
-  -H "Authorization: Bearer YOUR_API_KEY" \\
-  -H "Idempotency-Key: YOUR_UNIQUE_REQUEST_ID" \\
-  -H "Content-Type: application/json" \\
-  -d '{"model":"YOUR_AUDIO_MODEL","input":"欢迎使用幻图开放接口。","voice":"alloy","response_format":"mp3"}' \\
-  --output speech.mp3`;
-    const recoveryCurlExample = `curl "${endpoint}/generation-tasks/recovery" \\
-  -H "Authorization: Bearer YOUR_API_KEY" \\
-  -H "Idempotency-Key: YOUR_ORIGINAL_REQUEST_ID"`;
-    const curlExample = { models: modelCurlExample, image: imageCurlExample, video: videoCurlExample, audio: audioCurlExample, recovery: recoveryCurlExample }[exampleType];
-    const responsePreview = {
-        models: `成功
-{ "object": "list", "data": [{ "id": "MODEL_ID", "modality": "image" }] }
-
-失败
-{ "code": 1, "data": null, "msg": "错误原因" }`,
-        image: `成功
-{ "created": 1760000000, "data": [{ "b64_json": "..." }] }
-
-失败
-{ "code": 1, "data": null, "msg": "错误原因" }`,
-        video: `成功创建
-{ "id": "video_abc123", "status": "queued" }
-
-失败
-{ "code": 1, "data": null, "msg": "错误原因" }`,
-        audio: `成功时直接返回音频文件。
-若 Content-Type 是 application/json：
-{ "code": 1, "data": null, "msg": "错误原因" }`,
-        recovery: `成功
-{ "code": 0, "data": { "status": "success", "result": {} }, "msg": "ok" }
-
-失败
-{ "code": 1, "data": null, "msg": "错误原因" }`,
-    }[exampleType];
-    const responseHint = {
-        models: "先拉模型列表，用返回的 id 和 modality 决定走图片、视频还是音频。",
-        image: "图片是同步接口。成功后读 data[]，不要去找任务号。",
-        video: "视频任务号在顶层 id。有非零 code 就停，不要再读 id 或 task_id。",
-        audio: "音频成功时响应体就是文件。Content-Type 变成 JSON 才按失败解析。",
-        recovery: "恢复接口走 { code, data, msg }。先看 code，再读 data.status。",
-    }[exampleType];
-
-    useEffect(() => setEndpoint(`${window.location.origin}/api/v1`), []);
 
     const closeCreatedKey = () => {
         setCreatedKey(null);
@@ -1581,8 +1510,8 @@ curl "${endpoint}/videos/VIDEO_TASK_ID/content?model=YOUR_VIDEO_MODEL" \\
                     </div>
                 </header>
 
-                <div className="grid lg:grid-cols-[minmax(0,1.4fr)_minmax(320px,.8fr)]">
-                    <div className="p-5 sm:p-7 lg:border-r lg:border-border">
+                <div>
+                    <div className="p-5 sm:p-7">
                         <div className="mb-4 flex items-center justify-between gap-4">
                             <div className="text-sm font-medium text-muted-foreground">当前企业的密钥</div>
                             <span className="text-xs tabular-nums text-muted-foreground">{activeCount} / 10 个有效</span>
@@ -1619,82 +1548,12 @@ curl "${endpoint}/videos/VIDEO_TASK_ID/content?model=YOUR_VIDEO_MODEL" \\
                             <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有 API Key" />
                         )}
                     </div>
-
-                    <aside className="border-t border-border p-5 sm:p-7 lg:border-t-0">
-                        <div className="flex items-center gap-2 text-sm font-medium">
-                            <Code2 className="size-4 text-primary" />
-                            快速接入
-                        </div>
-                        <p className="mt-2 text-sm leading-6 text-muted-foreground">使用 Bearer 鉴权。图片、视频、音频返回体不一样，下面按当前示例分开看。</p>
-                        <div className="mt-5 rounded-lg bg-muted/70 p-4">
-                            <div className="text-xs font-medium text-foreground">先看返回体</div>
-                            <p className="mt-1 text-xs leading-5 text-muted-foreground">{responseHint}</p>
-                            <pre className="mt-3 overflow-x-auto whitespace-pre-wrap break-all text-[11px] leading-5">{responsePreview}</pre>
-                        </div>
-                        <div className="mt-3 rounded-lg bg-muted/70 p-4">
-                            <div className="flex items-center justify-between gap-3">
-                                <span className="text-xs text-muted-foreground">API Endpoint</span>
-                                <Button type="text" size="small" icon={<Copy className="size-3.5" />} onClick={() => copyText(endpoint, "接口地址已复制")} />
-                            </div>
-                            <code className="mt-2 block break-all text-xs leading-5">{endpoint}</code>
-                            <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-                                {exampleType === "models" ? <code>GET /models</code> : null}
-                                {exampleType === "image" ? (
-                                    <>
-                                        <code>POST /images/generations</code>
-                                        <code>POST /images/edits</code>
-                                    </>
-                                ) : null}
-                                {exampleType === "video" ? (
-                                    <>
-                                        <code>POST /videos</code>
-                                        <code>GET /videos/&#123;id&#125;</code>
-                                        <code>GET /videos/&#123;id&#125;/content</code>
-                                    </>
-                                ) : null}
-                                {exampleType === "audio" ? <code>POST /audio/speech</code> : null}
-                                {exampleType === "recovery" ? <code>GET /generation-tasks/recovery</code> : null}
-                            </div>
-                        </div>
-                        <div className="mt-3 rounded-lg bg-muted/70 p-4">
-                            <div className="flex items-center justify-between gap-3">
-                                <Segmented
-                                    size="small"
-                                    value={exampleType}
-                                    options={[
-                                        { label: "模型", value: "models" },
-                                        { label: "图片", value: "image" },
-                                        { label: "视频", value: "video" },
-                                        { label: "音频", value: "audio" },
-                                        { label: "恢复", value: "recovery" },
-                                    ]}
-                                    onChange={(value) => setExampleType(value as APIExampleType)}
-                                />
-                                <Button type="text" size="small" icon={<Copy className="size-3.5" />} onClick={() => copyText(curlExample, "示例已复制")} />
-                            </div>
-                            <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-all text-xs leading-5">{curlExample}</pre>
-                        </div>
-                        <div className="mt-3 rounded-lg bg-primary/[.055] p-4 ring-1 ring-primary/15">
-                            <div className="flex gap-2 text-xs leading-5">
-                                <RefreshCw className="mt-0.5 size-3.5 shrink-0 text-primary" />
-                                <div>
-                                    <span className="font-medium text-foreground">请求超时不要更换 Key。</span>
-                                    <span className="text-muted-foreground"> 使用原 </span>
-                                    <code className="text-foreground">Idempotency-Key</code>
-                                    <span className="text-muted-foreground"> 查询真实状态，避免重复生成和扣费。</span>
-                                </div>
-                            </div>
-                        </div>
-                        <div className="mt-4 flex gap-2 text-xs leading-5 text-muted-foreground">
-                            <ShieldCheck className="mt-0.5 size-3.5 shrink-0" />
-                            <div>
-                                <div>模型列表不会返回文本模型；Key 不能登录账号、管理企业或进入后台。</div>
-                                <Link href={exampleType === "image" || exampleType === "video" || exampleType === "audio" ? `/api-docs/integration/${exampleType}` : "/api-docs/integration"} className="mt-2 inline-flex items-center gap-1 font-medium text-primary hover:text-primary/80">
-                                    查看{exampleType === "image" ? "图片" : exampleType === "video" ? "视频" : exampleType === "audio" ? "音频" : "完整"}对接文档
-                                </Link>
-                            </div>
-                        </div>
-                    </aside>
+                    <div className="flex flex-col gap-3 border-t border-border px-5 py-4 text-sm leading-6 text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-7">
+                        <p>Key 只用于调用 /api/v1。打开模型广场里的某个模型，即可复制带真实模型 ID 的请求。模型列表不含文本模型，Key 也不能登录账号、管理企业或进入后台。</p>
+                        <Link href="/api-docs" className="inline-flex shrink-0 items-center gap-1 font-medium text-primary hover:text-primary/80">
+                            去模型广场复制请求
+                        </Link>
+                    </div>
                 </div>
             </section>
 

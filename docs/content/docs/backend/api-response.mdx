@@ -25,7 +25,20 @@ description: 业务接口统一响应结构与前端处理约定
 
 ## 用户 API Key
 
-面向外部调用方的完整示例按类型分开：[图片对接](/docs/api/image)、[视频对接](/docs/api/video)、[音频对接](/docs/api/audio)。平台拦截的失败仍是 `{ code, data, msg }`，且经常 HTTP 200。下游必须先看非零 `code`，再按类型读结果。
+面向外部调用方的完整示例按类型分开：[图片对接](/docs/api/image)、[视频对接](/docs/api/video)、[音频对接](/docs/api/audio)。`ic_live_` API Key 调用 `/api/v1/*` 时，成功响应保持各接口自己的结果；失败返回对应 HTTP 状态码和 OpenAI 错误体，不再使用 `{ code, data, msg }`。登录会话调用同一路由时，失败仍是 HTTP 200 的 `{ code, data, msg }`。
+
+```json
+{
+  "error": {
+    "message": "该模型或当前规格未设置价格",
+    "type": "invalid_request_error",
+    "param": "model",
+    "code": "model_not_priced"
+  }
+}
+```
+
+官方 SDK 把 `base_url` 设为 `https://huantu.xyz/api/v1`，视频路径是 `/videos`，不是 `/video`。
 
 登录用户可在当前企业内管理自己的 API Key：
 

@@ -88,8 +88,32 @@ func TestUserPricingRoutesExposeOnlyEffectiveExactSpecPricing(t *testing.T) {
 	if apiKeyResponse.Code != 0 || json.Unmarshal(apiKeyResponse.Data, &apiKeyPricing) != nil || apiKeyPricing.Group != pricing.Group || apiKeyPricing.GroupRatio != pricing.GroupRatio || len(apiKeyPricing.Items) != len(pricing.Items) || apiKeyPricing.Items[0].EffectiveRatio != pricing.Items[0].EffectiveRatio || apiKeyPricing.Items[0].Source != pricing.Items[0].Source {
 		t.Fatalf("API Key pricing differs from session pricing: response=%#v pricing=%#v", apiKeyResponse, apiKeyPricing)
 	}
-	forgedResponse := routerTestJSON(t, client, http.MethodGet, baseURL+"/api/v1/pricing", nil, map[string]string{"Authorization": "Bearer " + credential.Secret, "X-Organization-ID": tenant.Foreign.ID})
-	if forgedResponse.Code != 1 {
-		t.Fatalf("API Key should not read pricing through a forged organization: %#v", forgedResponse)
+	forgedRequest, err := http.NewRequest(http.MethodGet, baseURL+"/api/v1/pricing", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forgedRequest.Header.Set("Authorization", "Bearer "+credential.Secret)
+	forgedRequest.Header.Set("X-Organization-ID", tenant.Foreign.ID)
+	forgedHTTP, err := client.Do(forgedRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer forgedHTTP.Body.Close()
+	if forgedHTTP.StatusCode != http.StatusForbidden {
+		t.Fatalf("forged organization status = %d", forgedHTTP.StatusCode)
+	}
+	var forgedBody struct {
+		Code  int `json:"code"`
+		Error struct {
+			Message string `json:"message"`
+			Type    string `json:"type"`
+			Code    string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(forgedHTTP.Body).Decode(&forgedBody); err != nil {
+		t.Fatal(err)
+	}
+	if forgedBody.Code != 0 || forgedBody.Error.Type != "permission_error" || forgedBody.Error.Code != "organization_mismatch" || forgedBody.Error.Message == "" {
+		t.Fatalf("API Key should not read pricing through a forged organization: %#v", forgedBody)
 	}
 }

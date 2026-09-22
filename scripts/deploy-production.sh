@@ -39,6 +39,7 @@ if [[ -f "$DATA_DIR/infinite-canvas.db" ]]; then
     cp -a "$DATA_DIR/infinite-canvas.db-wal" "$BACKUP_ROOT/$stamp/"
   fi
 fi
+ls -1dt "$BACKUP_ROOT"/*/ 2>/dev/null | tail -n +3 | xargs -r rm -rf
 
 live=""
 if docker inspect "$LIVE_NAME" >/dev/null 2>&1; then
@@ -96,6 +97,21 @@ if [[ "$ready" != "1" ]]; then
   echo "health check failed: $HEALTH_URL" >&2
   exit 1
 fi
+
+keep_images="$(
+  docker inspect -f '{{.Image}}' "$LIVE_NAME" 2>/dev/null || true
+  docker inspect -f '{{.Image}}' "$ROLLBACK_NAME" 2>/dev/null || true
+)"
+while read -r image_id image_ref; do
+  [[ -z "$image_id" ]] && continue
+  case "$keep_images" in
+    *"$image_id"*) ;;
+    *)
+      echo "rmi $image_ref"
+      docker rmi "$image_ref" >/dev/null || true
+      ;;
+  esac
+done < <(docker images --format '{{.ID}} {{.Repository}}:{{.Tag}}' | awk '$2 ~ /(^|\/)infinite-canvas(:|$)/')
 
 printf '%s\n' "$TAG" > /opt/infinite-canvas/.deployed-revision
 echo "DEPLOY_OK $LIVE_NAME $IMAGE"

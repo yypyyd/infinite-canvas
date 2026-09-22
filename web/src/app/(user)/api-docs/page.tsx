@@ -387,9 +387,11 @@ function ModelDetails({
     onCopyEndpoint: () => void;
     onCopySnippet: () => void;
 }) {
+    const copyText = useCopyText();
     const meta = modalityMeta[model.modality];
     const Icon = meta.icon;
     const snippet = operation ? buildCompleteSnippet(endpoint, model, operation) : "";
+    const recoverySnippet = `curl "${endpoint}/generation-tasks/recovery" \\\n  -H "Authorization: Bearer YOUR_API_KEY" \\\n  -H "Idempotency-Key: YOUR_ORIGINAL_REQUEST_ID"`;
     return (
         <div className="pb-6">
             <div className="flex items-start gap-4 border-b border-border pb-6 pr-8">
@@ -452,6 +454,9 @@ function ModelDetails({
                         <Button type="text" size="small" icon={<Copy className="size-3.5" />} onClick={onCopyEndpoint} />
                     </div>
                     <code className="mt-1 block break-all text-xs">{endpoint}</code>
+                    <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                        鉴权 <code className="text-foreground">Authorization: Bearer ic_live_...</code>。把示例里的 YOUR_API_KEY 换成这个 Key。失败时 HTTP 状态码大于等于 400，读 error.message。
+                    </p>
                 </div>
                 <div className="border-b border-border px-4 py-3">
                     <div className="text-xs font-medium text-foreground">先看返回体</div>
@@ -474,12 +479,22 @@ function ModelDetails({
                 )}
             </section>
 
-            <div className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl bg-primary/[.055] px-3.5 py-3 text-xs ring-1 ring-primary/15">
-                <RefreshCw className="size-3.5 shrink-0 text-primary" />
-                <span className="text-muted-foreground">请求超时或响应丢失？</span>
-                <Link href="/account?tab=api" className="font-medium text-primary transition hover:text-primary/80">
-                    使用原 Idempotency-Key 恢复结果
-                </Link>
+            <div className="mt-4 rounded-xl bg-primary/[.055] px-3.5 py-3 text-xs leading-5 ring-1 ring-primary/15">
+                <div className="flex items-start gap-2">
+                    <RefreshCw className="mt-0.5 size-3.5 shrink-0 text-primary" />
+                    <div>
+                        <div className="font-medium text-foreground">请求超时不要换 Idempotency-Key</div>
+                        <p className="mt-1 text-muted-foreground">用原编号调用 GET /generation-tasks/recovery。成功读 data.status；失败看 HTTP 状态码和 error.message。</p>
+                    </div>
+                </div>
+                <div className="mt-3 overflow-hidden rounded-lg bg-card ring-1 ring-border">
+                    <div className="flex items-center justify-end border-b border-border px-2 py-1">
+                        <Button type="text" size="small" icon={<Copy className="size-3.5" />} onClick={() => copyText(recoverySnippet, "恢复请求已复制")}>
+                            复制
+                        </Button>
+                    </div>
+                    <pre className="overflow-x-auto whitespace-pre-wrap break-all p-3 text-[11px] leading-5">{recoverySnippet}</pre>
+                </div>
             </div>
 
             <div className="mt-6 flex flex-wrap gap-2">
@@ -618,7 +633,7 @@ function buildCompleteSnippet(endpoint: string, model: MarketplaceModel, operati
     if (model.modality !== "video") return snippet;
     return `${snippet}
 
-# 保存响应里的 id；失败时先看 code/msg。每 2-3 秒查询，直到 status=completed
+# 保存响应里的 id；HTTP 状态码大于等于 400 时读 error.message。每 2-3 秒查询，直到 status=completed
 curl "${endpoint}/videos/VIDEO_TASK_ID?model=${model.id}" \\
   -H "Authorization: Bearer YOUR_API_KEY"
 
@@ -634,18 +649,18 @@ function responseExample(modality: ModelModality) {
 { "id": "video_abc123", "status": "queued" }
 
 失败
-{ "code": 1, "data": null, "msg": "错误原因" }`;
+{ "error": { "message": "错误原因", "type": "invalid_request_error", "param": null, "code": "invalid_request" } }`;
     }
     if (modality === "image") {
         return `成功
 { "created": 1760000000, "data": [{ "b64_json": "..." }] }
 
 失败
-{ "code": 1, "data": null, "msg": "错误原因" }`;
+{ "error": { "message": "错误原因", "type": "invalid_request_error", "param": null, "code": "invalid_request" } }`;
     }
     return `成功时直接返回音频二进制。
-若 Content-Type 是 application/json，按失败解析：
-{ "code": 1, "data": null, "msg": "错误原因" }`;
+若 HTTP 状态码大于等于 400，按失败解析：
+{ "error": { "message": "错误原因", "type": "invalid_request_error", "param": null, "code": "invalid_request" } }`;
 }
 
 function imageOutputSize(ratio: string) {

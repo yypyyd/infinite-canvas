@@ -51,6 +51,7 @@ func APIAuth(c *gin.Context) {
 		UserAuth(c)
 		return
 	}
+	c.Writer = &openAIResponseWriter{ResponseWriter: c.Writer}
 	user, apiKey, err := service.AuthenticateUserAPIKey(token)
 	if err != nil {
 		handler.FailError(c.Writer, err)

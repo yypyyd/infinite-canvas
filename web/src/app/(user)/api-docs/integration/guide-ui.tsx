@@ -23,6 +23,7 @@ export function useApiEndpoint() {
 }
 
 export function GuideShell({ title, lead, current, children }: { title: string; lead: string; current: "index" | "image" | "video" | "audio"; children: ReactNode }) {
+    const endpoint = useApiEndpoint();
     return (
         <main className="h-full overflow-y-auto bg-background text-foreground">
             <div className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6 sm:py-12">
@@ -48,8 +49,23 @@ export function GuideShell({ title, lead, current, children }: { title: string; 
                         创建 API Key
                     </Link>
                     <Link href="/api-docs" className="inline-flex min-h-9 items-center gap-2 rounded-lg px-3.5 text-sm font-medium text-foreground ring-1 ring-border transition hover:bg-muted">
-                        去模型广场选模型
+                        去模型广场复制请求
                     </Link>
+                </div>
+                <div className="mt-6 space-y-2 rounded-xl border border-border bg-card px-4 py-4 text-sm leading-6 text-muted-foreground">
+                    <p>
+                        接口地址 <code className="text-foreground">{endpoint}</code>
+                    </p>
+                    <p>
+                        鉴权 <code className="text-foreground">Authorization: Bearer ic_live_...</code>，不要传企业编号。
+                    </p>
+                    <p>
+                        官方 SDK 的 <code className="text-foreground">base_url</code> 设成同一个地址。
+                    </p>
+                    <p>
+                        失败看 HTTP 状态码，读 <code className="text-foreground">error.message</code>。
+                    </p>
+                    <p>带真实模型 ID 的请求在模型广场里复制。这里只说明图片、视频、音频的差别。</p>
                 </div>
                 {children}
             </div>

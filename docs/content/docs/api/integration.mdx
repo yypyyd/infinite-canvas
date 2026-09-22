@@ -1,27 +1,16 @@
 ---
 title: API 对接指南
-description: 先选类型，再按图片、视频或音频分开接入
+description: 地址、鉴权和类型差别
 ---
 
 # API 对接指南
 
-先选类型。图片、视频、音频接口和返回体都不一样，不要混着看。站内页：
+接口地址是 `https://huantu.xyz/api/v1`。鉴权只传 `Authorization: Bearer ic_live_...`，不要传企业编号。官方 SDK 的 `base_url` 用同一个地址。失败看 HTTP 状态码和 `error.message`。
 
-- [对接目录](/api-docs/integration)
-- [图片对接](/api-docs/integration/image)
-- [视频对接](/api-docs/integration/video)
-- [音频对接](/api-docs/integration/audio)
+带真实模型 ID 的请求在站内[模型广场](/api-docs)复制。这里只说明类型差别：
 
-模型 ID 以 `GET /models` 为准。鉴权只传 `Authorization: Bearer ic_live_...`，不要传企业编号。
+- [图片](/docs/api/image)：同步返回图片
+- [视频](/docs/api/video)：创建、查询、下载
+- [音频](/docs/api/audio)：成功时响应体就是文件
 
-## 图片
-
-图片是同步接口。一次请求结束就返回图片，没有任务号。完整步骤看[图片对接](/docs/api/image)。
-
-## 视频
-
-视频是异步任务：创建 → 用 `id` 查询 → `completed` 后再下载。完整步骤看[视频对接](/docs/api/video)。
-
-## 音频
-
-音频成功时响应体就是文件。完整步骤看[音频对接](/docs/api/audio)。
+站内页是[对接目录](/api-docs/integration)。

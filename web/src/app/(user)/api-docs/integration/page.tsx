@@ -18,7 +18,7 @@ export default function ApiIntegrationIndexPage() {
     }, [router]);
 
     return (
-        <GuideShell title="API 对接指南" lead="先选要对接的类型。图片、视频、音频接口和返回体都不一样，分开看。" current="index">
+        <GuideShell title="API 对接指南" lead="先确认地址和鉴权，再选类型。带模型 ID 的请求到模型广场复制。" current="index">
             <div className="mt-10 grid gap-4 sm:grid-cols-3">
                 <ChapterCard href="/api-docs/integration/image" icon={ImageIcon} title="图片" summary="同步出图。一次请求结束就返回图片，没有任务号。" />
                 <ChapterCard href="/api-docs/integration/video" icon={Video} title="视频" summary="异步任务。先创建，再查 id，completed 后下载。" />

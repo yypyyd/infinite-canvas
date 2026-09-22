@@ -22,7 +22,7 @@ export function useApiEndpoint() {
     return endpoint;
 }
 
-export function GuideShell({ title, lead, current, children }: { title: string; lead: string; current: "index" | "image" | "video" | "audio"; children: ReactNode }) {
+export function GuideShell({ current, children }: { current: "index" | "image" | "video" | "audio"; children: ReactNode }) {
     const endpoint = useApiEndpoint();
     const copyText = useCopyText();
     return (

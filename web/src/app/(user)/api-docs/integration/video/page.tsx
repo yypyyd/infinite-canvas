@@ -6,8 +6,8 @@ export default function VideoIntegrationPage() {
     const endpoint = useApiEndpoint();
     return (
         <GuideShell current="video">
-            <DocsIntro title="视频" lead="先创建拿到 id，查到 completed，再下载 MP4。路径是 /videos。seconds 和 size 以模型广场里该模型的能力为准。" endpoint={endpoint} />
             <Endpoint
+                before={<DocsIntro title="视频" lead="先创建拿到 id，查到 completed，再下载 MP4。路径是 /videos。seconds 和 size 以模型广场里该模型的能力为准。" endpoint={endpoint} />}
                 method="POST"
                 path="/videos"
                 title="创建任务"

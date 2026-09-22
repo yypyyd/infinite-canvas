@@ -6,8 +6,8 @@ export default function AudioIntegrationPage() {
     const endpoint = useApiEndpoint();
     return (
         <GuideShell current="audio">
-            <DocsIntro title="音频" lead="同步接口。成功时响应体就是音频文件，不是 JSON，也没有任务号。" endpoint={endpoint} />
             <Endpoint
+                before={<DocsIntro title="音频" lead="同步接口。成功时响应体就是音频文件，不是 JSON，也没有任务号。" endpoint={endpoint} />}
                 method="POST"
                 path="/audio/speech"
                 title="合成语音"

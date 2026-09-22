@@ -6,8 +6,8 @@ export default function ImageIntegrationPage() {
     const endpoint = useApiEndpoint();
     return (
         <GuideShell current="image">
-            <DocsIntro title="图片" lead="一次请求结束就返回图片。没有任务号，不要轮询。size 的像素决定 1K / 2K / 4K，quality 不改变档位。" endpoint={endpoint} />
             <Endpoint
+                before={<DocsIntro title="图片" lead="一次请求结束就返回图片。没有任务号，不要轮询。size 的像素决定 1K / 2K / 4K，quality 不改变档位。" endpoint={endpoint} />}
                 method="POST"
                 path="/images/generations"
                 title="生成图片"

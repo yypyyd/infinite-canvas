@@ -25,8 +25,8 @@ export function useApiEndpoint() {
 export function GuideShell({ current, children }: { current: "index" | "image" | "video" | "audio"; children: ReactNode }) {
     return (
         <main className="h-full overflow-y-auto bg-background text-foreground">
-            <div className="grid min-h-full lg:grid-cols-[208px_minmax(0,1fr)]">
-                <aside className="border-b border-border px-4 py-4 lg:sticky lg:top-0 lg:self-start lg:border-b-0 lg:border-r lg:px-4 lg:py-8">
+            <div className="flex min-h-full flex-col lg:flex-row">
+                <aside className="border-b border-border px-4 py-4 lg:sticky lg:top-0 lg:w-52 lg:shrink-0 lg:self-start lg:border-b-0 lg:border-r lg:px-4 lg:py-8">
                     <div className="px-2 text-[11px] font-medium tracking-[.16em] text-muted-foreground">API</div>
                     <nav className="mt-2 flex gap-1 overflow-x-auto lg:flex-col">
                         {chapters.map((chapter) => (
@@ -48,7 +48,10 @@ export function GuideShell({ current, children }: { current: "index" | "image" |
                         </Link>
                     </div>
                 </aside>
-                <article className="min-w-0 px-4 py-6 sm:px-8 sm:py-8 lg:px-10">{children}</article>
+                <div className="relative grid min-h-full min-w-0 flex-1 grid-cols-1 lg:grid-cols-2">
+                    <div className="pointer-events-none absolute inset-y-0 right-0 hidden w-1/2 bg-card lg:block" aria-hidden />
+                    {children}
+                </div>
             </div>
         </main>
     );
@@ -59,9 +62,9 @@ export function DocsIntro({ title, lead, endpoint }: { title: string; lead: stri
     return (
         <header>
             <h1 className="text-[28px] font-semibold tracking-[-.03em]">{title}</h1>
-            <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">{lead}</p>
-            <dl className="mt-5 max-w-xl divide-y divide-border border-y border-border text-sm">
-                <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-3 py-2">
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{lead}</p>
+            <dl className="mt-5 divide-y divide-border border-y border-border text-sm">
+                <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-3 py-2.5">
                     <dt className="text-muted-foreground">地址</dt>
                     <dd className="flex min-w-0 items-center gap-2">
                         <code className="truncate font-mono text-[13px]">{endpoint}</code>
@@ -70,7 +73,7 @@ export function DocsIntro({ title, lead, endpoint }: { title: string; lead: stri
                         </button>
                     </dd>
                 </div>
-                <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-3 py-2">
+                <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-3 py-2.5">
                     <dt className="text-muted-foreground">鉴权</dt>
                     <dd className="truncate font-mono text-[13px]">Authorization: Bearer ic_live_...</dd>
                 </div>
@@ -79,34 +82,46 @@ export function DocsIntro({ title, lead, endpoint }: { title: string; lead: stri
     );
 }
 
-export function Endpoint({ method, path, title, sample, children }: { method: "GET" | "POST"; path: string; title: string; sample: string; children: ReactNode }) {
+export function Split({ text, code }: { text: ReactNode; code: ReactNode }) {
     return (
-        <section className="grid items-start gap-6 border-t border-border py-8 lg:grid-cols-[minmax(0,22rem)_minmax(280px,1fr)]">
-            <div className="min-w-0">
-                <h2 className="text-base font-semibold">{title}</h2>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <Method method={method} />
-                    <code className="font-mono text-[13px]">{path}</code>
+        <>
+            <div className="relative border-t border-border px-5 py-8 first:border-t-0 sm:px-10">{text}</div>
+            <div className="relative border-t border-border bg-card px-5 py-8 sm:px-8 lg:border-0 lg:bg-transparent">{code}</div>
+        </>
+    );
+}
+
+export function Endpoint({ before, method, path, title, sample, children }: { before?: ReactNode; method: "GET" | "POST"; path: string; title: string; sample: string; children: ReactNode }) {
+    return (
+        <Split
+            text={
+                <div>
+                    {before ? <div className="mb-10">{before}</div> : null}
+                    <h2 className="text-base font-semibold">{title}</h2>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <Method method={method} />
+                        <code className="font-mono text-[13px]">{path}</code>
+                    </div>
+                    <div className="mt-3 space-y-2 text-sm leading-6 text-muted-foreground">{children}</div>
                 </div>
-                <div className="mt-3 space-y-2 text-sm leading-6 text-muted-foreground">{children}</div>
-            </div>
-            <Sample code={sample} />
-        </section>
+            }
+            code={<Sample code={sample} />}
+        />
     );
 }
 
 export function Sample({ title = "curl", code }: { title?: string; code: string }) {
     const copyText = useCopyText();
     return (
-        <div className="overflow-hidden rounded-xl bg-card ring-1 ring-border">
-            <div className="flex items-center justify-between px-4 py-2">
-                <span className="font-mono text-[11px] text-muted-foreground">{title}</span>
+        <div>
+            <div className="mb-3 flex items-center justify-between">
+                <span className="font-mono text-[11px] tracking-wide text-muted-foreground">{title}</span>
                 <button type="button" onClick={() => copyText(code, "已复制")} className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
                     <Copy className="size-3" />
                     复制
                 </button>
             </div>
-            <pre className="overflow-x-auto px-4 pb-4 font-mono text-[12.5px] leading-6">
+            <pre className="overflow-x-auto font-mono text-[13px] leading-7">
                 <code>{code}</code>
             </pre>
         </div>
@@ -114,12 +129,12 @@ export function Sample({ title = "curl", code }: { title?: string; code: string 
 }
 
 function Method({ method }: { method: "GET" | "POST" }) {
-    return <span className={`rounded px-1.5 py-0.5 font-mono text-[11px] font-semibold tracking-wide ${method === "POST" ? "bg-primary/15 text-primary" : "bg-muted text-foreground"}`}>{method}</span>;
+    return <span className={`rounded px-1.5 py-0.5 font-mono text-[11px] font-semibold tracking-wide ${method === "POST" ? "bg-primary/15 text-primary" : "bg-foreground/10 text-foreground"}`}>{method}</span>;
 }
 
 export function EndpointIndex({ groups }: { groups: Array<{ title: string; href: string; rows: Array<{ method: "GET" | "POST"; path: string; text: string }> }> }) {
     return (
-        <div className="mt-8 overflow-hidden rounded-xl ring-1 ring-border">
+        <div className="overflow-hidden rounded-xl ring-1 ring-border">
             {groups.map((group) => (
                 <div key={group.title}>
                     <Link href={group.href} className="flex items-center justify-between bg-muted/50 px-4 py-2 text-sm font-medium hover:text-primary">

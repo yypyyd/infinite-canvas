@@ -48,14 +48,21 @@ export function Docs({ current, sections }: { current: "index" | "image" | "vide
                         </Link>
                     </div>
                 </aside>
-                <div className="relative grid min-h-full min-w-0 flex-1 grid-cols-1 lg:grid-cols-2">
-                    <div className="pointer-events-none absolute inset-y-0 right-0 hidden w-1/2 bg-card lg:block" aria-hidden />
-                    {sections.map((section, index) => (
-                        <div key={index} className="contents">
-                            <section className={`relative px-5 py-6 sm:px-8 ${index ? "border-t border-border" : ""}`}>{section.text}</section>
-                            <section className={`relative bg-card px-5 py-6 sm:px-8 lg:bg-transparent ${index ? "border-t border-border lg:border-border/50" : ""}`}>{section.code}</section>
-                        </div>
-                    ))}
+                <div className="grid min-h-full min-w-0 flex-1 lg:grid-cols-2">
+                    <div className="px-5 py-8 sm:px-8">
+                        {sections.map((section, index) => (
+                            <section key={index} className={index ? "mt-8 border-t border-border pt-8" : undefined}>
+                                {section.text}
+                            </section>
+                        ))}
+                    </div>
+                    <div className="min-h-full bg-card px-5 py-8 sm:px-8">
+                        {sections.map((section, index) => (
+                            <section key={index} className={index ? "mt-8 border-t border-border/60 pt-8" : undefined}>
+                                {section.code}
+                            </section>
+                        ))}
+                    </div>
                 </div>
             </div>
         </main>
@@ -68,21 +75,13 @@ export function DocsIntro({ title, lead, endpoint }: { title: string; lead: stri
         <header>
             <h1 className="text-2xl font-semibold tracking-[-.03em]">{title}</h1>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">{lead}</p>
-            <dl className="mt-4 text-sm">
-                <div className="flex items-center gap-3 border-t border-border py-2">
-                    <dt className="w-12 shrink-0 text-muted-foreground">地址</dt>
-                    <dd className="flex min-w-0 items-center gap-2">
-                        <code className="truncate font-mono text-[13px]">{endpoint}</code>
-                        <button type="button" onClick={() => copyText(endpoint, "接口地址已复制")} className="text-muted-foreground hover:text-foreground" aria-label="复制接口地址">
-                            <Copy className="size-3.5" />
-                        </button>
-                    </dd>
-                </div>
-                <div className="flex items-center gap-3 border-t border-border py-2">
-                    <dt className="w-12 shrink-0 text-muted-foreground">鉴权</dt>
-                    <dd className="truncate font-mono text-[13px]">Bearer ic_live_...</dd>
-                </div>
-            </dl>
+            <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                <code className="font-mono text-[13px]">{endpoint}</code>
+                <button type="button" onClick={() => copyText(endpoint, "接口地址已复制")} className="text-muted-foreground hover:text-foreground" aria-label="复制接口地址">
+                    <Copy className="size-3.5" />
+                </button>
+                <span className="text-muted-foreground">Bearer ic_live_...</span>
+            </div>
         </header>
     );
 }
@@ -102,9 +101,9 @@ export function Block({ method, path, title, children }: { method: "GET" | "POST
 
 export function Params({ rows }: { rows: Array<[string, string]> }) {
     return (
-        <dl className="mt-4 border-t border-border text-sm">
+        <dl className="mt-3 space-y-1.5 text-sm">
             {rows.map(([name, detail]) => (
-                <div key={name} className="grid grid-cols-[7.5rem_minmax(0,1fr)] gap-3 border-b border-border py-2">
+                <div key={name} className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-3">
                     <dt className="font-mono text-[13px] text-foreground">{name}</dt>
                     <dd>{detail}</dd>
                 </div>

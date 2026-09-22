@@ -7,7 +7,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useCopyText } from "@/hooks/use-copy-text";
 
 export const defaultEndpoint = "https://huantu.xyz/api/v1";
-export const chapters = [
+const chapters = [
     { href: "/api-docs/integration", key: "index", label: "概览" },
     { href: "/api-docs/integration/image", key: "image", label: "图片" },
     { href: "/api-docs/integration/video", key: "video", label: "视频" },
@@ -22,11 +22,11 @@ export function useApiEndpoint() {
     return endpoint;
 }
 
-export function GuideShell({ current, children }: { current: "index" | "image" | "video" | "audio"; children: ReactNode }) {
+export function Docs({ current, sections }: { current: "index" | "image" | "video" | "audio"; sections: Array<{ text: ReactNode; code: ReactNode }> }) {
     return (
         <main className="h-full overflow-y-auto bg-background text-foreground">
             <div className="flex min-h-full flex-col lg:flex-row">
-                <aside className="border-b border-border px-4 py-4 lg:sticky lg:top-0 lg:w-52 lg:shrink-0 lg:self-start lg:border-b-0 lg:border-r lg:px-4 lg:py-8">
+                <aside className="border-b border-border px-4 py-4 lg:sticky lg:top-0 lg:w-48 lg:shrink-0 lg:self-start lg:border-b-0 lg:border-r lg:px-3 lg:py-8">
                     <div className="px-2 text-[11px] font-medium tracking-[.16em] text-muted-foreground">API</div>
                     <nav className="mt-2 flex gap-1 overflow-x-auto lg:flex-col">
                         {chapters.map((chapter) => (
@@ -50,7 +50,12 @@ export function GuideShell({ current, children }: { current: "index" | "image" |
                 </aside>
                 <div className="relative grid min-h-full min-w-0 flex-1 grid-cols-1 lg:grid-cols-2">
                     <div className="pointer-events-none absolute inset-y-0 right-0 hidden w-1/2 bg-card lg:block" aria-hidden />
-                    {children}
+                    {sections.map((section, index) => (
+                        <div key={index} className="contents">
+                            <section className={`relative px-5 py-6 sm:px-8 ${index ? "border-t border-border" : ""}`}>{section.text}</section>
+                            <section className={`relative bg-card px-5 py-6 sm:px-8 lg:bg-transparent ${index ? "border-t border-border lg:border-border/50" : ""}`}>{section.code}</section>
+                        </div>
+                    ))}
                 </div>
             </div>
         </main>
@@ -61,52 +66,50 @@ export function DocsIntro({ title, lead, endpoint }: { title: string; lead: stri
     const copyText = useCopyText();
     return (
         <header>
-            <h1 className="text-[28px] font-semibold tracking-[-.03em]">{title}</h1>
+            <h1 className="text-2xl font-semibold tracking-[-.03em]">{title}</h1>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">{lead}</p>
-            <dl className="mt-5 divide-y divide-border border-y border-border text-sm">
-                <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-3 py-2.5">
-                    <dt className="text-muted-foreground">地址</dt>
+            <dl className="mt-4 text-sm">
+                <div className="flex items-center gap-3 border-t border-border py-2">
+                    <dt className="w-12 shrink-0 text-muted-foreground">地址</dt>
                     <dd className="flex min-w-0 items-center gap-2">
                         <code className="truncate font-mono text-[13px]">{endpoint}</code>
-                        <button type="button" onClick={() => copyText(endpoint, "接口地址已复制")} className="shrink-0 text-muted-foreground hover:text-foreground" aria-label="复制接口地址">
+                        <button type="button" onClick={() => copyText(endpoint, "接口地址已复制")} className="text-muted-foreground hover:text-foreground" aria-label="复制接口地址">
                             <Copy className="size-3.5" />
                         </button>
                     </dd>
                 </div>
-                <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-3 py-2.5">
-                    <dt className="text-muted-foreground">鉴权</dt>
-                    <dd className="truncate font-mono text-[13px]">Authorization: Bearer ic_live_...</dd>
+                <div className="flex items-center gap-3 border-t border-border py-2">
+                    <dt className="w-12 shrink-0 text-muted-foreground">鉴权</dt>
+                    <dd className="truncate font-mono text-[13px]">Bearer ic_live_...</dd>
                 </div>
             </dl>
         </header>
     );
 }
 
-export function Split({ text, code }: { text: ReactNode; code: ReactNode }) {
+export function Block({ method, path, title, children }: { method: "GET" | "POST"; path: string; title: string; children: ReactNode }) {
     return (
-        <>
-            <div className="relative border-t border-border px-5 py-8 first:border-t-0 sm:px-10">{text}</div>
-            <div className="relative border-t border-border bg-card px-5 py-8 sm:px-8 lg:border-0 lg:bg-transparent">{code}</div>
-        </>
+        <div>
+            <h2 className="text-base font-semibold">{title}</h2>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+                <span className={`rounded px-1.5 py-0.5 font-mono text-[11px] font-semibold ${method === "POST" ? "bg-primary/15 text-primary" : "bg-foreground/10 text-foreground"}`}>{method}</span>
+                <code className="font-mono text-[13px]">{path}</code>
+            </div>
+            <div className="mt-3 text-sm leading-6 text-muted-foreground">{children}</div>
+        </div>
     );
 }
 
-export function Endpoint({ before, method, path, title, sample, children }: { before?: ReactNode; method: "GET" | "POST"; path: string; title: string; sample: string; children: ReactNode }) {
+export function Params({ rows }: { rows: Array<[string, string]> }) {
     return (
-        <Split
-            text={
-                <div>
-                    {before ? <div className="mb-10">{before}</div> : null}
-                    <h2 className="text-base font-semibold">{title}</h2>
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <Method method={method} />
-                        <code className="font-mono text-[13px]">{path}</code>
-                    </div>
-                    <div className="mt-3 space-y-2 text-sm leading-6 text-muted-foreground">{children}</div>
+        <dl className="mt-4 border-t border-border text-sm">
+            {rows.map(([name, detail]) => (
+                <div key={name} className="grid grid-cols-[7.5rem_minmax(0,1fr)] gap-3 border-b border-border py-2">
+                    <dt className="font-mono text-[13px] text-foreground">{name}</dt>
+                    <dd>{detail}</dd>
                 </div>
-            }
-            code={<Sample code={sample} />}
-        />
+            ))}
+        </dl>
     );
 }
 
@@ -114,44 +117,16 @@ export function Sample({ title = "curl", code }: { title?: string; code: string 
     const copyText = useCopyText();
     return (
         <div>
-            <div className="mb-3 flex items-center justify-between">
-                <span className="font-mono text-[11px] tracking-wide text-muted-foreground">{title}</span>
+            <div className="mb-2 flex items-center justify-between">
+                <span className="font-mono text-[11px] text-muted-foreground">{title}</span>
                 <button type="button" onClick={() => copyText(code, "已复制")} className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
                     <Copy className="size-3" />
                     复制
                 </button>
             </div>
-            <pre className="overflow-x-auto font-mono text-[13px] leading-7">
+            <pre className="overflow-x-auto font-mono text-[13px] leading-6 text-foreground">
                 <code>{code}</code>
             </pre>
-        </div>
-    );
-}
-
-function Method({ method }: { method: "GET" | "POST" }) {
-    return <span className={`rounded px-1.5 py-0.5 font-mono text-[11px] font-semibold tracking-wide ${method === "POST" ? "bg-primary/15 text-primary" : "bg-foreground/10 text-foreground"}`}>{method}</span>;
-}
-
-export function EndpointIndex({ groups }: { groups: Array<{ title: string; href: string; rows: Array<{ method: "GET" | "POST"; path: string; text: string }> }> }) {
-    return (
-        <div className="overflow-hidden rounded-xl ring-1 ring-border">
-            {groups.map((group) => (
-                <div key={group.title}>
-                    <Link href={group.href} className="flex items-center justify-between bg-muted/50 px-4 py-2 text-sm font-medium hover:text-primary">
-                        {group.title}
-                        <span className="text-xs font-normal text-muted-foreground">打开</span>
-                    </Link>
-                    {group.rows.map((row) => (
-                        <Link key={row.path} href={group.href} className="grid grid-cols-1 gap-1 border-t border-border px-4 py-3 text-sm hover:bg-muted/30 sm:grid-cols-[4.5rem_minmax(0,1fr)] sm:gap-x-4">
-                            <Method method={row.method} />
-                            <span className="min-w-0">
-                                <code className="font-mono text-[13px]">{row.path}</code>
-                                <span className="mt-0.5 block text-muted-foreground">{row.text}</span>
-                            </span>
-                        </Link>
-                    ))}
-                </div>
-            ))}
         </div>
     );
 }

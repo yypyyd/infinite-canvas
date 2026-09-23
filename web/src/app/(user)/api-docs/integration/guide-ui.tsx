@@ -48,21 +48,14 @@ export function Docs({ current, sections }: { current: "index" | "image" | "vide
                         </Link>
                     </div>
                 </aside>
-                <div className="grid min-h-full min-w-0 flex-1 lg:grid-cols-2">
-                    <div className="px-5 py-8 sm:px-8">
-                        {sections.map((section, index) => (
-                            <section key={index} className={index ? "mt-8 border-t border-border pt-8" : undefined}>
-                                {section.text}
-                            </section>
-                        ))}
-                    </div>
-                    <div className="min-h-full bg-card px-5 py-8 sm:px-8">
-                        {sections.map((section, index) => (
-                            <section key={index} className={index ? "mt-8 border-t border-border/60 pt-8" : undefined}>
-                                {section.code}
-                            </section>
-                        ))}
-                    </div>
+                <div className="relative grid min-h-full min-w-0 flex-1 grid-cols-1 lg:grid-cols-2">
+                    <div className="pointer-events-none absolute inset-y-0 right-0 hidden w-1/2 bg-card lg:block" aria-hidden />
+                    {sections.map((section, index) => (
+                        <div key={index} className="contents">
+                            <section className={`relative px-6 py-7 sm:px-10 ${index ? "border-t border-border" : ""}`}>{section.text}</section>
+                            <section className={`relative bg-card px-6 py-7 sm:px-8 lg:bg-transparent ${index ? "border-t border-border/70" : ""}`}>{section.code}</section>
+                        </div>
+                    ))}
                 </div>
             </div>
         </main>
@@ -101,11 +94,11 @@ export function Block({ method, path, title, children }: { method: "GET" | "POST
 
 export function Params({ rows }: { rows: Array<[string, string]> }) {
     return (
-        <dl className="mt-3 space-y-1.5 text-sm">
+        <dl className="mt-4 border-t border-border text-sm">
             {rows.map(([name, detail]) => (
-                <div key={name} className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-3">
+                <div key={name} className="grid grid-cols-[7rem_minmax(0,1fr)] gap-4 border-b border-border py-2.5">
                     <dt className="font-mono text-[13px] text-foreground">{name}</dt>
-                    <dd>{detail}</dd>
+                    <dd className="text-muted-foreground">{detail}</dd>
                 </div>
             ))}
         </dl>
@@ -123,8 +116,21 @@ export function Sample({ title = "curl", code }: { title?: string; code: string 
                     复制
                 </button>
             </div>
-            <pre className="overflow-x-auto font-mono text-[13px] leading-6 text-foreground">
-                <code>{code}</code>
+            <pre className="overflow-x-auto font-mono text-[13px] leading-7 text-foreground">
+                <code>
+                    {code.split("\n").map((line, index) => (
+                        <span key={index} className="block">
+                            {line.startsWith("curl ") ? (
+                                <>
+                                    <span className="text-primary">curl</span>
+                                    {line.slice(4)}
+                                </>
+                            ) : (
+                                line || " "
+                            )}
+                        </span>
+                    ))}
+                </code>
             </pre>
         </div>
     );

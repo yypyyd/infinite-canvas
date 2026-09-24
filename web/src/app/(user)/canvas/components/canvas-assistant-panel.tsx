@@ -933,7 +933,8 @@ export function CanvasAssistantPanel({
             await onRevertRun(diagnosticsRunId);
             const session = localSessionsRef.current.find((item) => item.messages.some((message) => message.runId === diagnosticsRunId));
             const assistantMessage = session?.messages.find((message) => message.runId === diagnosticsRunId);
-            if (session && assistantMessage) updateMessageWith(session.id, assistantMessage.id, (message) => ({ ...message, text: "本轮画布操作已撤销", stages: failPendingAssistantStages(message.stages || []), confirmation: undefined, isLoading: false }));
+            if (session && assistantMessage)
+                updateMessageWith(session.id, assistantMessage.id, (message) => ({ ...message, text: "本轮画布操作已撤销", stages: failPendingAssistantStages(message.stages || []), confirmation: undefined, isLoading: false }));
             setRevertRunConfirmOpen(false);
             setDiagnosticsRunId(null);
         } catch (error) {
@@ -1178,7 +1179,7 @@ export function CanvasAssistantPanel({
             const answered = await answerAskUser(pendingQuestionMessage, pendingQuestion, "approved", text);
             if (answered) {
                 followMessagesRef.current = true;
-                setPrompt((current) => current.trim() === text ? "" : current);
+                setPrompt((current) => (current.trim() === text ? "" : current));
             }
             return;
         }
@@ -1196,50 +1197,64 @@ export function CanvasAssistantPanel({
         );
     };
 
-    const decideConfirmation = useCallback(async (message: CanvasAssistantMessage, decision: "approved" | "rejected") => {
-        const session = localSessionsRef.current.find((session) => session.messages.some((item) => item.id === message.id));
-        const confirmation = session?.messages.find((item) => item.id === message.id)?.confirmation;
-        if (!session || !confirmation || !["pending", "failed"].includes(confirmation.status) || pendingAnswers.current.has(confirmation.callId)) return;
-        const sessionId = session.id;
-        pendingAnswers.current.add(confirmation.callId);
-        updateMessage(sessionId, message.id, { confirmation: { ...confirmation, status: "approving" } });
-        try {
-            if (decision === "approved" && (confirmation.name === "canvas.delete" || confirmation.name === "canvas.update_text")) {
-                const targetNodeIds = "nodeIds" in confirmation.arguments ? confirmation.arguments.nodeIds : "nodeId" in confirmation.arguments ? [confirmation.arguments.nodeId] : [];
-                if (targetNodeIds.length) onFlashAssistantNodes(targetNodeIds);
+    const decideConfirmation = useCallback(
+        async (message: CanvasAssistantMessage, decision: "approved" | "rejected") => {
+            const session = localSessionsRef.current.find((session) => session.messages.some((item) => item.id === message.id));
+            const confirmation = session?.messages.find((item) => item.id === message.id)?.confirmation;
+            if (!session || !confirmation || !["pending", "failed"].includes(confirmation.status) || pendingAnswers.current.has(confirmation.callId)) return;
+            const sessionId = session.id;
+            pendingAnswers.current.add(confirmation.callId);
+            updateMessage(sessionId, message.id, { confirmation: { ...confirmation, status: "approving" } });
+            try {
+                if (decision === "approved" && (confirmation.name === "canvas.delete" || confirmation.name === "canvas.update_text")) {
+                    const targetNodeIds = "nodeIds" in confirmation.arguments ? confirmation.arguments.nodeIds : "nodeId" in confirmation.arguments ? [confirmation.arguments.nodeId] : [];
+                    if (targetNodeIds.length) onFlashAssistantNodes(targetNodeIds);
+                }
+                await confirmAgentTool(confirmation.runId, confirmation.callId, decision);
+                updateMessageWith(sessionId, message.id, (current) =>
+                    current.confirmation?.status === "approving" ? { ...current, confirmation: { ...confirmation, status: decision === "approved" ? "approved" : "rejected" }, isLoading: true } : current,
+                );
+                resumeConfirmedRun(message, confirmation.runId);
+            } catch {
+                updateMessageWith(sessionId, message.id, (current) => (current.confirmation?.status === "approving" ? { ...current, confirmation: { ...confirmation, status: "failed" } } : current));
+            } finally {
+                pendingAnswers.current.delete(confirmation.callId);
             }
-            await confirmAgentTool(confirmation.runId, confirmation.callId, decision);
-            updateMessageWith(sessionId, message.id, (current) => current.confirmation?.status === "approving" ? { ...current, confirmation: { ...confirmation, status: decision === "approved" ? "approved" : "rejected" }, isLoading: true } : current);
-            resumeConfirmedRun(message, confirmation.runId);
-        } catch {
-            updateMessageWith(sessionId, message.id, (current) => current.confirmation?.status === "approving" ? { ...current, confirmation: { ...confirmation, status: "failed" } } : current);
-        } finally {
-            pendingAnswers.current.delete(confirmation.callId);
-        }
-    }, [onFlashAssistantNodes, updateMessage, updateMessageWith]);
+        },
+        [onFlashAssistantNodes, updateMessage, updateMessageWith],
+    );
 
-    const answerAskUser = useCallback(async (message: CanvasAssistantMessage, stage: CanvasAssistantStage, decision: "approved" | "rejected", answer = "") => {
-        const session = localSessionsRef.current.find((item) => item.messages.some((item) => item.id === message.id));
-        const ask = session?.messages.find((item) => item.id === message.id)?.stages?.find((item) => item.callId === stage.callId)?.ask;
-        if (!session || !ask || !["pending", "failed"].includes(ask.status) || pendingAnswers.current.has(ask.callId)) return false;
-        pendingAnswers.current.add(ask.callId);
-        updateMessageWith(session.id, message.id, (current) => ({ ...current, stages: updateAskStage(current.stages || [], ask.callId, { status: "answering" }) }));
-        try {
-            await confirmAgentTool(ask.runId, ask.callId, decision, answer.trim() || undefined);
-            updateMessageWith(session.id, message.id, (current) => current.stages?.some((item) => item.callId === ask.callId && item.ask?.status === "answering") ? ({
-                ...current,
-                stages: updateAskStage(current.stages || [], ask.callId, { answer: answer.trim(), status: decision === "approved" ? "answered" : "skipped" }),
-                isLoading: true,
-            }) : current);
-            resumeConfirmedRun(message, ask.runId);
-            return true;
-        } catch {
-            updateMessageWith(session.id, message.id, (current) => current.stages?.some((item) => item.callId === ask.callId && item.ask?.status === "answering") ? { ...current, stages: updateAskStage(current.stages || [], ask.callId, { status: "failed" }) } : current);
-            return false;
-        } finally {
-            pendingAnswers.current.delete(ask.callId);
-        }
-    }, [updateMessageWith]);
+    const answerAskUser = useCallback(
+        async (message: CanvasAssistantMessage, stage: CanvasAssistantStage, decision: "approved" | "rejected", answer = "") => {
+            const session = localSessionsRef.current.find((item) => item.messages.some((item) => item.id === message.id));
+            const ask = session?.messages.find((item) => item.id === message.id)?.stages?.find((item) => item.callId === stage.callId)?.ask;
+            if (!session || !ask || !["pending", "failed"].includes(ask.status) || pendingAnswers.current.has(ask.callId)) return false;
+            pendingAnswers.current.add(ask.callId);
+            updateMessageWith(session.id, message.id, (current) => ({ ...current, stages: updateAskStage(current.stages || [], ask.callId, { status: "answering" }) }));
+            try {
+                await confirmAgentTool(ask.runId, ask.callId, decision, answer.trim() || undefined);
+                updateMessageWith(session.id, message.id, (current) =>
+                    current.stages?.some((item) => item.callId === ask.callId && item.ask?.status === "answering")
+                        ? {
+                              ...current,
+                              stages: updateAskStage(current.stages || [], ask.callId, { answer: answer.trim(), status: decision === "approved" ? "answered" : "skipped" }),
+                              isLoading: true,
+                          }
+                        : current,
+                );
+                resumeConfirmedRun(message, ask.runId);
+                return true;
+            } catch {
+                updateMessageWith(session.id, message.id, (current) =>
+                    current.stages?.some((item) => item.callId === ask.callId && item.ask?.status === "answering") ? { ...current, stages: updateAskStage(current.stages || [], ask.callId, { status: "failed" }) } : current,
+                );
+                return false;
+            } finally {
+                pendingAnswers.current.delete(ask.callId);
+            }
+        },
+        [updateMessageWith],
+    );
 
     useEffect(() => {
         const session = localSessions.find((item) => item.id === localActiveSessionId);
@@ -1802,10 +1817,24 @@ function AssistantMessages({
                         {message.confirmation && ["pending", "approving", "failed"].includes(message.confirmation.status) ? (
                             <div className="w-[280px] max-w-full rounded-lg border p-3 text-xs" style={{ background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.text }}>
                                 <p>{agentConfirmationDetail(message.confirmation)}</p>
-                                {message.confirmation.status === "failed" ? <p className="mt-2" style={{ color: theme.node.activeStroke }}>提交失败，请重试</p> : null}
+                                {message.confirmation.status === "failed" ? (
+                                    <p className="mt-2" style={{ color: theme.node.activeStroke }}>
+                                        提交失败，请重试
+                                    </p>
+                                ) : null}
                                 <div className="mt-3 flex justify-end gap-2">
-                                    <Button size="small" disabled={message.confirmation.status === "approving"} onClick={() => onConfirm(message, "rejected")}>拒绝</Button>
-                                    <Button size="small" type="primary" danger={message.confirmation.name === "canvas.delete" || message.confirmation.name === "agent.forget"} loading={message.confirmation.status === "approving"} onClick={() => onConfirm(message, "approved")}>允许执行</Button>
+                                    <Button size="small" disabled={message.confirmation.status === "approving"} onClick={() => onConfirm(message, "rejected")}>
+                                        拒绝
+                                    </Button>
+                                    <Button
+                                        size="small"
+                                        type="primary"
+                                        danger={message.confirmation.name === "canvas.delete" || message.confirmation.name === "agent.forget"}
+                                        loading={message.confirmation.status === "approving"}
+                                        onClick={() => onConfirm(message, "approved")}
+                                    >
+                                        允许执行
+                                    </Button>
                                 </div>
                             </div>
                         ) : message.confirmation ? (

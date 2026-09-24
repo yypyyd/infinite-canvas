@@ -209,7 +209,7 @@ function Panel({ title, extra, children, className = "" }: { title?: string; ext
     const { token } = theme.useToken();
     const mark = { width: 10, height: 10, borderColor: token.colorPrimary };
     return (
-        <section className={`relative flex min-h-0 flex-col ${className}`} style={{ background: withAlpha(token.colorBgContainer, 0.86), border: `1px solid ${token.colorBorderSecondary}`, boxShadow: `inset 0 1px 0 ${withAlpha(token.colorPrimary, 0.22)}` }}>
+        <section className={`relative flex min-h-0 flex-col overflow-hidden ${className}`} style={{ background: withAlpha(token.colorBgContainer, 0.86), border: `1px solid ${token.colorBorderSecondary}`, boxShadow: `inset 0 1px 0 ${withAlpha(token.colorPrimary, 0.22)}` }}>
             <i className="pointer-events-none absolute top-0 left-0 border-t border-l" style={mark} />
             <i className="pointer-events-none absolute top-0 right-0 border-t border-r" style={mark} />
             <i className="pointer-events-none absolute bottom-0 left-0 border-b border-l" style={mark} />
@@ -225,7 +225,7 @@ function Panel({ title, extra, children, className = "" }: { title?: string; ext
             ) : (
                 <div className="px-4 pt-4" />
             )}
-            <div className="min-h-0 flex-1 px-4 pb-3 pt-2">{children}</div>
+            <div className="min-h-0 flex-1 overflow-hidden px-4 pb-3 pt-2">{children}</div>
         </section>
     );
 }
@@ -233,15 +233,24 @@ function Panel({ title, extra, children, className = "" }: { title?: string; ext
 function TaskStream({ tasks, loading, empty }: { tasks: AdminGenerationTask[]; loading: boolean; empty: string }) {
     const { token } = theme.useToken();
     const tone = { success: token.colorSuccess, error: token.colorError, warning: token.colorWarning };
-    if (loading) return <Skeleton active paragraph={{ rows: 5 }} title={false} />;
+    if (loading) return <Skeleton active paragraph={{ rows: 4 }} title={false} />;
     if (!tasks.length) return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={empty} />;
     return (
-        <div className="flex h-full flex-col gap-1.5 overflow-auto">
+        <div className="flex h-full min-h-0 flex-col gap-1 overflow-auto">
             {tasks.map((task) => {
                 const meta = statusMeta[task.status] || statusMeta.running;
+                const created = dayjs(task.createdAt);
                 return (
-                    <div key={task.id} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-1 py-1 text-xs" style={{ background: withAlpha(tone[meta.tone], 0.06) }}>
-                        <span className="size-1.5 rounded-full" style={{ background: tone[meta.tone], boxShadow: `0 0 8px ${tone[meta.tone]}` }} />
+                    <div
+                        key={task.id}
+                        className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-1 py-1 text-xs"
+                        style={{
+                            background: withAlpha(tone[meta.tone], 0.06),
+                            contentVisibility: "auto",
+                            containIntrinsicSize: "auto 44px",
+                        }}
+                    >
+                        <span className="size-1.5 rounded-full" style={{ background: tone[meta.tone] }} />
                         <div className="min-w-0">
                             <div className="truncate" style={{ color: token.colorText }}>
                                 {task.model || "未知模型"}
@@ -254,7 +263,7 @@ function TaskStream({ tasks, loading, empty }: { tasks: AdminGenerationTask[]; l
                             </div>
                         </div>
                         <div className="text-right tabular-nums" style={{ color: token.colorTextSecondary }}>
-                            <div>{dayjs(task.createdAt).isSame(dayjs(), "day") ? dayjs(task.createdAt).format("HH:mm:ss") : dayjs(task.createdAt).format("MM-DD HH:mm")}</div>
+                            <div>{created.isSame(dayjs(), "day") ? created.format("HH:mm:ss") : created.format("MM-DD HH:mm")}</div>
                             <div style={{ color: tone[meta.tone] }}>{meta.label}</div>
                         </div>
                     </div>

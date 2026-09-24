@@ -338,11 +338,7 @@ func AdminDashboard() (model.AdminDashboard, error) {
 	if todayTasks > 0 {
 		failureRate = todayFailed * 100 / todayTasks
 	}
-	recentTasks, err := repository.RecentGenerationTasks(20)
-	if err != nil {
-		return model.AdminDashboard{}, err
-	}
-	recentFailures, err := repository.RecentFailedGenerationTasks(8)
+	recentTasks, err := repository.RecentGenerationTasks(8)
 	if err != nil {
 		return model.AdminDashboard{}, err
 	}
@@ -363,7 +359,6 @@ func AdminDashboard() (model.AdminDashboard, error) {
 		RecentTasks:    recentTasks,
 		TopModels:      topModels,
 		ChannelErrors:  channelErrors,
-		RecentFailures: recentFailures,
 	}, nil
 }
 

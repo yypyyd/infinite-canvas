@@ -216,7 +216,7 @@ const GAUGE_SWEEP = 180;
 export function FailureGauge({ percent, label }: { percent: number; label: string }) {
     const colors = useChartToken();
     const clamped = Math.min(100, Math.max(0, percent));
-    const color = clamped >= 92 ? colors.success : clamped >= 80 ? colors.warning : colors.failed;
+    const color = colors.success;
     const cx = 100;
     const cy = 104;
     const radius = 70;
@@ -260,9 +260,9 @@ export function RankBars({ items, color, empty }: { items: { name: string; value
         );
     }
     return (
-        <div className="flex h-full flex-col justify-center gap-3">
+        <div className="flex h-full min-h-0 flex-col justify-start gap-1 overflow-auto pr-0.5">
             {items.map((item, index) => (
-                <div key={item.name} className="grid grid-cols-[22px_minmax(0,1fr)_40px] items-center gap-2">
+                <div key={item.name} className="grid grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-2">
                     <span className="text-[11px] tabular-nums" style={{ color: colors.muted }}>
                         {String(index + 1).padStart(2, "0")}
                     </span>
@@ -270,11 +270,11 @@ export function RankBars({ items, color, empty }: { items: { name: string; value
                         <div className="truncate text-xs" style={{ color: colors.fg }}>
                             {item.name}
                         </div>
-                        <div className="mt-1 h-2 overflow-hidden rounded-sm" style={{ background: withAlpha(colors.track, 0.2) }}>
+                        <div className="mt-0.5 h-1.5 overflow-hidden rounded-sm" style={{ background: withAlpha(colors.track, 0.2) }}>
                             <div className="h-full rounded-sm" style={{ width: `${(item.value / maxValue) * 100}%`, background: color, boxShadow: `0 0 12px ${withAlpha(color, 0.45)}` }} />
                         </div>
                     </div>
-                    <span className="text-right text-sm tabular-nums">{item.value}</span>
+                    <span className="text-right text-xs tabular-nums">{item.value.toLocaleString()}</span>
                 </div>
             ))}
         </div>

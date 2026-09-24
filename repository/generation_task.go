@@ -577,7 +577,7 @@ func RecentGenerationTasks(limit int) ([]model.GenerationTask, error) {
 		return nil, err
 	}
 	var items []model.GenerationTask
-	err = db.Order("created_at desc").Limit(limit).Find(&items).Error
+	err = db.Select("id, model, channel_name, path, modality, credits, status, substr(error_message, 1, 160) AS error_message, created_at").Order("created_at desc").Limit(limit).Find(&items).Error
 	return items, err
 }
 

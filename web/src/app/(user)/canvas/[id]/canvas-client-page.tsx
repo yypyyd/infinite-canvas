@@ -397,6 +397,8 @@ function InfiniteCanvasPage() {
 
     const nodesRef = useRef(nodes);
     const connectionsRef = useRef(connections);
+    const chatSessionsRef = useRef(chatSessions);
+    const activeChatIdRef = useRef(activeChatId);
     const selectedNodeIdsRef = useRef(selectedNodeIds);
     const viewportRef = useRef(viewport);
     const connectingParamsRef = useRef(connectingParams);
@@ -647,10 +649,14 @@ function InfiniteCanvasPage() {
             const restoredNodes = await restoreInterruptedCanvasMedia(project.nodes, readCanvasImageGenerationResults(historyOwnerId, projectId), readCanvasVideoGenerationResults(historyOwnerId, projectId)).then(hydrateCanvasImages);
             if (restoreRequest !== restoreRequestRef.current) return;
             if (preserveLocalChanges && (generationRequestsRef.current.size || hasUnsavedChangesRef.current || lastSavedProjectRef.current !== savedProject)) return;
+            const nextChatSessions = preserveLocalChanges ? chatSessionsRef.current : [];
+            const nextActiveChatId = preserveLocalChanges ? activeChatIdRef.current : null;
             setNodes(restoredNodes);
             setConnections(project.connections);
-            setChatSessions([]);
-            setActiveChatId(null);
+            chatSessionsRef.current = nextChatSessions;
+            activeChatIdRef.current = nextActiveChatId;
+            setChatSessions(nextChatSessions);
+            setActiveChatId(nextActiveChatId);
             setBackgroundMode(project.backgroundMode);
             setShowImageInfo(project.showImageInfo || false);
             setAutoSaveEnabled(project.autoSaveEnabled ?? true);
@@ -670,8 +676,8 @@ function InfiniteCanvasPage() {
             lastHistoryRef.current = {
                 nodes: restoredNodes,
                 connections: project.connections,
-                chatSessions: [],
-                activeChatId: null,
+                chatSessions: nextChatSessions,
+                activeChatId: nextActiveChatId,
                 backgroundMode: project.backgroundMode,
                 showImageInfo: project.showImageInfo || false,
             };
@@ -823,12 +829,14 @@ function InfiniteCanvasPage() {
         if (projectLoaded) restoreRequestRef.current += 1;
         nodesRef.current = nodes;
         connectionsRef.current = connections;
+        chatSessionsRef.current = chatSessions;
+        activeChatIdRef.current = activeChatId;
         selectedNodeIdsRef.current = selectedNodeIds;
         viewportRef.current = viewport;
         connectingParamsRef.current = connectingParams;
         connectionTargetNodeIdRef.current = connectionTargetNodeId;
         pendingConnectionCreateRef.current = pendingConnectionCreate;
-    }, [nodes, connections, selectedNodeIds, viewport, connectingParams, connectionTargetNodeId, pendingConnectionCreate, projectLoaded]);
+    }, [nodes, connections, chatSessions, activeChatId, selectedNodeIds, viewport, connectingParams, connectionTargetNodeId, pendingConnectionCreate, projectLoaded]);
 
     useLayoutEffect(() => {
         selectionBoxRef.current = selectionBox;
@@ -1454,6 +1462,8 @@ function InfiniteCanvasPage() {
         applyingHistoryRef.current = true;
         setNodes(entry.nodes);
         setConnections(entry.connections);
+        chatSessionsRef.current = entry.chatSessions;
+        activeChatIdRef.current = entry.activeChatId;
         setChatSessions(entry.chatSessions);
         setActiveChatId(entry.activeChatId);
         setBackgroundMode(entry.backgroundMode);
@@ -2539,11 +2549,15 @@ function InfiniteCanvasPage() {
     );
 
     const handleAssistantSessionsChange = useCallback((sessions: CanvasAssistantSession[], activeId: string | null) => {
+        chatSessionsRef.current = sessions;
+        activeChatIdRef.current = activeId;
         setChatSessions(sessions);
         setActiveChatId(activeId);
     }, []);
 
     const persistAssistantSessions = useCallback(async (sessions: CanvasAssistantSession[], activeId: string | null) => {
+        chatSessionsRef.current = sessions;
+        activeChatIdRef.current = activeId;
         setChatSessions(sessions);
         setActiveChatId(activeId);
     }, []);

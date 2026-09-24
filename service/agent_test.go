@@ -8,31 +8,6 @@ import (
 	"github.com/yypyyd/infinite-canvas/model"
 )
 
-func TestParseExplicitAddConfigRequest(t *testing.T) {
-	canvas := AgentCanvasContext{
-		SelectedNodeIDs: []string{"text-1"},
-		VisibleNodeIDs:  []string{"text-1", "image-1"},
-		Nodes: []AgentCanvasNode{
-			{ID: "text-1", Type: "text", Title: "文案", X: 0},
-			{ID: "image-1", Type: "image", Title: "主图", X: 400},
-		},
-	}
-	sources, placement, ok := parseExplicitAddConfigRequest("给画布上的文本节点添加一个配置节点并连上，不要生图", canvas)
-	if !ok || placement != "right_of_selection" || len(sources) != 1 || sources[0] != "text-1" {
-		t.Fatalf("expected selected text source, got ok=%v placement=%q sources=%v", ok, placement, sources)
-	}
-	if _, _, ok := parseExplicitAddConfigRequest("生成图片并添加配置节点", canvas); ok {
-		t.Fatal("compound generate+config should stay in planner")
-	}
-	unselected := canvas
-	unselected.SelectedNodeIDs = nil
-	unselected.FocusNodeIDs = nil
-	left, _, ok := parseExplicitAddConfigRequest("给视口最左边那张图添加配置并连上", unselected)
-	if !ok || len(left) != 1 || left[0] != "text-1" {
-		t.Fatalf("expected leftmost visible node, got ok=%v sources=%v", ok, left)
-	}
-}
-
 func TestSanitizeAgentUserFacingText(t *testing.T) {
 	got := sanitizeAgentUserFacingText("**目标完成**：已为画布上的文本节点（id: text-1789248805391-97cfc）添加配置节点（config-1789248869566-aif4z），并通过连线关联，无图像生成。")
 	if strings.Contains(got, "text-") || strings.Contains(got, "config-") || strings.Contains(got, "目标完成") || strings.Contains(got, "**") {
@@ -40,19 +15,6 @@ func TestSanitizeAgentUserFacingText(t *testing.T) {
 	}
 	if !strings.Contains(got, "添加配置节点") {
 		t.Fatalf("expected remaining canvas sentence, got %q", got)
-	}
-}
-
-func TestSimpleAgentMediaCommandRejectsCompoundWorkflows(t *testing.T) {
-	for _, content := range []string{"生成一张红色运动鞋海报", "制作咖啡机旋转展示视频", "策划一张夏季饮料海报", "生成一张先进科技风海报"} {
-		if !simpleAgentMediaCommand(content) {
-			t.Fatalf("expected simple media command for %q", content)
-		}
-	}
-	for _, content := range []string{"先分析图片，然后生成海报", "生成图片；再添加文案", "比较图片并且生成视频", "生成图片同时排列节点"} {
-		if simpleAgentMediaCommand(content) {
-			t.Fatalf("expected compound workflow for %q", content)
-		}
 	}
 }
 
@@ -93,19 +55,6 @@ func TestAgentModelToolResultOmitsMediaStorageKey(t *testing.T) {
 	}
 }
 
-func TestAgentMediaRequestNeedsClarification(t *testing.T) {
-	for _, content := range []string{"生成图片", "帮我生成一张图片", "请制作短视频", "我想要策划并生成海报"} {
-		if !agentMediaRequestNeedsClarification(content) {
-			t.Fatalf("expected clarification for %q", content)
-		}
-	}
-	for _, content := range []string{"生成一张红色运动鞋商品主图", "制作咖啡机旋转展示视频"} {
-		if agentMediaRequestNeedsClarification(content) {
-			t.Fatalf("unexpected clarification for %q", content)
-		}
-	}
-}
-
 func TestAgentMemoryArgumentsNormalizeAndProtectSensitiveKeys(t *testing.T) {
 	args, raw, err := decodeAgentToolArguments("agent.remember", `{"kind":"preference","key":"image.style","content":"写实","confidence":0.9}`, agentNodeAuthorization{})
 	if err != nil {
@@ -142,13 +91,6 @@ func TestNormalizeAgentCanvasContextDefaultsAndValidatesAutonomy(t *testing.T) {
 	}
 	if _, err := normalizeAgentCanvasContext(AgentCanvasContext{Autonomy: "unrestricted"}); err == nil {
 		t.Fatal("expected invalid autonomy rejection")
-	}
-}
-
-func TestAgentMediaIntentRecognizesNaturalImageRequest(t *testing.T) {
-	image, video := agentMediaIntent("我想生成一个美女图片", false)
-	if !image || video {
-		t.Fatalf("image=%v video=%v", image, video)
 	}
 }
 
@@ -365,5 +307,56 @@ func TestNormalizeAuthorizedNodeIDsAndPlacement(t *testing.T) {
 	}
 	if !validAgentPlacement("viewport") || validAgentPlacement("stack") {
 		t.Fatal("placement validation failed")
+	}
+}
+
+func TestAgentNodeCountReplyDoesNotExecuteNaturalLanguage(t *testing.T) {
+	run := model.AgentRun{MessageID: "message", Context: `{"nodes":[{"id":"image-1"},{"id":"image-2"}]}`}
+	for _, content := range []string{"在吗", "这个布局怎么样？", "不要排列图片", "海报怎么设计？", "配置节点是什么？", "帮我写文案，突出夏日氛围", "生成三张猫的图片", "生成一个十秒的视频", "先生成图片，然后排列", "查看节点数量然后删除一个节点"} {
+		messages := []model.AgentMessage{{ID: run.MessageID, Role: model.AgentMessageRoleUser, Content: content}}
+		if reply, handled := agentNodeCountReply(run, messages); handled || reply != "" {
+			t.Fatalf("request bypassed planner: %q => %q", content, reply)
+		}
+	}
+	messages := []model.AgentMessage{{ID: run.MessageID, Role: model.AgentMessageRoleUser, Content: "当前画布有多少个节点？"}}
+	if reply, handled := agentNodeCountReply(run, messages); !handled || reply != "当前画布有 2 个节点。" {
+		t.Fatalf("node count = %q handled=%v", reply, handled)
+	}
+}
+
+func TestAgentMediaParametersPreserveExplicitRequirements(t *testing.T) {
+	authorization := agentNodeAuthorization{
+		ImageNodeIDs: map[string]struct{}{"image-1": {}},
+		VideoNodeIDs: map[string]struct{}{"video-1": {}},
+		AudioNodeIDs: map[string]struct{}{"audio-1": {}},
+	}
+	args, _, err := decodeAgentToolArguments("image.generate", `{"prompt":"猫","count":3,"referenceNodeIds":["image-1"]}`, authorization)
+	if err != nil {
+		t.Fatal(err)
+	}
+	image := args.(imageGenerateArguments)
+	if image.Count != 3 || len(image.ReferenceNodeIDs) != 1 {
+		t.Fatalf("image parameters changed: %#v", image)
+	}
+	args, _, err = decodeAgentToolArguments("video.generate", `{"prompt":"咖啡机展示","duration":10,"imageNodeIds":["image-1"],"videoNodeIds":["video-1"],"audioNodeIds":["audio-1"]}`, authorization)
+	if err != nil {
+		t.Fatal(err)
+	}
+	video := args.(videoGenerateArguments)
+	if video.Duration != 10 || len(video.ImageNodeIDs) != 1 || len(video.VideoNodeIDs) != 1 || len(video.AudioNodeIDs) != 1 {
+		t.Fatalf("video parameters changed: %#v", video)
+	}
+}
+
+func TestAgentPreviewLoadingFollowsCurrentMessage(t *testing.T) {
+	for _, content := range []string{"在吗", "你好", "谢谢", "介绍一下你能做什么"} {
+		if agentNeedsPlanningPreviews(content) {
+			t.Fatalf("conversation requested visual context: %q", content)
+		}
+	}
+	for _, content := range []string{"这张怎么样", "好看吗", "看看当前画布", "参考图片生成海报", "把背景改成蓝色"} {
+		if !agentNeedsPlanningPreviews(content) {
+			t.Fatalf("missing visual context for %q", content)
+		}
 	}
 }

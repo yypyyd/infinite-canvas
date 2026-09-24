@@ -205,6 +205,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
                     props.onDoubleClick?.(event);
                 }}
                 onKeyDown={(event) => {
+                    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
                     if (insertReferenceText && (event.key === "Backspace" || event.key === "Delete") && deleteAdjacentReference(event.key)) {
                         event.preventDefault();
                         return;

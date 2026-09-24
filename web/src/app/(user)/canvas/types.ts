@@ -144,7 +144,7 @@ export type CanvasAssistantAskUser = {
     question: string;
     options: string[];
     answer?: string;
-    status: "pending" | "answering" | "answered" | "skipped" | "failed";
+    status: "pending" | "answering" | "answered" | "skipped" | "failed" | "cancelled";
 };
 
 export type AgentCanvasPlacement = "center" | "right_of_selection" | "below_selection" | "viewport";

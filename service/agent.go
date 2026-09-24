@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"os"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -25,7 +24,11 @@ import (
 )
 
 const (
-	agentSystemPrompt            = "你是画布原住民。侧栏只是嘴，手和眼都在画布上。根据画布 JSON、视口预览和用户这句话，直接在布上改。修改必须调用工具，禁止假装完成。画布语法：要可复用的生成入口就 canvas.add_config，并用 sourceNodeIds 带上上游节点；只需补连线时才 canvas.connect。不要两个配置互连。落位用 right_of_selection、below_selection 或 viewport。改已有图用 image.edit。工具：canvas.plan {summary,steps}；image.generate {prompt,count,referenceNodeIds}；image.edit {nodeId,prompt,count}；image.inspect {nodeIds,criteria}；video.generate {prompt,duration,imageNodeIds,videoNodeIds,audioNodeIds}；video.inspect {nodeId,criteria}；canvas.add_text {text,placement,sourceNodeIds}；canvas.add_config {placement,sourceNodeIds}；canvas.connect {fromNodeId,toNodeId}；canvas.arrange {nodeIds,mode,gap}；canvas.delete {nodeIds}；canvas.update_text {nodeId,text}；agent.ask_user {question,options}；agent.remember {kind,key,content,scope,confidence,expiresInDays}；agent.forget {key,scope}。一两步画布动作不要 canvas.plan。只有生图或生视频后才 inspect。删除、改文本、记忆要确认，对象是本轮授权节点。不要重复同名同参工具。调用工具只走 function call，不要写成正文。对用户说话用一句短中文，像指着画布，例如「配置已经加在这张图右边并连上了」。禁止节点 id、markdown、目标完成、关键假设、工具名。"
+	agentSystemPrompt = "你是画布助手。侧栏负责对话，画布承载用户要求创建或修改的内容。先结合本轮消息和上下文判断意图：问候、闲聊、咨询、解释、能力询问直接回答；否定的操作不得执行。仅提到海报、排版、配置节点或工具名不代表要求执行。用户回答澄清问题或确认已提出的操作时，继续原任务。" +
+		"只有用户要求操作画布或生成媒体时才调用工具。canvas.add_text 仅用于用户要求放到画布的文案、注释或文本；写文案默认在侧栏给出成品，不得把需求原文、问候或操作总结插成节点。使用画布 JSON 和必要的预览定位对象；不明确时先询问，未选中节点不等于授权重排所有图片。" +
+		"严格将用户指定的图片数量、视频时长和参考媒体写入工具参数；只有未指定时才默认一张图片、六秒视频。单次图片最多四张，更多图片按剩余数量分次生成并遵守预算；超出工具或模型支持的规格先解释并询问，不得默默改成默认值。复合任务逐项执行，单个工具成功不代表整项任务结束。三步及以上的任务可先 canvas.plan，一两步直接执行。" +
+		"可复用生成入口用 canvas.add_config，sourceNodeIds 带上游节点；补连线用 canvas.connect，配置节点之间不互连。落位支持 right_of_selection、below_selection、viewport、center。已有图修改用 image.edit。只有生成媒体后才做视觉验收，服务端会安排 inspect；验收后继续尚未完成的用户要求。" +
+		"工具只走结构化 function call，不得把工具调用写入正文。删除、覆盖文本、保存和遗忘记忆仍需确认。不要重复同名同参工具。根据真实工具结果回复，不得假装完成。画布操作完成后简短说明结果；普通问答和文案按需要完整回答。不输出节点 id、工具名、目标完成或关键假设等内部措辞。"
 	agentAutonomyCautious        = "cautious"
 	agentAutonomyStandard        = "standard"
 	agentAutonomyAutonomous      = "autonomous"
@@ -1068,8 +1071,8 @@ func requestAgentCompletion(ctx context.Context, run model.AgentRun, userGroup, 
 	if routed, handled, routeErr := routePendingAgentVideoInspection(run, messages, toolSteps); handled || routeErr != nil {
 		return routed, routeErr
 	}
-	if routed, handled, routeErr := routeDeterministicAgentCompletion(run, messages, toolSteps); handled || routeErr != nil {
-		return routed, routeErr
+	if content, ok := agentNodeCountReply(run, messages); ok {
+		return agentCompletion{Content: content}, nil
 	}
 	pricingRequest := PricingRequest{Model: run.Model, Modality: "text", Operation: "completion", Unit: "request", Quantity: 1}
 	selection, err := SelectModelChannel(pricingRequest)
@@ -1135,7 +1138,7 @@ func requestAgentCompletion(ctx context.Context, run model.AgentRun, userGroup, 
 			completed = append(completed, map[string]any{"name": step.ToolName, "arguments": arguments, "result": agentModelToolResult(step)})
 		}
 		completedPayload, _ := json.Marshal(completed)
-		requestMessages = append(requestMessages, agentChatMessage{Role: "system", Content: "本轮已执行的工具及真实 TOOL_RESULT：" + string(completedPayload) + "。画布动作成功后不要再 inspect 或 plan；仍需工具时只走下一条 function call，否则用一句短中文指向画布，不要复述节点 id。"})
+		requestMessages = append(requestMessages, agentChatMessage{Role: "system", Content: "本轮已执行的工具及真实 TOOL_RESULT：" + string(completedPayload) + "。逐项检查用户要求是否完成；已有验收结果不要重复 inspect，未完成的任务继续下一条 function call，整项任务完成后简短回复，不要复述节点 id。"})
 	}
 	currentIndex := len(messages) - 1
 	for i := range messages {
@@ -1159,7 +1162,7 @@ func requestAgentCompletion(ctx context.Context, run model.AgentRun, userGroup, 
 		requestMessages = append(requestMessages, agentChatMessage{Role: "system", Content: "本次运行已达到工具调用上限，请根据已有真实结果直接总结，不要再请求工具。"})
 	}
 	hasPreviewImages := agentChatMessagesHaveImageURLs(requestMessages)
-	bodyValue := map[string]any{"model": selection.Model.UpstreamModel, "messages": requestMessages, "tools": agentToolSchemas(), "tool_choice": "auto", "stream": false, "max_tokens": 768}
+	bodyValue := map[string]any{"model": selection.Model.UpstreamModel, "messages": requestMessages, "tools": agentToolSchemas(), "tool_choice": "auto", "stream": false, "max_tokens": 2048}
 	var responseBody []byte
 	var statusCode int
 	for previewAttempt := 0; previewAttempt < 2; previewAttempt++ {
@@ -1270,68 +1273,6 @@ func requestAgentCompletion(ctx context.Context, run model.AgentRun, userGroup, 
 		completion.ToolCall = &agentToolCall{ID: call.ID, Name: toolName, Arguments: arguments, Raw: raw}
 		return completion, nil
 	}
-	if textName, textArguments, ok := parseAgentTextToolCall(completion.Content); ok {
-		if len(toolSteps) >= maxToolCalls {
-			return completion, errors.New("agent exceeded tool call limit")
-		}
-		textName = canonicalAgentToolName(textName)
-		if textName == "canvas.plan" && len(toolSteps) != 0 && failedAgentToolCallCount(toolSteps) == 0 {
-			return completion, errors.New("agent requested a duplicate plan")
-		}
-		authorization, authorizationErr := agentRunNodeAuthorization(run)
-		if authorizationErr != nil {
-			return completion, authorizationErr
-		}
-		arguments, raw, decodeErr := decodeAgentToolArguments(textName, textArguments, authorization)
-		if decodeErr != nil {
-			return completion, decodeErr
-		}
-		if agentMediaRevisionLimitReached(run, toolSteps, textName) {
-			completion.Content = agentMediaRevisionLimitMessage(textName)
-			return completion, nil
-		}
-		if completedAgentToolCall(toolSteps, textName, raw) {
-			completion.Content = "请求的画布操作已完成。"
-			return completion, nil
-		}
-		if failedAgentToolCall(toolSteps, textName, raw) {
-			completion.Content = "相同参数的操作已经失败，未重复执行。"
-			return completion, nil
-		}
-		completion.ToolCall = &agentToolCall{ID: newID("agent-tool-call"), Name: textName, Arguments: arguments, Raw: raw}
-		return completion, nil
-	}
-	if textName, textArguments, ok := parseAgentNaturalLanguageToolCall(completion.Content); ok {
-		if len(toolSteps) >= maxToolCalls {
-			return completion, errors.New("agent exceeded tool call limit")
-		}
-		textName = canonicalAgentToolName(textName)
-		if textName == "canvas.plan" && len(toolSteps) != 0 && failedAgentToolCallCount(toolSteps) == 0 {
-			return completion, errors.New("agent requested a duplicate plan")
-		}
-		authorization, authorizationErr := agentRunNodeAuthorization(run)
-		if authorizationErr != nil {
-			return completion, authorizationErr
-		}
-		arguments, raw, decodeErr := decodeAgentToolArguments(textName, textArguments, authorization)
-		if decodeErr != nil {
-			return completion, decodeErr
-		}
-		if agentMediaRevisionLimitReached(run, toolSteps, textName) {
-			completion.Content = agentMediaRevisionLimitMessage(textName)
-			return completion, nil
-		}
-		if completedAgentToolCall(toolSteps, textName, raw) {
-			completion.Content = "请求的画布操作已完成。"
-			return completion, nil
-		}
-		if failedAgentToolCall(toolSteps, textName, raw) {
-			completion.Content = "相同参数的操作已经失败，未重复执行。"
-			return completion, nil
-		}
-		completion.ToolCall = &agentToolCall{ID: newID("agent-tool-call"), Name: textName, Arguments: arguments, Raw: raw}
-		return completion, nil
-	}
 	if completion.Content == "" {
 		return completion, errors.New("agent upstream returned empty content")
 	}
@@ -1339,141 +1280,21 @@ func requestAgentCompletion(ctx context.Context, run model.AgentRun, userGroup, 
 	return completion, nil
 }
 
-func routeDeterministicAgentCompletion(run model.AgentRun, messages []model.AgentMessage, toolSteps []model.AgentStep) (agentCompletion, bool, error) {
-	content := ""
+// Only exact, read-only queries bypass the planner. Natural-language actions never do.
+func agentNodeCountReply(run model.AgentRun, messages []model.AgentMessage) (string, bool) {
 	for _, message := range messages {
-		if message.ID == run.MessageID && message.Role == model.AgentMessageRoleUser {
-			content = strings.TrimSpace(message.Content)
-			break
+		if message.ID != run.MessageID || message.Role != model.AgentMessageRoleUser {
+			continue
 		}
-	}
-	if content == "" {
-		return agentCompletion{}, false, nil
-	}
-	var canvasContext AgentCanvasContext
-	if err := json.Unmarshal([]byte(run.Context), &canvasContext); err != nil {
-		return agentCompletion{}, true, errors.New("agent canvas context invalid")
-	}
-	if canvasContext.Autonomy == agentAutonomyAutonomous && failedAgentToolCallCount(toolSteps) > 0 {
-		return agentCompletion{}, false, nil
-	}
-
-	if containsAgentPhrase(content, "多少节点", "多少个节点", "几个节点", "节点数量") {
-		return agentCompletion{Content: fmt.Sprintf("当前画布有 %d 个节点。", len(canvasContext.Nodes))}, true, nil
-	}
-	if text, placement, ok := parseExplicitAddTextRequest(content); ok {
-		return deterministicAgentToolCompletion(run, toolSteps, "canvas.add_text", canvasAddTextArguments{Text: text, Placement: placement}, "文本已添加到画布。")
-	}
-	if sources, placement, ok := parseExplicitAddConfigRequest(content, canvasContext); ok {
-		return deterministicAgentToolCompletion(run, toolSteps, "canvas.add_config", canvasAddConfigArguments{Placement: placement, SourceNodeIDs: sources}, "配置已经加在旁边并连上了。")
-	}
-
-	lower := strings.ToLower(content)
-	mediaNegated := containsAgentPhrase(lower, "不要生成媒体", "不要生成图片", "不要生图", "别生成图片", "无需生成图片", "不要生成视频", "别生成视频", "无需生成视频")
-	imageIntent, videoIntent := agentMediaIntent(lower, mediaNegated)
-	if !imageIntent && !videoIntent {
-		return agentCompletion{}, false, nil
-	}
-	if !simpleAgentMediaCommand(content) {
-		return agentCompletion{}, false, nil
-	}
-	if canvasContext.Autonomy == agentAutonomyCautious {
-		return agentCompletion{}, false, nil
-	}
-	for _, step := range toolSteps {
-		if step.ToolName == "agent.ask_user" {
-			return agentCompletion{}, false, nil
-		}
-	}
-	if agentMediaRequestNeedsClarification(content) {
-		return agentCompletion{}, false, nil
-	}
-
-	authorization, err := agentRunNodeAuthorization(run)
-	if err != nil {
-		return agentCompletion{}, true, err
-	}
-	planned := containsAgentPhrase(content, "策划", "规划", "计划")
-	if planned {
-		kind := "图片"
-		if videoIntent {
-			kind = "视频"
-		}
-		arguments, raw, err := normalizeDeterministicAgentToolArguments("canvas.plan", canvasPlanArguments{
-			Summary: "策划并生成" + kind,
-			Steps:   []string{"生成" + kind + "并添加到画布", "对照目标验收真实内容"},
-		}, authorization)
-		if err != nil {
-			return agentCompletion{}, true, err
-		}
-		if !completedAgentToolCall(toolSteps, "canvas.plan", raw) {
-			return agentCompletion{ToolCall: &agentToolCall{ID: newID("agent-tool-call"), Name: "canvas.plan", Arguments: arguments, Raw: raw}}, true, nil
-		}
-	}
-
-	selectedImages := selectedAgentImageNodeIDs(canvasContext)
-	if videoIntent {
-		imageNodeID := ""
-		if len(selectedImages) > 0 {
-			imageNodeID = selectedImages[0]
-		}
-		generated := successfulAgentToolSteps(toolSteps, "video.generate")
-		inspected := successfulAgentToolSteps(toolSteps, "video.inspect")
-		if len(inspected) > 0 {
-			if len(generated) == 0 {
-				return agentCompletion{}, true, errors.New("agent video generation result missing")
+		switch strings.Trim(message.Content, " \t\r\n?？。") {
+		case "多少节点", "多少个节点", "几个节点", "节点数量", "画布有多少个节点", "当前画布有多少个节点":
+			var canvas AgentCanvasContext
+			if json.Unmarshal([]byte(run.Context), &canvas) == nil {
+				return fmt.Sprintf("当前画布有 %d 个节点。", len(canvas.Nodes)), true
 			}
-			inspection, err := agentStepInspection(inspected[len(inspected)-1])
-			if err != nil {
-				return agentCompletion{}, true, err
-			}
-			if inspection.Status == "needs_revision" && canvasContext.Autonomy == agentAutonomyAutonomous && len(generated) < 2 && inspection.RevisedPrompt != "" {
-				previous, err := agentStepVideoArguments(generated[len(generated)-1])
-				if err != nil {
-					return agentCompletion{}, true, err
-				}
-						return deterministicAgentToolCompletionWithAuthorization(toolSteps, "video.generate", previous, "视频已根据视觉验收结果调整并重新生成。", authorization)
-			}
-			if inspection.Status == "passed" {
-				return agentCompletion{Content: "视频已生成，视觉验收通过：" + inspection.Summary}, true, nil
-			}
-			if inspection.Status == "unavailable" {
-				return agentCompletion{Content: "视频已生成；视觉验收暂不可用：" + inspection.Summary}, true, nil
-			}
-			return agentCompletion{Content: "视频已生成，但视觉验收仍发现问题：" + inspection.Summary}, true, nil
 		}
-		return deterministicAgentToolCompletionWithAuthorization(toolSteps, "video.generate", videoGenerateArguments{Prompt: agentVideoExecutionPrompt(content), Duration: 6, ImageNodeID: imageNodeID, ImageNodeIDs: selectedImages}, "视频已生成并添加到画布。", authorization)
 	}
-	if len(selectedImages) > 6 {
-		selectedImages = selectedImages[:6]
-	}
-	generated := successfulAgentToolSteps(toolSteps, "image.generate")
-	inspected := successfulAgentToolSteps(toolSteps, "image.inspect")
-	if len(inspected) > 0 {
-		inspection, err := agentStepInspection(inspected[len(inspected)-1])
-		if err != nil {
-			return agentCompletion{}, true, err
-		}
-		if inspection.Status == "needs_revision" && canvasContext.Autonomy == agentAutonomyAutonomous && len(generated) < 2 && inspection.RevisedPrompt != "" {
-			return deterministicAgentToolCompletionWithAuthorization(toolSteps, "image.generate", imageGenerateArguments{Prompt: inspection.RevisedPrompt, Count: 1, ReferenceNodeIDs: selectedImages}, "图片已根据视觉验收结果调整并重新生成。", authorization)
-		}
-		if inspection.Status == "passed" {
-			return agentCompletion{Content: "图片已生成，视觉验收通过：" + inspection.Summary}, true, nil
-		}
-		if inspection.Status == "unavailable" {
-			return agentCompletion{Content: "图片已生成；视觉验收暂不可用：" + inspection.Summary}, true, nil
-		}
-		return agentCompletion{Content: "图片已生成，但视觉验收仍发现问题：" + inspection.Summary}, true, nil
-	}
-	return deterministicAgentToolCompletionWithAuthorization(toolSteps, "image.generate", imageGenerateArguments{Prompt: agentImageExecutionPrompt(content), Count: 1, ReferenceNodeIDs: selectedImages}, "图片已生成并添加到画布。", authorization)
-}
-
-func deterministicAgentToolCompletion(run model.AgentRun, steps []model.AgentStep, name string, input any, completedText string) (agentCompletion, bool, error) {
-	authorization, err := agentRunNodeAuthorization(run)
-	if err != nil {
-		return agentCompletion{}, true, err
-	}
-	return deterministicAgentToolCompletionWithAuthorization(steps, name, input, completedText, authorization)
+	return "", false
 }
 
 func deterministicAgentToolCompletionWithAuthorization(steps []model.AgentStep, name string, input any, completedText string, authorization agentNodeAuthorization) (agentCompletion, bool, error) {
@@ -1495,121 +1316,6 @@ func normalizeDeterministicAgentToolArguments(name string, input any, authorizat
 	return decodeAgentToolArguments(name, string(raw), authorization)
 }
 
-func parseExplicitAddTextRequest(content string) (string, string, bool) {
-	if !strings.Contains(strings.ToLower(content), "canvas.add_text") {
-		return "", "", false
-	}
-	match := regexp.MustCompile(`(?i)(?:参数\s*)?text\s*(?:为|是|=|:|：)\s*[“"']([^”"']+)[”"']`).FindStringSubmatch(content)
-	if len(match) < 2 {
-		match = regexp.MustCompile(`(?i)(?:参数\s*)?text\s*(?:为|是|=|:|：)\s*([^,，;；\n]+)`).FindStringSubmatch(content)
-	}
-	if len(match) < 2 || strings.TrimSpace(match[1]) == "" {
-		return "", "", false
-	}
-	placement := "center"
-	if placementMatch := regexp.MustCompile(`(?i)placement\s*(?:为|是|=|:|：)\s*(center|right_of_selection|below_selection|viewport)`).FindStringSubmatch(content); len(placementMatch) > 1 {
-		placement = strings.ToLower(placementMatch[1])
-	}
-	return strings.TrimSpace(match[1]), placement, true
-}
-
-func parseExplicitAddConfigRequest(content string, canvas AgentCanvasContext) ([]string, string, bool) {
-	if !containsAgentPhrase(content, "添加配置", "加个配置", "加一个配置", "加上配置", "加配置", "配置节点") {
-		return nil, "", false
-	}
-	if containsAgentPhrase(content, "删除配置", "去掉配置", "删掉配置", "然后生成", "再生成", "并生成", "同时生成", "然后生图", "再生图", "排列", "整理画布", "删除节点", "修改文字") {
-		return nil, "", false
-	}
-	lower := strings.ToLower(content)
-	mediaNegated := containsAgentPhrase(lower, "不要生成媒体", "不要生成图片", "不要生图", "别生成图片", "无需生成图片", "不要生成视频", "别生成视频", "无需生成视频")
-	imageIntent, videoIntent := agentMediaIntent(lower, mediaNegated)
-	if imageIntent || videoIntent {
-		return nil, "", false
-	}
-	sources := agentConfigSourceNodeIDs(canvas, content)
-	if len(sources) == 0 {
-		return nil, "", false
-	}
-	placement := "right_of_selection"
-	if containsAgentPhrase(content, "下方", "下面") {
-		placement = "below_selection"
-	} else if containsAgentPhrase(content, "视口") && !containsAgentPhrase(content, "视口最", "视口里", "视口中") {
-		placement = "viewport"
-	}
-	return sources, placement, true
-}
-
-func agentConfigSourceNodeIDs(canvas AgentCanvasContext, content string) []string {
-	allowed := make(map[string]AgentCanvasNode, len(canvas.Nodes))
-	for _, node := range canvas.Nodes {
-		if node.Type != "" && node.Type != "config" {
-			allowed[node.ID] = node
-		}
-	}
-	picked := make([]string, 0, 4)
-	seen := make(map[string]struct{}, 4)
-	add := func(id string) {
-		if _, ok := allowed[id]; !ok {
-			return
-		}
-		if _, exists := seen[id]; exists {
-			return
-		}
-		seen[id] = struct{}{}
-		picked = append(picked, id)
-	}
-	for _, id := range canvas.SelectedNodeIDs {
-		add(id)
-	}
-	if len(picked) > 0 {
-		return picked
-	}
-	for _, id := range canvas.FocusNodeIDs {
-		add(id)
-	}
-	if len(picked) > 0 {
-		return picked
-	}
-	candidates := make([]AgentCanvasNode, 0, len(allowed))
-	for _, id := range canvas.VisibleNodeIDs {
-		if node, ok := allowed[id]; ok {
-			candidates = append(candidates, node)
-		}
-	}
-	if len(candidates) == 0 {
-		for _, node := range canvas.Nodes {
-			if _, ok := allowed[node.ID]; ok {
-				candidates = append(candidates, node)
-			}
-		}
-	}
-	if len(candidates) == 1 {
-		return []string{candidates[0].ID}
-	}
-	if len(candidates) == 0 {
-		return nil
-	}
-	if containsAgentPhrase(content, "最左", "左边那", "左侧那", "最左边") {
-		left := candidates[0]
-		for _, node := range candidates[1:] {
-			if node.X < left.X {
-				left = node
-			}
-		}
-		return []string{left.ID}
-	}
-	if containsAgentPhrase(content, "最右", "右边那", "右侧那", "最右边") {
-		right := candidates[0]
-		for _, node := range candidates[1:] {
-			if node.X > right.X {
-				right = node
-			}
-		}
-		return []string{right.ID}
-	}
-	return nil
-}
-
 func sanitizeAgentUserFacingText(content string) string {
 	content = strings.TrimSpace(content)
 	if content == "" {
@@ -1620,31 +1326,6 @@ func sanitizeAgentUserFacingText(content string) string {
 	content = agentUserFacingNodeIDPattern.ReplaceAllString(content, "")
 	content = agentEmptyParenPattern.ReplaceAllString(content, "")
 	return strings.TrimSpace(agentMultiSpacePattern.ReplaceAllString(content, " "))
-}
-
-func selectedAgentImageNodeIDs(canvasContext AgentCanvasContext) []string {
-	images := make(map[string]struct{})
-	for _, node := range canvasContext.Nodes {
-		if node.Type == "image" {
-			images[node.ID] = struct{}{}
-		}
-	}
-	result := make([]string, 0, len(canvasContext.SelectedNodeIDs))
-	for _, id := range canvasContext.SelectedNodeIDs {
-		if _, valid := images[id]; valid {
-			result = append(result, id)
-		}
-	}
-	return result
-}
-
-func containsAgentPhrase(content string, phrases ...string) bool {
-	for _, phrase := range phrases {
-		if strings.Contains(content, phrase) {
-			return true
-		}
-	}
-	return false
 }
 
 type agentRememberArguments struct {
@@ -1666,33 +1347,6 @@ type AgentToolMemory struct {
 	Key    string `json:"key"`
 	Status string `json:"status"`
 	Scope  string `json:"scope"`
-}
-
-func agentMediaRequestNeedsClarification(content string) bool {
-	detail := strings.NewReplacer(
-		"我想要", "", "想要", "", "帮我", "", "请", "", "给我", "", "策划", "", "规划", "", "计划", "", "生成", "", "制作", "", "做", "", "生图", "",
-		"商品主图", "", "电商主图", "", "场景图", "", "短视频", "", "视频", "", "海报", "", "图片", "", "图", "",
-		"一张", "", "一个", "", "一下", "", "并", "",
-	).Replace(strings.ToLower(strings.TrimSpace(content)))
-	return strings.Trim(detail, " \t\r\n,，.。!！?？:：;；") == ""
-}
-
-func agentMediaIntent(content string, negated bool) (bool, bool) {
-	mediaAction := containsAgentPhrase(content, "生成", "制作", "做一张", "画一张")
-	video := !negated && (containsAgentPhrase(content, "生成视频", "生成短视频", "制作视频", "制作短视频", "我要视频", "我要的是视频", "要的是视频", "做成视频") || (mediaAction && containsAgentPhrase(content, "视频", "短片")))
-	image := !negated && !video && (containsAgentPhrase(content, "生成图片", "生成一张图", "生成一张图片", "生图", "商品主图", "电商主图", "场景图", "海报") || (mediaAction && containsAgentPhrase(content, "图片", "图像", "照片")))
-	return image, video
-}
-
-func simpleAgentMediaCommand(content string) bool {
-	content = strings.TrimSpace(content)
-	if content == "" || strings.ContainsAny(content, "；;\n") {
-		return false
-	}
-	if strings.HasPrefix(content, "先") || containsAgentPhrase(content, "，先", ",先", "然后", "接着", "随后", "再把", "并且", "同时") {
-		return false
-	}
-	return !containsAgentPhrase(content, "分析画布", "分析图片", "比较图片", "对比图片", "排列节点", "整理画布", "添加文本", "添加文案", "添加配置", "配置节点", "连接节点", "连线", "删除节点", "修改文字", "更新文字", "记住这个", "忘记这个")
 }
 
 func agentImageExecutionPrompt(content string) string {
@@ -1856,30 +1510,12 @@ func agentMediaRevisionLimitMessage(tool string) string {
 	return "图片视觉验收仍有问题，当前自主策略不再继续生成。"
 }
 
-func successfulAgentToolSteps(steps []model.AgentStep, name string) []model.AgentStep {
-	result := make([]model.AgentStep, 0)
-	for _, step := range steps {
-		if step.Status == model.AgentStepStatusCompleted && step.ToolName == name {
-			result = append(result, step)
-		}
-	}
-	return result
-}
-
 func agentStepInspection(step model.AgentStep) (AgentToolInspection, error) {
 	var result SubmitAgentToolResultRequest
 	if json.Unmarshal([]byte(step.Output), &result) != nil || result.Status != "success" || result.Inspection == nil {
 		return AgentToolInspection{}, errors.New("agent media inspection invalid")
 	}
 	return *result.Inspection, nil
-}
-
-func agentStepVideoArguments(step model.AgentStep) (videoGenerateArguments, error) {
-	var result videoGenerateArguments
-	if json.Unmarshal([]byte(step.Input), &result) != nil || result.Prompt == "" || result.Duration < 1 {
-		return videoGenerateArguments{}, errors.New("agent video arguments invalid")
-	}
-	return result, nil
 }
 
 func agentRunAutonomy(run model.AgentRun) string {
@@ -1912,9 +1548,9 @@ func agentAutonomyPrompt(autonomy string) string {
 	case agentAutonomyCautious:
 		return "本轮自主等级为谨慎：仍要优先从上下文推断；只有会显著改变结果且无法可靠推断的信息才使用 agent.ask_user。"
 	case agentAutonomyAutonomous:
-		return "本轮自主等级为自主：风格、构图、数量和时长等可安全默认的信息直接补全并执行；画布语法成功后立刻结束，不要复述节点 id。非破坏性工具失败时可以修改参数重试一次，禁止原参数重放；重试仍失败则说明阻塞。删除、覆盖文本、记忆写入和遗忘仍不得绕过确认。"
+		return "本轮自主等级为自主：仅对用户未指定的风格、构图、数量和时长采用默认值；整项用户任务完成后结束，不要复述节点 id。媒体验收需要修订时按建议调整一次，保留用户指定数量、时长和参考媒体。非破坏性工具失败时可以修改参数重试一次，禁止原参数重放；重试仍失败则说明阻塞。删除、覆盖文本、记忆写入和遗忘仍不得绕过确认。"
 	default:
-		return "本轮自主等级为标准：风格、构图、数量和时长等可安全默认的信息直接补全并执行，不要为这些信息提问；默认单张图片、6 秒视频。画布语法成功后立刻结束，不要写关键假设或节点 id。只有没有可执行主体或目标、约束冲突、或必须目标无法唯一确定时才询问。"
+		return "本轮自主等级为标准：仅对用户未指定的风格、构图、数量和时长采用默认值，不要为这些信息提问；未指定时默认单张图片、6 秒视频。整项用户任务完成后结束，不要写关键假设或节点 id。只有没有可执行主体或目标、约束冲突、或必须目标无法唯一确定时才询问。"
 	}
 }
 
@@ -2296,152 +1932,6 @@ func agentRunNodeAuthorization(run model.AgentRun) (agentNodeAuthorization, erro
 		}
 	}
 	return authorization, nil
-}
-
-func parseAgentTextToolCall(content string) (string, string, bool) {
-	for _, line := range strings.Split(content, "\n") {
-		line = strings.TrimSpace(line)
-		if len(line) < len("TOOL_CALL ") || !strings.EqualFold(line[:len("TOOL_CALL ")], "TOOL_CALL ") {
-			continue
-		}
-		payload := strings.TrimSpace(line[len("TOOL_CALL "):])
-		var call struct {
-			Name      string          `json:"name"`
-			Action    string          `json:"action"`
-			Tool      string          `json:"tool"`
-			Arguments json.RawMessage `json:"arguments"`
-		}
-		if json.Unmarshal([]byte(payload), &call) != nil {
-			continue
-		}
-		if call.Name == "" {
-			call.Name = call.Action
-		}
-		if call.Name == "" {
-			call.Name = call.Tool
-		}
-		if call.Name == "" {
-			continue
-		}
-		if len(call.Arguments) == 0 {
-			var flat map[string]json.RawMessage
-			if json.Unmarshal([]byte(payload), &flat) != nil {
-				continue
-			}
-			delete(flat, "name")
-			delete(flat, "action")
-			delete(flat, "tool")
-			call.Arguments, _ = json.Marshal(flat)
-		}
-		if len(call.Arguments) == 0 {
-			continue
-		}
-		return call.Name, string(call.Arguments), true
-	}
-	return "", "", false
-}
-
-func parseAgentNaturalLanguageToolCall(content string) (string, string, bool) {
-	callPattern := regexp.MustCompile(`(?i)\b(?:tool\s+)?call\s+((?:canvas|image|video)\.[a-z_]+)\s+with\s+(.*)`)
-	quotedPattern := regexp.MustCompile(`"([^"]*)"|'([^']*)'`)
-	for _, line := range strings.Split(content, "\n") {
-		line = strings.TrimSpace(line)
-		match := callPattern.FindStringSubmatch(line)
-		if len(match) < 3 {
-			continue
-		}
-		name := strings.ToLower(strings.TrimSpace(match[1]))
-		rest := match[2]
-		switch name {
-		case "canvas.plan":
-			summaryMatch := regexp.MustCompile(`(?i)summary\s+is\s+(.+?)(?:,\s*steps\s+is\s+|$)`).FindStringSubmatch(rest)
-			stepsMatch := regexp.MustCompile(`(?i)steps\s+is\s+(\[[^\]]*\])`).FindStringSubmatch(rest)
-			if len(summaryMatch) < 2 || len(stepsMatch) < 2 {
-				continue
-			}
-			var steps []string
-			if json.Unmarshal([]byte(stepsMatch[1]), &steps) != nil {
-				continue
-			}
-			raw, _ := json.Marshal(map[string]any{"summary": strings.Trim(strings.TrimSpace(summaryMatch[1]), `"'`), "steps": steps})
-			return name, string(raw), true
-		case "image.generate":
-			promptMatch := regexp.MustCompile(`(?i)prompt\s+is\s+(.+)`).FindStringSubmatch(rest)
-			if len(promptMatch) < 2 {
-				continue
-			}
-			raw, _ := json.Marshal(map[string]any{"prompt": strings.Trim(strings.TrimSpace(promptMatch[1]), `"'`)})
-			return name, string(raw), true
-		case "video.generate":
-			promptMatch := regexp.MustCompile(`(?i)prompt\s+is\s+(.+)`).FindStringSubmatch(rest)
-			if len(promptMatch) < 2 {
-				continue
-			}
-			raw, _ := json.Marshal(map[string]any{"prompt": strings.Trim(strings.TrimSpace(promptMatch[1]), `"'`)})
-			return name, string(raw), true
-		case "canvas.arrange":
-			nodesMatch := regexp.MustCompile(`nodes\s+is\s+(\[[^\]]*\])`).FindStringSubmatch(rest)
-			if len(nodesMatch) < 2 {
-				continue
-			}
-			var nodeIDs []string
-			if err := json.Unmarshal([]byte(nodesMatch[1]), &nodeIDs); err != nil {
-				continue
-			}
-			modeMatch := regexp.MustCompile(`direction\s+is\s+(horizontal|vertical|grid)`).FindStringSubmatch(rest)
-			if len(modeMatch) < 2 {
-				continue
-			}
-			gap := 40
-			if gapMatch := regexp.MustCompile(`spacing\s+is\s+(\d+)`).FindStringSubmatch(rest); len(gapMatch) > 1 {
-				if value, err := strconv.Atoi(gapMatch[1]); err == nil {
-					gap = value
-				}
-			}
-			raw, _ := json.Marshal(map[string]any{"nodeIds": nodeIDs, "mode": modeMatch[1], "gap": gap})
-			return name, string(raw), true
-		case "canvas.delete":
-			nodesMatch := regexp.MustCompile(`nodes\s+is\s+(\[[^\]]*\])`).FindStringSubmatch(rest)
-			if len(nodesMatch) < 2 {
-				continue
-			}
-			var nodeIDs []string
-			if err := json.Unmarshal([]byte(nodesMatch[1]), &nodeIDs); err != nil {
-				continue
-			}
-			raw, _ := json.Marshal(map[string]any{"nodeIds": nodeIDs})
-			return name, string(raw), true
-		case "canvas.add_text":
-			textMatch := regexp.MustCompile(`text\s+is\s+(.+)`).FindStringSubmatch(rest)
-			if len(textMatch) < 2 {
-				continue
-			}
-			text := strings.TrimSpace(textMatch[1])
-			if quoted := quotedPattern.FindStringSubmatch(text); len(quoted) > 1 {
-				text = quoted[1]
-			}
-			placement := "center"
-			if placementMatch := regexp.MustCompile(`placement\s+is\s+(center|right_of_selection)`).FindStringSubmatch(rest); len(placementMatch) > 1 {
-				placement = placementMatch[1]
-			}
-			raw, _ := json.Marshal(map[string]any{"text": text, "placement": placement})
-			return name, string(raw), true
-		case "canvas.update_text":
-			nodeIDMatch := regexp.MustCompile(`nodeId\s+is\s+([^\s]+)`).FindStringSubmatch(rest)
-			textMatch := regexp.MustCompile(`text\s+is\s+(.+)`).FindStringSubmatch(rest)
-			if len(nodeIDMatch) < 2 || len(textMatch) < 2 {
-				continue
-			}
-			nodeID := strings.Trim(nodeIDMatch[1], `"'`)
-			text := strings.TrimSpace(textMatch[1])
-			if quoted := quotedPattern.FindStringSubmatch(text); len(quoted) > 1 {
-				text = quoted[1]
-			}
-			raw, _ := json.Marshal(map[string]any{"nodeId": nodeID, "text": text})
-			return name, string(raw), true
-		}
-	}
-	return "", "", false
 }
 
 func decodeAgentToolArguments(name, value string, authorization agentNodeAuthorization) (any, string, error) {
@@ -3102,14 +2592,14 @@ func sensitiveAgentMemoryKey(key string) bool {
 
 func agentToolSchemas() []any {
 	return []any{
-		map[string]any{"type": "function", "function": map[string]any{"name": "canvas_plan", "description": "当任务需要两个及以上工具时，先展示执行计划；每个步骤按顺序对应后续一个真实工具及其成功条件，失败后可提交剩余步骤的新计划", "parameters": map[string]any{"type": "object", "properties": map[string]any{"summary": map[string]any{"type": "string", "maxLength": 120}, "steps": map[string]any{"type": "array", "minItems": 2, "maxItems": 7, "items": map[string]any{"type": "string", "maxLength": 160}}}, "required": []string{"summary", "steps"}, "additionalProperties": false}}},
+		map[string]any{"type": "function", "function": map[string]any{"name": "canvas_plan", "description": "当任务需要三个及以上步骤时可先展示执行计划；一两步直接执行；每个步骤按顺序对应后续一个真实工具及其成功条件，失败后可提交剩余步骤的新计划", "parameters": map[string]any{"type": "object", "properties": map[string]any{"summary": map[string]any{"type": "string", "maxLength": 120}, "steps": map[string]any{"type": "array", "minItems": 2, "maxItems": 7, "items": map[string]any{"type": "string", "maxLength": 160}}}, "required": []string{"summary", "steps"}, "additionalProperties": false}}},
 		map[string]any{"type": "function", "function": map[string]any{"name": "image_generate", "description": "根据提示词生成一至四张图片，可通过 referenceNodeIds 引用画布中的图片节点作为参考", "parameters": map[string]any{"type": "object", "properties": map[string]any{"prompt": map[string]any{"type": "string", "maxLength": 8000}, "count": map[string]any{"type": "integer", "minimum": 1, "maximum": 4, "default": 1}, "referenceNodeIds": map[string]any{"type": "array", "maxItems": 6, "uniqueItems": true, "items": map[string]any{"type": "string"}}}, "required": []string{"prompt"}, "additionalProperties": false}}},
 		map[string]any{"type": "function", "function": map[string]any{"name": "image_edit", "description": "以画布中一个图片节点为源图进行编辑修改，生成一至四张新图片并自动连线；用户要求修改、替换、调整已有图片时优先使用，而不是重新生成", "parameters": map[string]any{"type": "object", "properties": map[string]any{"nodeId": map[string]any{"type": "string"}, "prompt": map[string]any{"type": "string", "maxLength": 8000}, "count": map[string]any{"type": "integer", "minimum": 1, "maximum": 4, "default": 1}}, "required": []string{"nodeId", "prompt"}, "additionalProperties": false}}},
 		map[string]any{"type": "function", "function": map[string]any{"name": "image_inspect", "description": "使用视觉模型对照用户目标验收一至四个图片节点；图片生成后、总结完成前必须调用", "parameters": map[string]any{"type": "object", "properties": map[string]any{"nodeIds": map[string]any{"type": "array", "minItems": 1, "maxItems": 4, "uniqueItems": true, "items": map[string]any{"type": "string"}}, "criteria": map[string]any{"type": "string", "maxLength": 2000}}, "required": []string{"nodeIds", "criteria"}, "additionalProperties": false}}},
 		map[string]any{"type": "function", "function": map[string]any{"name": "video_generate", "description": "生成一个视频；参考面与画布一致，最多 9 张图、3 个视频、3 个音频", "parameters": map[string]any{"type": "object", "properties": map[string]any{"prompt": map[string]any{"type": "string", "maxLength": 8000}, "duration": map[string]any{"type": "integer", "minimum": 1, "maximum": 20, "default": 6}, "imageNodeIds": map[string]any{"type": "array", "maxItems": 9, "uniqueItems": true, "items": map[string]any{"type": "string"}}, "videoNodeIds": map[string]any{"type": "array", "maxItems": 3, "uniqueItems": true, "items": map[string]any{"type": "string"}}, "audioNodeIds": map[string]any{"type": "array", "maxItems": 3, "uniqueItems": true, "items": map[string]any{"type": "string"}}, "imageNodeId": map[string]any{"type": "string"}}, "required": []string{"prompt"}, "additionalProperties": false}}},
 		map[string]any{"type": "function", "function": map[string]any{"name": "video_inspect", "description": "按时间顺序抽取关键帧并使用视觉模型对照用户目标验收一个视频节点；视频生成后、总结完成前必须调用", "parameters": map[string]any{"type": "object", "properties": map[string]any{"nodeId": map[string]any{"type": "string"}, "criteria": map[string]any{"type": "string", "maxLength": 2000}}, "required": []string{"nodeId", "criteria"}, "additionalProperties": false}}},
 		map[string]any{"type": "function", "function": map[string]any{"name": "canvas_arrange", "description": "重排画布中相关节点", "parameters": map[string]any{"type": "object", "properties": map[string]any{"nodeIds": map[string]any{"type": "array", "minItems": 2, "maxItems": 20, "uniqueItems": true, "items": map[string]any{"type": "string"}}, "mode": map[string]any{"type": "string", "enum": []string{"horizontal", "vertical", "grid"}}, "gap": map[string]any{"type": "integer", "minimum": 16, "maximum": 400, "default": 40}}, "required": []string{"nodeIds", "mode"}, "additionalProperties": false}}},
-		map[string]any{"type": "function", "function": map[string]any{"name": "canvas_add_text", "description": "在画布中插入文本节点，并可用连线关联来源；落位优先选区右侧、下方或当前视口", "parameters": map[string]any{"type": "object", "properties": map[string]any{"text": map[string]any{"type": "string", "maxLength": 4000}, "placement": map[string]any{"type": "string", "enum": []string{"center", "right_of_selection", "below_selection", "viewport"}, "default": "right_of_selection"}, "sourceNodeIds": map[string]any{"type": "array", "maxItems": 20, "uniqueItems": true, "items": map[string]any{"type": "string"}}}, "required": []string{"text"}, "additionalProperties": false}}},
+		map[string]any{"type": "function", "function": map[string]any{"name": "canvas_add_text", "description": "仅当用户明确要求把文案、注释或其他文字放到画布上时插入文本节点，并可用连线关联来源；不得用来承载用户消息、助手回复、总结、问候或闲聊；落位优先选区右侧、下方或当前视口", "parameters": map[string]any{"type": "object", "properties": map[string]any{"text": map[string]any{"type": "string", "maxLength": 4000}, "placement": map[string]any{"type": "string", "enum": []string{"center", "right_of_selection", "below_selection", "viewport"}, "default": "right_of_selection"}, "sourceNodeIds": map[string]any{"type": "array", "maxItems": 20, "uniqueItems": true, "items": map[string]any{"type": "string"}}}, "required": []string{"text"}, "additionalProperties": false}}},
 		map[string]any{"type": "function", "function": map[string]any{"name": "canvas_add_config", "description": "按画布语法创建生成配置节点，并用 sourceNodeIds 作为上游输入；后续出图/出视频应连到该配置", "parameters": map[string]any{"type": "object", "properties": map[string]any{"placement": map[string]any{"type": "string", "enum": []string{"center", "right_of_selection", "below_selection", "viewport"}, "default": "right_of_selection"}, "sourceNodeIds": map[string]any{"type": "array", "maxItems": 20, "uniqueItems": true, "items": map[string]any{"type": "string"}}}, "required": []string{}, "additionalProperties": false}}},
 		map[string]any{"type": "function", "function": map[string]any{"name": "canvas_connect", "description": "在两个已有节点之间建立来源连线；配置节点不能互连", "parameters": map[string]any{"type": "object", "properties": map[string]any{"fromNodeId": map[string]any{"type": "string"}, "toNodeId": map[string]any{"type": "string"}}, "required": []string{"fromNodeId", "toNodeId"}, "additionalProperties": false}}},
 		map[string]any{"type": "function", "function": map[string]any{"name": "canvas_delete", "description": "删除本轮授权的画布节点，执行前需要用户确认", "parameters": map[string]any{"type": "object", "properties": map[string]any{"nodeIds": map[string]any{"type": "array", "minItems": 1, "maxItems": 20, "uniqueItems": true, "items": map[string]any{"type": "string"}}}, "required": []string{"nodeIds"}, "additionalProperties": false}}},
@@ -3192,18 +2682,28 @@ func normalizeAuthorizedNodeIDs(values []string, authorized map[string]struct{},
 	return result, nil
 }
 
-func attachAgentPlanningPreviews(messages []agentChatMessage, organizationID, rawContext string) []agentChatMessage {
-	parts := agentPlanningPreviewParts(organizationID, rawContext)
-	if len(parts) == 0 {
-		return messages
+func agentNeedsPlanningPreviews(content string) bool {
+	// Only unambiguous small talk skips previews; visual follow-ups may omit node names.
+	switch strings.ToLower(strings.Trim(content, " \t\r\n?？!！。")) {
+	case "在吗", "你好", "您好", "谢谢", "hi", "hello", "介绍一下你能做什么", "你能做什么", "你是谁":
+		return false
 	}
+	return true
+}
+
+func attachAgentPlanningPreviews(messages []agentChatMessage, organizationID, rawContext string) []agentChatMessage {
 	for i := len(messages) - 1; i >= 0; i-- {
 		if messages[i].Role != "user" {
 			continue
 		}
 		text, _ := messages[i].Content.(string)
-		content := append([]any{map[string]any{"type": "text", "text": text}}, parts...)
-		messages[i].Content = content
+		if !agentNeedsPlanningPreviews(text) {
+			return messages
+		}
+		parts := agentPlanningPreviewParts(organizationID, rawContext)
+		if len(parts) > 0 {
+			messages[i].Content = append([]any{map[string]any{"type": "text", "text": text}}, parts...)
+		}
 		break
 	}
 	return messages

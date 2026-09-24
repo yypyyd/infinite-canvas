@@ -8,15 +8,6 @@ import (
 )
 
 func TestAgentProductionEvaluationSuite(t *testing.T) {
-	t.Run("compound goals stay in planner", func(t *testing.T) {
-		if simpleAgentMediaCommand("先生成商品主图，然后添加卖点并排列") {
-			t.Fatal("compound goal bypassed planner")
-		}
-		if simpleAgentMediaCommand("生成图片并添加配置节点") || simpleAgentMediaCommand("生成视频然后连线") {
-			t.Fatal("canvas grammar command bypassed planner")
-		}
-	})
-
 	t.Run("tool registry keeps safety policy", func(t *testing.T) {
 		for _, name := range []string{"canvas.delete", "canvas.update_text", "agent.remember", "agent.forget"} {
 			if !agentToolRequiresConfirmation(name) {

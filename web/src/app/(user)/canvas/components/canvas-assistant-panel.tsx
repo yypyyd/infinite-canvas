@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { ArrowUp, Bot, Check, History, Lightbulb, ListTree, LoaderCircle, LocateFixed, MessageCircleQuestion, PanelRightClose, Plus, RotateCcw, Settings2, Sparkles, ThumbsDown, ThumbsUp, Trash2, Undo2, Video, X } from "lucide-react";
-import { Button, Input, InputNumber, Modal, Switch, Tooltip } from "antd";
+import { ArrowUp, Bot, Check, History, Lightbulb, ListTree, LoaderCircle, LocateFixed, MessageCircleQuestion, PanelRightClose, Plus, RotateCcw, Settings2, Sparkles, Square, ThumbsDown, ThumbsUp, Trash2, Undo2, Video, X } from "lucide-react";
+import { Button, Input, InputNumber, Modal, Tooltip } from "antd";
 import { motion } from "motion/react";
 
 import { flushActiveWorkspaceChanges } from "@/components/layout/workspace-provider";
@@ -159,7 +159,8 @@ export function CanvasAssistantPanel({
     const [width, setWidth] = useState(390);
     const [view, setView] = useState<"chat" | "history">("chat");
     const [prompt, setPrompt] = useState("");
-    const [isRunning, setIsRunning] = useState(false);
+    const [isStarting, setIsStarting] = useState(false);
+    const [isStopping, setIsStopping] = useState(false);
     const [checkedChatIds, setCheckedChatIds] = useState<string[]>([]);
     const [deleteChatIds, setDeleteChatIds] = useState<string[]>([]);
     const [replayMessage, setReplayMessage] = useState<CanvasAssistantMessage | null>(null);
@@ -170,9 +171,7 @@ export function CanvasAssistantPanel({
     const [agentSettings, setAgentSettings] = useState<AgentSettingsPreference | null>(() => getAgentSettingsPreference());
     const [agentAutonomy, setAgentAutonomy] = useState<AgentAutonomy>(() => getAgentSettingsPreference()?.autonomy || "standard");
     const [agentBudget, setAgentBudget] = useState(() => agentBudgetFromSettings(getAgentSettingsPreference()));
-    const [agentExecutionConsent, setAgentExecutionConsent] = useState(true);
     const [agentSettingsOpen, setAgentSettingsOpen] = useState(false);
-    const [pendingAgentPrompt, setPendingAgentPrompt] = useState<string | null>(null);
     const [runDiagnostics, setRunDiagnostics] = useState<AgentRunDiagnostics | null>(null);
     const [diagnosticsRunId, setDiagnosticsRunId] = useState<string | null>(null);
     const [diagnosticsError, setDiagnosticsError] = useState("");
@@ -201,6 +200,9 @@ export function CanvasAssistantPanel({
     const visibleNodeIdsRef = useRef(visibleNodeIds);
     const previousMentionReferencesRef = useRef<CanvasResourceReference[]>([]);
     const composerInputRef = useRef<HTMLTextAreaElement>(null);
+    const messageListRef = useRef<HTMLDivElement>(null);
+    const followMessagesRef = useRef(true);
+    const pendingAnswers = useRef(new Set<string>());
 
     const replaceLocalSessions = useCallback(
         (nextSessions: CanvasAssistantSession[], nextActiveId: string | null) => {
@@ -281,6 +283,19 @@ export function CanvasAssistantPanel({
     const activeSession = useMemo(() => safeSessions.find((session) => session.id === localActiveSessionId) || safeSessions[0] || null, [localActiveSessionId, safeSessions]);
     const historySessions = safeSessions.filter((session) => session.messages.length > 0);
     const messages = activeSession?.messages || [];
+    const pendingQuestionMessage = messages.findLast((message) => message.stages?.some((stage) => stage.ask && ["pending", "answering", "failed"].includes(stage.ask.status)));
+    const pendingQuestion = pendingQuestionMessage?.stages?.find((stage) => stage.ask && ["pending", "answering", "failed"].includes(stage.ask.status));
+    const isRunning = messages.some(assistantMessageIsActive);
+    const canAnswer = Boolean(pendingQuestion?.ask && pendingQuestion.ask.status !== "answering");
+
+    useEffect(() => {
+        followMessagesRef.current = true;
+    }, [localActiveSessionId, view]);
+
+    useEffect(() => {
+        const list = messageListRef.current;
+        if (list && view === "chat" && !collapsed && followMessagesRef.current) list.scrollTop = list.scrollHeight;
+    }, [messages, view, collapsed]);
     const hasMessages = messages.length > 0;
     const selectedNodeKey = useMemo(() => Array.from(selectedNodeIds).sort().join(","), [selectedNodeIds]);
     const allSelectedReferences = useMemo(() => buildAssistantReferences(nodes, selectedNodeIds), [nodes, selectedNodeIds]);
@@ -383,35 +398,32 @@ export function CanvasAssistantPanel({
         [updateSession],
     );
 
-    const refreshRunningState = useCallback(() => {
-        setIsRunning(inFlightRuns.current.size > 0 || activeImageRequests.current.size > 0);
-    }, []);
-
-    const interruptActiveOperation = useCallback(
-        async (sessionId: string) => {
+    const stopActiveOperation = async () => {
+        if (!activeSession || isStopping || isStarting) return;
+        const sessionId = activeSession.id;
+        const current = localSessionsRef.current.find((session) => session.id === sessionId)?.messages.findLast(assistantMessageIsActive);
+        if (!current) return;
+        setIsStopping(true);
+        try {
             const imageRequest = activeImageRequests.current.get(sessionId);
             if (imageRequest) {
                 interruptedOperations.current.add(imageRequest.assistantMessageId);
                 imageRequest.controller.abort();
-                updateMessage(sessionId, imageRequest.assistantMessageId, { text: "已被新消息打断", isLoading: false });
             }
-
-            const activeRun = activeRuns.current.get(sessionId);
-            if (!activeRun) return true;
-            try {
-                const run = await cancelAgentRun(activeRun.runId);
-                if (run.status !== "cancelled") return true;
-                interruptedOperations.current.add(activeRun.runId);
-                activeToolRequests.current.get(activeRun.runId)?.forEach((controller) => controller.abort());
-                updateMessage(sessionId, activeRun.assistantMessageId, { text: "已被新消息打断", confirmation: undefined, isLoading: false });
-                return true;
-            } catch {
-                updateMessage(sessionId, activeRun.assistantMessageId, { text: "打断失败，当前任务仍在继续", isLoading: true });
-                return false;
+            if (current.runId) {
+                const run = await cancelAgentRun(current.runId);
+                if (run.status !== "cancelled") return;
+                interruptedOperations.current.add(current.runId);
+                activeToolRequests.current.get(current.runId)?.forEach((controller) => controller.abort());
+                onSettleGeneration(current.runId, undefined, "cancelled");
             }
-        },
-        [updateMessage],
-    );
+            updateMessageWith(sessionId, current.id, (message) => ({ ...message, text: "已停止", stages: failPendingAssistantStages(message.stages || []), confirmation: undefined, isLoading: false }));
+        } catch {
+            updateMessage(sessionId, current.id, { text: "停止失败，请重试；当前任务仍保留" });
+        } finally {
+            setIsStopping(false);
+        }
+    };
 
     const persistMessagePatch = useCallback(
         (sessionId: string, messageId: string, patch: Partial<CanvasAssistantMessage>, activeId: string | null) => {
@@ -466,7 +478,6 @@ export function CanvasAssistantPanel({
             activeRunStreams.current.set(runId, streamController);
             activeRuns.current.set(sessionId, { runId, assistantMessageId });
             checkedRecoveryRuns.current.add(runId);
-            refreshRunningState();
             const followStream = async (): Promise<void> => {
                 if (streamController.signal.aborted) return;
                 let streamError: unknown;
@@ -492,13 +503,13 @@ export function CanvasAssistantPanel({
                             }
                             if (event.type === "run.failed") {
                                 onSettleGeneration(runId, undefined, "failed", event.data.error || "助手请求失败");
-                                advanceStages(failPendingAssistantStages, { text: event.data.error || "助手请求失败", isLoading: false });
+                                advanceStages(failPendingAssistantStages, { text: event.data.error || "助手请求失败", confirmation: undefined, isLoading: false });
                                 return;
                             }
                             if (event.type === "run.cancelled") {
                                 const interrupted = interruptedOperations.current.delete(runId);
                                 onSettleGeneration(runId, undefined, "cancelled");
-                                advanceStages(failPendingAssistantStages, { text: event.data.reason === "tool_reverted" ? "画布操作已撤销" : interrupted ? "已被新消息打断" : "已取消", confirmation: undefined, isLoading: false });
+                                advanceStages(failPendingAssistantStages, { text: event.data.reason === "tool_reverted" ? "画布操作已撤销" : interrupted ? "已停止" : "已取消", confirmation: undefined, isLoading: false });
                                 return;
                             }
                             if (event.type === "tool.reverted") {
@@ -783,7 +794,7 @@ export function CanvasAssistantPanel({
                                 if (interruptedOperations.current.has(runId)) {
                                     onSettleGeneration(runId, callId, "cancelled");
                                     handledToolCalls.current.delete(toolKey);
-                                    advanceEvent({ text: "已被新消息打断", isLoading: false });
+                                    advanceEvent({ text: "已停止", isLoading: false });
                                     return;
                                 }
                                 const appliedResult = onRestoreToolResult(runId, callId);
@@ -850,7 +861,6 @@ export function CanvasAssistantPanel({
                 revertedOperations.current.delete(runId);
                 if (activeRuns.current.get(sessionId)?.runId === runId) activeRuns.current.delete(sessionId);
                 activeToolRequests.current.delete(runId);
-                refreshRunningState();
             }
         },
         [
@@ -871,7 +881,6 @@ export function CanvasAssistantPanel({
             onSettleGeneration,
             onStartGeneration,
             projectId,
-            refreshRunningState,
             updateMessageWith,
         ],
     );
@@ -924,7 +933,7 @@ export function CanvasAssistantPanel({
             await onRevertRun(diagnosticsRunId);
             const session = localSessionsRef.current.find((item) => item.messages.some((message) => message.runId === diagnosticsRunId));
             const assistantMessage = session?.messages.find((message) => message.runId === diagnosticsRunId);
-            if (session && assistantMessage) updateMessage(session.id, assistantMessage.id, { text: "本轮画布操作已撤销", confirmation: undefined, isLoading: false });
+            if (session && assistantMessage) updateMessageWith(session.id, assistantMessage.id, (message) => ({ ...message, text: "本轮画布操作已撤销", stages: failPendingAssistantStages(message.stages || []), confirmation: undefined, isLoading: false }));
             setRevertRunConfirmOpen(false);
             setDiagnosticsRunId(null);
         } catch (error) {
@@ -933,7 +942,7 @@ export function CanvasAssistantPanel({
         } finally {
             setRevertingRun(false);
         }
-    }, [diagnosticsRunId, onRevertRun, updateMessage]);
+    }, [diagnosticsRunId, onRevertRun, updateMessageWith]);
 
     const recordMessageFeedback = useCallback(
         async (message: CanvasAssistantMessage, signal: "accepted" | "unhelpful") => {
@@ -961,6 +970,8 @@ export function CanvasAssistantPanel({
                         const recoveryAfter = run.status === "completed" || run.status === "failed" || run.status === "cancelled" ? message.lastEventSequence || 0 : Math.max(0, (message.lastEventSequence || 0) - 1);
                         if (run.status === "waiting_tool" || run.status === "waiting_confirmation" || run.status === "running") {
                             updateMessage(session.id, message.id, { isLoading: true });
+                        } else if (run.status === "failed" || run.status === "cancelled") {
+                            updateMessageWith(session.id, message.id, (current) => ({ ...current, stages: failPendingAssistantStages(current.stages || []), confirmation: undefined, isLoading: false }));
                         }
                         void followAgentRun(runId, session.id, message.id, userMessage?.references || [], userMessage?.authorizedNodeIds || userMessage?.references?.map((item) => item.id) || [], recoveryAfter).catch((error) => {
                             checkedRecoveryRuns.current.delete(runId);
@@ -972,19 +983,17 @@ export function CanvasAssistantPanel({
                     });
             });
         }
-    }, [followAgentRun, localSessions, updateMessage]);
+    }, [followAgentRun, localSessions, updateMessage, updateMessageWith]);
 
     const sendMessage = async (text: string, nextMode: AssistantMode, savedReferences?: CanvasAssistantReference[]) => {
         const activeModel = nextMode === "image" ? effectiveConfig.imageModel || effectiveConfig.model : effectiveConfig.textModel || effectiveConfig.model;
-        const preliminaryReferences = savedReferences || selectedReferences;
-        const directCommand = nextMode === "ask" ? tryDirectCanvasCommand(text, nodes, new Set(preliminaryReferences.map((item) => item.id))) : null;
         const requestConfig = {
             ...effectiveConfig,
             count: nextMode === "image" ? effectiveConfig.canvasImageCount || effectiveConfig.count : effectiveConfig.count,
             model: activeModel,
             quality: nextMode === "image" && !supportsImageQuality(activeModel) ? "auto" : effectiveConfig.quality,
         };
-        if (!directCommand && !isAiConfigReady(requestConfig, requestConfig.model)) {
+        if (!isAiConfigReady(requestConfig, requestConfig.model)) {
             openConfigDialog(true);
             return;
         }
@@ -1008,7 +1017,8 @@ export function CanvasAssistantPanel({
             stages: nextMode === "image" ? [{ kind: "image", label: "图片生成中", status: "pending" }] : undefined,
         });
         setPrompt(syncAssistantReferenceLabels("", mentionReferences, selectedReferenceIds));
-        setIsRunning(true);
+        setIsStarting(true);
+        followMessagesRef.current = true;
         let generationRecordId = "";
         let generationStartedAt = 0;
         let agentRunId = "";
@@ -1016,31 +1026,8 @@ export function CanvasAssistantPanel({
         if (imageRequestController) activeImageRequests.current.set(session.id, { assistantMessageId: assistantId, controller: imageRequestController });
 
         try {
-            if (nextMode === "ask") {
-                if (directCommand) {
-                    try {
-                        if (directCommand.kind === "arrange") {
-                            onArrangeNodes(directCommand.nodeIds, directCommand.mode, directCommand.gap);
-                        } else if (directCommand.kind === "add_text") {
-                            onInsertText(directCommand.text, "right_of_selection");
-                        }
-                        updateMessage(session.id, assistantId, {
-                            text: directCommand.message,
-                            stages:
-                                directCommand.kind === "arrange"
-                                    ? [{ kind: "arrange", label: "节点已排列", status: "done", nodeIds: directCommand.nodeIds }]
-                                    : directCommand.kind === "add_text"
-                                      ? [{ kind: "text", label: "文本已添加", status: "done" }]
-                                      : undefined,
-                            isLoading: false,
-                        });
-                    } catch (error) {
-                        updateMessage(session.id, assistantId, { text: error instanceof Error ? error.message : "画布操作失败", isLoading: false });
-                    }
-                    return;
-                }
-            }
             if (nextMode === "image") {
+                setIsStarting(false);
                 generationStartedAt = performance.now();
                 const imageCount = normalizeImageCount(requestConfig.count);
                 generationRecordId = await saveCanvasImageGenerationRecord(historyOwnerId, {
@@ -1091,12 +1078,13 @@ export function CanvasAssistantPanel({
             let agentSessionId = session.agentSessionId;
             if (!agentSessionId) {
                 agentSessionId = `agent-session-${crypto.randomUUID()}`;
+                await createAgentSession(projectId, session.title === "新对话" ? text.slice(0, 18) : session.title, agentSessionId);
                 const nextSessions = localSessionsRef.current.map((current) => (current.id === session.id ? { ...current, agentSessionId } : current));
                 replaceLocalSessions(nextSessions, localActiveSessionIdRef.current || session.id);
                 void onPersistSessions(nextSessions, localActiveSessionIdRef.current || session.id).catch(() => {});
-                await createAgentSession(projectId, session.title === "新对话" ? text.slice(0, 18) : session.title, agentSessionId);
             }
             agentRunId = `agent-run-${crypto.randomUUID()}`;
+            checkedRecoveryRuns.current.add(agentRunId);
             activeRuns.current.set(session.id, { runId: agentRunId, assistantMessageId: assistantId });
             persistMessagePatch(session.id, assistantId, { runId: agentRunId, lastEventSequence: 0 }, localActiveSessionIdRef.current || session.id);
             const settings = getAgentSettingsPreference();
@@ -1133,6 +1121,7 @@ export function CanvasAssistantPanel({
                     maxCredits: settings?.maxCredits || DEFAULT_AGENT_BUDGET.maxCredits,
                 },
             );
+            setIsStarting(false);
             await followAgentRun(
                 submission.run.id,
                 session.id,
@@ -1159,25 +1148,24 @@ export function CanvasAssistantPanel({
             const interrupted = interruptedOperations.current.delete(assistantId) || Boolean(agentRunId && interruptedOperations.current.delete(agentRunId));
             updateMessageWith(session.id, assistantId, (message) => ({
                 ...message,
-                text: interrupted ? "已被新消息打断" : error instanceof Error ? error.message : "操作失败",
+                text: interrupted ? "已停止" : error instanceof Error ? error.message : "操作失败",
                 stages: failPendingAssistantStages(message.stages || []),
+                confirmation: undefined,
                 isLoading: false,
             }));
         } finally {
+            setIsStarting(false);
             if (imageRequestController && activeImageRequests.current.get(session.id)?.controller === imageRequestController) activeImageRequests.current.delete(session.id);
             if (activeRuns.current.get(session.id)?.assistantMessageId === assistantId) activeRuns.current.delete(session.id);
-            refreshRunningState();
         }
     };
 
-    const executePrompt = async (text: string) => {
-        if (isSubmittingMessage.current) return;
+    const executePrompt = async (text: string, mode: AssistantMode = "ask", references?: CanvasAssistantReference[]) => {
+        const session = localSessionsRef.current.find((item) => item.id === activeSession?.id);
+        if (isSubmittingMessage.current || session?.messages.some(assistantMessageIsActive)) return;
         isSubmittingMessage.current = true;
         try {
-            if (activeSession && !(await interruptActiveOperation(activeSession.id))) return;
-            const request = sendMessage(text, "ask");
-            isSubmittingMessage.current = false;
-            await request;
+            await sendMessage(text, mode, references);
         } finally {
             isSubmittingMessage.current = false;
         }
@@ -1185,12 +1173,13 @@ export function CanvasAssistantPanel({
 
     const submit = async () => {
         const text = prompt.trim();
-        if (!hasAssistantPromptText(text, mentionReferences) || isSubmittingMessage.current) return;
-        if (!agentSettings?.configured) {
-            setAgentExecutionConsent(true);
-            setAgentAutonomy("standard");
-            setPendingAgentPrompt(text);
-            setAgentSettingsOpen(true);
+        if (!hasAssistantPromptText(text, mentionReferences) || isStopping) return;
+        if (pendingQuestionMessage && pendingQuestion) {
+            const answered = await answerAskUser(pendingQuestionMessage, pendingQuestion, "approved", text);
+            if (answered) {
+                followMessagesRef.current = true;
+                setPrompt((current) => current.trim() === text ? "" : current);
+            }
             return;
         }
         await executePrompt(text);
@@ -1208,44 +1197,53 @@ export function CanvasAssistantPanel({
     };
 
     const decideConfirmation = useCallback(async (message: CanvasAssistantMessage, decision: "approved" | "rejected") => {
-        const confirmation = message.confirmation;
-        if (!confirmation || confirmation.status !== "pending") return;
-        updateMessage(activeSession?.id || "", message.id, { confirmation: { ...confirmation, status: "approving" } });
+        const session = localSessionsRef.current.find((session) => session.messages.some((item) => item.id === message.id));
+        const confirmation = session?.messages.find((item) => item.id === message.id)?.confirmation;
+        if (!session || !confirmation || !["pending", "failed"].includes(confirmation.status) || pendingAnswers.current.has(confirmation.callId)) return;
+        const sessionId = session.id;
+        pendingAnswers.current.add(confirmation.callId);
+        updateMessage(sessionId, message.id, { confirmation: { ...confirmation, status: "approving" } });
         try {
             if (decision === "approved" && (confirmation.name === "canvas.delete" || confirmation.name === "canvas.update_text")) {
                 const targetNodeIds = "nodeIds" in confirmation.arguments ? confirmation.arguments.nodeIds : "nodeId" in confirmation.arguments ? [confirmation.arguments.nodeId] : [];
                 if (targetNodeIds.length) onFlashAssistantNodes(targetNodeIds);
             }
             await confirmAgentTool(confirmation.runId, confirmation.callId, decision);
-            updateMessage(activeSession?.id || "", message.id, { confirmation: { ...confirmation, status: decision === "approved" ? "approved" : "rejected" } });
+            updateMessageWith(sessionId, message.id, (current) => current.confirmation?.status === "approving" ? { ...current, confirmation: { ...confirmation, status: decision === "approved" ? "approved" : "rejected" }, isLoading: true } : current);
             resumeConfirmedRun(message, confirmation.runId);
         } catch {
-            updateMessage(activeSession?.id || "", message.id, { confirmation: { ...confirmation, status: "failed" } });
+            updateMessageWith(sessionId, message.id, (current) => current.confirmation?.status === "approving" ? { ...current, confirmation: { ...confirmation, status: "failed" } } : current);
+        } finally {
+            pendingAnswers.current.delete(confirmation.callId);
         }
-    }, [activeSession?.id, onFlashAssistantNodes, updateMessage]);
+    }, [onFlashAssistantNodes, updateMessage, updateMessageWith]);
 
     const answerAskUser = useCallback(async (message: CanvasAssistantMessage, stage: CanvasAssistantStage, decision: "approved" | "rejected", answer = "") => {
-        if (!stage.ask || (stage.ask.status !== "pending" && stage.ask.status !== "failed")) return;
-        const ask = stage.ask;
-        updateMessageWith(activeSession?.id || "", message.id, (current) => ({ ...current, stages: updateAskStage(current.stages || [], ask.callId, { status: "answering" }) }));
+        const session = localSessionsRef.current.find((item) => item.messages.some((item) => item.id === message.id));
+        const ask = session?.messages.find((item) => item.id === message.id)?.stages?.find((item) => item.callId === stage.callId)?.ask;
+        if (!session || !ask || !["pending", "failed"].includes(ask.status) || pendingAnswers.current.has(ask.callId)) return false;
+        pendingAnswers.current.add(ask.callId);
+        updateMessageWith(session.id, message.id, (current) => ({ ...current, stages: updateAskStage(current.stages || [], ask.callId, { status: "answering" }) }));
         try {
             await confirmAgentTool(ask.runId, ask.callId, decision, answer.trim() || undefined);
-            updateMessageWith(activeSession?.id || "", message.id, (current) => ({
+            updateMessageWith(session.id, message.id, (current) => current.stages?.some((item) => item.callId === ask.callId && item.ask?.status === "answering") ? ({
                 ...current,
                 stages: updateAskStage(current.stages || [], ask.callId, { answer: answer.trim(), status: decision === "approved" ? "answered" : "skipped" }),
                 isLoading: true,
-            }));
+            }) : current);
             resumeConfirmedRun(message, ask.runId);
+            return true;
         } catch {
-            updateMessageWith(activeSession?.id || "", message.id, (current) => ({ ...current, stages: updateAskStage(current.stages || [], ask.callId, { status: "failed" }) }));
+            updateMessageWith(session.id, message.id, (current) => current.stages?.some((item) => item.callId === ask.callId && item.ask?.status === "answering") ? { ...current, stages: updateAskStage(current.stages || [], ask.callId, { status: "failed" }) } : current);
+            return false;
+        } finally {
+            pendingAnswers.current.delete(ask.callId);
         }
-    }, [activeSession?.id, updateMessageWith]);
+    }, [updateMessageWith]);
 
     useEffect(() => {
         const session = localSessions.find((item) => item.id === localActiveSessionId);
         const confirmMessage = session?.messages.find((item) => item.confirmation && ["pending", "approving", "failed"].includes(item.confirmation.status));
-        const askMessage = session?.messages.find((item) => item.stages?.some((stage) => stage.ask && ["pending", "answering", "failed"].includes(stage.ask.status)));
-        const askStage = askMessage?.stages?.find((stage) => stage.ask && ["pending", "answering", "failed"].includes(stage.ask.status));
         if (confirmMessage?.confirmation) {
             const confirmation = confirmMessage.confirmation;
             onCanvasOverlayChange({
@@ -1262,22 +1260,8 @@ export function CanvasAssistantPanel({
             });
             return;
         }
-        if (askMessage && askStage?.ask) {
-            onCanvasOverlayChange({
-                prompt: {
-                    kind: "ask",
-                    question: askStage.ask.question,
-                    options: askStage.ask.options,
-                    status: askStage.ask.status === "answering" || askStage.ask.status === "failed" ? askStage.ask.status : "pending",
-                    nodeIds: Array.from(selectedNodeIdsRef.current),
-                },
-                onApprove: (answer) => void answerAskUser(askMessage, askStage, "approved", answer),
-                onReject: () => void answerAskUser(askMessage, askStage, "rejected"),
-            });
-            return;
-        }
         onCanvasOverlayChange(null);
-    }, [answerAskUser, decideConfirmation, localActiveSessionId, localSessions, onCanvasOverlayChange]);
+    }, [decideConfirmation, localActiveSessionId, localSessions, onCanvasOverlayChange]);
 
     useEffect(() => () => onCanvasOverlayChange(null), [onCanvasOverlayChange]);
 
@@ -1285,7 +1269,7 @@ export function CanvasAssistantPanel({
         const index = messages.findIndex((item) => item.id === message.id);
         const userIndex = messages.slice(0, index).findLastIndex((item) => item.role === "user");
         const user = messages[userIndex];
-        if (user) void sendMessage(user.text, user.mode, user.references);
+        if (user) void executePrompt(user.text, user.mode, user.references);
     };
 
     const requestReplayMessage = (message: CanvasAssistantMessage) => {
@@ -1391,8 +1375,6 @@ export function CanvasAssistantPanel({
                                 onClick={() => {
                                     setAgentAutonomy(agentSettings?.autonomy || "standard");
                                     setAgentBudget(agentBudgetFromSettings(agentSettings));
-                                    setAgentExecutionConsent(true);
-                                    setPendingAgentPrompt(null);
                                     setAgentSettingsOpen(true);
                                 }}
                             />
@@ -1406,7 +1388,14 @@ export function CanvasAssistantPanel({
                     </div>
                 </div>
 
-                <div className="thin-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
+                <div
+                    ref={messageListRef}
+                    className="thin-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4"
+                    onScroll={(event) => {
+                        const list = event.currentTarget;
+                        followMessagesRef.current = list.scrollHeight - list.scrollTop - list.clientHeight < 80;
+                    }}
+                >
                     {view === "history" ? (
                         <AssistantHistory
                             sessions={historySessions}
@@ -1442,6 +1431,10 @@ export function CanvasAssistantPanel({
                     <AssistantComposer
                         prompt={prompt}
                         isRunning={isRunning}
+                        canAnswer={canAnswer}
+                        isStopping={isStopping}
+                        isStarting={isStarting}
+                        onStop={stopActiveOperation}
                         inputRef={composerInputRef}
                         references={selectedReferences}
                         mentionReferences={mentionReferences}
@@ -1457,34 +1450,20 @@ export function CanvasAssistantPanel({
                     title="Agent 设置"
                     open={agentSettingsOpen}
                     centered
-                    onCancel={() => {
-                        setAgentSettingsOpen(false);
-                        setPendingAgentPrompt(null);
-                    }}
+                    onCancel={() => setAgentSettingsOpen(false)}
                     footer={
                         <>
-                            <Button
-                                onClick={() => {
-                                    setAgentSettingsOpen(false);
-                                    setPendingAgentPrompt(null);
-                                }}
-                            >
-                                取消
-                            </Button>
+                            <Button onClick={() => setAgentSettingsOpen(false)}>取消</Button>
                             <Button
                                 type="primary"
-                                disabled={pendingAgentPrompt !== null && !agentExecutionConsent}
                                 onClick={() => {
-                                    const text = pendingAgentPrompt;
                                     const settings: AgentSettingsPreference = { configured: true, autonomy: agentAutonomy, ...agentBudget };
                                     setAgentSettings(settings);
                                     updateAgentSettingsPreference(settings);
                                     setAgentSettingsOpen(false);
-                                    setPendingAgentPrompt(null);
-                                    if (text) void executePrompt(text);
                                 }}
                             >
-                                {pendingAgentPrompt ? "确认并继续" : "保存"}
+                                保存
                             </Button>
                         </>
                     }
@@ -1520,15 +1499,6 @@ export function CanvasAssistantPanel({
                             <AgentBudgetField label="最长分钟" value={Math.round(agentBudget.maxDurationSec / 60)} min={1} max={30} onChange={(value) => setAgentBudget((current) => ({ ...current, maxDurationSec: value * 60 }))} />
                             <AgentBudgetField label="算力上限" value={agentBudget.maxCredits} min={1} max={10000} onChange={(value) => setAgentBudget((current) => ({ ...current, maxCredits: value }))} />
                         </div>
-                        {pendingAgentPrompt !== null ? (
-                            <div className="flex items-center justify-between gap-4 rounded-lg border p-3" style={{ borderColor: theme.node.stroke, background: theme.node.fill }}>
-                                <div className="min-w-0">
-                                    <div className="text-sm font-medium">允许自动执行非破坏性操作</div>
-                                    <div className="mt-1 text-xs leading-5 opacity-60">生成媒体、添加内容与排列节点可能消耗算力。</div>
-                                </div>
-                                <Switch checked={agentExecutionConsent} onChange={setAgentExecutionConsent} aria-label="允许 Agent 自动执行非破坏性操作" />
-                            </div>
-                        ) : null}
                     </div>
                 </Modal>
 
@@ -1678,6 +1648,10 @@ export function CanvasAssistantPanel({
 function AssistantComposer({
     prompt,
     isRunning,
+    canAnswer,
+    isStopping,
+    isStarting,
+    onStop,
     inputRef,
     references,
     mentionReferences,
@@ -1689,6 +1663,10 @@ function AssistantComposer({
 }: {
     prompt: string;
     isRunning: boolean;
+    canAnswer: boolean;
+    isStopping: boolean;
+    isStarting: boolean;
+    onStop: () => void;
     inputRef: RefObject<HTMLTextAreaElement | null>;
     references: CanvasAssistantReference[];
     mentionReferences: CanvasResourceReference[];
@@ -1721,18 +1699,20 @@ function AssistantComposer({
                         }}
                         className="thin-scrollbar h-full w-full resize-none border-0 bg-transparent px-1 py-1 text-sm leading-5 outline-none placeholder:text-neutral-400"
                         style={{ color: theme.node.text }}
-                        placeholder={references.length ? "描述目标，或输入 @ 引用其他节点" : "描述目标，输入 @ 引用画布节点"}
+                        placeholder={canAnswer ? "在这里回答上面的问题" : isRunning ? "可先写下新要求，停止或完成后发送" : references.length ? "描述目标，或输入 @ 引用其他节点" : "描述目标，输入 @ 引用画布节点"}
                     />
                 </div>
                 <div className="mt-2 flex items-center justify-between gap-2">
                     <div className="canvas-composer-tools flex min-w-0 flex-1 items-center gap-1">
                         <CanvasPromptLibrary onSelect={(text) => onPromptChange(syncAssistantReferenceLabels(text, mentionReferences, new Set(references.map((item) => item.id))))} />
                     </div>
-                    <Button type="primary" className="!h-10 !min-w-16 shrink-0 !rounded-full !px-3" disabled={!hasPromptText} onClick={() => void onSubmit()} aria-label={isRunning ? "发送并打断当前任务" : "发送"}>
-                        <span className="flex items-center gap-1.5">
-                            {isRunning ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
-                            <ArrowUp className="size-4" />
-                        </span>
+                    {isRunning ? (
+                        <Button type="text" className="!h-10 !rounded-full" icon={<Square className="size-3.5" />} loading={isStopping} disabled={isStarting} onClick={onStop} aria-label="停止当前任务">
+                            {isStarting ? "准备中" : "停止"}
+                        </Button>
+                    ) : null}
+                    <Button type="primary" className="!h-10 !min-w-16 shrink-0 !rounded-full !px-3" disabled={!hasPromptText || isStopping || (isRunning && !canAnswer)} onClick={() => void onSubmit()} aria-label={canAnswer ? "提交回答" : "发送"}>
+                        <ArrowUp className="size-4" />
                     </Button>
                 </div>
             </div>
@@ -1820,8 +1800,13 @@ function AssistantMessages({
                         {message.references?.length ? <MessageReferences message={message} /> : null}
                         {message.stages?.length ? <AssistantStages message={message} onAnswer={onAnswer} /> : message.isLoading ? <AssistantStatusCapsule label={message.mode === "image" ? "图片生成中" : "正在理解需求"} status="pending" /> : null}
                         {message.confirmation && ["pending", "approving", "failed"].includes(message.confirmation.status) ? (
-                            <div className="text-xs" style={{ color: theme.node.muted }}>
-                                请在画布上确认
+                            <div className="w-[280px] max-w-full rounded-lg border p-3 text-xs" style={{ background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.text }}>
+                                <p>{agentConfirmationDetail(message.confirmation)}</p>
+                                {message.confirmation.status === "failed" ? <p className="mt-2" style={{ color: theme.node.activeStroke }}>提交失败，请重试</p> : null}
+                                <div className="mt-3 flex justify-end gap-2">
+                                    <Button size="small" disabled={message.confirmation.status === "approving"} onClick={() => onConfirm(message, "rejected")}>拒绝</Button>
+                                    <Button size="small" type="primary" danger={message.confirmation.name === "canvas.delete" || message.confirmation.name === "agent.forget"} loading={message.confirmation.status === "approving"} onClick={() => onConfirm(message, "approved")}>允许执行</Button>
+                                </div>
                             </div>
                         ) : message.confirmation ? (
                             <div className="text-xs" style={{ color: theme.node.muted }}>
@@ -1881,9 +1866,7 @@ function AssistantStages({ message, onAnswer }: { message: CanvasAssistantMessag
     return (
         <div className="flex w-[280px] max-w-full flex-col items-start gap-2">
             {stages.map((stage, index) =>
-                stage.kind === "ask" && stage.ask && ["pending", "answering", "failed"].includes(stage.ask.status) ? (
-                    <AssistantStatusCapsule key={stage.callId || index} label="请在画布上确认" status="pending" />
-                ) : stage.kind === "ask" && stage.ask ? (
+                stage.kind === "ask" && stage.ask ? (
                     <AssistantAskStage key={stage.callId || index} message={message} stage={stage} onAnswer={onAnswer} />
                 ) : stage.kind === "inspect" && stage.inspection ? (
                     <AssistantInspectionStage key={stage.callId || index} stage={stage} />
@@ -1942,6 +1925,7 @@ function AssistantAskStage({
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const ask = stage.ask!;
     const [answer, setAnswer] = useState(ask.answer || "");
+    if (ask.status === "cancelled") return <AssistantStatusCapsule label="提问已结束" status="failed" />;
     if (ask.status === "answered" || ask.status === "skipped") {
         return <AssistantStatusCapsule label={ask.status === "skipped" ? "已询问 · 已忽略" : `已询问 · ${ask.answer || "已回答"}`} status="done" />;
     }
@@ -1975,7 +1959,9 @@ function AssistantAskStage({
                 disabled={ask.status === "answering"}
                 placeholder="输入其他回答"
                 onChange={(event) => setAnswer(event.target.value)}
-                onPressEnter={() => answer.trim() && onAnswer(message, stage, "approved", answer)}
+                onPressEnter={(event) => {
+                    if (!event.nativeEvent.isComposing && event.keyCode !== 229 && ask.status !== "answering" && answer.trim()) onAnswer(message, stage, "approved", answer);
+                }}
             />
             {ask.status === "failed" ? <div className="mt-2 text-xs text-red-500">提交失败，请重试</div> : null}
             <div className="mt-3 flex justify-end gap-2">
@@ -2355,7 +2341,7 @@ function upsertAssistantStage(stages: CanvasAssistantStage[], next: CanvasAssist
 
 function finishAssistantStage(stages: CanvasAssistantStage[], callId: string, status: "done" | "failed", answer?: string, rejected = false, inspection?: AgentToolInspection) {
     return stages.map((stage) => {
-        if (stage.callId !== callId) return stage;
+        if (stage.callId !== callId || stage.ask?.status === "cancelled") return stage;
         const skipped = stage.ask?.status === "skipped" || rejected;
         const ask = stage.ask
             ? {
@@ -2413,8 +2399,15 @@ function finishPendingAssistantStages(stages: CanvasAssistantStage[]) {
     return stages.map((stage) => (stage.status === "pending" && stage.kind !== "ask" ? { ...stage, status: "done" as const, label: assistantStageDoneLabel(stage) } : stage));
 }
 
+function assistantMessageIsActive(message: CanvasAssistantMessage) {
+    return Boolean(message.isLoading || (message.confirmation && ["pending", "approving", "failed"].includes(message.confirmation.status)) || message.stages?.some((stage) => stage.ask && ["pending", "answering", "failed"].includes(stage.ask.status)));
+}
+
 function failPendingAssistantStages(stages: CanvasAssistantStage[]) {
-    return stages.map((stage) => (stage.status === "pending" ? { ...stage, status: "failed" as const, label: assistantStageFailedLabel(stage.kind), ask: stage.ask ? { ...stage.ask, status: "failed" as const } : undefined } : stage));
+    return stages.map((stage) => {
+        if (stage.ask && ["pending", "answering", "failed"].includes(stage.ask.status)) return { ...stage, status: "failed" as const, label: "提问已结束", ask: { ...stage.ask, status: "cancelled" as const } };
+        return stage.status === "pending" ? { ...stage, status: "failed" as const, label: assistantStageFailedLabel(stage.kind) } : stage;
+    });
 }
 
 function assistantStageDoneLabel(stage: CanvasAssistantStage) {
@@ -2618,27 +2611,6 @@ function agentConfirmationDetail(confirmation: NonNullable<CanvasAssistantMessag
     if (confirmation.name === "canvas.update_text") return "覆盖本轮授权的文本节点内容";
     if (confirmation.name === "agent.remember") return `保存长期记忆“${"key" in confirmation.arguments ? confirmation.arguments.key : ""}”`;
     return `遗忘长期记忆“${"key" in confirmation.arguments ? confirmation.arguments.key : ""}”`;
-}
-
-type DirectCanvasCommand = { kind: "arrange"; nodeIds: string[]; mode: "horizontal" | "vertical" | "grid"; gap: number; message: string } | { kind: "add_text"; text: string; message: string } | { kind: "notice"; message: string } | null;
-
-function tryDirectCanvasCommand(text: string, nodes: CanvasNodeData[], selectedNodeIds: Set<string>): DirectCanvasCommand {
-    if (/(加文案|添加文本|配文案|加标题|写文案|加文字)/.test(text)) {
-        const contentMatch = text.match(/(?:文案|标题|内容|文字)[:：]\s*(.+)/) || text.match(/(?:配|加|写)(?:文案|标题|文字)[:：]?\s*(.+)/);
-        const selectedImageNodeIds = nodes.filter((node) => node.type === CanvasNodeType.Image && selectedNodeIds.has(node.id)).map((node) => node.id);
-        const sourceNodeIds = selectedNodeIds.size ? selectedImageNodeIds : nodes.filter((node) => node.type === CanvasNodeType.Image).map((node) => node.id);
-        if (!contentMatch?.[1]?.trim()) return sourceNodeIds.length ? null : { kind: "notice", message: "请先选择图片节点，再告诉我要添加的文案内容" };
-        const textToAdd = contentMatch[1].replace(/\s+/g, " ").trim().slice(0, 200);
-        return { kind: "add_text", text: textToAdd, message: "已添加文本节点，后续可继续让助手修改内容" };
-    }
-    if (!/(排|排列|排齐|排整齐|布局|整理)/.test(text)) return null;
-    const mode = /纵向|竖排|垂直/.test(text) ? "vertical" : /网格|矩阵|宫格/.test(text) ? "grid" : "horizontal";
-    const gapMatch = text.match(/间距\s*(\d+)/);
-    const gap = gapMatch ? Math.min(400, Math.max(16, Number(gapMatch[1]))) : 40;
-    const nodeIds = selectedNodeIds.size ? Array.from(selectedNodeIds) : nodes.filter((node) => node.type === CanvasNodeType.Image).map((node) => node.id);
-    if (nodeIds.length < 2) return { kind: "notice", message: selectedNodeIds.size ? "至少需要选择两个节点才能排列" : "画布上至少需要两个图片节点才能排列" };
-    const modeLabel = mode === "horizontal" ? "横向" : mode === "vertical" ? "纵向" : "网格";
-    return { kind: "arrange", nodeIds, mode, gap, message: `已帮你把 ${nodeIds.length} 个节点${modeLabel}排列` };
 }
 
 function buildCanvasSuggestions(nodes: CanvasNodeData[], connections: CanvasConnection[]): CanvasSuggestion[] {

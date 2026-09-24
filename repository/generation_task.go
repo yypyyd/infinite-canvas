@@ -631,6 +631,30 @@ func applyGenerationTaskFilters(tx *gorm.DB, q model.Query) *gorm.DB {
 }
 
 func DayStartRFC3339() string {
+	return LocalDayStartUTC(0)
+}
+
+func LocalDayStartUTC(daysAgo int) string {
 	now := time.Now()
-	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).Format(time.RFC3339)
+	start := time.Date(now.Year(), now.Month(), now.Day()-daysAgo, 0, 0, 0, 0, now.Location())
+	return start.UTC().Format("2006-01-02T15:04:05.000000000Z")
+}
+
+type DashboardTaskRow struct {
+	CreatedAt   string
+	Status      model.GenerationTaskStatus
+	Credits     int
+	Modality    string
+	Model       string
+	ChannelName string
+}
+
+func ListDashboardTaskRowsSince(since string) ([]DashboardTaskRow, error) {
+	db, err := DB()
+	if err != nil {
+		return nil, err
+	}
+	var items []DashboardTaskRow
+	err = db.Model(&model.GenerationTask{}).Select("created_at, status, credits, modality, model, channel_name").Where("created_at >= ?", since).Scan(&items).Error
+	return items, err
 }

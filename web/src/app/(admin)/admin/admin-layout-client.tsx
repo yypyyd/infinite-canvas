@@ -62,6 +62,7 @@ export function AdminLayoutClient({ children }: { children: ReactNode }) {
     const dark = useThemeStore((state) => state.theme === "dark");
     const activeKey = currentAdminKey(pathname);
     const pageTitle = pageTitles[activeKey] || "用户管理";
+    const isDashboard = pathname === "/admin";
     const submitLogout = async () => {
         try {
             await flushActiveWorkspaceChanges();
@@ -134,17 +135,19 @@ export function AdminLayoutClient({ children }: { children: ReactNode }) {
                     </Flex>
                 </Layout.Sider>
                 <Layout style={{ background: antToken.colorBgLayout }}>
-                    <Layout.Header
-                        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", height: adminLayoutStyle.headerHeight, padding: "0 24px", background: antToken.colorBgContainer, borderBottom: `1px solid ${antToken.colorBorder}` }}
-                    >
-                        <Typography.Title level={5} style={{ margin: 0 }}>
-                            {pageTitle}
-                        </Typography.Title>
-                        <Flex align="center" gap={4}>
-                            <UserStatusActions showConfig={false} />
-                        </Flex>
-                    </Layout.Header>
-                    <Layout.Content style={{ minHeight: 0, overflow: "auto" }}>{children}</Layout.Content>
+                    {isDashboard ? null : (
+                        <Layout.Header
+                            style={{ display: "flex", alignItems: "center", justifyContent: "space-between", height: adminLayoutStyle.headerHeight, padding: "0 24px", background: antToken.colorBgContainer, borderBottom: `1px solid ${antToken.colorBorder}` }}
+                        >
+                            <Typography.Title level={5} style={{ margin: 0 }}>
+                                {pageTitle}
+                            </Typography.Title>
+                            <Flex align="center" gap={4}>
+                                <UserStatusActions showConfig={false} />
+                            </Flex>
+                        </Layout.Header>
+                    )}
+                    <Layout.Content style={{ display: isDashboard ? "flex" : undefined, flexDirection: isDashboard ? "column" : undefined, minHeight: 0, overflow: isDashboard ? "hidden" : "auto" }}>{children}</Layout.Content>
                 </Layout>
             </Layout>
         </ProConfigProvider>

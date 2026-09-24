@@ -3,6 +3,8 @@ package service
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -301,63 +303,157 @@ func isGenerationTaskWriteConflict(err error) bool {
 }
 
 func AdminDashboard() (model.AdminDashboard, error) {
-	since := repository.DayStartRFC3339()
-	registrations, err := repository.CountUsersSince(since)
+	current := time.Now()
+	today := time.Date(current.Year(), current.Month(), current.Day(), 0, 0, 0, 0, current.Location())
+	sinceToday := repository.LocalDayStartUTC(0)
+	sincePeriod := repository.LocalDayStartUTC(29)
+	registrations, err := repository.CountUsersSince(sinceToday)
 	if err != nil {
 		return model.AdminDashboard{}, err
 	}
-	activeUsers, err := repository.CountActiveUsersSince(since)
+	activeUsers, err := repository.CountActiveUsersSince(sinceToday)
 	if err != nil {
 		return model.AdminDashboard{}, err
 	}
-	taskCount, err := repository.CountGenerationTasksSince(since)
+	consumedCredits, err := repository.SumConsumedCreditsSince(sinceToday)
 	if err != nil {
 		return model.AdminDashboard{}, err
 	}
-	failedCount, err := repository.CountFailedGenerationTasksSince(since)
+	rechargedCredits, err := repository.SumRechargeCreditsSince(sinceToday)
 	if err != nil {
 		return model.AdminDashboard{}, err
 	}
-	consumedCredits, err := repository.SumConsumedCreditsSince(since)
+	rows, err := repository.ListDashboardTaskRowsSince(sincePeriod)
 	if err != nil {
 		return model.AdminDashboard{}, err
 	}
-	rechargedCredits, err := repository.SumRechargeCreditsSince(since)
-	if err != nil {
-		return model.AdminDashboard{}, err
-	}
-	topModels, err := repository.TopGenerationTaskModelsSince(since, 8)
-	if err != nil {
-		return model.AdminDashboard{}, err
-	}
-	channelErrors, err := repository.ChannelGenerationErrorsSince(since, 8)
-	if err != nil {
-		return model.AdminDashboard{}, err
-	}
-	recentTasks, err := repository.RecentGenerationTasks(8)
-	if err != nil {
-		return model.AdminDashboard{}, err
-	}
-	recentFailures, err := repository.RecentFailedGenerationTasks(6)
-	if err != nil {
-		return model.AdminDashboard{}, err
+	hourly, daily, statuses, modalities, topModels, channelErrors := aggregateDashboardSeries(rows, today, 30)
+	todayTasks := int64(0)
+	todayFailed := int64(0)
+	for _, point := range hourly {
+		todayTasks += point.Tasks
+		todayFailed += point.Failed
 	}
 	failureRate := int64(0)
-	if taskCount > 0 {
-		failureRate = failedCount * 100 / taskCount
+	if todayTasks > 0 {
+		failureRate = todayFailed * 100 / todayTasks
+	}
+	recentTasks, err := repository.RecentGenerationTasks(20)
+	if err != nil {
+		return model.AdminDashboard{}, err
+	}
+	recentFailures, err := repository.RecentFailedGenerationTasks(8)
+	if err != nil {
+		return model.AdminDashboard{}, err
 	}
 	return model.AdminDashboard{
+		GeneratedAt: now(),
 		Metrics: []model.DashboardMetric{
 			{Key: "registrations", Label: "今日注册", Value: registrations},
 			{Key: "activeUsers", Label: "今日活跃", Value: activeUsers},
-			{Key: "tasks", Label: "生成次数", Value: taskCount},
+			{Key: "tasks", Label: "今日生成", Value: todayTasks},
 			{Key: "consumedCredits", Label: "算力消耗", Value: consumedCredits},
 			{Key: "failureRate", Label: "失败率", Value: failureRate},
 			{Key: "rechargedCredits", Label: "兑换充值", Value: rechargedCredits},
 		},
+		Hourly:         hourly,
+		Daily:          daily,
+		Statuses:       statuses,
+		Modalities:     modalities,
 		RecentTasks:    recentTasks,
 		TopModels:      topModels,
 		ChannelErrors:  channelErrors,
 		RecentFailures: recentFailures,
 	}, nil
+}
+
+func aggregateDashboardSeries(rows []repository.DashboardTaskRow, today time.Time, days int) ([]model.DashboardSeriesPoint, []model.DashboardSeriesPoint, []model.DashboardNameValue, []model.DashboardNameValue, []model.DashboardNameValue, []model.DashboardNameValue) {
+	periodStart := today.AddDate(0, 0, -(days - 1))
+	todayEnd := today.AddDate(0, 0, 1)
+	hourly := make([]model.DashboardSeriesPoint, 24)
+	for hour := 0; hour < 24; hour++ {
+		hourly[hour] = model.DashboardSeriesPoint{Label: fmt.Sprintf("%02d:00", hour)}
+	}
+	daily := make([]model.DashboardSeriesPoint, days)
+	for index := 0; index < days; index++ {
+		daily[index] = model.DashboardSeriesPoint{Label: periodStart.AddDate(0, 0, index).Format("01-02")}
+	}
+	statusCounts := map[model.GenerationTaskStatus]int64{
+		model.GenerationTaskStatusSuccess: 0,
+		model.GenerationTaskStatusFailed:  0,
+		model.GenerationTaskStatusRunning: 0,
+	}
+	modalityCounts := map[string]int64{"image": 0, "video": 0, "text": 0, "audio": 0}
+	modelCounts := map[string]int64{}
+	channelFails := map[string]int64{}
+	for _, row := range rows {
+		parsed, ok := parseDashboardTime(row.CreatedAt)
+		if !ok {
+			continue
+		}
+		local := parsed.In(today.Location())
+		dayIndex := int(local.Sub(periodStart).Hours() / 24)
+		if dayIndex >= 0 && dayIndex < days {
+			applySeriesPoint(&daily[dayIndex], row)
+			statusCounts[row.Status]++
+			if _, exists := modalityCounts[row.Modality]; exists {
+				modalityCounts[row.Modality]++
+			}
+			if row.Model != "" {
+				modelCounts[row.Model]++
+			}
+			if row.Status == model.GenerationTaskStatusFailed && row.ChannelName != "" {
+				channelFails[row.ChannelName]++
+			}
+		}
+		if !local.Before(today) && local.Before(todayEnd) {
+			applySeriesPoint(&hourly[local.Hour()], row)
+		}
+	}
+	return hourly, daily,
+		[]model.DashboardNameValue{
+			{Name: "成功", Value: statusCounts[model.GenerationTaskStatusSuccess]},
+			{Name: "失败", Value: statusCounts[model.GenerationTaskStatusFailed]},
+			{Name: "运行中", Value: statusCounts[model.GenerationTaskStatusRunning]},
+		},
+		[]model.DashboardNameValue{
+			{Name: "图片", Value: modalityCounts["image"]},
+			{Name: "视频", Value: modalityCounts["video"]},
+			{Name: "文本", Value: modalityCounts["text"]},
+			{Name: "音频", Value: modalityCounts["audio"]},
+		},
+		topNameValues(modelCounts, 8),
+		topNameValues(channelFails, 8)
+}
+
+func applySeriesPoint(point *model.DashboardSeriesPoint, row repository.DashboardTaskRow) {
+	point.Tasks++
+	point.Credits += int64(row.Credits)
+	switch row.Status {
+	case model.GenerationTaskStatusSuccess:
+		point.Success++
+	case model.GenerationTaskStatusFailed:
+		point.Failed++
+	}
+}
+
+func parseDashboardTime(value string) (time.Time, bool) {
+	for _, layout := range []string{"2006-01-02T15:04:05.000000000Z", time.RFC3339Nano, time.RFC3339} {
+		if parsed, err := time.Parse(layout, value); err == nil {
+			return parsed, true
+		}
+	}
+	return time.Time{}, false
+}
+
+func topNameValues(counts map[string]int64, limit int) []model.DashboardNameValue {
+	items := make([]model.DashboardNameValue, 0, len(counts))
+	for name, value := range counts {
+		items = append(items, model.DashboardNameValue{Name: name, Value: value})
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].Value > items[j].Value })
+	if len(items) > limit {
+		return items[:limit]
+	}
+	return items
 }

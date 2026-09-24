@@ -97,10 +97,23 @@ type DashboardNameValue struct {
 	Value int64  `json:"value"`
 }
 
+type DashboardSeriesPoint struct {
+	Label   string `json:"label"`
+	Tasks   int64  `json:"tasks"`
+	Success int64  `json:"success"`
+	Failed  int64  `json:"failed"`
+	Credits int64  `json:"credits"`
+}
+
 type AdminDashboard struct {
-	Metrics        []DashboardMetric    `json:"metrics"`
-	RecentTasks    []GenerationTask     `json:"recentTasks"`
-	TopModels      []DashboardNameValue `json:"topModels"`
-	ChannelErrors  []DashboardNameValue `json:"channelErrors"`
-	RecentFailures []GenerationTask     `json:"recentFailures"`
+	GeneratedAt    string                 `json:"generatedAt"`
+	Metrics        []DashboardMetric      `json:"metrics"`
+	Hourly         []DashboardSeriesPoint `json:"hourly"`
+	Daily          []DashboardSeriesPoint `json:"daily"`
+	Statuses       []DashboardNameValue   `json:"statuses"`
+	Modalities     []DashboardNameValue   `json:"modalities"`
+	RecentTasks    []GenerationTask       `json:"recentTasks"`
+	TopModels      []DashboardNameValue   `json:"topModels"`
+	ChannelErrors  []DashboardNameValue   `json:"channelErrors"`
+	RecentFailures []GenerationTask       `json:"recentFailures"`
 }

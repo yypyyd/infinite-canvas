@@ -132,8 +132,21 @@ export type AdminGenerationTaskQuery = {
     pageSize?: number;
 };
 
+export type AdminDashboardSeriesPoint = {
+    label: string;
+    tasks: number;
+    success: number;
+    failed: number;
+    credits: number;
+};
+
 export type AdminDashboard = {
+    generatedAt: string;
     metrics: { key: string; label: string; value: number }[];
+    hourly: AdminDashboardSeriesPoint[];
+    daily: AdminDashboardSeriesPoint[];
+    statuses: { name: string; value: number }[];
+    modalities: { name: string; value: number }[];
     recentTasks: AdminGenerationTask[];
     topModels: { name: string; value: number }[];
     channelErrors: { name: string; value: number }[];

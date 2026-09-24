@@ -2,7 +2,7 @@
 
 import { CheckCircleOutlined, DeleteOutlined, FormatPainterOutlined, PlusOutlined, ReloadOutlined, SaveOutlined } from "@ant-design/icons";
 import { json } from "@codemirror/lang-json";
-import { App, Button, Card, Col, Flex, Form, Input, InputNumber, Row, Segmented, Select, Space, Switch, Table, Tabs, Tag, Typography } from "antd";
+import { App, Button, Card, Col, Flex, Form, Input, InputNumber, Row, Segmented, Select, Space, Switch, Table, Tag, Typography } from "antd";
 import dynamic from "next/dynamic";
 import { Activity, Boxes, HandCoins, HardDrive, Mail, Megaphone, RefreshCw, ShieldCheck, WalletCards } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -75,7 +75,7 @@ type SettingsSectionKey = "models" | "access" | "operations" | "payment" | "refe
 type EditorMode = "visual" | "json";
 
 const modelAspectRatioOptions = ["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "21:9"];
-const settingsTabs = [
+const settingsSections = [
     {
         key: "models",
         label: (
@@ -269,8 +269,14 @@ export default function AdminSettingsPage() {
         <main style={{ padding: 24 }}>
             <Flex vertical gap={16}>
                 <Card variant="borderless">
-                    <Flex justify="space-between" align="center" gap={16} wrap>
-                        <Tabs activeKey={activeSection} onChange={(key) => setActiveSection(key as SettingsSectionKey)} items={settingsTabs} tabBarStyle={{ margin: 0 }} className="min-w-0 flex-1" />
+                    <Flex justify="space-between" align="start" gap={16} wrap>
+                        <div className="flex min-w-0 flex-wrap gap-2" style={{ flex: "1 1 700px" }}>
+                            {settingsSections.map((section) => (
+                                <Button key={section.key} type={activeSection === section.key ? "primary" : "default"} aria-pressed={activeSection === section.key} onClick={() => setActiveSection(section.key as SettingsSectionKey)}>
+                                    {section.label}
+                                </Button>
+                            ))}
+                        </div>
                         <Space>
                             <Button icon={<ReloadOutlined />} loading={isLoading} onClick={() => void loadSettings()}>
                                 刷新

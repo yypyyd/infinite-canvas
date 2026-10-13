@@ -1,4 +1,7 @@
-FROM oven/bun:1.3.13 AS docs-build
+FROM oven/bun:1.3.13 AS bun-runtime
+
+FROM node:22-bookworm-slim AS docs-build
+COPY --from=bun-runtime /usr/local/bin/bun /usr/local/bin/bun
 
 WORKDIR /app
 COPY docs/package.json docs/bun.lock ./
@@ -6,7 +9,7 @@ RUN --mount=type=cache,target=/root/.bun/install/cache bun install --frozen-lock
 COPY docs ./
 COPY CHANGELOG.md /CHANGELOG.md
 RUN bun run postinstall
-RUN bun run build
+RUN node node_modules/next/dist/bin/next build
 
 FROM node:22-bookworm-slim
 

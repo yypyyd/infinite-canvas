@@ -117,7 +117,7 @@ func getExistingAgentRunSubmission(db *gorm.DB, message model.AgentMessage, run 
 	} else if err != nil {
 		return message, run, false, err
 	}
-	if existing.SessionID != run.SessionID || existing.Model != run.Model || existing.Context != run.Context || existing.MaxToolCalls != run.MaxToolCalls || existing.MaxMediaCalls != run.MaxMediaCalls || existing.MaxDurationSec != run.MaxDurationSec || existing.MaxCredits != run.MaxCredits {
+	if existing.SessionID != run.SessionID || existing.Model != run.Model || len(snapshots) == 0 && existing.Context != run.Context || existing.MaxToolCalls != run.MaxToolCalls || existing.MaxMediaCalls != run.MaxMediaCalls || existing.MaxDurationSec != run.MaxDurationSec || existing.MaxCredits != run.MaxCredits {
 		return message, run, true, ErrAgentToolResultConflict
 	}
 	if len(snapshots) > 0 {
@@ -164,41 +164,21 @@ func SaveAgentMemory(memory model.AgentMemory) (model.AgentMemory, error) {
 	if err != nil {
 		return memory, err
 	}
-	var existing model.AgentMemory
-	lookup := db.Where("organization_id = ? AND user_id = ? AND project_id = ? AND key = ?", memory.OrganizationID, memory.UserID, memory.ProjectID, memory.Key).First(&existing)
-	if lookup.Error == nil {
-		memory.ID = existing.ID
-		if memory.CreatedAt == "" {
-			memory.CreatedAt = existing.CreatedAt
-		}
-		if err := db.Model(&existing).Updates(map[string]any{
-			"kind": memory.Kind, "content": memory.Content, "source_run_id": memory.SourceRunID,
-			"source_message_id": memory.SourceMessageID, "confidence": memory.Confidence,
-			"status": memory.Status, "expires_at": memory.ExpiresAt, "forgotten_at": memory.ForgottenAt,
-			"updated_at": memory.UpdatedAt,
-		}).Error; err != nil {
-			return memory, err
-		}
-		return memory, nil
-	}
-	if !errors.Is(lookup.Error, gorm.ErrRecordNotFound) {
-		return memory, lookup.Error
-	}
-	if err := transactionWithSQLiteRetry(db, func(tx *gorm.DB) error { return tx.Create(&memory).Error }); err != nil {
-		if retryErr := db.Where("organization_id = ? AND user_id = ? AND project_id = ? AND key = ?", memory.OrganizationID, memory.UserID, memory.ProjectID, memory.Key).First(&existing).Error; retryErr == nil {
-			memory.ID = existing.ID
-			return memory, db.Model(&existing).Updates(map[string]any{
-				"kind": memory.Kind, "content": memory.Content, "source_run_id": memory.SourceRunID,
-				"source_message_id": memory.SourceMessageID, "confidence": memory.Confidence,
-				"status": memory.Status, "expires_at": memory.ExpiresAt, "forgotten_at": memory.ForgottenAt,
-				"updated_at": memory.UpdatedAt,
-			}).Error
-		}
-		return memory, err
-	}
-	return memory, nil
+	return saveAgentMemory(db, memory)
 }
 
+func saveAgentMemory(db *gorm.DB, memory model.AgentMemory) (model.AgentMemory, error) {
+	err := db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "organization_id"}, {Name: "user_id"}, {Name: "project_id"}, {Name: "key"}},
+		DoUpdates: clause.AssignmentColumns([]string{"kind", "content", "source_run_id", "source_message_id", "confidence", "status", "expires_at", "forgotten_at", "updated_at"}),
+	}).Create(&memory).Error
+	if err != nil {
+		return memory, err
+	}
+	var saved model.AgentMemory
+	err = db.Where("organization_id = ? AND user_id = ? AND project_id = ? AND key = ?", memory.OrganizationID, memory.UserID, memory.ProjectID, memory.Key).First(&saved).Error
+	return saved, err
+}
 func ListActiveAgentMemories(organizationID, userID, projectID string, limit int) ([]model.AgentMemory, error) {
 	db, err := DB()
 	if err != nil {
@@ -422,7 +402,7 @@ func ConfirmAgentTool(organizationID, userID, runID, callID, decision, rejectedO
 	return run, toolStep, approved, resume, err
 }
 
-func AnswerAgentAskUser(organizationID, userID, runID, callID, decision, output, timestamp string, completedEvent model.AgentEvent, completionStep model.AgentStep) (model.AgentRun, bool, error) {
+func AnswerAgentAskUser(organizationID, userID, runID, callID, decision, output, timestamp string, completedEvent model.AgentEvent, completionStep model.AgentStep, contexts ...string) (model.AgentRun, bool, error) {
 	db, err := DB()
 	if err != nil {
 		return model.AgentRun{}, false, err
@@ -445,6 +425,12 @@ func AnswerAgentAskUser(organizationID, userID, runID, callID, decision, output,
 		}
 		if toolStep.Status != model.AgentStepStatusRunning {
 			return gorm.ErrRecordNotFound
+		}
+		if len(contexts) > 0 && contexts[0] != "" {
+			if err := tx.Model(&run).Update("context", contexts[0]).Error; err != nil {
+				return err
+			}
+			run.Context = contexts[0]
 		}
 		result := tx.Model(&model.AgentStep{}).Where("organization_id = ? AND user_id = ? AND id = ? AND status = ? AND confirmation = ''", organizationID, userID, toolStep.ID, model.AgentStepStatusRunning).Updates(map[string]any{"status": model.AgentStepStatusCompleted, "confirmation": decision, "output": output, "error": "", "completed_at": timestamp, "updated_at": timestamp})
 		if result.Error != nil {
@@ -474,7 +460,12 @@ func AnswerAgentAskUser(organizationID, userID, runID, callID, decision, output,
 	return run, resume, err
 }
 
-func SubmitAgentToolResult(organizationID, userID, runID, callID, executionToken, output, toolError, timestamp string, succeeded, continueAfterFailure bool, completedEvent, failedEvent model.AgentEvent, completionStep model.AgentStep) (model.AgentRun, model.AgentStep, bool, error) {
+type AgentToolCommit struct {
+	Memory  *model.AgentMemory
+	Context string
+}
+
+func SubmitAgentToolResult(organizationID, userID, runID, callID, executionToken, output, toolError, timestamp string, succeeded, continueAfterFailure bool, completedEvent, failedEvent model.AgentEvent, completionStep model.AgentStep, commits ...AgentToolCommit) (model.AgentRun, model.AgentStep, bool, error) {
 	db, err := DB()
 	if err != nil {
 		return model.AgentRun{}, model.AgentStep{}, false, err
@@ -495,11 +486,39 @@ func SubmitAgentToolResult(organizationID, userID, runID, callID, executionToken
 			}
 			return ErrAgentToolResultConflict
 		}
-		if toolStep.ExecutionToken != executionToken {
+		claimedAt, claimErr := time.Parse(time.RFC3339Nano, toolStep.ExecutionAt)
+		submittedAt, submittedErr := time.Parse(time.RFC3339Nano, timestamp)
+		if executionToken == "" || toolStep.ExecutionToken != executionToken || claimErr != nil || submittedErr != nil || submittedAt.Sub(claimedAt) >= 90*time.Second {
 			return ErrAgentToolExecutionClaimed
 		}
 		if run.Status != model.AgentRunStatusWaitingTool {
 			return gorm.ErrRecordNotFound
+		}
+		commit := AgentToolCommit{}
+		if len(commits) > 0 {
+			commit = commits[0]
+		}
+		if commit.Context != "" {
+			if err := tx.Model(&run).Update("context", commit.Context).Error; err != nil {
+				return err
+			}
+			run.Context = commit.Context
+		}
+		if commit.Memory != nil {
+			if toolStep.Confirmation != "approved" || !succeeded {
+				return ErrAgentToolResultConflict
+			}
+			memory := *commit.Memory
+			if memory.OrganizationID != organizationID || memory.UserID != userID || (toolStep.ToolName != "agent.remember" && toolStep.ToolName != "agent.forget") {
+				return ErrAgentToolResultConflict
+			}
+			if memory.Status == model.AgentMemoryStatusForgotten {
+				if err := tx.Model(&model.AgentMemory{}).Where("organization_id = ? AND user_id = ? AND project_id = ? AND key = ?", organizationID, userID, memory.ProjectID, memory.Key).Updates(map[string]any{"status": memory.Status, "forgotten_at": timestamp, "updated_at": timestamp}).Error; err != nil {
+					return err
+				}
+			} else if _, err := saveAgentMemory(tx, memory); err != nil {
+				return err
+			}
 		}
 		stepStatus := model.AgentStepStatusCompleted
 		if !succeeded {
@@ -594,6 +613,13 @@ func ExpireWaitingAgentRun(organizationID, userID, runID, eventID, message, payl
 			return err
 		}
 		if run.Status != model.AgentRunStatusWaitingTool || run.UpdatedAt > deadline {
+			return nil
+		}
+		var activeTools int64
+		if err := tx.Model(&model.AgentStep{}).Where("organization_id = ? AND user_id = ? AND run_id = ? AND type = ? AND status = ? AND execution_at > ?", organizationID, userID, runID, model.AgentStepTypeTool, model.AgentStepStatusRunning, deadline).Count(&activeTools).Error; err != nil {
+			return err
+		}
+		if activeTools > 0 {
 			return nil
 		}
 		result := tx.Model(&model.AgentRun{}).Where("organization_id = ? AND user_id = ? AND id = ? AND status = ? AND updated_at <= ?", organizationID, userID, runID, model.AgentRunStatusWaitingTool, deadline).Updates(map[string]any{"status": model.AgentRunStatusFailed, "error": message, "completed_at": timestamp, "updated_at": timestamp})

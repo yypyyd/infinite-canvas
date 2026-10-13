@@ -1,0 +1,95 @@
+---
+title: 自定义渠道协议
+description: HTTP 媒体协议模板、VividAI 接入与已有渠道切换
+---
+
+# 自定义渠道协议
+
+后台“模型管理”分为模型与计费、上游渠道、协议模板。渠道保存接口地址、密钥、模型映射和能力；模板描述 HTTP 请求与响应，不保存密钥。多个渠道可以复用同一模板，复制、导入和导出模板不会携带渠道 API Key。
+
+## 已有 VividAI 渠道怎么切换
+
+1. 同步升级后端与前端。服务启动时由现有 GORM 表结构初始化补充 `generation_tasks.protocol_snapshot` 字段，无需手工修改渠道数据。
+2. 打开“模型管理 → 上游渠道”，编辑已配置的 `VividAI`，保留渠道名称与模型映射。
+3. 将协议改为“自定义 HTTP”，模板选择“VividAI”。选择预设会填入根地址 `https://vividai.run`，确认地址末尾没有 `/v1`。密钥输入框留空会保留原密钥。
+4. 检查模型映射与能力。上游模型名必须与 `/v1/models` 返回的 ID 一致；该列表只提供名称，不能据此确定分辨率、时长、参考素材上限、音轨开关或价格。已有手填能力和价格保留。
+5. 保存后执行“检查接入”，仅调用模型列表，不提交付费生成。然后从用户端依次验收单张图片、带参考图的图片编辑、短视频和关闭页面后的任务恢复。真实生成测试按现有规则计费。
+
+无需删除后重建渠道。保存会为缺少 ID 的渠道分配稳定 ID，之后改名不会改变新协议任务的归属。切换前已按旧 OpenAI 配置提交的任务不会自动转换，建议先等这些任务结束再切换。
+
+预置模板遵循 [VividAI 文档](https://vividai.run/docs)：
+
+- `GET /v1/models` 发现模型，API 请求使用 Bearer 鉴权。
+- `POST /v1/uploads` 传入素材 `kind`、`mime`，取得预签名地址后用相同 Content-Type 执行 PUT。PUT 不携带渠道密钥，生成请求引用素材 key。
+- `POST /v1/generate` 提交模型、提示词、清晰度和参考素材；图片传 `ratio`，视频传数值型 `duration`。图片 `1k/2k/4k` 映射为 `1K/2K/4K`，视频清晰度原样传递，按实际模型要求核对或修改 `valueMaps`。
+- 响应为 NDJSON，首个 `jobId` 立即保存；收到 `succeeded` 才下载结果。`X-Wait-Seconds: 20` 控制单次等待，未完成时用同一路径、仅含 `jobId` 的请求继续等待。
+- 单次生成 1 张图片；提示词按上游文档限制在 2000 字符内。没有文档支持的多张参数、蒙版或生成音轨开关不做猜测。视频忽略比例，不应将比例选项理解为上游承诺。
+- 结果 URL 有效期为 30 分钟，后端拿到后立即归档到当前配置的本地或七牛存储。临时上游 URL 不返回用户端、不存入任务恢复结果。
+
+## 模板范围
+
+支持图片生成、图片编辑、视频生成；JSON / multipart 请求；JSON / NDJSON 响应；URL 参考、multipart 上传、预签名 PUT 上传；同步结果或带任务 ID 的查询恢复。
+
+路径、请求字段、枚举值、状态名和结果层级不同，可以通过模板配置。WebSocket、自定义签名算法、二进制协议、任意多步骤编排及文本流式协议需要扩展执行器。模板不能执行脚本。
+
+模板最多 64 个，每个不超过 64KB。接口基址使用 HTTPS，不带用户信息、查询参数或 fragment；接口路径使用相对路径。单个 HTTP 请求最长 90 秒，较长生成应通过任务 ID 续接；操作总等待时间为 60–7200 秒，查询间隔为 2–60 秒，受后台调度与并发额度影响。
+
+## 配置结构
+
+| 字段 | 作用 |
+| --- | --- |
+| `id` / `name` / `revision` | 稳定模板 ID、显示名、版本号 |
+| `defaultBaseUrl` | 选择模板时填入渠道的默认基址 |
+| `headers` | 公共请求头，鉴权引用 `${api_key}` |
+| `models` | 模型发现请求与 `items`、`id` 字段路径，可不配置 |
+| `upload` | 参考素材上传方式；不配置时仅支持生成请求直接 multipart 附件 |
+| `operations` | 以 `image.generation`、`image.edit`、`video.generation` 为键的操作集合 |
+
+每个操作配置 `create`，异步操作另配 `resume`，以及 `timeoutSeconds`、`pollSeconds`、`maxImages`、可选 `valueMaps`。`maxImages` 是单次图片上限，不会自动拆成多次计费任务。
+
+请求配置 `method`、`path`、`encoding`、`headers`、`body` 和 `response`。multipart 必须填写附件字段 `fileField`。响应配置 `format`、`taskId`、`status`、三类状态数组 `running/success/failure`、`resultUrl` 或 `resultBase64`、`error`；状态值不能交叉重复。没有状态字段时按同步结果处理。
+
+响应字段路径使用 [GJSON 语法](https://github.com/tidwall/gjson/blob/master/SYNTAX.md)，例如 `data.task.id`、`data.#.url`。结果字段可指向字符串或字符串数组，不使用以 `$` 开头的 JSONPath。
+
+下面是 VividAI 的 `resume` 请求示例，完整模板可在后台导出：
+
+```json
+{
+  "method": "POST",
+  "path": "/v1/generate",
+  "headers": { "X-Wait-Seconds": "20" },
+  "body": { "jobId": "${task_id}" },
+  "response": {
+    "format": "ndjson",
+    "taskId": "jobId",
+    "status": "status",
+    "running": ["running"],
+    "success": ["succeeded"],
+    "failure": ["failed"],
+    "resultUrl": "result",
+    "error": "error"
+  }
+}
+```
+
+JSON 占位符必须独占整个值，渲染后保留数字、布尔值和数组类型；缺少变量、空字符串和空素材数组会省略对应字段。请求头和路径允许嵌入占位符，路径变量会 URL 编码。
+
+| 类别 | 支持变量 |
+| --- | --- |
+| 生成参数 | `model`、`prompt`、`negative_prompt`、`size`、`width`、`height`、`ratio`、`resolution`、`seconds`、`count`、`seed`、`generate_audio`、`request_id` |
+| 上传引用 | `reference_keys`、`reference_urls`、`reference_image_urls`、`reference_video_urls`、`reference_audio_urls` |
+| 上传请求 | `kind`、`mime` |
+| 恢复请求 | `task_id`、`model`、`request_id` |
+| 鉴权请求头 | `api_key` |
+
+恢复请求只允许上述恢复变量和请求头中的鉴权变量，不重传提示词或素材、不重建任务。`valueMaps` 以变量名为键，例如 `{"resolution":{"1k":"1K"}}`。`upload.mode=url` 要求上游能访问本系统签名媒体地址；multipart / presigned 模式可以直接读取本地存储上传，不要求公开本地存储 URL。
+
+“常用配置”编辑身份信息、接口路径、响应映射和等待参数；请求体、上传流程、枚举映射和新增操作使用“完整 JSON”。“预览调试”只渲染示例请求并解析粘贴的响应，不调用上游，鉴权始终显示 `***`。保存时还会校验模板引用和模型操作。
+
+## 恢复与结算
+
+付费创建请求之前原子保存协议快照，包含稳定渠道 ID、原基址、完整模板、操作和截止时间，不保存密钥或临时素材地址。后续修改模板、渠道名称或基址只影响新任务；旧任务用快照恢复，并从原渠道 ID 读取当前密钥。仍有任务时不要删除原渠道或换成无权查询旧任务的密钥。
+
+提交结果不确定且没有拿到任务 ID 时不会重复创建，等待到截止时间仍无法交付才按原扣费来源退款。已获取 ID 的任务由服务端 Worker 查询，浏览器关闭后仍会推进；只有作品数量符合请求且成功归档后才记成功。失败、超时和重复回调使用任务终态与账本保证幂等退款。
+
+普通任务使用租约避免多实例重复恢复。批量生产走同一媒体提交和归档入口，最终交付与结算由批量 Worker 负责，普通任务扫描不接管批量任务。客户端等待窗口结束不等于服务端任务失败，可通过原请求编号恢复。

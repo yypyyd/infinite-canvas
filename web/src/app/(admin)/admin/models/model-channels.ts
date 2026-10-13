@@ -28,7 +28,6 @@ export function collectChannelModels(channels: AdminModelChannel[]) {
     return [...models.values()];
 }
 
-
 function normalizeDurations(items: number[] = []) {
     return Array.from(new Set(items.map((item) => Math.floor(Number(item))).filter((item) => item > 0))).sort((a, b) => a - b);
 }

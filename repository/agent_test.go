@@ -91,7 +91,7 @@ func TestClaimAgentToolExecutionRenewsOwnerAndAllowsExpiredTakeover(t *testing.T
 func TestSubmitAgentToolResultIsIdempotentAndRejectsConflicts(t *testing.T) {
 	testDB := setupUserWorkspaceTestDB(t)
 	run := model.AgentRun{ID: "run-result", OrganizationID: "organization-a", UserID: "user-a", Status: model.AgentRunStatusWaitingTool, CreatedAt: workspaceTestNow, UpdatedAt: workspaceTestNow}
-	step := model.AgentStep{ID: "step-result", OrganizationID: run.OrganizationID, UserID: run.UserID, RunID: run.ID, Type: model.AgentStepTypeTool, Status: model.AgentStepStatusRunning, ToolCallID: "call-result", ToolName: "canvas.add_text", ExecutionToken: "token-a", CreatedAt: workspaceTestNow, UpdatedAt: workspaceTestNow}
+	step := model.AgentStep{ID: "step-result", OrganizationID: run.OrganizationID, UserID: run.UserID, RunID: run.ID, Type: model.AgentStepTypeTool, Status: model.AgentStepStatusRunning, ToolCallID: "call-result", ToolName: "canvas.add_text", ExecutionToken: "token-a", ExecutionAt: workspaceTestNow, CreatedAt: workspaceTestNow, UpdatedAt: workspaceTestNow}
 	if err := testDB.Create(&run).Error; err != nil {
 		t.Fatal(err)
 	}

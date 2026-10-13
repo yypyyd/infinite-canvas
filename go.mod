@@ -13,6 +13,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/qiniu/go-sdk/v7 v7.26.16
 	github.com/robfig/cron/v3 v3.0.1
+	github.com/tidwall/gjson v1.18.0
 	golang.org/x/crypto v0.52.0
 	golang.org/x/image v0.43.0 // indirect
 	gorm.io/driver/mysql v1.6.0
@@ -25,6 +26,8 @@ require (
 	github.com/alex-ant/gomath v0.0.0-20160516115720-89013a210a82 // indirect
 	github.com/gofrs/flock v0.8.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
+	github.com/tidwall/match v1.1.1 // indirect
+	github.com/tidwall/pretty v1.2.0 // indirect
 	modernc.org/fileutil v1.0.0 // indirect
 )
 

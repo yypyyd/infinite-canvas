@@ -24,6 +24,26 @@ func UserWorkspace(w http.ResponseWriter, r *http.Request) {
 	OK(w, result)
 }
 
+func SyncUserWorkspace(w http.ResponseWriter, r *http.Request) {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok {
+		Fail(w, "未登录或权限不足")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 24<<20)
+	var request service.WorkspaceSyncRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		Fail(w, "工作区版本格式不正确")
+		return
+	}
+	result, err := service.SyncUserWorkspace(user, request)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, result)
+}
+
 func SaveUserWorkspace(w http.ResponseWriter, r *http.Request) {
 	user, ok := service.UserFromContext(r.Context())
 	if !ok {

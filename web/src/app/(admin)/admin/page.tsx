@@ -146,7 +146,10 @@ export default function AdminDashboardPage() {
                                     </div>
                                 </div>
                                 {item.key === "tasks" || item.key === "consumedCredits" || item.key === "failureRate" ? (
-                                    <Sparkline values={daily.map((point) => (item.key === "consumedCredits" ? point.credits : item.key === "failureRate" ? point.failed : point.tasks))} color={item.key === "failureRate" ? token.colorError : item.key === "consumedCredits" ? token.colorWarning : token.colorPrimary} />
+                                    <Sparkline
+                                        values={daily.map((point) => (item.key === "consumedCredits" ? point.credits : item.key === "failureRate" ? point.failed : point.tasks))}
+                                        color={item.key === "failureRate" ? token.colorError : item.key === "consumedCredits" ? token.colorWarning : token.colorPrimary}
+                                    />
                                 ) : null}
                             </div>
                         </Panel>
@@ -167,7 +170,12 @@ export default function AdminDashboardPage() {
                 >
                     <div className="relative h-full">
                         {reducedMotion ? null : (
-                            <motion.div className="pointer-events-none absolute inset-y-6 w-px" style={{ background: `linear-gradient(${token.colorPrimary}, transparent)` }} animate={{ left: ["4%", "96%"], opacity: [0, 0.7, 0] }} transition={{ duration: 7.5, repeat: Infinity, ease: "linear" }} />
+                            <motion.div
+                                className="pointer-events-none absolute inset-y-6 w-px"
+                                style={{ background: `linear-gradient(${token.colorPrimary}, transparent)` }}
+                                animate={{ left: ["4%", "96%"], opacity: [0, 0.7, 0] }}
+                                transition={{ duration: 7.5, repeat: Infinity, ease: "linear" }}
+                            />
                         )}
                         <TrendArea points={daily} />
                     </div>
@@ -209,7 +217,10 @@ function Panel({ title, extra, children, className = "" }: { title?: string; ext
     const { token } = theme.useToken();
     const mark = { width: 10, height: 10, borderColor: token.colorPrimary };
     return (
-        <section className={`relative flex min-h-0 flex-col overflow-hidden ${className}`} style={{ background: withAlpha(token.colorBgContainer, 0.86), border: `1px solid ${token.colorBorderSecondary}`, boxShadow: `inset 0 1px 0 ${withAlpha(token.colorPrimary, 0.22)}` }}>
+        <section
+            className={`relative flex min-h-0 flex-col overflow-hidden ${className}`}
+            style={{ background: withAlpha(token.colorBgContainer, 0.86), border: `1px solid ${token.colorBorderSecondary}`, boxShadow: `inset 0 1px 0 ${withAlpha(token.colorPrimary, 0.22)}` }}
+        >
             <i className="pointer-events-none absolute top-0 left-0 border-t border-l" style={mark} />
             <i className="pointer-events-none absolute top-0 right-0 border-t border-r" style={mark} />
             <i className="pointer-events-none absolute bottom-0 left-0 border-b border-l" style={mark} />

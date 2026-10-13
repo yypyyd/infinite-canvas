@@ -52,6 +52,7 @@ const emptySettings: AdminSettings = {
     },
     private: {
         channels: [],
+        protocolTemplates: [],
         storage: { driver: "local", retentionDays: 0, localPath: "data/user-files", qiniuAccessKey: "", qiniuSecretKey: "", qiniuBucket: "", qiniuRegion: "as0", qiniuDownloadDomain: "", qiniuSecretKeyConfigured: false },
         promptSync: { enabled: true, cron: "*/5 * * * *" },
         email: { smtpHost: "", smtpPort: 587, smtpUsername: "", smtpPassword: "", smtpFromEmail: "", smtpFromName: "幻图", smtpSecurity: "starttls", passwordConfigured: false },
@@ -213,6 +214,7 @@ export default function AdminSettingsPage() {
         try {
             const latest = await fetchAdminSettings(token);
             values.private.channels = latest.private.channels;
+            values.private.protocolTemplates = latest.private.protocolTemplates;
             values.public.modelChannel = {
                 ...values.public.modelChannel,
                 models: latest.public.modelChannel.models,
@@ -320,15 +322,15 @@ export default function AdminSettingsPage() {
                         <div>
                             <Typography.Paragraph type="secondary">模型目录、价格与渠道请在“模型管理”保存；这里保存其他系统配置。</Typography.Paragraph>
                             <div style={{ overflow: "hidden", border: "1px solid var(--ant-color-border)", borderRadius: 6 }}>
-                            <CodeMirror
-                                value={activeJsonText}
-                                height="520px"
-                                extensions={[json(), jsonEditorTheme]}
-                                basicSetup={{ foldGutter: true, lineNumbers: true, highlightActiveLine: true, highlightActiveLineGutter: true }}
-                                theme="none"
-                                onChange={(value) => setJsonText((current) => ({ ...current, [activeTab]: value }))}
-                                style={{ fontSize: 13 }}
-                            />
+                                <CodeMirror
+                                    value={activeJsonText}
+                                    height="520px"
+                                    extensions={[json(), jsonEditorTheme]}
+                                    basicSetup={{ foldGutter: true, lineNumbers: true, highlightActiveLine: true, highlightActiveLineGutter: true }}
+                                    theme="none"
+                                    onChange={(value) => setJsonText((current) => ({ ...current, [activeTab]: value }))}
+                                    style={{ fontSize: 13 }}
+                                />
                             </div>
                         </div>
                     ) : (
@@ -629,6 +631,7 @@ function normalizePricingRules(items: Partial<AdminSettings["public"]["modelChan
 function normalizePrivateSetting(setting: Partial<AdminSettings["private"]> = {}): AdminSettings["private"] {
     return {
         channels: (setting.channels || []).map(normalizeChannel),
+        protocolTemplates: setting.protocolTemplates || [],
         storage: {
             driver: setting.storage?.driver === "local" ? "local" : "qiniu",
             retentionDays: Math.min(36500, Math.max(0, Math.floor(Number(setting.storage?.retentionDays) || 0))),
@@ -692,7 +695,9 @@ function normalizeAlertThreshold(value: number | undefined, fallback: number) {
 
 function normalizeChannel(item: Partial<AdminModelChannel> = {}): AdminModelChannel {
     return {
-        protocol: item.protocol === "autodl_comfyui" ? "autodl_comfyui" : "openai",
+        id: item.id,
+        templateId: item.templateId,
+        protocol: item.protocol === "autodl_comfyui" || item.protocol === "custom_http" ? item.protocol : "openai",
         name: item.name || "",
         baseUrl: item.baseUrl || "",
         apiKey: item.apiKey || "",
@@ -775,7 +780,6 @@ function mergeChannelApiKeys(currentChannels: AdminModelChannel[], saved: AdminS
         private: { ...saved.private, channels },
     };
 }
-
 
 function parseTabJson(tab: "public", value: string): AdminSettings["public"] | null;
 function parseTabJson(tab: "private", value: string): AdminSettings["private"] | null;

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { App } from "antd";
 
 import type { CanvasProject } from "@/app/(user)/canvas/stores/use-canvas-store";
 import { useCanvasStore } from "@/app/(user)/canvas/stores/use-canvas-store";
@@ -8,7 +9,7 @@ import { getMediaBlob, resolveMediaUrl } from "@/services/file-storage";
 import { applyGenerationRecordSnapshot, clearGenerationRecordMemory } from "@/services/generation-history";
 import { acknowledgeGenerationTaskRecoveries } from "@/services/api/generation-task";
 import { getImageBlob, resolveImageUrl } from "@/services/image-storage";
-import { fetchWorkspace, fetchWorkspaceStorageStatus, saveWorkspaceChanges, uploadWorkspaceFile, workspaceFileExists, WorkspaceVersionConflictError, type WorkspaceDomain, type WorkspaceRecord } from "@/services/api/workspace";
+import { syncWorkspace, fetchWorkspaceStorageStatus, saveWorkspaceChanges, uploadWorkspaceFile, workspaceFileExists, WorkspaceVersionConflictError, type WorkspaceDomain, type WorkspaceRecord } from "@/services/api/workspace";
 import { commitWorkspaceChanges, hasPendingWorkspaceChanges, readPendingWorkspaceChanges, rebasePendingWorkspaceChanges, workspaceOwnerId, WORKSPACE_CHANGES_UPDATED_EVENT, type PendingWorkspaceChange } from "@/services/workspace-changes";
 import type { Asset } from "@/stores/use-asset-store";
 import { useAssetStore } from "@/stores/use-asset-store";
@@ -31,6 +32,7 @@ export async function flushActiveWorkspaceChanges(options?: WorkspaceFlushOption
 }
 
 export function WorkspaceProvider() {
+    const { message } = App.useApp();
     const token = useUserStore((state) => state.token);
     const userId = useUserStore((state) => state.user?.id || "");
     const organizationId = useUserStore((state) => state.user?.organizationId || "");
@@ -41,12 +43,34 @@ export function WorkspaceProvider() {
         let saveWaiters: Array<() => void> = [];
         let timer: ReturnType<typeof setTimeout> | null = null;
         let lastSaveError: Error | null = null;
+        let initialized = false;
+        let lastUsageCheck = 0;
+        const recordsById = new Map<string, WorkspaceRecord>();
+        const confirmedFiles = new Set<string>();
+        const conflictNotices = new Map<string, string>();
         if (!token || !userId || !organizationId) {
             useCanvasStore.getState().switchOwner("guest");
             useAssetStore.getState().switchOwner("guest");
             useWorkspaceStatusStore.getState().setStatus("idle");
             return;
         }
+
+        const mergeRecords = (records: WorkspaceRecord[]) => {
+            records.forEach((record) => recordsById.set(`${record.domain}:${record.objectId}`, record));
+            collectStorageKeys(records.filter((record) => !record.deleted).map((record) => record.data)).forEach((key) => confirmedFiles.add(key));
+        };
+        const applySnapshot = async (force = false) => {
+            const records = [...recordsById.values()];
+            const pending = readPendingWorkspaceChanges(ownerId);
+            applyWorkspaceSnapshot(ownerId, records, pending, force);
+            await Promise.all([hydrateOwnerAssets(ownerId), applyGenerationRecordSnapshot(ownerId, records, pending)]);
+        };
+        const syncRemote = () =>
+            syncWorkspace(
+                token,
+                [...recordsById.values()].map(({ domain, objectId, version }) => ({ domain, objectId, version })),
+                organizationId,
+            );
 
         const save = async (bootstrap = false) => {
             if (cancelled) return;
@@ -59,35 +83,52 @@ export function WorkspaceProvider() {
                 return;
             }
             try {
-                useCanvasStore.getState().switchOwner(ownerId);
-                useAssetStore.getState().switchOwner(ownerId);
+                if (useCanvasStore.getState().ownerId !== ownerId) useCanvasStore.getState().switchOwner(ownerId);
+                if (useAssetStore.getState().ownerId !== ownerId) useAssetStore.getState().switchOwner(ownerId);
 
-                let workspace: Awaited<ReturnType<typeof fetchWorkspace>> | undefined;
-                if (bootstrap) {
-                    workspace = await fetchWorkspace(token);
-                    const pending = readPendingWorkspaceChanges(ownerId);
-                    applyWorkspaceSnapshot(ownerId, workspace.records, pending, true);
-                    await Promise.all([hydrateOwnerAssets(ownerId), applyGenerationRecordSnapshot(ownerId, workspace.records, pending)]);
+                if (!initialized) {
+                    const workspace = await syncRemote();
+                    if (cancelled) return;
+                    mergeRecords(workspace.records);
+                    await applySnapshot(true);
+                    initialized = true;
+                    bootstrap = true;
                 }
-
-                const hadPendingChanges = readPendingWorkspaceChanges(ownerId).length > 0;
-                await flushPendingChanges(token, ownerId);
-                const [latestWorkspace, usage] = await Promise.all([workspace && !hadPendingChanges ? workspace : fetchWorkspace(token), fetchWorkspaceStorageStatus(token)]);
-                const pending = readPendingWorkspaceChanges(ownerId);
-                applyWorkspaceSnapshot(ownerId, latestWorkspace.records, pending, false);
-                await Promise.all([hydrateOwnerAssets(ownerId), applyGenerationRecordSnapshot(ownerId, latestWorkspace.records, pending)]);
-                statusStore.setUsage(usage.usedBytes, usage.quotaBytes, usage.projectCount, usage.assetCount, usage.fileCount);
+                if (cancelled) return;
+                const saved = await flushPendingChanges(token, ownerId, organizationId, confirmedFiles, () => cancelled);
+                if (cancelled) return;
+                mergeRecords(saved);
+                for (const record of saved) {
+                    const title = conflictNotices.get(record.objectId);
+                    if (record.domain === "canvas_project" && title) {
+                        message.warning({ content: `这张画布已在其他地方更新。你的修改已另存为「${title}」，可在画布列表查看。`, duration: 10 });
+                        conflictNotices.delete(record.objectId);
+                    }
+                }
+                const [latestWorkspace, usage] = await Promise.all([bootstrap && !saved.length ? { records: [] } : syncRemote(), saved.length || Date.now() - lastUsageCheck > 60_000 ? fetchWorkspaceStorageStatus(token) : null]);
+                if (cancelled) return;
+                mergeRecords(latestWorkspace.records);
+                if (saved.length || latestWorkspace.records.length) await applySnapshot();
+                if (cancelled) return;
+                if (usage) {
+                    statusStore.setUsage(usage.usedBytes, usage.quotaBytes, usage.projectCount, usage.assetCount, usage.fileCount);
+                    lastUsageCheck = Date.now();
+                }
                 statusStore.markSaved();
                 lastSaveError = null;
             } catch (error) {
-                const text = error instanceof Error ? error.message : "账号数据保存失败";
+                if (cancelled) return;
                 if (error instanceof WorkspaceVersionConflictError) {
                     try {
-                        const latestWorkspace = await fetchWorkspace(token);
-                        rebasePendingWorkspaceChanges(ownerId, latestWorkspace.records);
+                        const latestWorkspace = await syncRemote();
+                        if (cancelled) return;
+                        mergeRecords(latestWorkspace.records);
+                        const { conflictCopies, skippedDeletes } = rebasePendingWorkspaceChanges(ownerId, [...recordsById.values()]);
+                        conflictCopies.forEach(({ id, title }) => conflictNotices.set(id, title));
+                        if (skippedDeletes) message.warning("画布已在其他地方更新，本次删除已取消，最新内容已保留。");
                         const pending = readPendingWorkspaceChanges(ownerId);
-                        applyWorkspaceSnapshot(ownerId, latestWorkspace.records, pending, false);
-                        await applyGenerationRecordSnapshot(ownerId, latestWorkspace.records, pending);
+                        await applySnapshot();
+                        if (cancelled) return;
                         lastSaveError = null;
                         if (pending.length) statusStore.setStatus("syncing");
                         else statusStore.markSaved();
@@ -96,8 +137,9 @@ export function WorkspaceProvider() {
                         error = recoveryError;
                     }
                 }
-                lastSaveError = error instanceof Error ? error : new Error(text);
-                statusStore.setStatus(navigator.onLine ? "error" : "offline", text);
+                confirmedFiles.clear();
+                lastSaveError = error instanceof Error ? error : new Error("账号数据保存失败");
+                statusStore.setStatus(navigator.onLine ? "error" : "offline", lastSaveError.message);
             } finally {
                 running = false;
                 saveWaiters.splice(0).forEach((resolve) => resolve());
@@ -120,7 +162,7 @@ export function WorkspaceProvider() {
                 if (cancelled) throw new Error("账号数据同步已切换，请稍后重试");
                 await save(false);
                 const pending = readPendingWorkspaceChanges(ownerId);
-                if (!pending.some((item) => required.get(item.key) === item)) return;
+                if (!pending.some((item) => required.get(item.key) === item || conflictNotices.has(item.objectId))) return;
                 failedAttempts = lastSaveError ? failedAttempts + 1 : 0;
                 if (failedAttempts >= 3) throw lastSaveError;
                 await new Promise((resolve) => window.setTimeout(resolve, 50));
@@ -158,23 +200,27 @@ export function WorkspaceProvider() {
                 useAssetStore.getState().replaceOwnerAssets(ownerId, []);
             }
         };
-    }, [organizationId, ownerId, token, userId]);
+    }, [message, organizationId, ownerId, token, userId]);
 
     return null;
 }
 
-async function flushPendingChanges(token: string, userId: string) {
+async function flushPendingChanges(token: string, userId: string, organizationId: string, confirmedFiles: Set<string>, cancelled: () => boolean) {
     const pending = readPendingWorkspaceChanges(userId);
-    if (!pending.length) return;
-    await uploadReferencedFiles(token, pending);
+    if (!pending.length) return [];
+    await uploadReferencedFiles(token, pending, organizationId, confirmedFiles, cancelled);
+    if (cancelled()) return [];
     const result = await saveWorkspaceChanges(
         token,
         pending.map(({ domain, objectId, data, deleted, version }) => ({ domain, objectId, data, deleted, version })),
+        organizationId,
     );
     commitWorkspaceChanges(pending, result.records);
+    if (cancelled()) return result.records;
     applyWorkspaceVersions(userId, result.records);
     const requestIds = generationRecoveryRequestIds(pending);
     if (requestIds.length) await acknowledgeGenerationTaskRecoveries(requestIds).catch(() => undefined);
+    return result.records;
 }
 
 function generationRecoveryRequestIds(changes: PendingWorkspaceChange[]) {
@@ -242,28 +288,36 @@ function applyWorkspaceVersions(userId: string, records: WorkspaceRecord[]) {
     }
 }
 
-async function uploadReferencedFiles(token: string, changes: PendingWorkspaceChange[]) {
+async function uploadReferencedFiles(token: string, changes: PendingWorkspaceChange[], organizationId: string, confirmedFiles: Set<string>, cancelled: () => boolean) {
     const keys = collectStorageKeys(changes.map((item) => item.data));
     await runWithConcurrency(keys, fileConcurrency, async (storageKey) => {
-        if (await workspaceFileExists(token, storageKey)) return;
-        const blob = storageKey.startsWith("image:") ? await getImageBlob(storageKey) : await getMediaBlob(storageKey);
-        if (!blob) throw new Error("本机媒体文件缺失，账号数据尚未保存");
-        await uploadWorkspaceFile(token, storageKey, blob);
+        if (cancelled() || confirmedFiles.has(storageKey)) return;
+        if (!(await workspaceFileExists(token, storageKey, organizationId))) {
+            if (cancelled()) return;
+            const blob = storageKey.startsWith("image:") ? await getImageBlob(storageKey) : await getMediaBlob(storageKey);
+            if (cancelled()) return;
+            if (!blob) throw new Error("媒体文件缺失，账号数据尚未保存");
+            await uploadWorkspaceFile(token, storageKey, blob, undefined, organizationId);
+        }
+        confirmedFiles.add(storageKey);
     });
 }
 
 async function hydrateOwnerAssets(userId: string) {
     const assets = useAssetStore.getState().assetsByOwner[userId] || [];
-    useAssetStore.getState().replaceOwnerAssets(userId, await Promise.all(assets.map(hydrateAsset)));
+    const hydrated = await Promise.all(assets.map(hydrateAsset));
+    if (useAssetStore.getState().assetsByOwner[userId] === assets && hydrated.some((asset, index) => asset !== assets[index])) useAssetStore.getState().replaceOwnerAssets(userId, hydrated);
 }
 
 async function hydrateAsset(asset: Asset): Promise<Asset> {
     if (asset.kind === "image" && asset.data.storageKey) {
         const dataUrl = await resolveImageUrl(asset.data.storageKey, asset.data.dataUrl);
+        if (dataUrl === asset.data.dataUrl && !asset.coverUrl.startsWith("blob:")) return asset;
         return { ...asset, coverUrl: asset.coverUrl.startsWith("blob:") ? dataUrl : asset.coverUrl, data: { ...asset.data, dataUrl } };
     }
     if (asset.kind === "video" && asset.data.storageKey) {
         const url = await resolveMediaUrl(asset.data.storageKey, asset.data.url);
+        if (url === asset.data.url && !asset.coverUrl.startsWith("blob:")) return asset;
         return { ...asset, coverUrl: asset.coverUrl.startsWith("blob:") ? url : asset.coverUrl, data: { ...asset.data, url } };
     }
     return asset;
@@ -289,14 +343,14 @@ function sortUpdated<T extends { updatedAt: string }>(items: T[]) {
     return items.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
 }
 
-function collectStorageKeys(value: unknown, keys = new Set<string>()) {
-    if (typeof value === "string") {
-        if (storageKeyPattern.test(value)) keys.add(value);
-        return [...keys];
-    }
-    if (!value || typeof value !== "object") return [...keys];
-    if ("storageKey" in value && typeof value.storageKey === "string" && storageKeyPattern.test(value.storageKey)) keys.add(value.storageKey);
-    Object.values(value).forEach((item) => (Array.isArray(item) ? item.forEach((child) => collectStorageKeys(child, keys)) : collectStorageKeys(item, keys)));
+function collectStorageKeys(value: unknown) {
+    const keys = new Set<string>();
+    const visit = (item: unknown) => {
+        if (typeof item === "string") {
+            if (storageKeyPattern.test(item)) keys.add(item);
+        } else if (item && typeof item === "object") Object.values(item).forEach(visit);
+    };
+    visit(value);
     return [...keys];
 }
 

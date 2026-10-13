@@ -36,6 +36,51 @@ type WorkspaceChangeRequest struct {
 	Changes []WorkspaceChangeInput `json:"changes"`
 }
 
+type WorkspaceSyncRequest struct {
+	Versions []struct {
+		Domain   string `json:"domain"`
+		ObjectID string `json:"objectId"`
+		Version  int64  `json:"version"`
+	} `json:"versions"`
+}
+
+func SyncUserWorkspace(user model.AuthUser, request WorkspaceSyncRequest) (WorkspacePayload, error) {
+	organization, _, err := EnsureOrganization(user)
+	if err != nil {
+		return WorkspacePayload{}, err
+	}
+	if len(request.Versions) > 100000 {
+		return WorkspacePayload{}, safeMessageError{message: "工作区版本列表过大"}
+	}
+	versions := make(map[string]int64, len(request.Versions))
+	for _, item := range request.Versions {
+		if !validWorkspaceDomain(item.Domain) || item.ObjectID == "" || len(item.ObjectID) > 160 || item.Version < 0 {
+			return WorkspacePayload{}, safeMessageError{message: "工作区版本无效"}
+		}
+		versions[item.Domain+":"+item.ObjectID] = item.Version
+	}
+	projects, assets, generationRecords, err := repository.ListUserWorkspaceChanges(organization.ID, versions)
+	if err != nil {
+		return WorkspacePayload{}, err
+	}
+	records := make([]WorkspaceRecord, 0, len(projects)+len(assets)+len(generationRecords))
+	for _, item := range projects {
+		records = append(records, workspaceProjectRecord(item))
+	}
+	for _, item := range assets {
+		records = append(records, workspaceAssetRecord(item))
+	}
+	for _, item := range generationRecords {
+		records = append(records, workspaceGenerationRecord(item))
+	}
+	for i := range records {
+		if records[i].Deleted {
+			records[i].Data = nil
+		}
+	}
+	return WorkspacePayload{Records: records}, nil
+}
+
 func UserWorkspace(user model.AuthUser) (WorkspacePayload, error) {
 	organization, _, err := EnsureOrganization(user)
 	if err != nil {

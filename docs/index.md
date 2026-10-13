@@ -27,6 +27,7 @@
 - [本地开发](/docs/backend/local-development)
 - [接口响应约定](/docs/backend/api-response)
 - [系统配置数据结构](/docs/backend/system-settings)
+- [自定义渠道协议与 VividAI 切换](/docs/backend/custom-protocols)
 - [后端数据库说明](/docs/backend/backend-database)
 - [画布数据结构](/docs/backend/canvas-data-structure)
 

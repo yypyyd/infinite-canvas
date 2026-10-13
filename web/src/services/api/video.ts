@@ -14,7 +14,7 @@ import { videoReferenceCapabilities, VIDEO_REFERENCE_LIMITS } from "@/lib/video-
 
 type VideoResponse = { id: string; status?: string; storage_key?: string; bytes?: number; mime_type?: string; error?: { message?: string } };
 type ApiVideoResponse = VideoResponse | { code: number; data: VideoResponse | null; msg?: string };
-type RequestOptions = { signal?: AbortSignal; idempotencyKey?: string };
+type RequestOptions = { signal?: AbortSignal; idempotencyKey?: string; strictSpecs?: boolean };
 
 const VIDEO_POLL_INTERVAL_MS = 2500;
 const VIDEO_POLL_TIMEOUT_MS = 30 * 60 * 1000;
@@ -45,6 +45,12 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
     const ratio = supportedValue(definition?.aspectRatios, normalizeVideoRatio(config.size), defaultVideoRatios[0]);
     const resolution = supportedValue(definition?.resolutionTiers, normalizeVideoResolution(config.vquality), defaultVideoResolutions[0]);
     const duration = supportedNumber(definition?.durations, Number(config.videoSeconds), defaultVideoDurations[0]);
+    if (options?.strictSpecs) {
+        if (duration !== Number(config.videoSeconds)) throw new Error(`当前视频模型不支持 ${config.videoSeconds} 秒，支持：${(definition?.durations?.length ? definition.durations : defaultVideoDurations).join("、")} 秒`);
+        if (ratio !== config.size || resolution !== config.vquality)
+            throw new Error(`当前视频模型不支持指定规格，请从 ${definition?.aspectRatios?.join("、") || defaultVideoRatios.join("、")} / ${definition?.resolutionTiers?.join("、") || defaultVideoResolutions.join("、")} 中选择`);
+        if (config.videoGenerateAudio === "true" && !capabilities.supportsAudioOutput) throw new Error("当前视频模型不支持生成音轨");
+    }
 
     const requestId = options?.idempotencyKey || crypto.randomUUID();
     try {

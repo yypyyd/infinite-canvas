@@ -90,6 +90,39 @@ func routerTestSaveWorkspace(t *testing.T, client *http.Client, baseURL, organiz
 	return routerTestJSON(t, client, http.MethodPost, baseURL+"/api/workspace/changes", service.WorkspaceChangeRequest{Changes: []service.WorkspaceChangeInput{change}}, map[string]string{"X-Organization-ID": organizationID})
 }
 
+func TestWorkspaceSyncHTTPReturnsOnlyChangedRecords(t *testing.T) {
+	tenant := seedRouterTestTenant(t, "workspace-sync")
+	client, baseURL := loginRouterTestClient(t, tenant.User.Username)
+	for _, organizationID := range []string{tenant.Organization.ID, tenant.Secondary.ID} {
+		response := routerTestSaveWorkspace(t, client, baseURL, organizationID, service.WorkspaceChangeInput{Domain: "canvas_project", ObjectID: "sync-project", Data: json.RawMessage(`{"title":"sync"}`)})
+		if response.Code != 0 {
+			t.Fatalf("create project: %#v", response)
+		}
+	}
+	headers := map[string]string{"X-Organization-ID": tenant.Organization.ID}
+	versions := []map[string]any{{"domain": "canvas_project", "objectId": "sync-project", "version": 1}}
+	response := routerTestJSON(t, client, http.MethodPost, baseURL+"/api/workspace/sync", map[string]any{"versions": versions}, headers)
+	var payload service.WorkspacePayload
+	if err := json.Unmarshal(response.Data, &payload); response.Code != 0 || err != nil || len(payload.Records) != 0 {
+		t.Fatalf("unchanged sync: %#v, %v", response, err)
+	}
+	deleted := routerTestSaveWorkspace(t, client, baseURL, tenant.Organization.ID, service.WorkspaceChangeInput{Domain: "canvas_project", ObjectID: "sync-project", Version: 1, Deleted: true})
+	if deleted.Code != 0 {
+		t.Fatalf("delete project: %#v", deleted)
+	}
+	response = routerTestJSON(t, client, http.MethodPost, baseURL+"/api/workspace/sync", map[string]any{"versions": versions}, headers)
+	if err := json.Unmarshal(response.Data, &payload); response.Code != 0 || err != nil || len(payload.Records) != 1 {
+		t.Fatalf("deleted sync: %#v, %v", response, err)
+	}
+	if record := payload.Records[0]; !record.Deleted || record.Version != 2 || len(record.Data) != 0 {
+		t.Fatalf("invalid deletion record: %#v", record)
+	}
+	denied := routerTestJSON(t, client, http.MethodPost, baseURL+"/api/workspace/sync", map[string]any{"versions": []any{}}, map[string]string{"X-Organization-ID": "foreign-sync-org"})
+	if denied.Code == 0 {
+		t.Fatal("foreign organization sync should be rejected")
+	}
+}
+
 func assertRouterTestWorkspaceRevision(t *testing.T, client *http.Client, baseURL, organizationID, projectID, revision string, version int64) {
 	t.Helper()
 	response := routerTestJSON(t, client, http.MethodGet, baseURL+"/api/workspace", nil, map[string]string{"X-Organization-ID": organizationID})

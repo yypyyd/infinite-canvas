@@ -15,6 +15,8 @@ var (
 	ErrInsufficientOrganizationCredits  = errors.New("insufficient organization credits")
 	ErrOrganizationCreditBudgetExceeded = errors.New("organization credit budget exceeded")
 	ErrGenerationTaskRequestConflict    = errors.New("generation task request conflict")
+	ErrAgentCreditBudgetExceeded        = errors.New("agent credit budget exceeded")
+	ErrAgentRunNotActive                = errors.New("agent run is no longer active")
 )
 
 func ListGenerationTasks(q model.Query) ([]model.GenerationTask, int64, error) {
@@ -49,12 +51,28 @@ func ListUserGenerationTasks(organizationID string, userID string, q model.Query
 	return items, total, err
 }
 
-func CreateGenerationTaskWithCharge(task model.GenerationTask, log *model.CreditLog) (model.GenerationTask, error) {
+func CreateGenerationTaskWithCharge(task model.GenerationTask, log *model.CreditLog, agentRunIDs ...string) (model.GenerationTask, error) {
 	db, err := DB()
 	if err != nil {
 		return task, err
 	}
 	err = db.Transaction(func(tx *gorm.DB) error {
+		if len(agentRunIDs) > 0 && agentRunIDs[0] != "" {
+			var run model.AgentRun
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("organization_id = ? AND user_id = ? AND id = ?", task.OrganizationID, task.UserID, agentRunIDs[0]).First(&run).Error; err != nil {
+				return err
+			}
+			if run.Status != model.AgentRunStatusRunning && run.Status != model.AgentRunStatusWaitingTool {
+				return ErrAgentRunNotActive
+			}
+			var spent int
+			if err := agentRunCreditQuery(tx, run.OrganizationID, run.UserID, run.ID).Select("COALESCE(SUM(credits), 0)").Scan(&spent).Error; err != nil {
+				return err
+			}
+			if spent+task.Credits > run.MaxCredits {
+				return ErrAgentCreditBudgetExceeded
+			}
+		}
 		if err := tx.Create(&task).Error; err != nil {
 			return err
 		}
@@ -248,7 +266,7 @@ func GetGenerationTaskByUpstreamID(organizationID, userID, upstreamTaskID string
 	return task, err == nil, err
 }
 
-func ListStaleRunningGenerationTasks(createdBefore string, limit int) ([]model.GenerationTask, error) {
+func ListStaleRunningGenerationTasks(createdBefore string, timestamp string, limit int) ([]model.GenerationTask, error) {
 	db, err := DB()
 	if err != nil {
 		return nil, err
@@ -257,24 +275,67 @@ func ListStaleRunningGenerationTasks(createdBefore string, limit int) ([]model.G
 		limit = 100
 	}
 	var tasks []model.GenerationTask
-	err = db.Where("status = ? AND batch_job_id = '' AND batch_item_id = '' AND created_at <= ?", model.GenerationTaskStatusRunning, createdBefore).
-		Order("created_at asc").
+	err = db.Where("status = ? AND batch_job_id = '' AND batch_item_id = ''", model.GenerationTaskStatusRunning).
+		Where("created_at <= ? OR (protocol_snapshot IS NOT NULL AND protocol_snapshot <> '' AND protocol_snapshot <> 'null')", createdBefore).
+		Where("reconcile_after <= ? AND reconcile_lease_expires_at <= ?", timestamp, timestamp).
+		Order("reconcile_after asc, created_at asc").
 		Limit(limit).
 		Find(&tasks).Error
 	return tasks, err
 }
 
-func UpdateGenerationTaskRecovery(taskID, upstreamTaskID, resultJSON string, storageKeys []string, updatedAt string) error {
+func ClaimGenerationTaskReconcile(taskID, token, timestamp, expiresAt string) (model.GenerationTask, bool, error) {
+	db, err := DB()
+	if err != nil {
+		return model.GenerationTask{}, false, err
+	}
+	var task model.GenerationTask
+	claimed := false
+	err = transactionWithSQLiteRetry(db, func(tx *gorm.DB) error {
+		claimed = false
+		result := tx.Model(&model.GenerationTask{}).
+			Where("id = ? AND status = ? AND batch_job_id = '' AND batch_item_id = '' AND reconcile_after <= ? AND reconcile_lease_expires_at <= ?", taskID, model.GenerationTaskStatusRunning, timestamp, timestamp).
+			Updates(map[string]any{"reconcile_lease_token": token, "reconcile_lease_expires_at": expiresAt})
+		if result.Error != nil || result.RowsAffected != 1 {
+			return result.Error
+		}
+		claimed = true
+		return tx.First(&task, "id = ?", taskID).Error
+	})
+	return task, claimed && err == nil, err
+}
+
+func ReleaseGenerationTaskReconcile(taskID, token, nextAttemptAt string) error {
+	db, err := DB()
+	if err != nil {
+		return err
+	}
+	return db.Model(&model.GenerationTask{}).Where("id = ? AND reconcile_lease_token = ?", taskID, token).
+		Updates(map[string]any{"reconcile_lease_token": "", "reconcile_lease_expires_at": "", "reconcile_after": nextAttemptAt}).Error
+}
+
+func generationTaskReconcileScope(tx *gorm.DB, token, timestamp string) *gorm.DB {
+	if token != "" {
+		return tx.Where("reconcile_lease_token = ? AND reconcile_lease_expires_at > ?", token, timestamp)
+	}
+	return tx
+}
+
+func UpdateGenerationTaskRecovery(taskID, upstreamTaskID, resultJSON string, storageKeys []string, updatedAt string, leaseToken ...string) error {
 	db, err := DB()
 	if err != nil {
 		return err
 	}
 	return db.Transaction(func(tx *gorm.DB) error {
+		token := ""
+		if len(leaseToken) > 0 {
+			token = leaseToken[0]
+		}
 		var task model.GenerationTask
-		if err := tx.Where("id = ? AND status IN ?", taskID, []model.GenerationTaskStatus{model.GenerationTaskStatusRunning, model.GenerationTaskStatusSuccess}).First(&task).Error; err != nil {
+		if err := generationTaskReconcileScope(tx, token, updatedAt).Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND status IN ?", taskID, []model.GenerationTaskStatus{model.GenerationTaskStatusRunning, model.GenerationTaskStatusSuccess}).First(&task).Error; err != nil {
 			return err
 		}
-		result := tx.Model(&task).Select("UpstreamTaskID", "ResultJSON", "StorageKeys", "UpdatedAt").Updates(model.GenerationTask{UpstreamTaskID: upstreamTaskID, ResultJSON: resultJSON, StorageKeys: storageKeys, UpdatedAt: updatedAt})
+		result := generationTaskReconcileScope(tx.Model(&task), token, updatedAt).Select("UpstreamTaskID", "ResultJSON", "StorageKeys", "UpdatedAt").Updates(model.GenerationTask{UpstreamTaskID: upstreamTaskID, ResultJSON: resultJSON, StorageKeys: storageKeys, UpdatedAt: updatedAt})
 		if result.Error != nil {
 			return result.Error
 		}
@@ -309,7 +370,7 @@ func CompleteGenerationTask(task model.GenerationTask) error {
 	if err != nil {
 		return err
 	}
-	return db.Model(&model.GenerationTask{}).Where("id = ? AND status = ?", task.ID, model.GenerationTaskStatusRunning).Updates(map[string]any{
+	return generationTaskReconcileScope(db.Model(&model.GenerationTask{}), task.ReconcileLeaseToken, task.UpdatedAt).Where("id = ? AND status = ?", task.ID, model.GenerationTaskStatusRunning).Updates(map[string]any{
 		"status":        model.GenerationTaskStatusSuccess,
 		"error_message": "",
 		"duration_ms":   task.DurationMs,
@@ -405,7 +466,7 @@ func FailGenerationTaskAndRefund(task model.GenerationTask, log *model.CreditLog
 	refunded := false
 	err = db.Transaction(func(tx *gorm.DB) error {
 		var saved model.GenerationTask
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&saved, "id = ?", task.ID).Error; err != nil {
+		if err := generationTaskReconcileScope(tx, task.ReconcileLeaseToken, task.UpdatedAt).Clauses(clause.Locking{Strength: "UPDATE"}).First(&saved, "id = ?", task.ID).Error; err != nil {
 			return err
 		}
 		if saved.Status != model.GenerationTaskStatusRunning {

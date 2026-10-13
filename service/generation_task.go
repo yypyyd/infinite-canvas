@@ -202,7 +202,14 @@ func BeginGenerationTask(input GenerationTaskInput) (model.GenerationTask, error
 		}
 		task, err = repository.CreateBatchGenerationTaskWithCharge(task, log)
 	} else {
-		task, err = repository.CreateGenerationTaskWithCharge(task, log)
+		task, err = repository.CreateGenerationTaskWithCharge(task, log, agentGenerationRunID(input.RequestID))
+	}
+	if errors.Is(err, repository.ErrAgentCreditBudgetExceeded) {
+		_ = repository.MarkAgentRunBudgetReason(input.OrganizationID, input.UserID, agentGenerationRunID(input.RequestID), "credits", nowText)
+		return task, safeMessageError{message: "本次调用将超出助手算力预算，已停止且未扣费"}
+	}
+	if errors.Is(err, repository.ErrAgentRunNotActive) {
+		return task, safeMessageError{message: "助手运行已结束，未发起新的付费请求"}
 	}
 	if errors.Is(err, repository.ErrInsufficientUserCredits) {
 		return task, safeMessageError{message: "个人算力余额不足"}
@@ -271,7 +278,7 @@ func UpdateGenerationTaskRecovery(task *model.GenerationTask, upstreamTaskID str
 	}
 	updatedAt := now()
 	err := retryGenerationTaskWrite(func() error {
-		return repository.UpdateGenerationTaskRecovery(task.ID, strings.TrimSpace(upstreamTaskID), string(result), storageKeys, updatedAt)
+		return repository.UpdateGenerationTaskRecovery(task.ID, strings.TrimSpace(upstreamTaskID), string(result), storageKeys, updatedAt, task.ReconcileLeaseToken)
 	})
 	if err == nil {
 		task.UpstreamTaskID = strings.TrimSpace(upstreamTaskID)
@@ -352,13 +359,13 @@ func AdminDashboard() (model.AdminDashboard, error) {
 			{Key: "failureRate", Label: "失败率", Value: failureRate},
 			{Key: "rechargedCredits", Label: "兑换充值", Value: rechargedCredits},
 		},
-		Hourly:         hourly,
-		Daily:          daily,
-		Statuses:       statuses,
-		Modalities:     modalities,
-		RecentTasks:    recentTasks,
-		TopModels:      topModels,
-		ChannelErrors:  channelErrors,
+		Hourly:        hourly,
+		Daily:         daily,
+		Statuses:      statuses,
+		Modalities:    modalities,
+		RecentTasks:   recentTasks,
+		TopModels:     topModels,
+		ChannelErrors: channelErrors,
 	}, nil
 }
 

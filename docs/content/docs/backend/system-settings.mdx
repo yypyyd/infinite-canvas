@@ -210,6 +210,7 @@ description: settings 表中 public 和 private 配置结构说明
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `channels` | object[] | 模型渠道列表 |
+| `protocolTemplates` | object[] | 无密钥的自定义 HTTP 媒体协议模板，预置 VividAI；见[自定义渠道协议](./custom-protocols) |
 | `storage` | object | 用户媒体文件存储与无引用旧文件保留策略 |
 | `promptSync` | object | GitHub 远程提示词定时同步配置 |
 | `email` | object | 注册验证码 SMTP 私有配置；密码不会出现在公开接口，后台读取时也只返回是否已配置 |
@@ -223,7 +224,9 @@ description: settings 表中 public 和 private 配置结构说明
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `protocol` | string | 渠道协议：`openai` 或 `autodl_comfyui` |
+| `id` | string | 保存时生成的稳定渠道 ID，自定义协议任务按此 ID 找回当前密钥 |
+| `protocol` | string | 渠道协议：`openai`、`autodl_comfyui` 或 `custom_http` |
+| `templateId` | string | `custom_http` 使用的协议模板 ID，例如 `vividai` |
 | `name` | string | 渠道名称 |
 | `baseUrl` | string | 上游接口地址；AutoDL 默认使用 `https://autodl.art` |
 | `apiKey` | string | 渠道密钥或 AutoDL ComfyUI Token；只保存在服务端，后台读取时为空 |
@@ -231,6 +234,8 @@ description: settings 表中 public 和 private 配置结构说明
 | `weight` | number | 渠道权重；同一请求命中多个能力相符的渠道时按权重随机 |
 | `enabled` | boolean | 是否启用 |
 | `remark` | string | 备注 |
+
+已有 VividAI 渠道需要管理员明确切换到 `custom_http` 并选择 `vividai`，不会按域名自动迁移。密钥留空沿用已保存值，模型和价格保留；选择 VividAI 模板后使用根地址 `https://vividai.run`。系统设置页保存时保留最新渠道与协议模板，协议统一在模型管理维护。
 
 `channels.models` 每项字段：
 

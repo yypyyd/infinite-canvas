@@ -92,11 +92,11 @@ description: 当前后端主要数据表与字段说明
 
 ### agent_sessions / agent_messages / agent_runs / agent_steps / agent_events / agent_run_snapshots / agent_plan_steps
 
-画布 Agent 的持久执行骨架。`agent_sessions` 按企业、用户和画布项目保存会话；`agent_messages` 保存有序消息；`agent_runs` 保存运行状态、工具/媒体/时间/算力预算、预算停止原因、事件流续接次数和工具租约接管次数，隐藏 `context` 只用于节点授权和模型上下文裁剪；`agent_steps` 保存 completion/tool 输入输出、工具调用编号、确认决定和执行租约；`agent_events` 保存可恢复 SSE 事件。`agent_run_snapshots` 单独保存每轮第一个副作用前的完整节点与连线及 SHA-256 校验值，只允许当前企业和账号在整轮撤销时读取，模型与运行诊断看不到快照正文；本地历史淘汰、刷新或换设备后仍能恢复。`agent_plan_steps` 按 Run、计划版本和位置保存标题、完成条件、顺序依赖、状态、关联工具及失败/跳过原因；失败后重新规划会保留旧版本，并把旧版本未完成步骤标为 `skipped`。所有访问同时校验 `organization_id + user_id`。客户端预分配会话与运行编号，服务端对同编号、上下文、预算和快照校验值进行幂等重放，对冲突请求明确拒绝；Completion Step 由数据库原子认领，Tool Step 使用 90 秒租约并由执行页面续租，执行页面失联后可安全接管。自主模式下首次非破坏性工具失败会恢复 Completion，允许调整或重规划一次；第二次失败仍结束 Run，相同参数始终禁止重放。媒体结果只保存节点编号和私有 `storageKey`，不保存二进制或签名 URL。`waiting_tool` 超过 15 分钟会回收，`waiting_confirmation` 保持等待用户决定。
+画布 Agent 的持久执行骨架。`agent_sessions` 按企业、用户和画布项目保存会话；`agent_messages` 保存有序消息；`agent_runs` 保存运行状态、工具/媒体/时间/算力预算、预算停止原因、事件流续接次数和工具租约接管次数，隐藏 `context` 在工具回执和澄清回答事务内更新为最新画布状态，用于节点授权和有界模型上下文裁剪；`agent_steps` 保存 completion/tool 输入输出、工具调用编号、确认决定和执行租约；`agent_events` 保存可恢复 SSE 事件。`agent_run_snapshots` 单独保存每轮第一个副作用前的完整节点与连线及 SHA-256 校验值，只允许当前企业和账号在整轮撤销时读取，模型与运行诊断看不到快照正文；快照保留作审计；客户端局部撤销使用 `user_projects` 工作区数据中 `agentToolReceipts` 的 `patch`（节点修改前后值及增删连线）和 `revertedAt`，不再覆盖整张画布。`agent_plan_steps` 按 Run、计划版本和位置保存标题、完成条件、顺序依赖、状态、关联工具及失败/跳过原因；失败后重新规划会保留旧版本，并把旧版本未完成步骤标为 `skipped`。所有访问同时校验 `organization_id + user_id`。客户端预分配会话与运行编号，服务端对同编号、初始消息、预算和原始快照校验值进行幂等重放，对冲突请求明确拒绝；Completion Step 由数据库原子认领，Tool Step 使用 90 秒租约并由执行页面续租，执行页面失联后可安全接管。首次可重试工具失败会恢复 Completion，允许调整或重规划一次；第二次失败仍结束 Run，相同失败参数禁止重放，有意分批生成媒体和重新读取画布不受成功参数去重限制。媒体结果只保存节点编号和私有 `storageKey`，不保存二进制或签名 URL。`waiting_tool` 在 Run 与工具心跳均超过 15 分钟未更新时回收，`waiting_confirmation` 保持等待用户决定。
 
 ### agent_memories
 
-Agent 的长期记忆表。记忆同时绑定企业、用户和可选画布项目；`project_id` 为空表示账号级记忆。`kind` 取 `preference`、`fact`、`constraint` 或 `experience`，`confidence` 用于检索排序，`source_run_id` 和 `source_message_id` 保留来源。只有 `active`、未过期且置信度不低于 `0.35` 的记录会注入后续 Run；用户批准 `agent.forget` 后改为 `forgotten`。所有写入由服务端从已确认的模型工具参数生成，读取、覆盖和遗忘均校验 `organization_id + user_id`。
+Agent 的长期记忆表。记忆同时绑定企业、用户和可选画布项目；`project_id` 为空表示账号级记忆。`kind` 取 `preference`、`fact`、`constraint` 或 `experience`，`confidence` 用于检索排序，`source_run_id` 和 `source_message_id` 保留来源。只有 `active`、未过期且置信度不低于 `0.35` 的记录会注入后续 Run；用户批准 `agent.forget` 后改为 `forgotten`。模型工具写入由服务端从已确认参数生成，与合法租约的工具回执同事务提交；用户也可通过记忆管理接口直接编辑或遗忘，读取、覆盖和遗忘均校验 `organization_id + user_id`。
 
 ### agent_feedbacks
 
@@ -318,6 +318,7 @@ Agent 的长期记忆表。记忆同时绑定企业、用户和可选画布项�
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `channels` | object[] | 模型渠道配置列表 |
+| `protocolTemplates` | object[] | 自定义 HTTP 协议模板，不包含渠道密钥；请求、上传、恢复、状态与结果字段映射见[协议说明](./custom-protocols) |
 | `promptSync` | object | GitHub 远程提示词定时同步配置 |
 | `email` | object | SMTP 私有配置；密码读取时脱敏，不会出现在公开设置接口 |
 | `payment` | object | 易支付 V1 私有配置、可用支付方式和充值档位；商户密钥读取时脱敏 |
@@ -327,7 +328,9 @@ Agent 的长期记忆表。记忆同时绑定企业、用户和可选画布项�
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `protocol` | string | 协议，当前支持 `openai` |
+| `id` | string | 稳定渠道 ID，在保存设置时分配 |
+| `protocol` | string | `openai`、`autodl_comfyui` 或 `custom_http` |
+| `templateId` | string | 自定义 HTTP 协议模板 ID |
 | `name` | string | 渠道名称 |
 | `baseUrl` | string | 渠道接口地址 |
 | `apiKey` | string | 渠道密钥 |
@@ -484,6 +487,10 @@ Agent 的长期记忆表。记忆同时绑定企业、用户和可选画布项�
 | `credit_source` | string | 创建任务时固化的扣费来源：`personal` 或 `organization` |
 | `status` | string | 状态：`running`、`success`、`failed` |
 | `upstream_task_id` | string | 异步图片或视频在原渠道中的任务 ID，仅服务端使用 |
+| `protocol_snapshot` | text/json | 自定义协议提交前固化的渠道 ID、原基址、完整模板、操作和截止时间；不含密钥与临时媒体 URL，不对外返回。非空即阻止再次提交创建请求 |
+| `reconcile_lease_token` | string | 普通任务补偿领取凭证，仅服务端使用；写回、完成与退款受租约约束 |
+| `reconcile_lease_expires_at` | string | 补偿租约到期时间，空字符串表示未领取；支持进程退出后的接管 |
+| `reconcile_after` | string | 下次允许补偿查询的时间，空字符串表示尚未处理 |
 | `result_json` | text | 可供页面刷新后恢复的临时上游响应；生成记录确认保存后清空，仅恢复接口按当前企业和用户返回 |
 | `storage_keys` | text/json | 后端已直存七牛的临时工作区文件编号；生成记录确认保存后清空并释放任务临时引用 |
 | `error_message` | text | 失败原因摘要 |
@@ -494,6 +501,8 @@ Agent 的长期记忆表。记忆同时绑定企业、用户和可选画布项�
 创建任务时会按企业当时的 `credit_mode` 固化 `credit_source`，并固化最终 `credits` 与 `pricing_snapshot`。`generation_tasks`、个人或企业算力预扣和 `ai_consume` 流水在同一事务中提交，任一步失败都会整体回滚；共享模式同时检查企业算力与月度预算，消费流水的 `related_id` 保存任务 ID，并在扩展信息中记录有效倍率和命中来源。客户端可通过 `Idempotency-Key` 提交稳定请求编号，同一企业、用户和请求编号只能创建一个任务，重复请求不会再次扣费。任务失败时，失败终态、原扣费来源算力返还和 `ai_refund` 流水同样在一个事务中提交，并只允许 `running` 任务进入失败终态；退款严格使用任务固化的算力和扣费来源，不重新读取当前全局价格、用户组或专属优惠，因此切换扣费模式或重复失败回调不会退错算力账本或重复退款。同月退款减少当月用量，跨月退款只增加共享算力。
 
 图片和视频请求会在任务表中保存稳定请求编号、原渠道、上游任务 ID、可恢复响应和已归档文件编号。生成成功后由后端直接写入七牛，并以生成任务 ID 构造稳定文件编号；重复轮询和刷新恢复复用同一文件，不再要求浏览器下载后重新上传。浏览器刷新后从服务端工作区读取“生成中”记录，再按请求编号接管原任务；视频状态和内容查询固定使用任务创建时的渠道，明确失败时才进入失败终态，避免刷新后改选渠道、重复提交、重复扣费或丢失结果。恢复接口按当前企业和用户双重隔离，不返回渠道密钥；生成记录成功写入工作区后，前端确认消费恢复结果，服务端清空临时响应和文件编号并把文件引用交给正式生成记录。
+
+自定义 HTTP 媒体任务的 `result_json` 只保存归一化状态和已归档文件元数据，不保存上游临时媒体 URL。任务从协议快照读取最长等待时间；模型、渠道名、基址或模板编辑不改变旧任务的恢复请求，当前密钥按稳定渠道 ID 查找。普通任务提交与恢复共享租约，批量任务由批量 Worker 独立结算。
 
 ### user_projects
 

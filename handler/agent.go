@@ -18,6 +18,39 @@ const (
 	agentEventPollMax = time.Second
 )
 
+func ListAgentMemories(w http.ResponseWriter, r *http.Request) {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok {
+		Fail(w, "未登录或权限不足")
+		return
+	}
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	result, err := service.ListAgentMemories(user, r.URL.Query().Get("projectId"), model.Query{Page: page, PageSize: 20})
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, result)
+}
+
+func UpdateAgentMemory(w http.ResponseWriter, r *http.Request, id string) {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok {
+		Fail(w, "未登录或权限不足")
+		return
+	}
+	var request service.AgentMemoryUpdate
+	if !decodeAgentJSON(w, r, &request) {
+		return
+	}
+	result, err := service.UpdateAgentMemory(user, id, request)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, result)
+}
+
 func CreateAgentSession(w http.ResponseWriter, r *http.Request) {
 	user, ok := service.UserFromContext(r.Context())
 	if !ok {
@@ -135,6 +168,20 @@ func GetAgentRun(w http.ResponseWriter, r *http.Request, runID string) {
 	OK(w, run)
 }
 
+func ListRecoverableAgentRuns(w http.ResponseWriter, r *http.Request) {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok {
+		Fail(w, "未登录或权限不足")
+		return
+	}
+	items, err := service.ListRecoverableAgentRuns(user, r.URL.Query().Get("projectId"))
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, items)
+}
+
 func GetAgentRunDiagnostics(w http.ResponseWriter, r *http.Request, runID string) {
 	user, ok := service.UserFromContext(r.Context())
 	if !ok {
@@ -242,7 +289,13 @@ func RevertAgentRun(w http.ResponseWriter, r *http.Request, runID string) {
 		Fail(w, "未登录或权限不足")
 		return
 	}
-	result, err := service.RevertAgentRun(user, runID)
+	var request struct {
+		CallIDs []string `json:"callIds"`
+	}
+	if !decodeAgentJSON(w, r, &request) {
+		return
+	}
+	result, err := service.RevertAgentRun(user, runID, request.CallIDs)
 	if err != nil {
 		FailError(w, err)
 		return
@@ -338,7 +391,7 @@ func agentEventPollDelay(idlePolls int) time.Duration {
 }
 
 func decodeAgentJSON(w http.ResponseWriter, r *http.Request, target any) bool {
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 32<<20))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
 		Fail(w, "请求参数无效")

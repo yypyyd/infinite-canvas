@@ -19,6 +19,21 @@ const (
 	agentDefaultMaxCredits     = 100
 )
 
+func agentGenerationRunID(requestID string) string {
+	for _, prefix := range []string{"agent:", "agent-inspect:"} {
+		if strings.HasPrefix(requestID, prefix) {
+			runID, _, _ := strings.Cut(strings.TrimPrefix(requestID, prefix), ":")
+			return runID
+		}
+	}
+	if strings.HasPrefix(requestID, "agent-run-") {
+		if runID, _, found := strings.Cut(requestID, "-completion-"); found {
+			return runID
+		}
+	}
+	return ""
+}
+
 type SubmitAgentFeedbackRequest struct {
 	Signal string `json:"signal"`
 	Note   string `json:"note,omitempty"`
@@ -82,14 +97,14 @@ func normalizeAgentRunSnapshot(raw json.RawMessage, context AgentCanvasContext) 
 		}
 		raw = fallback
 	}
-	if len(raw) > 384<<10 {
+	if len(raw) > maxWorkspaceRecordBytes {
 		return nil, "", safeMessageError{message: "画布撤销快照过大"}
 	}
 	var snapshot struct {
 		Nodes       []json.RawMessage `json:"nodes"`
 		Connections []json.RawMessage `json:"connections"`
 	}
-	if json.Unmarshal(raw, &snapshot) != nil || snapshot.Nodes == nil || snapshot.Connections == nil || len(snapshot.Nodes) > 200 || len(snapshot.Connections) > 1000 {
+	if json.Unmarshal(raw, &snapshot) != nil || snapshot.Nodes == nil || snapshot.Connections == nil || len(snapshot.Nodes) > 10000 || len(snapshot.Connections) > 50000 {
 		return nil, "", safeMessageError{message: "画布撤销快照无效"}
 	}
 	canonical, err := json.Marshal(snapshot)

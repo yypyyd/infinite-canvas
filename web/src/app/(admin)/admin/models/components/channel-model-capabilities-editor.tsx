@@ -139,12 +139,22 @@ function ModelCapabilityFields({ fieldName, channelModel, managedModel, managedM
             </Form.Item>
             <Row gutter={12}>
                 <Col xs={24} md={12}>
-                    <Form.Item name={[fieldName, "model"]} label="对外模型 ID" extra="相同 ID 共用售价，不同售价选择不同 ID；同一渠道内 ID 不可重复。"
+                    <Form.Item
+                        name={[fieldName, "model"]}
+                        label="对外模型 ID"
+                        extra="相同 ID 共用售价，不同售价选择不同 ID；同一渠道内 ID 不可重复。"
                         rules={[
                             { required: true, whitespace: true, message: "请输入对外模型 ID" },
-                            { validator: (_, value: string) => ((form.getFieldValue("models") || []) as AdminChannelModel[]).some((model, index) => index !== fieldName && model.model?.trim() === value?.trim()) ? Promise.reject(new Error("当前渠道已关联该模型")) : Promise.resolve() },
-                        ]}>
-                        <AutoComplete options={managedModels.filter((model) => model.modality === modality).map((model) => ({ value: model.id, label: model.name && model.name !== model.id ? `${model.name} · ${model.id}` : model.id }))} placeholder="选择已有模型或输入新 ID" />
+                            {
+                                validator: (_, value: string) =>
+                                    ((form.getFieldValue("models") || []) as AdminChannelModel[]).some((model, index) => index !== fieldName && model.model?.trim() === value?.trim()) ? Promise.reject(new Error("当前渠道已关联该模型")) : Promise.resolve(),
+                            },
+                        ]}
+                    >
+                        <AutoComplete
+                            options={managedModels.filter((model) => model.modality === modality).map((model) => ({ value: model.id, label: model.name && model.name !== model.id ? `${model.name} · ${model.id}` : model.id }))}
+                            placeholder="选择已有模型或输入新 ID"
+                        />
                     </Form.Item>
                 </Col>
                 <Col xs={24} md={12}>

@@ -13,6 +13,7 @@ type agentToolDefinition struct {
 
 var agentToolRegistry = []agentToolDefinition{
 	{Name: "canvas.plan", Alias: "canvas_plan"},
+	{Name: "canvas.read", Alias: "canvas_read"},
 	{Name: "image.generate", Alias: "image_generate", Retryable: true, Revertible: true, MediaCost: 1},
 	{Name: "image.edit", Alias: "image_edit", Retryable: true, Revertible: true, MediaCost: 1},
 	{Name: "image.inspect", Alias: "image_inspect"},
@@ -27,6 +28,11 @@ var agentToolRegistry = []agentToolDefinition{
 	{Name: "agent.ask_user", Alias: "agent_ask_user", RequiresConfirmation: true},
 	{Name: "agent.remember", Alias: "agent_remember", RequiresConfirmation: true},
 	{Name: "agent.forget", Alias: "agent_forget", RequiresConfirmation: true},
+}
+
+func agentToolAdvancesPlan(name string) bool {
+	definition, ok := agentToolDefinitionFor(name)
+	return ok && definition.Revertible
 }
 
 func agentToolDefinitionFor(name string) (agentToolDefinition, bool) {

@@ -444,7 +444,9 @@ function ModelDetails({
                 <div className="flex flex-col gap-3 border-b border-border bg-muted/35 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                         <h3 className="text-sm font-semibold">{meta.label}调用示例</h3>
-                        <p className="mt-1 text-xs text-muted-foreground">{model.modality === "image" ? "图片是同步接口，成功后直接读 data[]。" : model.modality === "video" ? "视频是异步任务：保存顶层 id，再查询，completed 后下载。" : "音频成功时直接返回文件，不是 JSON。"}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                            {model.modality === "image" ? "图片是同步接口，成功后直接读 data[]。" : model.modality === "video" ? "视频是异步任务：保存顶层 id，再查询，completed 后下载。" : "音频成功时直接返回文件，不是 JSON。"}
+                        </p>
                     </div>
                     {operations.length > 1 ? <Segmented<ModelOperation> size="small" value={operation} options={operations.map((item) => ({ label: operationMeta[item], value: item }))} onChange={onOperationChange} /> : null}
                 </div>
@@ -599,14 +601,7 @@ function buildSnippet(endpoint: string, model: MarketplaceModel, operation: Mode
     const ratio = model.aspectRatios[0];
     const resolution = model.resolutionTiers[0];
     if (model.modality === "image" && operation === "edit") {
-        const fields = [
-            `model=${model.id}`,
-            "prompt=保留商品主体，把背景改成夜晚霓虹街道",
-            "image=@./reference.png",
-            ...(ratio ? [`size=${imageOutputSize(ratio)}`] : []),
-            "n=1",
-            "response_format=b64_json",
-        ];
+        const fields = [`model=${model.id}`, "prompt=保留商品主体，把背景改成夜晚霓虹街道", "image=@./reference.png", ...(ratio ? [`size=${imageOutputSize(ratio)}`] : []), "n=1", "response_format=b64_json"];
         return `curl -X POST "${endpoint}/images/edits" \\\n  -H "Authorization: Bearer YOUR_API_KEY" \\\n  -H "Idempotency-Key: YOUR_UNIQUE_REQUEST_ID" \\\n${fields.map((field) => `  -F "${field}"`).join(" \\\n")}`;
     }
     if (model.modality === "image") {

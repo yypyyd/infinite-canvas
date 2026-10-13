@@ -64,3 +64,17 @@ func AdminTestChannelModel(w http.ResponseWriter, r *http.Request) {
 	}
 	OK(w, result)
 }
+
+func AdminProtocolPreview(w http.ResponseWriter, r *http.Request) {
+	var request service.ProtocolPreviewInput
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2<<20)).Decode(&request); err != nil {
+		Fail(w, "协议样例格式无效或内容过大")
+		return
+	}
+	result, err := service.PreviewProtocol(request)
+	if err != nil {
+		Fail(w, err.Error())
+		return
+	}
+	OK(w, result)
+}

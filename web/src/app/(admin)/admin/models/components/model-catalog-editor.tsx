@@ -61,7 +61,9 @@ export function ModelCatalogEditor({ value, pricingRules, channels, isSaving, on
     }, [pricingRules]);
     const filteredModels = useMemo(() => {
         const search = keyword.trim().toLowerCase();
-        return models.filter((model) => (modality === "all" || model.modality === modality) && (!onlyUnpriced || !hasPricing(model, rulesByModel.get(model.id) || [])) && (!search || model.id.toLowerCase().includes(search) || model.name.toLowerCase().includes(search)));
+        return models.filter(
+            (model) => (modality === "all" || model.modality === modality) && (!onlyUnpriced || !hasPricing(model, rulesByModel.get(model.id) || [])) && (!search || model.id.toLowerCase().includes(search) || model.name.toLowerCase().includes(search)),
+        );
     }, [keyword, modality, models, onlyUnpriced, rulesByModel]);
     const unconfiguredCount = models.filter((model) => !hasPricing(model, rulesByModel.get(model.id) || [])).length;
 
@@ -112,7 +114,11 @@ export function ModelCatalogEditor({ value, pricingRules, channels, isSaving, on
     };
     const saveModel = async () => {
         let fields: AdminManagedModel;
-        try { fields = await form.validateFields(); } catch { return; }
+        try {
+            fields = await form.validateFields();
+        } catch {
+            return;
+        }
         const model = normalizeModels([{ ...fields, id: fields.id.trim() }])[0];
         if (!model) return;
         if (!editingModel && models.some((item) => item.id === model.id)) {
@@ -143,7 +149,13 @@ export function ModelCatalogEditor({ value, pricingRules, channels, isSaving, on
     };
     const deleteModels = async (ids: string[]) => {
         const removed = new Set(ids);
-        if (!await updateModels(models.filter((item) => !removed.has(item.id)), pricingRules.filter((rule) => !removed.has(rule.model)))) throw new Error("删除失败");
+        if (
+            !(await updateModels(
+                models.filter((item) => !removed.has(item.id)),
+                pricingRules.filter((rule) => !removed.has(rule.model)),
+            ))
+        )
+            throw new Error("删除失败");
     };
     const removeSelectedModels = () => {
         const deletable = selectedIds.filter((id) => !channelModelSet.has(id));
@@ -166,27 +178,41 @@ export function ModelCatalogEditor({ value, pricingRules, channels, isSaving, on
         const additions = channelModels.filter((item) => !existing.has(item.model)).map((item, index) => ({ ...createModel(item.model, item.modality || inferModelModality(item.model), models.length + index, item), enabled: false }));
         const synced = models.map((model) => syncModelCapabilities(model, channelModelMap.get(model.id)));
         const changes = synced.filter((model, index) => JSON.stringify(model) !== JSON.stringify(models[index]));
-        if (!additions.length && !changes.length) { message.info("没有需要导入或更新的模型"); return; }
+        if (!additions.length && !changes.length) {
+            message.info("没有需要导入或更新的模型");
+            return;
+        }
         modal.confirm({
             title: `新增 ${additions.length} 个模型，更新 ${changes.length} 个模型能力`,
             width: 600,
-            content: <Flex vertical gap={8}>
-                <Typography.Text>同一模型 ID 合并为一个对外模型，各渠道映射分别保留。已有价格与开放状态不变，新增模型默认关闭。</Typography.Text>
-                <div className="max-h-64 overflow-y-auto">
-                    {additions.map((model) => <div key={model.id}>新增：{model.id}</div>)}
-                    {changes.map((model) => <div key={model.id}>更新：{model.id} · {capabilitySummary(model)}</div>)}
-                </div>
-            </Flex>,
+            content: (
+                <Flex vertical gap={8}>
+                    <Typography.Text>同一模型 ID 合并为一个对外模型，各渠道映射分别保留。已有价格与开放状态不变，新增模型默认关闭。</Typography.Text>
+                    <div className="max-h-64 overflow-y-auto">
+                        {additions.map((model) => (
+                            <div key={model.id}>新增：{model.id}</div>
+                        ))}
+                        {changes.map((model) => (
+                            <div key={model.id}>
+                                更新：{model.id} · {capabilitySummary(model)}
+                            </div>
+                        ))}
+                    </div>
+                </Flex>
+            ),
             okText: "确认导入并保存",
             cancelText: "取消",
-            onOk: async () => { if (!await updateModels([...synced, ...additions])) throw new Error("保存失败"); },
+            onOk: async () => {
+                if (!(await updateModels([...synced, ...additions]))) throw new Error("保存失败");
+            },
         });
     };
     const setModelEnabled = (id: string, enabled: boolean) => updateModels(models.map((model) => (model.id === id ? { ...model, enabled } : model)));
     useEffect(() => {
         if (!requestedModel) return;
         const model = models.find((item) => item.id === requestedModel);
-        if (model) openEdit(model); else openCreate(requestedModel);
+        if (model) openEdit(model);
+        else openCreate(requestedModel);
         onModelOpened();
     }, [requestedModel]);
     const setRuleField = <K extends keyof AdminPricingRule>(index: number, key: K, nextValue: AdminPricingRule[K]) =>
@@ -221,19 +247,26 @@ export function ModelCatalogEditor({ value, pricingRules, channels, isSaving, on
         <>
             <Flex justify="space-between" align="center" gap={12} wrap className="mb-4">
                 <Space wrap>
-                    <Button type="text" onClick={() => setOnlyUnpriced(false)} disabled={!onlyUnpriced}>全部 {models.length}</Button>
-                    <Button type={onlyUnpriced ? "link" : "text"} onClick={() => setOnlyUnpriced(!onlyUnpriced)}>待定价 {unconfiguredCount}</Button>
+                    <Button type="text" onClick={() => setOnlyUnpriced(false)} disabled={!onlyUnpriced}>
+                        全部 {models.length}
+                    </Button>
+                    <Button type={onlyUnpriced ? "link" : "text"} onClick={() => setOnlyUnpriced(!onlyUnpriced)}>
+                        待定价 {unconfiguredCount}
+                    </Button>
                 </Space>
                 <Space wrap>
                     <Button href="/admin/settings">默认与分组设置</Button>
-                    <Button icon={<SyncOutlined />} disabled={isSaving} onClick={syncChannelModels}>从渠道导入</Button>
-                    <Button type="primary" icon={<PlusOutlined />} disabled={isSaving} onClick={() => openCreate()}>添加模型</Button>
+                    <Button icon={<SyncOutlined />} disabled={isSaving} onClick={syncChannelModels}>
+                        从渠道导入
+                    </Button>
+                    <Button type="primary" icon={<PlusOutlined />} disabled={isSaving} onClick={() => openCreate()}>
+                        添加模型
+                    </Button>
                 </Space>
             </Flex>
             <Flex vertical gap={14}>
                 <Flex justify="space-between" align="center" gap={12} wrap>
                     <Space wrap>
-
                         {selectedIds.length ? (
                             <Button danger size="small" disabled={isSaving} icon={<DeleteOutlined />} onClick={removeSelectedModels}>
                                 删除选中（{selectedIds.length}）
@@ -259,32 +292,59 @@ export function ModelCatalogEditor({ value, pricingRules, channels, isSaving, on
                             dataIndex: "id",
                             render: (_: unknown, model: AdminManagedModel) => (
                                 <Flex vertical gap={2}>
-                                    <Typography.Link strong onClick={() => openEdit(model)}>{model.name || model.id}</Typography.Link>
-                                    {model.name !== model.id ? <Typography.Text type="secondary" copyable={{ text: model.id }} className="text-xs">{model.id}</Typography.Text> : null}
-                                    <Typography.Text type="secondary" className="text-xs">{modalityLabel[model.modality] || model.modality}</Typography.Text>
+                                    <Typography.Link strong onClick={() => openEdit(model)}>
+                                        {model.name || model.id}
+                                    </Typography.Link>
+                                    {model.name !== model.id ? (
+                                        <Typography.Text type="secondary" copyable={{ text: model.id }} className="text-xs">
+                                            {model.id}
+                                        </Typography.Text>
+                                    ) : null}
+                                    <Typography.Text type="secondary" className="text-xs">
+                                        {modalityLabel[model.modality] || model.modality}
+                                    </Typography.Text>
                                 </Flex>
                             ),
                         },
                         {
                             title: "计费",
                             width: 280,
-                            render: (_: unknown, model: AdminManagedModel) => <Flex vertical gap={4}>
-                                <RuleSummary rules={rulesByModel.get(model.id) || []} />
-                                {(rulesByModel.get(model.id) || []).length > 0 && !hasPricing(model, rulesByModel.get(model.id) || []) ? <Typography.Text type="warning" className="text-xs">计费规格未配齐</Typography.Text> : null}
-                            </Flex>,
+                            render: (_: unknown, model: AdminManagedModel) => (
+                                <Flex vertical gap={4}>
+                                    <RuleSummary rules={rulesByModel.get(model.id) || []} />
+                                    {(rulesByModel.get(model.id) || []).length > 0 && !hasPricing(model, rulesByModel.get(model.id) || []) ? (
+                                        <Typography.Text type="warning" className="text-xs">
+                                            计费规格未配齐
+                                        </Typography.Text>
+                                    ) : null}
+                                </Flex>
+                            ),
                         },
                         {
                             title: "接入渠道",
                             width: 150,
                             render: (_: unknown, model: AdminManagedModel) => {
                                 const related = channels.filter((channel) => channel.models.some((item) => item.model === model.id));
-                                return related.length ? <Flex vertical gap={2}>
-                                    <Typography.Link onClick={() => setRelatedModel(model.id)}>{related.length} 个渠道 →</Typography.Link>
-                                    {!related.some((channel) => channel.enabled) ? <Typography.Text type="warning" className="text-xs">渠道均已停用</Typography.Text> : null}
-                                </Flex> : <Typography.Text type="warning">未接入渠道</Typography.Text>;
+                                return related.length ? (
+                                    <Flex vertical gap={2}>
+                                        <Typography.Link onClick={() => setRelatedModel(model.id)}>{related.length} 个渠道 →</Typography.Link>
+                                        {!related.some((channel) => channel.enabled) ? (
+                                            <Typography.Text type="warning" className="text-xs">
+                                                渠道均已停用
+                                            </Typography.Text>
+                                        ) : null}
+                                    </Flex>
+                                ) : (
+                                    <Typography.Text type="warning">未接入渠道</Typography.Text>
+                                );
                             },
                         },
-                        { title: "开放", dataIndex: "enabled", width: 76, render: (enabled: boolean, model: AdminManagedModel) => <Switch size="small" checked={enabled} disabled={isSaving} onChange={(checked) => void setModelEnabled(model.id, checked)} /> },
+                        {
+                            title: "开放",
+                            dataIndex: "enabled",
+                            width: 76,
+                            render: (enabled: boolean, model: AdminManagedModel) => <Switch size="small" checked={enabled} disabled={isSaving} onChange={(checked) => void setModelEnabled(model.id, checked)} />,
+                        },
                         {
                             title: "操作",
                             width: 112,
@@ -294,11 +354,18 @@ export function ModelCatalogEditor({ value, pricingRules, channels, isSaving, on
                                     <Button type="text" size="small" icon={<EditOutlined />} onClick={() => openEdit(model)}>
                                         编辑
                                     </Button>
-                                    <Dropdown menu={{ items: [
-                                        { key: "copy", label: "复制为独立定价模型", disabled: isSaving, onClick: () => openCopy(model) },
-                                        { key: "delete", label: "删除模型", danger: true, disabled: isSaving || channelModelSet.has(model.id), onClick: () => removeModel(model) },
-                                    ] }} trigger={["click"]}>
-                                        <Button type="text" size="small" aria-label="更多模型操作">···</Button>
+                                    <Dropdown
+                                        menu={{
+                                            items: [
+                                                { key: "copy", label: "复制为独立定价模型", disabled: isSaving, onClick: () => openCopy(model) },
+                                                { key: "delete", label: "删除模型", danger: true, disabled: isSaving || channelModelSet.has(model.id), onClick: () => removeModel(model) },
+                                            ],
+                                        }}
+                                        trigger={["click"]}
+                                    >
+                                        <Button type="text" size="small" aria-label="更多模型操作">
+                                            ···
+                                        </Button>
                                     </Dropdown>
                                 </Space>
                             ),
@@ -312,11 +379,15 @@ export function ModelCatalogEditor({ value, pricingRules, channels, isSaving, on
                 title={editingModel ? "编辑模型与计费" : copiedFrom ? "复制为独立定价模型" : "添加模型与计费"}
                 width="min(720px, 100vw)"
                 open={drawerOpen}
-                onClose={() => { if (!isSaving) closeDrawer(); }}
+                onClose={() => {
+                    if (!isSaving) closeDrawer();
+                }}
                 destroyOnHidden
                 extra={
                     <Space>
-                        <Button disabled={isSaving} onClick={closeDrawer}>取消</Button>
+                        <Button disabled={isSaving} onClick={closeDrawer}>
+                            取消
+                        </Button>
                         <Button type="primary" loading={isSaving} onClick={() => void saveModel()}>
                             保存模型
                         </Button>
@@ -335,9 +406,15 @@ export function ModelCatalogEditor({ value, pricingRules, channels, isSaving, on
                 >
                     <Flex justify="space-between" align="center" className="mb-4">
                         <Typography.Text type="secondary">保存后直接生效，无需再次保存整页。</Typography.Text>
-                        {editingModel ? <Button type="link" onClick={() => setRelatedModel(editingModel)}>查看关联渠道</Button> : null}
+                        {editingModel ? (
+                            <Button type="link" onClick={() => setRelatedModel(editingModel)}>
+                                查看关联渠道
+                            </Button>
+                        ) : null}
                     </Flex>
-                    {copiedFrom ? <Alert className="mb-4" type="info" showIcon title={`已复制 ${copiedFrom} 的模型能力`} description="填写新的对外 ID、显示名称和售价。保存后在目标渠道选择此 ID，并填写原上游模型名；新模型默认关闭，接入渠道后再开放。" /> : null}
+                    {copiedFrom ? (
+                        <Alert className="mb-4" type="info" showIcon title={`已复制 ${copiedFrom} 的模型能力`} description="填写新的对外 ID、显示名称和售价。保存后在目标渠道选择此 ID，并填写原上游模型名；新模型默认关闭，接入渠道后再开放。" />
+                    ) : null}
                     <Typography.Title level={5}>基本信息与能力</Typography.Title>
                     <Row gutter={16}>
                         <Col span={16}>
@@ -523,7 +600,9 @@ export function ModelCatalogEditor({ value, pricingRules, channels, isSaving, on
                                             <Form.Item label="当前使用倍率计费">
                                                 <Space wrap>
                                                     <Typography.Text>模型倍率 ×{rule.modelRatio}</Typography.Text>
-                                                    <Button size="small" onClick={() => setDraftRules((current) => current.map((item, ruleIndex) => ruleIndex === index ? { ...item, billingMode: "fixed", credits: null } : item))}>改为固定单价</Button>
+                                                    <Button size="small" onClick={() => setDraftRules((current) => current.map((item, ruleIndex) => (ruleIndex === index ? { ...item, billingMode: "fixed", credits: null } : item)))}>
+                                                        改为固定单价
+                                                    </Button>
                                                 </Space>
                                             </Form.Item>
                                         </Col>
@@ -549,14 +628,30 @@ export function ModelCatalogEditor({ value, pricingRules, channels, isSaving, on
                 {channels.map((channel, index) => {
                     const model = channel.models.find((item) => item.model === relatedModel);
                     if (!model) return null;
-                    return <div key={index} className="py-4" style={{ borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
-                        <Flex justify="space-between" gap={12}>
-                            <Space><Typography.Text strong>{channel.name}</Typography.Text><Tag color={channel.enabled ? "success" : "default"}>{channel.enabled ? "已启用" : "已停用"}</Tag></Space>
-                            <Button type="link" onClick={() => { setRelatedModel(null); closeDrawer(); onOpenChannel(index); }}>渠道配置 →</Button>
-                        </Flex>
-                        <Typography.Paragraph type="secondary" className="!mb-1">上游模型：{model.upstreamModel || model.model} · 渠道权重 {channel.weight}</Typography.Paragraph>
-                        <Typography.Text>{capabilitySummary(model)}</Typography.Text>
-                    </div>;
+                    return (
+                        <div key={index} className="py-4" style={{ borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
+                            <Flex justify="space-between" gap={12}>
+                                <Space>
+                                    <Typography.Text strong>{channel.name}</Typography.Text>
+                                    <Tag color={channel.enabled ? "success" : "default"}>{channel.enabled ? "已启用" : "已停用"}</Tag>
+                                </Space>
+                                <Button
+                                    type="link"
+                                    onClick={() => {
+                                        setRelatedModel(null);
+                                        closeDrawer();
+                                        onOpenChannel(index);
+                                    }}
+                                >
+                                    渠道配置 →
+                                </Button>
+                            </Flex>
+                            <Typography.Paragraph type="secondary" className="!mb-1">
+                                上游模型：{model.upstreamModel || model.model} · 渠道权重 {channel.weight}
+                            </Typography.Paragraph>
+                            <Typography.Text>{capabilitySummary(model)}</Typography.Text>
+                        </div>
+                    );
                 })}
                 {!channels.some((channel) => channel.models.some((model) => model.model === relatedModel)) ? <Empty description="尚未接入渠道" /> : null}
             </Drawer>
@@ -571,7 +666,9 @@ function RuleSummary({ rules }: { rules: AdminPricingRule[] }) {
         <Space size={[4, 4]} wrap>
             {enabled.slice(0, 3).map((rule, index) => (
                 <Typography.Text key={`${index}-${rule.resolutionTier}`} type={rule.billingMode === "fixed" && rule.credits == null ? "warning" : undefined}>
-                    {pricingTierLabel(rule, rule.modality, false)} · {rule.billingMode === "ratio" ? `×${rule.modelRatio}` : rule.credits == null ? "未设置价格" : rule.credits === 0 && !rule.minCredits ? "免费" : `${rule.credits} 点/${unitLabel[rule.unit] || rule.unit}`}{rule.minCredits > 0 ? `（最低 ${rule.minCredits} 点）` : ""}
+                    {pricingTierLabel(rule, rule.modality, false)} ·{" "}
+                    {rule.billingMode === "ratio" ? `×${rule.modelRatio}` : rule.credits == null ? "未设置价格" : rule.credits === 0 && !rule.minCredits ? "免费" : `${rule.credits} 点/${unitLabel[rule.unit] || rule.unit}`}
+                    {rule.minCredits > 0 ? `（最低 ${rule.minCredits} 点）` : ""}
                 </Typography.Text>
             ))}
             {enabled.length > 3 ? <Tag>+{enabled.length - 3}</Tag> : null}

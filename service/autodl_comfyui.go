@@ -26,12 +26,12 @@ var autoDLHTTPClient = &http.Client{Timeout: autoDLRequestTimeout, CheckRedirect
 	return nil
 }}
 
-type AutoDLReferenceFile struct {
+type MediaReferenceFile struct {
 	MimeType string
 	Data     []byte
 }
 
-type AutoDLGenerationInput struct {
+type MediaGenerationInput struct {
 	Prompt                    string
 	NegativePrompt            string
 	Size                      string
@@ -45,7 +45,9 @@ type AutoDLGenerationInput struct {
 	ReferenceImageStorageKeys []string
 	ReferenceVideoStorageKeys []string
 	ReferenceAudioStorageKeys []string
-	ReferenceImages           []AutoDLReferenceFile
+	ReferenceImages           []MediaReferenceFile
+	ReferenceVideos           []MediaReferenceFile
+	ReferenceAudios           []MediaReferenceFile
 }
 
 type autoDLTaskOutput struct {
@@ -98,7 +100,10 @@ func testAutoDLComfyUICredentials(ctx context.Context, channel model.ModelChanne
 	return nil
 }
 
-func SubmitAutoDLComfyUITask(ctx context.Context, user model.AuthUser, task model.GenerationTask, selection ModelChannelSelection, input AutoDLGenerationInput) (string, []byte, error) {
+func SubmitAutoDLComfyUITask(ctx context.Context, user model.AuthUser, task model.GenerationTask, selection ModelChannelSelection, input MediaGenerationInput) (string, []byte, error) {
+	if len(input.ReferenceVideos)+len(input.ReferenceAudios) > 0 {
+		return "", nil, errors.New("AutoDL 视频和音频参考素材必须使用工作区文件")
+	}
 	workflow := selection.Model.Workflow
 	if err := validateComfyUIWorkflow(workflow); err != nil {
 		return "", nil, safeMessageError{message: "AutoDL 工作流配置无效：" + err.Error()}
@@ -140,6 +145,9 @@ func ReconcileAutoDLGenerationTask(ctx context.Context, task *model.GenerationTa
 		return false, errors.New("AutoDL task ID is missing")
 	}
 	if len(task.StorageKeys) > 0 {
+		if task.BatchJobID != "" {
+			return true, nil
+		}
 		task.Status = model.GenerationTaskStatusSuccess
 		return true, FinishGenerationTask(*task, model.GenerationTaskStatusSuccess, "")
 	}
@@ -154,6 +162,9 @@ func ReconcileAutoDLGenerationTask(ctx context.Context, task *model.GenerationTa
 			message = "AutoDL 生成失败"
 		}
 		task.Status, task.ErrorMessage = model.GenerationTaskStatusFailed, message
+		if task.BatchJobID != "" {
+			return true, errors.New(message)
+		}
 		return true, FinishGenerationTask(*task, model.GenerationTaskStatusFailed, message)
 	case "success":
 		return archiveAutoDLTaskOutputs(ctx, task, result.Outputs)
@@ -236,7 +247,7 @@ func normalizeAutoDLStatus(status string) string {
 	}
 }
 
-func autoDLTemplateValues(ctx context.Context, user model.AuthUser, task model.GenerationTask, input AutoDLGenerationInput) (map[string]any, error) {
+func autoDLTemplateValues(ctx context.Context, user model.AuthUser, task model.GenerationTask, input MediaGenerationInput) (map[string]any, error) {
 	imageURLs, err := autoDLStorageURLs(user, input.ReferenceImageStorageKeys)
 	if err != nil {
 		return nil, err
@@ -323,19 +334,19 @@ func renderAutoDLRequest(workflow model.ComfyUIWorkflowConfig, values map[string
 	if err := json.Unmarshal([]byte(workflow.ValueMaps), &valueMaps); err != nil {
 		return nil, err
 	}
-	rendered, _, err := renderAutoDLValue(template, values, valueMaps)
+	rendered, _, err := renderMediaTemplateValue(template, values, valueMaps)
 	if err != nil {
 		return nil, err
 	}
 	return json.Marshal(rendered)
 }
 
-func renderAutoDLValue(value any, values map[string]any, valueMaps map[string]map[string]any) (any, bool, error) {
+func renderMediaTemplateValue(value any, values map[string]any, valueMaps map[string]map[string]any) (any, bool, error) {
 	switch typed := value.(type) {
 	case map[string]any:
 		result := make(map[string]any, len(typed))
 		for key, child := range typed {
-			rendered, exists, err := renderAutoDLValue(child, values, valueMaps)
+			rendered, exists, err := renderMediaTemplateValue(child, values, valueMaps)
 			if err != nil {
 				return nil, false, err
 			}
@@ -347,7 +358,7 @@ func renderAutoDLValue(value any, values map[string]any, valueMaps map[string]ma
 	case []any:
 		result := make([]any, 0, len(typed))
 		for _, child := range typed {
-			rendered, exists, err := renderAutoDLValue(child, values, valueMaps)
+			rendered, exists, err := renderMediaTemplateValue(child, values, valueMaps)
 			if err != nil {
 				return nil, false, err
 			}
@@ -357,7 +368,7 @@ func renderAutoDLValue(value any, values map[string]any, valueMaps map[string]ma
 		}
 		return result, true, nil
 	case string:
-		if !isComfyUIPlaceholder(typed) {
+		if !protocolVariablePattern.MatchString(typed) {
 			return typed, true, nil
 		}
 		name := strings.TrimSuffix(strings.TrimPrefix(typed, "${"), "}")
@@ -416,6 +427,9 @@ func archiveAutoDLTaskOutputs(ctx context.Context, task *model.GenerationTask, o
 	body := autoDLArchivedBody(*task, files)
 	if err := UpdateGenerationTaskRecovery(task, task.UpstreamTaskID, body, storageKeys); err != nil {
 		return false, err
+	}
+	if task.BatchJobID != "" {
+		return true, nil
 	}
 	if err := FinishGenerationTask(*task, model.GenerationTaskStatusSuccess, ""); err != nil {
 		return false, err

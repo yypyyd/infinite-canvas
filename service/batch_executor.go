@@ -118,9 +118,17 @@ func (executor StandardBatchProductionExecutor) Execute(ctx context.Context, inp
 	credits := input.Item.EstimatedCredits
 	resultClient, cleanup := executor.standardResultClient()
 	defer cleanup()
-	body, contentType, err := buildStandardBatchRequest(ctx, resultClient, selection, prompt, references, generationSize)
-	if err != nil {
-		return pendingResult, standardBatchTypedError(err, model.BatchProductionErrorUpstreamTransient, true)
+	var body []byte
+	var contentType string
+	if !IsManagedMediaChannel(selection.Channel) {
+		body, contentType, err = buildStandardBatchRequest(ctx, resultClient, selection, prompt, references, generationSize)
+		if err != nil {
+			return pendingResult, standardBatchTypedError(err, model.BatchProductionErrorUpstreamTransient, true)
+		}
+	} else if resumeTask == nil {
+		if err := ValidateManagedMediaRequest(selection, pricing); err != nil {
+			return pendingResult, permanentBatchProductionError(model.BatchProductionErrorValidationInput, err)
+		}
 	}
 	task, err := beginOrResumeBatchGeneration(GenerationTaskInput{
 		UserID: input.Job.CreatedBy, OrganizationID: input.Job.OrganizationID,
@@ -147,6 +155,11 @@ func (executor StandardBatchProductionExecutor) Execute(ctx context.Context, inp
 		}
 	}
 	pendingResult.GenerationTask = &task
+	if IsManagedMediaChannel(selection.Channel) {
+		auth := model.PublicUser(user)
+		auth.OrganizationID = input.Job.OrganizationID
+		return executor.executeManagedBatch(ctx, auth, selection, prompt, generationSize, references, &task)
+	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, BuildModelChannelURL(selection.Channel, path), bytes.NewReader(body))
 	if err != nil {
 		return pendingResult, standardBatchTypedError(err, model.BatchProductionErrorUpstreamPermanent, false)
@@ -254,6 +267,11 @@ func standardBatchReferenceStorageKeys(brand *model.Brand, sku *model.ProductSKU
 }
 
 func selectStandardBatchModelChannel(request PricingRequest, task *model.GenerationTask, key string) (ModelChannelSelection, error) {
+	if task != nil && task.ProtocolSnapshot != nil {
+		channel, err := protocolTaskChannel(*task)
+		channel.Protocol = modelChannelProtocolCustomHTTP
+		return ModelChannelSelection{Channel: channel, Model: model.ChannelModel{Model: task.Model, UpstreamModel: task.UpstreamModel, Modality: task.Modality}}, err
+	}
 	settings, err := repository.GetSettings()
 	if err != nil {
 		return ModelChannelSelection{}, err

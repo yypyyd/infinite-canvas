@@ -133,7 +133,10 @@ function LoginContent() {
             <LoginBackdrop />
             <section className="relative m-auto grid w-full max-w-[960px] overflow-hidden rounded-[28px] bg-card shadow-[0_40px_140px_-28px_rgba(0,0,0,.78),0_0_90px_-28px_rgba(139,92,246,.38)] ring-1 ring-white/10 lg:grid-cols-2">
                 <aside className="relative hidden min-h-[520px] flex-col justify-between overflow-hidden bg-[#07131f] px-10 py-10 text-white lg:flex">
-                    <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(90%_70%_at_0%_0%,rgba(56,189,248,.28),transparent_42%),radial-gradient(80%_60%_at_100%_100%,rgba(139,92,246,.22),transparent_46%),linear-gradient(165deg,#07111c_0%,#0b1c2e_52%,#0a1624_100%)]" />
+                    <div
+                        aria-hidden
+                        className="pointer-events-none absolute inset-0 bg-[radial-gradient(90%_70%_at_0%_0%,rgba(56,189,248,.28),transparent_42%),radial-gradient(80%_60%_at_100%_100%,rgba(139,92,246,.22),transparent_46%),linear-gradient(165deg,#07111c_0%,#0b1c2e_52%,#0a1624_100%)]"
+                    />
                     <div aria-hidden className="pointer-events-none absolute -left-16 top-24 size-64 rounded-full bg-cyan-400/10 blur-3xl" />
                     <div aria-hidden className="pointer-events-none absolute -right-10 bottom-10 size-56 rounded-full bg-violet-500/20 blur-3xl" />
                     <Link href="/" prefetch={false} className="relative inline-flex items-center gap-3 self-start">
@@ -169,7 +172,13 @@ function LoginContent() {
                         <h2 className="text-[26px] font-semibold tracking-[-.04em]">{isRegister ? "创建账号" : "欢迎回来"}</h2>
                         <p className="mt-1.5 text-sm text-muted-foreground">{isRegister ? "几秒钟完成注册，立刻开始出图。" : "登录后继续生成商品图与营销素材。"}</p>
                     </div>
-                    <Form<LoginFormValues> form={form} layout="vertical" requiredMark={false} onFinish={submit} className="[&_.ant-form-item]:!mb-4 [&_.ant-form-item-label>label]:!h-auto [&_.ant-form-item-label>label]:!text-[13px] [&_.ant-form-item-label>label]:!text-muted-foreground">
+                    <Form<LoginFormValues>
+                        form={form}
+                        layout="vertical"
+                        requiredMark={false}
+                        onFinish={submit}
+                        className="[&_.ant-form-item]:!mb-4 [&_.ant-form-item-label>label]:!h-auto [&_.ant-form-item-label>label]:!text-[13px] [&_.ant-form-item-label>label]:!text-muted-foreground"
+                    >
                         <Form.Item name="username" label={isRegister ? "用户名" : "账号"} rules={[{ required: true, message: isRegister ? "请输入用户名" : "请输入用户名或邮箱" }]}>
                             <Input className={inputClass} autoComplete="username" placeholder={isRegister ? "设置用户名" : "用户名或邮箱"} />
                         </Form.Item>
@@ -216,12 +225,7 @@ function LoginContent() {
                                 <Input.Password className={inputClass} autoComplete="new-password" placeholder="再次输入密码" />
                             </Form.Item>
                         ) : null}
-                        <Button
-                            block
-                            htmlType="submit"
-                            loading={isLoading}
-                            className="!mt-1 !h-11 !rounded-[10px] !border-0 !bg-foreground !font-medium !text-background hover:!opacity-90"
-                        >
+                        <Button block htmlType="submit" loading={isLoading} className="!mt-1 !h-11 !rounded-[10px] !border-0 !bg-foreground !font-medium !text-background hover:!opacity-90">
                             {isRegister ? "创建账号" : "登录"}
                         </Button>
                     </Form>

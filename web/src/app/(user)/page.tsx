@@ -166,44 +166,44 @@ export default function IndexPage() {
                 </div>
                 <div className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)] lg:gap-8">
                     <div className="divide-y divide-border border-y border-border">
-                            {commercePresets.map((preset, index) => (
-                                <button
-                                    key={preset.id}
-                                    type="button"
-                                    onMouseEnter={() => setActivePreset(index)}
-                                    onFocus={() => setActivePreset(index)}
-                                    onClick={() => setActivePreset(index)}
-                                    className={`flex w-full items-center justify-between gap-3 py-4 text-left transition ${activePreset === index ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}
-                                >
-                                    <span className="flex items-center gap-3">
-                                        <span className={`text-[10px] tabular-nums ${activePreset === index ? "text-primary" : "text-muted-foreground/60"}`}>0{index + 1}</span>
-                                        <span className="text-sm font-medium">{preset.title}</span>
-                                    </span>
-                                    <ArrowUpRight className={`size-4 transition ${activePreset === index ? "translate-x-0 text-primary" : "-translate-x-1 opacity-0"}`} />
-                                </button>
-                            ))}
-                        </div>
-                        <div className="relative min-h-[360px] overflow-hidden rounded-[22px] bg-muted">
-                            <AnimatePresence mode="wait">
-                                <motion.div
-                                    key={activePreset}
-                                    initial={reducedMotion ? false : { opacity: 0, scale: 1.04 }}
-                                    animate={{ opacity: 1, scale: 1 }}
-                                    exit={reducedMotion ? undefined : { opacity: 0, scale: 0.98 }}
-                                    transition={{ duration: 0.38 }}
-                                    className="absolute inset-0"
-                                >
-                                    <NextImage src={media[activePreset]} alt={commercePresets[activePreset]?.title ?? "商品视觉"} fill sizes="(max-width: 1024px) 100vw, 460px" className="object-cover" />
-                                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-5 pt-20 text-left text-white">
-                                        <h3 className="text-lg font-medium">{commercePresets[activePreset]?.title}</h3>
-                                        <p className="mt-1 text-sm text-white/65">{commercePresets[activePreset]?.description}</p>
-                                        <Link href={`/image?preset=${commercePresets[activePreset]?.id}`} prefetch={false} className="mt-4 inline-flex items-center gap-1 text-sm font-medium">
-                                            立即制作 <ArrowUpRight className="size-4" />
-                                        </Link>
-                                    </div>
-                                </motion.div>
-                            </AnimatePresence>
-                        </div>
+                        {commercePresets.map((preset, index) => (
+                            <button
+                                key={preset.id}
+                                type="button"
+                                onMouseEnter={() => setActivePreset(index)}
+                                onFocus={() => setActivePreset(index)}
+                                onClick={() => setActivePreset(index)}
+                                className={`flex w-full items-center justify-between gap-3 py-4 text-left transition ${activePreset === index ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                            >
+                                <span className="flex items-center gap-3">
+                                    <span className={`text-[10px] tabular-nums ${activePreset === index ? "text-primary" : "text-muted-foreground/60"}`}>0{index + 1}</span>
+                                    <span className="text-sm font-medium">{preset.title}</span>
+                                </span>
+                                <ArrowUpRight className={`size-4 transition ${activePreset === index ? "translate-x-0 text-primary" : "-translate-x-1 opacity-0"}`} />
+                            </button>
+                        ))}
+                    </div>
+                    <div className="relative min-h-[360px] overflow-hidden rounded-[22px] bg-muted">
+                        <AnimatePresence mode="wait">
+                            <motion.div
+                                key={activePreset}
+                                initial={reducedMotion ? false : { opacity: 0, scale: 1.04 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={reducedMotion ? undefined : { opacity: 0, scale: 0.98 }}
+                                transition={{ duration: 0.38 }}
+                                className="absolute inset-0"
+                            >
+                                <NextImage src={media[activePreset]} alt={commercePresets[activePreset]?.title ?? "商品视觉"} fill sizes="(max-width: 1024px) 100vw, 460px" className="object-cover" />
+                                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-5 pt-20 text-left text-white">
+                                    <h3 className="text-lg font-medium">{commercePresets[activePreset]?.title}</h3>
+                                    <p className="mt-1 text-sm text-white/65">{commercePresets[activePreset]?.description}</p>
+                                    <Link href={`/image?preset=${commercePresets[activePreset]?.id}`} prefetch={false} className="mt-4 inline-flex items-center gap-1 text-sm font-medium">
+                                        立即制作 <ArrowUpRight className="size-4" />
+                                    </Link>
+                                </div>
+                            </motion.div>
+                        </AnimatePresence>
+                    </div>
                 </div>
             </motion.section>
 
@@ -218,22 +218,22 @@ export default function IndexPage() {
                     <p className="text-xs font-medium uppercase tracking-[.18em] text-primary">上新流程</p>
                     <h2 className="mt-3 text-3xl font-semibold tracking-[-.04em] sm:text-4xl">三步，完成一次上新。</h2>
                     <div className="relative mt-10 grid gap-8 sm:grid-cols-3 sm:gap-6">
-                            <div className="pointer-events-none absolute left-[8%] right-[8%] top-4 hidden border-t border-border sm:block" />
-                            {workflow.map((item, index) => (
-                                <motion.div
-                                    key={item.step}
-                                    initial={reducedMotion ? false : { opacity: 0, y: 20 }}
-                                    whileInView={{ opacity: 1, y: 0 }}
-                                    viewport={{ once: true }}
-                                    whileHover={reducedMotion ? undefined : { y: -4 }}
-                                    transition={{ delay: index * 0.1, duration: 0.45 }}
-                                    className="group relative"
-                                >
-                                    <span className="relative z-10 grid size-8 place-items-center rounded-full border border-border bg-background text-xs font-medium tabular-nums text-primary transition group-hover:border-primary">{item.step}</span>
-                                    <h3 className="mt-5 text-base font-medium text-foreground">{item.title}</h3>
-                                    <p className="mt-2 max-w-[210px] text-sm leading-6 text-muted-foreground">{item.detail}</p>
-                                </motion.div>
-                            ))}
+                        <div className="pointer-events-none absolute left-[8%] right-[8%] top-4 hidden border-t border-border sm:block" />
+                        {workflow.map((item, index) => (
+                            <motion.div
+                                key={item.step}
+                                initial={reducedMotion ? false : { opacity: 0, y: 20 }}
+                                whileInView={{ opacity: 1, y: 0 }}
+                                viewport={{ once: true }}
+                                whileHover={reducedMotion ? undefined : { y: -4 }}
+                                transition={{ delay: index * 0.1, duration: 0.45 }}
+                                className="group relative"
+                            >
+                                <span className="relative z-10 grid size-8 place-items-center rounded-full border border-border bg-background text-xs font-medium tabular-nums text-primary transition group-hover:border-primary">{item.step}</span>
+                                <h3 className="mt-5 text-base font-medium text-foreground">{item.title}</h3>
+                                <p className="mt-2 max-w-[210px] text-sm leading-6 text-muted-foreground">{item.detail}</p>
+                            </motion.div>
+                        ))}
                     </div>
                 </motion.div>
             </section>
@@ -295,7 +295,15 @@ export default function IndexPage() {
                 onSaveAsset={
                     canSaveAsset
                         ? (item) => {
-                              addAsset({ kind: "text", title: item.title, coverUrl: item.coverUrl, tags: item.tags, source: item.category, data: { content: item.prompt }, metadata: { source: "prompt-library", promptId: item.id, githubUrl: item.githubUrl } });
+                              addAsset({
+                                  kind: "text",
+                                  title: item.title,
+                                  coverUrl: item.coverUrl,
+                                  tags: item.tags,
+                                  source: item.category,
+                                  data: { content: item.prompt },
+                                  metadata: { source: "prompt-library", promptId: item.id, githubUrl: item.githubUrl },
+                              });
                               message.success("已加入商品素材");
                           }
                         : undefined

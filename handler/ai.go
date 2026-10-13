@@ -146,6 +146,19 @@ func proxyAIGetRequest(w http.ResponseWriter, r *http.Request, path string) {
 			return
 		}
 	}
+	if generationTask != nil && generationTask.ProtocolSnapshot != nil {
+		if generationTask.Status == model.GenerationTaskStatusFailed {
+			Fail(w, generationTask.ErrorMessage)
+			return
+		}
+		if strings.HasSuffix(path, "/content") {
+			Fail(w, "生成结果暂不可读取，请稍后重试")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(generationTask.ResultJSON))
+		return
+	}
 	if err != nil {
 		log.Printf("AI proxy select channel failed: model=%s err=%v", modelName, err)
 		FailError(w, err)
@@ -236,6 +249,10 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		FailError(w, err)
 		return
 	}
+	if err := service.ValidateManagedMediaRequest(selection, pricingRequest); err != nil {
+		Fail(w, err.Error())
+		return
+	}
 	pricingResolver, err := service.NewPricingResolver(user.ID, user.Group)
 	if err != nil {
 		log.Printf("AI proxy load pricing failed: model=%s path=%s err=%v", requestMeta.ModelName, path, err)
@@ -250,7 +267,7 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 	}
 	cleanup := func() {}
 	var request *http.Request
-	if !service.IsAutoDLComfyUIChannel(selection.Channel) {
+	if !service.IsManagedMediaChannel(selection.Channel) {
 		if path == "/videos" && canBuildStorageReferenceRequest(requestMeta) {
 			request, cleanup, err = buildAIUpstreamStorageRequest(r.Context(), r, user, requestMeta, selection, "")
 		} else {
@@ -289,8 +306,8 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 			log.Printf("AI proxy finish generation task failed: task=%s status=%s err=%v", task.ID, status, err)
 		}
 	}
-	if service.IsAutoDLComfyUIChannel(selection.Channel) {
-		proxyAutoDLGeneration(w, r, body, contentType, requestMeta, user, selection, &task, finishTask)
+	if service.IsManagedMediaChannel(selection.Channel) {
+		proxyManagedMediaGeneration(w, r, body, contentType, requestMeta, user, selection, &task, finishTask)
 		return
 	}
 	request.Header.Set("Idempotency-Key", task.RequestID)
@@ -338,12 +355,12 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 			excludedChannels = append(excludedChannels, selection.Channel.Name)
 			nextSelection, selectErr := service.SelectModelChannelExcluding(pricingRequest, excludedChannels)
 			if selectErr == nil {
-				if service.IsAutoDLComfyUIChannel(nextSelection.Channel) {
+				if service.IsManagedMediaChannel(nextSelection.Channel) {
 					if updateErr := service.UpdateGenerationTaskChannel(&task, nextSelection.Channel.Name, nextSelection.Model.UpstreamModel); updateErr == nil {
 						if response != nil {
 							_ = response.Body.Close()
 						}
-						proxyAutoDLGeneration(w, r, body, contentType, requestMeta, user, nextSelection, &task, finishTask)
+						proxyManagedMediaGeneration(w, r, body, contentType, requestMeta, user, nextSelection, &task, finishTask)
 						return
 					}
 				} else if nextRequest, buildErr := buildAIUpstreamRequest(r, path, body, contentType, nextSelection, task.RequestID); buildErr == nil {
@@ -400,10 +417,10 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 	}
 }
 
-func proxyAutoDLGeneration(w http.ResponseWriter, r *http.Request, body []byte, contentType string, meta aiRequestMeta, user model.AuthUser, selection service.ModelChannelSelection, task *model.GenerationTask, finishTask func(model.GenerationTaskStatus, string)) {
-	input, err := autoDLGenerationInput(body, contentType, meta)
+func proxyManagedMediaGeneration(w http.ResponseWriter, r *http.Request, body []byte, contentType string, meta aiRequestMeta, user model.AuthUser, selection service.ModelChannelSelection, task *model.GenerationTask, finishTask func(model.GenerationTaskStatus, string)) {
+	input, err := mediaGenerationInput(body, contentType, meta)
 	if err != nil {
-		message := "AutoDL 请求参数无效"
+		message := "生成请求参数无效"
 		var requestErr *aiError
 		if errors.As(err, &requestErr) {
 			message = requestErr.Error()
@@ -412,20 +429,19 @@ func proxyAutoDLGeneration(w http.ResponseWriter, r *http.Request, body []byte, 
 		Fail(w, message)
 		return
 	}
-	upstreamTaskID, initialBody, err := service.SubmitAutoDLComfyUITask(r.Context(), user, *task, selection, input)
+	if service.IsCustomHTTPChannel(selection.Channel) {
+		proxyCustomMediaGeneration(w, r, user, selection, task, input, meta.ResponseFormat, finishTask)
+		return
+	}
+	err = service.SubmitManagedMediaTask(r.Context(), user, task, selection, input)
 	if err != nil {
 		finishTask(model.GenerationTaskStatusFailed, err.Error())
 		FailError(w, err)
 		return
 	}
-	if err := service.UpdateGenerationTaskRecovery(task, upstreamTaskID, initialBody, nil); err != nil {
-		finishTask(model.GenerationTaskStatusFailed, "生成任务状态保存失败")
-		Fail(w, "生成任务状态保存失败")
-		return
-	}
 	if task.Modality == "video" {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		_, _ = w.Write(initialBody)
+		_, _ = w.Write([]byte(task.ResultJSON))
 		return
 	}
 	waitCtx, cancelWait := context.WithTimeout(r.Context(), 30*time.Minute)
@@ -1443,8 +1459,8 @@ func readJSONAIRequest(body []byte) aiRequestMeta {
 	}
 }
 
-func autoDLGenerationInput(body []byte, contentType string, meta aiRequestMeta) (service.AutoDLGenerationInput, error) {
-	input := service.AutoDLGenerationInput{
+func mediaGenerationInput(body []byte, contentType string, meta aiRequestMeta) (service.MediaGenerationInput, error) {
+	input := service.MediaGenerationInput{
 		Prompt: meta.Prompt, NegativePrompt: meta.NegativePrompt, Size: meta.Size, Ratio: meta.Size,
 		Resolution: meta.Resolution, ResolutionTier: meta.ResolutionTier, Seconds: meta.Duration,
 		Count: meta.Count, Seed: meta.Seed, GenerateAudio: meta.GenerateAudio,
@@ -1453,18 +1469,18 @@ func autoDLGenerationInput(body []byte, contentType string, meta aiRequestMeta) 
 	}
 	if !strings.HasPrefix(contentType, "multipart/form-data") {
 		if meta.ReferenceImages > len(meta.InputReferenceStorageKeys) || meta.ReferenceVideos > len(meta.ReferenceVideoStorageKeys) || meta.ReferenceAudios > len(meta.ReferenceAudioStorageKeys) {
-			return input, &aiError{"AutoDL 参考素材必须使用当前账号工作区文件"}
+			return input, &aiError{"参考素材必须使用当前账号工作区文件或 multipart 上传"}
 		}
 		return input, nil
-	}
-	if meta.ReferenceVideos > 0 || meta.ReferenceAudios > 0 {
-		return input, &aiError{"AutoDL 视频和音频参考素材必须使用当前账号工作区文件"}
 	}
 	form, err := readMultipartForm(body, contentType)
 	if err != nil {
 		return input, &aiError{"参考图请求格式无效"}
 	}
 	defer form.RemoveAll()
+	if len(form.File["mask"]) > 0 {
+		return input, &aiError{"当前协议未配置蒙版编辑，请使用普通参考图编辑"}
+	}
 	for _, field := range []string{"image", "image[]", "input_reference", "input_reference[]", "reference_images", "reference_images[]"} {
 		for _, header := range form.File[field] {
 			file, openErr := header.Open()
@@ -1477,9 +1493,32 @@ func autoDLGenerationInput(body []byte, contentType string, meta aiRequestMeta) 
 				return input, readErr
 			}
 			if len(data) == 0 || len(data) > 20<<20 {
-				return input, &aiError{"AutoDL 单张参考图必须在 20MB 以内"}
+				return input, &aiError{"单张参考图必须在 20MB 以内"}
 			}
-			input.ReferenceImages = append(input.ReferenceImages, service.AutoDLReferenceFile{MimeType: header.Header.Get("Content-Type"), Data: data})
+			input.ReferenceImages = append(input.ReferenceImages, service.MediaReferenceFile{MimeType: header.Header.Get("Content-Type"), Data: data})
+		}
+	}
+	for _, field := range []string{"reference_videos", "reference_videos[]", "reference_audios", "reference_audios[]"} {
+		limit := int64(50 << 20)
+		if strings.HasPrefix(field, "reference_videos") {
+			limit = 200 << 20
+		}
+		for _, header := range form.File[field] {
+			file, err := header.Open()
+			if err != nil {
+				return input, err
+			}
+			data, err := io.ReadAll(io.LimitReader(file, limit+1))
+			_ = file.Close()
+			if err != nil || int64(len(data)) > limit {
+				return input, &aiError{"参考视频或音频过大或读取失败"}
+			}
+			reference := service.MediaReferenceFile{MimeType: header.Header.Get("Content-Type"), Data: data}
+			if strings.HasPrefix(field, "reference_videos") {
+				input.ReferenceVideos = append(input.ReferenceVideos, reference)
+			} else {
+				input.ReferenceAudios = append(input.ReferenceAudios, reference)
+			}
 		}
 	}
 	return input, nil

@@ -193,7 +193,6 @@ export async function fetchAdminDashboard(token: string) {
     return apiGet<AdminDashboard>("/api/admin/dashboard", undefined, token);
 }
 
-
 export async function fetchAdminGenerationTasks(token: string, query: AdminGenerationTaskQuery = {}) {
     return apiGet<AdminGenerationTaskListResponse>("/api/admin/generation-tasks", compactApiParams(query), token);
 }
@@ -308,7 +307,9 @@ export async function uploadAdminAssetFile(token: string, file: File) {
 }
 
 export type AdminModelChannel = {
-    protocol: "openai" | "autodl_comfyui";
+    id?: string;
+    protocol: "openai" | "autodl_comfyui" | "custom_http";
+    templateId?: string;
     name: string;
     baseUrl: string;
     apiKey: string;
@@ -317,6 +318,52 @@ export type AdminModelChannel = {
     enabled: boolean;
     remark: string;
 };
+
+export type ProtocolResponse = {
+    format: "json" | "ndjson";
+    taskId?: string;
+    status?: string;
+    running?: string[];
+    success?: string[];
+    failure?: string[];
+    resultUrl?: string;
+    resultBase64?: string;
+    error?: string;
+};
+
+export type ProtocolRequest = {
+    method: "GET" | "POST";
+    path: string;
+    encoding?: "json" | "multipart";
+    headers?: Record<string, string>;
+    body?: Record<string, unknown>;
+    fileField?: string;
+    response: ProtocolResponse;
+};
+
+export type ProtocolOperation = {
+    create: ProtocolRequest;
+    resume?: ProtocolRequest;
+    timeoutSeconds: number;
+    pollSeconds: number;
+    maxImages: number;
+    valueMaps?: Record<string, Record<string, unknown>>;
+};
+
+export type ProtocolTemplate = {
+    id: string;
+    name: string;
+    revision: number;
+    defaultBaseUrl: string;
+    headers: Record<string, string>;
+    models?: { request: ProtocolRequest; items: string; id: string };
+    upload?: { mode: "url" | "multipart" | "presigned"; request: ProtocolRequest; url?: string; key?: string };
+    operations: Record<string, ProtocolOperation>;
+};
+
+export async function previewProtocol(token: string, input: { template: ProtocolTemplate; operation: string; phase: "create" | "resume"; variables: Record<string, unknown>; response: string }) {
+    return apiPost<Record<string, unknown>>("/api/admin/settings/protocol-preview", input, token);
+}
 
 export type AdminChannelModel = {
     model: string;
@@ -441,6 +488,7 @@ export type AdminAnnouncement = {
 
 export type AdminPrivateSettings = {
     channels: AdminModelChannel[];
+    protocolTemplates: ProtocolTemplate[];
     storage: AdminStorageSetting;
     promptSync: {
         enabled: boolean;

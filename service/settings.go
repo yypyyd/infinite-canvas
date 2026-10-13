@@ -117,6 +117,14 @@ func SaveSettings(settings model.Settings) (model.Settings, error) {
 		return model.Settings{}, safeMessageError{message: "启用邮箱域名限制前请至少填写一个有效域名"}
 	}
 	keepPrivateAPIKeys(&settings, normalizeSettings(saved))
+	for i := range settings.Private.Channels {
+		if settings.Private.Channels[i].ID == "" {
+			settings.Private.Channels[i].ID = newID("channel")
+		}
+	}
+	if err := validateProtocolTemplates(settings.Private); err != nil {
+		return model.Settings{}, safeMessageError{message: err.Error()}
+	}
 	if err := validateModelChannels(settings.Private.Channels); err != nil {
 		return model.Settings{}, err
 	}
@@ -856,6 +864,7 @@ func firstPricingNonEmpty(values ...string) string {
 }
 
 func normalizePrivateSetting(setting model.PrivateSetting) model.PrivateSetting {
+	setting.ProtocolTemplates = normalizeProtocolTemplates(setting.ProtocolTemplates)
 	if setting.Channels == nil {
 		setting.Channels = []model.ModelChannel{}
 	}
@@ -1103,12 +1112,20 @@ func keepPrivateAPIKeys(settings *model.Settings, saved model.Settings) {
 }
 
 func findSavedChannel(channel model.ModelChannel, saved []model.ModelChannel, index int) (model.ModelChannel, bool) {
+	if channel.ID != "" {
+		for _, item := range saved {
+			if item.ID == channel.ID {
+				return item, true
+			}
+		}
+		return model.ModelChannel{}, false
+	}
 	for _, item := range saved {
 		if item.Name == channel.Name && item.BaseURL == channel.BaseURL {
 			return item, true
 		}
 	}
-	if index < len(saved) {
+	if index >= 0 && index < len(saved) {
 		return saved[index], true
 	}
 	return model.ModelChannel{}, false
@@ -1295,7 +1312,7 @@ func defaultModelModality(modelName string) string {
 
 func normalizeModelChannel(channel model.ModelChannel) model.ModelChannel {
 	channel.Protocol = normalizePricingToken(channel.Protocol)
-	if channel.Protocol != modelChannelProtocolAutoDLComfyUI {
+	if channel.Protocol != modelChannelProtocolAutoDLComfyUI && channel.Protocol != modelChannelProtocolCustomHTTP {
 		channel.Protocol = "openai"
 	}
 	channel.Name = strings.TrimSpace(channel.Name)
@@ -1486,6 +1503,9 @@ func resolveAdminChannel(index *int, channel model.ModelChannel) (model.ModelCha
 }
 
 func fetchAdminChannelModels(channel model.ModelChannel) ([]model.DiscoveredModel, error) {
+	if IsCustomHTTPChannel(channel) {
+		return fetchProtocolModels(channel)
+	}
 	if channel.Protocol == modelChannelProtocolAutoDLComfyUI {
 		result := make([]model.DiscoveredModel, 0, len(channel.Models))
 		for _, item := range channel.Models {
@@ -1626,10 +1646,13 @@ func testAdminChannelModel(channel model.ModelChannel, modelName string) (string
 	}
 	for _, item := range models {
 		if item.ID == targetModel {
-			return fmt.Sprintf("OpenAI /models?extended=true 校验成功（%s）", item.Modality), nil
+			if item.Modality == "" {
+				return "模型列表校验成功（未提交生成任务）", nil
+			}
+			return fmt.Sprintf("模型列表校验成功（%s，未提交生成任务）", item.Modality), nil
 		}
 	}
-	return "", safeMessageError{message: "测试失败：上游 /models?extended=true 未返回该模型"}
+	return "", safeMessageError{message: "检查失败：上游模型列表未返回该模型"}
 }
 
 func discoveredModelModality(kind string, modelName string) string {

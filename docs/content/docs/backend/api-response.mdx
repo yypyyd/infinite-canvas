@@ -23,6 +23,18 @@ description: 业务接口统一响应结构与前端处理约定
 
 接口连接失败、服务不可达、返回体不是约定 JSON 时，前端按网络或接口异常处理。
 
+## 管理员协议预览
+
+`POST /api/admin/settings/protocol-preview` 使用管理员鉴权和上述统一响应，接受 `template`、`operation`、`phase`（`create` 或 `resume`）、`variables`、可选字符串 `response`。仅校验模板、渲染示例请求和解析 JSON / NDJSON，不访问上游；`data` 返回 `method/path/headers/body` 及可选 `frames`，鉴权变量始终替换为 `***`。模板持久化仍通过设置接口，详见[自定义渠道协议](./custom-protocols)。
+
+自定义媒体渠道对用户端保持现有 `/api/v1/*` 入参及归一化图片/视频响应，协议模板与渠道地址不对用户公开。提交结果不确定时返回 `submission_pending`，已提交但当前等待结束时返回 `generation_pending`，按原请求编号恢复；不得将其当成可以重新创建任务的信号。
+
+## 工作区增量同步
+
+`POST /api/workspace/sync` 使用登录会话和当前企业鉴权，请求体为 `{ "versions": [{ "domain": "canvas_project", "objectId": "画布ID", "version": 1 }] }`。首次传空数组；服务端只返回当前企业中版本不同或尚未读取的记录，响应仍为 `{ code, data: { records: [...] }, msg }`。删除记录返回 `deleted: true`、新版本号且不带 `data`，无变化返回空数组。前端合并增量，不能把未返回的记录当作删除；已知版本和文件检查结果只保留在当前页面内存。
+
+画布保存仍提交读取时的版本。冲突时保留服务端最新画布并另存本地冲突副本，禁止仅更新旧画布的版本号后重试覆盖；副本成功写入后再提示用户。
+
 ## 用户 API Key
 
 面向外部调用方的完整示例按类型分开：[图片对接](/docs/api/image)、[视频对接](/docs/api/video)、[音频对接](/docs/api/audio)。`ic_live_` API Key 调用 `/api/v1/*` 时，成功响应保持各接口自己的结果；失败返回对应 HTTP 状态码和 OpenAI 错误体，不再使用 `{ code, data, msg }`。登录会话调用同一路由时，失败仍是 HTTP 200 的 `{ code, data, msg }`。
@@ -99,16 +111,26 @@ curl -X POST "https://huantu.xyz/api/v1/images/generations" \
 
 `GET /api/v1/agent/runs/:id/events` 使用 SSE 按 `after` 游标补放并推送 Run 事件。Run 进入终态或 `waiting_confirmation` 后服务端会主动结束当前连接，避免在人为等待期间维持长连接；用户提交澄清回答或破坏性操作决定后，前端按最后已处理序号重新连接同一 Run，已保存事件可幂等重放。
 
-提交 Agent 消息时，`canvasContext.autonomy` 取 `cautious`、`standard` 或 `autonomous`，`selectedNodeIds` 与 `focusNodeIds` 最多各 20 个，`visibleNodeIds` 最多 40 个；`canvasSnapshot` 保存跨设备整轮撤销所需的节点与连线；`budget` 固化 `maxToolCalls`、`maxMediaCalls`、`maxDurationSec` 和 `maxCredits`。工具、媒体和时间预算在发起下一步前强制检查；算力预算按本轮已创建且未退款的文本、媒体和视觉验收任务累计，达到上限后停止下一步，因此单个已开始任务可能使最终值略高于上限。完整画布上下文只用于服务端节点授权和视口预览；发送给模型的 JSON 包含选中/显式引用节点、一跳邻居、当前视口节点、本轮新节点编号和全局摘要，`storageKey` 与签名地址不会写入模型 JSON。上游请求最多附带 4 张视口/关注图片的内联缩略图；本站 `/api/media/storage` 与工作区文件签名地址不会发给上游，避免上游下载到登录页或非图片而整轮 400。若带预览仍被上游拒绝，服务端会去掉预览图再请求一次。默认 `standard` 会补全安全默认值；`autonomous` 会在真实工具结果后检查完成条件，首次非破坏性失败可调整参数或重新规划一次。图片或视频生成后强制追加对应视觉验收；相同工具与相同参数禁止重放。删除、覆盖文本和长期记忆仍需明确确认，目标为本轮授权节点，不必要求用户此刻仍选中。画布语法工具包括 `canvas.add_config`、`canvas.connect`，以及 `video.generate` 的多参考字段 `imageNodeIds` / `videoNodeIds` / `audioNodeIds`。明确「添加配置并连上」且能唯一确定来源节点时，服务端直接调用 `canvas.add_config`（`sourceNodeIds` 会建连线），不再让模型先 plan 再检查。对用户回复会去掉节点 id 和「目标完成」套话。指挥中心会话只存在当前页面，不写入画布快照，打开画布也不会恢复旧对话。
+提交 Agent 消息时，`canvasContext.autonomy` 取 `cautious`、`standard` 或 `autonomous`。完整上下文最多 10000 个节点、50000 条连线和 16MB，`selectedNodeIds` 最多 10000 个，`focusNodeIds` 最多 20 个，`visibleNodeIds` 最多 40 个；初始 `canvasSnapshot` 最多 16MB，HTTP 请求体最多 32MB。模型上下文仅保留有限节点详情及总数、范围摘要，节点存储键不进入模型 JSON。`canvas.read` 支持 `nodeIds`、`query`、`offset`，从执行页面的当前状态返回最多 20 个匹配节点及相关连线；工具结果中的 `canvasContext` 经服务端规范化，与回执在同一事务内更新 Run 上下文。读取结果由服务端从这份上下文裁剪，澄清回答也会刷新上下文。原始撤销快照保持不变。
 
-`GET /api/v1/agent/runs/:id/diagnostics` 返回 Run 状态、模型、总耗时、版本化执行计划、预算和实际用量、预算停止原因，以及步骤的安全诊断字段；同时返回事件流续接和租约接管计数。响应不包含完整 Context、原始工具输入输出、执行租约、服务端快照、媒体存储键或签名地址。`GET /api/v1/agent/metrics?hours=24` 返回当前企业与账号范围的完成率、工具失败率、平均步骤、成本、续接、租约接管、反馈分布和阈值告警。`POST /api/v1/agent/runs/:id/steps/:callId/retry` 只允许安全白名单中的失败步骤创建新调用编号。`POST /api/v1/agent/runs/:id/revert` 幂等标记本轮可逆工具并返回服务端快照；浏览器优先使用本地历史，本地历史失效时回退到服务端快照，因此刷新和换设备后仍可整轮恢复。
+自然语言始终由模型通过结构化工具规划；不会根据关键词直接修改画布。每次只执行一个工具，回传结果后再规划；上游忽略 `parallel_tool_calls: false` 时只执行首个调用，再依据真实结果决定下一步。媒体分批生成允许相同参数，其他重复修改会停止并明确提示；读取、澄清和视觉验收不推进业务计划步骤。首次可重试工具失败可重新规划一次，后续失败终止；图片/视频生成后安排视觉验收，验收不可用或未通过不能视为目标完成。
 
+图片/视频工具支持 `configNodeId`、`model`、`size` 等显式设置；图片支持 `quality`，分辨率使用 `size` 像素尺寸，视频支持 `resolution`、`generateAudio`。配置节点可设置生成类型、提示词、数量和时长。执行时读取指定配置和实际入边中的文本/参考媒体；明确工具参数优先，省略提示词使用配置当前完整提示词，用户清空后不会回用历史提示词；省略数量/时长使用配置值，无配置时图片默认一张、视频沿用当前默认时长，产物连接到配置节点。模型不支持指定时长、规格或参考媒体时明确失败，不能丢弃参考或静默替换规格。删除、覆盖文本、保存/遗忘记忆仍需用户确认。
+
+`budget` 固化工具、媒体、时间和算力上限。前三项在下一步与手动重试前检查；每次文本、媒体和视觉验收任务在实际扣费事务内锁定所属 Run，并检查累计未退款算力加本次费用不超过上限，取消或终止后不允许新付费调用；已创建媒体任务按实际结果继续归档结算。15 分钟工具等待回收以最后心跳为依据，持续续租的视频不会仅因 Run 等待时间长而失败。
+
+`GET /api/v1/agent/runs?projectId=...` 返回当前企业、用户和项目的未结束运行及原始请求、引用节点信息。刷新会保持旧对话清空的规则，但恢复未结束任务的控制入口并从持久事件及工具回执续接；删除会话须先取消其运行。执行页面关闭时画布工具暂停，重新进入后可续接；媒体任务归档由现有服务端任务机制负责。
+
+`GET /api/v1/agent/runs/:id/diagnostics` 返回安全运行诊断、计划、预算、实际用量和停止原因，不包含完整 Context、原始输入输出、租约、快照或媒体存储键。`GET /api/v1/agent/metrics?hours=24` 返回当前企业与账号范围的聚合指标。`POST /api/v1/agent/runs/:id/steps/:callId/retry` 只允许预算内的可重试失败步骤创建新调用编号。
+
+整轮撤销使用工作区 `agentToolReceipts` 中每次修改的局部补丁，按逆序恢复受影响的节点字段与连线，保留无关手动改动；内容已被后续改写时整体拒绝撤销，缺失补丁也不会回退覆盖整张画布。客户端先停止运行、校验并保存撤销结果，再向 `POST /api/v1/agent/runs/:id/revert` 提交 `{ callIds: [...] }` 标记已应用工具的撤销状态；保存失败可重试，费用不返还。接口保留原始所有者隔离快照与校验值供审计，客户端不再用它覆盖整张画布。
 视觉验收的信任边界仍在同源服务端：`image.inspect.nodeIds` 必须属于本轮固化画布或本轮已成功生成的图片节点，最多四个且不可重复；`video.inspect.nodeId` 必须属于同一授权范围内的视频节点。浏览器只把工作区预览图或本地抽取的六张视频关键帧转成内联图片提交到 `/api/v1/chat/completions`，不会把渠道 Base URL、API Key 或签名 URL 交给模型。视频验收只依据关键帧可见内容判断主体一致性、构图、明显画面缺陷、镜头稳定性和连续性，不判断声音或关键帧无法证明的完整运动。验收响应使用固定字段白名单和长度限制严格解析，格式异常降级为 `unavailable`；服务端再次校验状态、问题列表和修订提示词的组合，不能借验收结果绕过节点授权或破坏性确认。
 
 ## Agent 长期记忆
 
-画布 Agent 的长期记忆只通过服务端 Run 工具写入，不提供浏览器持久化副本。模型在用户明确表达长期偏好、项目事实或约束时提出 `agent.remember`，批准后才写入；`agent.forget` 同样需要确认。运行结束后可向 `POST /api/v1/agent/runs/{id}/feedback` 提交 `accepted`、`helpful`、`unhelpful`、`deleted` 或 `corrected`。反馈只低幅调整该 Run 产生的 `experience` 记忆，且同一 Run 以最新反馈为准；画布手动删除 Agent 产物和改写 Agent 文本会自动提交对应信号。低于置信度门槛、过期或 `forgotten` 的记忆不会注入后续 Run。
+画布 Agent 的长期记忆保存在服务端，不提供浏览器持久化副本。模型工具的记忆写入与回执提交处于同一事务，须先验证用户确认、运行状态和未过期执行租约；拒绝请求和回执重放不能改动记忆。模型在用户明确表达长期偏好、项目事实或约束时提出 `agent.remember`，批准后才写入；`agent.forget` 同样需要确认。运行结束后可向 `POST /api/v1/agent/runs/{id}/feedback` 提交 `accepted`、`helpful`、`unhelpful`、`deleted` 或 `corrected`。反馈只低幅调整该 Run 产生的 `experience` 记忆，且同一 Run 以最新反馈为准；画布手动删除 Agent 产物和改写 Agent 文本会自动提交对应信号。低于置信度门槛、过期或 `forgotten` 的记忆不会注入后续 Run。
 
+用户也可在 Agent 设置中直接管理记忆：`GET /api/v1/agent/memories?projectId=...&page=1` 每页返回 20 条本画布及账户的 active 记忆，响应为 `{ items, total }`；`POST /api/v1/agent/memories/:id` 接收 `{ content }` 修改文字，或 `{ forget: true }` 遗忘。全部操作校验当前企业与账号，文字长度为 1–1000 字；过期和低置信度记忆可在管理入口查看，但不注入模型。
 ## 请求 ID 与访问日志
 
 - 每个响应都会返回 `X-Request-ID`。客户端可传入由字母、数字、点、下划线、冒号或短横线组成且不超过 128 位的请求 ID；缺失或格式无效时由服务端生成 UUID。

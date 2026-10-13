@@ -21,7 +21,7 @@ import {
     type CanvasVideoGenerationResult,
 } from "@/services/generation-history";
 import { workspaceFileUrl } from "@/services/api/workspace";
-import { workspaceOwnerId } from "@/services/workspace-changes";
+import { clearWorkspaceProjectConflict, workspaceOwnerId } from "@/services/workspace-changes";
 import { defaultConfig, type AiConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { resolveImageUrl, storeGeneratedImage, uploadImage, type UploadedImage } from "@/services/image-storage";
 import { resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
@@ -33,7 +33,9 @@ import { videoReferenceCapabilities } from "@/lib/video-reference";
 import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { flushActiveWorkspaceChanges, isWorkspaceVersionConflictError } from "@/components/layout/workspace-provider";
-import { revertAgentRun, revertAgentTool, submitAgentFeedback, type AgentCanvasPlacement, type AgentToolName, type AgentToolResult } from "@/services/api/agent";
+import { cancelAgentRun, listRecoverableAgentRuns, revertAgentRun, revertAgentTool, submitAgentFeedback, type AgentCanvasPlacement, type AgentToolName, type AgentToolResult, type AgentMediaOptions } from "@/services/api/agent";
+import { createAgentPatch, revertAgentPatches } from "../utils/canvas-agent-undo";
+import type { AgentCanvasState } from "../utils/canvas-agent-context";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -64,6 +66,7 @@ import type { AssetPickerTab, InsertAssetPayload } from "../components/asset-pic
 import { CanvasToolbar } from "../components/canvas-toolbar";
 import { CanvasZoomControls } from "../components/canvas-zoom-controls";
 import { CANVAS_PROJECTS_REPLACED_EVENT, useCanvasStore, type CanvasProject } from "../stores/use-canvas-store";
+import { boundsIntersect, connectionBounds } from "../utils/canvas-connection-bounds";
 import { buildCanvasMentionReferences, buildCanvasResourceReferences, buildNodeMentionReferenceMap, type CanvasResourceReference } from "../utils/canvas-resource-references";
 import { resolveCanvasVideoConfig } from "../utils/canvas-video-config";
 import {
@@ -315,7 +318,9 @@ function InfiniteCanvasPage() {
         startY: 0,
         initialSelectedNodes: [],
     });
+    const agentToolBeforeRef = useRef(new Map<string, AgentCanvasState>());
     const markAssistantHistory = useCallback((runId: string, callId: string) => {
+        agentToolBeforeRef.current.set(`${runId}:${callId}`, { nodes: nodesRef.current, connections: connectionsRef.current });
         pendingAgentHistoryRef.current.set(`${runId}:${callId}`, { runId, callId });
     }, []);
 
@@ -397,6 +402,7 @@ function InfiniteCanvasPage() {
 
     const nodesRef = useRef(nodes);
     const connectionsRef = useRef(connections);
+    const readAssistantCanvas = useCallback(() => ({ nodes: nodesRef.current, connections: connectionsRef.current }), []);
     const chatSessionsRef = useRef(chatSessions);
     const activeChatIdRef = useRef(activeChatId);
     const selectedNodeIdsRef = useRef(selectedNodeIds);
@@ -649,6 +655,7 @@ function InfiniteCanvasPage() {
             const restoredNodes = await restoreInterruptedCanvasMedia(project.nodes, readCanvasImageGenerationResults(historyOwnerId, projectId), readCanvasVideoGenerationResults(historyOwnerId, projectId)).then(hydrateCanvasImages);
             if (restoreRequest !== restoreRequestRef.current) return;
             if (preserveLocalChanges && (generationRequestsRef.current.size || hasUnsavedChangesRef.current || lastSavedProjectRef.current !== savedProject)) return;
+            clearWorkspaceProjectConflict(historyOwnerId, projectId);
             const nextChatSessions = preserveLocalChanges ? chatSessionsRef.current : [];
             const nextActiveChatId = preserveLocalChanges ? activeChatIdRef.current : null;
             setNodes(restoredNodes);
@@ -825,6 +832,19 @@ function InfiniteCanvasPage() {
         }
     }, [chatSessions, projectLoaded]);
 
+    useEffect(() => {
+        if (!projectLoaded) return;
+        let disposed = false;
+        void listRecoverableAgentRuns(projectId)
+            .then((runs) => {
+                if (!disposed && runs.length) setAssistantMounted(true);
+            })
+            .catch(() => {});
+        return () => {
+            disposed = true;
+        };
+    }, [projectId, projectLoaded]);
+
     useLayoutEffect(() => {
         if (projectLoaded) restoreRequestRef.current += 1;
         nodesRef.current = nodes;
@@ -999,7 +1019,7 @@ function InfiniteCanvasPage() {
         });
     }, [nodeDragOffset, nodes]);
 
-    const visibleNodes = useMemo(() => {
+    const viewBounds = useMemo(() => {
         const padding = 280;
         const rect = containerRef.current?.getBoundingClientRect();
         const width = rect?.width || size.width;
@@ -1009,10 +1029,30 @@ function InfiniteCanvasPage() {
         const viewRight = viewLeft + width / viewport.k + padding * 2;
         const viewBottom = viewTop + height / viewport.k + padding * 2;
 
-        return displayNodes.filter((node) => !isHiddenBatchChild(node, displayNodes, collapsingBatchIds) && node.position.x + node.width > viewLeft && node.position.x < viewRight && node.position.y + node.height > viewTop && node.position.y < viewBottom);
-    }, [collapsingBatchIds, displayNodes, size.height, size.width, viewport.k, viewport.x, viewport.y]);
+        return { left: viewLeft, top: viewTop, right: viewRight, bottom: viewBottom };
+    }, [size.height, size.width, viewport.k, viewport.x, viewport.y]);
 
     const nodeById = useMemo(() => new Map(displayNodes.map((node) => [node.id, node])), [displayNodes]);
+    const hiddenBatchNodeIds = useMemo(() => new Set(displayNodes.filter((node) => isHiddenBatchConnectionEndpoint(node, nodeById)).map((node) => node.id)), [displayNodes, nodeById]);
+    const visibleNodes = useMemo(
+        () =>
+            displayNodes.filter(
+                (node) =>
+                    (!hiddenBatchNodeIds.has(node.id) || collapsingBatchIds.has(node.metadata?.batchRootId || "")) &&
+                    boundsIntersect({ left: node.position.x, top: node.position.y, right: node.position.x + node.width, bottom: node.position.y + node.height }, viewBounds),
+            ),
+        [collapsingBatchIds, displayNodes, hiddenBatchNodeIds, viewBounds],
+    );
+    const connectionEntries = useMemo(
+        () =>
+            connections.flatMap((connection) => {
+                const from = nodeById.get(connection.fromNodeId);
+                const to = nodeById.get(connection.toNodeId);
+                return from && to && !hiddenBatchNodeIds.has(from.id) && !hiddenBatchNodeIds.has(to.id) ? [{ connection, from, to, bounds: connectionBounds(from, to) }] : [];
+            }),
+        [connections, hiddenBatchNodeIds, nodeById],
+    );
+    const visibleConnections = useMemo(() => connectionEntries.filter((entry) => boundsIntersect(entry.bounds, viewBounds)), [connectionEntries, viewBounds]);
     const toolbarNode = toolbarNodeId ? nodeById.get(toolbarNodeId) || null : null;
     const infoNode = infoNodeId ? nodeById.get(infoNodeId) || null : null;
     const cropNode = cropNodeId ? nodeById.get(cropNodeId) || null : null;
@@ -1494,32 +1534,39 @@ function InfiniteCanvasPage() {
 
     const revertAssistantRun = useCallback(
         async (runId: string) => {
-            const pendingCalls = [...pendingAgentHistoryRef.current.values()];
-            const committed = lastHistoryRef.current;
-            if (!committed) throw new Error("画布历史尚未就绪");
-            const current = pendingCalls.length ? { ...createHistoryEntry(), agentToolCalls: pendingCalls } : committed;
-            const timeline = [...historyRef.current.past, current];
-            const firstRunEntry = timeline.findIndex((entry) => entry.agentToolCalls?.some((tool) => tool.runId === runId));
-            const result = await revertAgentRun(runId);
-            const serverSnapshot = result.snapshot as Pick<CanvasHistoryEntry, "nodes" | "connections">;
-            const beforeRun = firstRunEntry > 0 ? timeline[firstRunEntry - 1] : serverSnapshot;
-            if (!beforeRun?.nodes || !beforeRun?.connections) throw new Error("服务端画布快照无效，无法安全撤销");
-            const restored: CanvasHistoryEntry = {
-                ...beforeRun,
-                chatSessions: current.chatSessions,
-                activeChatId: current.activeChatId,
-                backgroundMode: current.backgroundMode,
-                showImageInfo: current.showImageInfo,
-            };
-            historyRef.current.past = firstRunEntry > 0 ? timeline.slice(0, firstRunEntry - 1) : [];
-            historyRef.current.future = [];
-            applyHistory(restored);
+            await cancelAgentRun(runId);
+            window.dispatchEvent(new CustomEvent(CANVAS_AGENT_RUN_REVERTED_EVENT, { detail: { runId, cancelledOnly: true } }));
+            const project = useCanvasStore.getState().openProject(projectId);
+            const receipts = Object.entries(project?.agentToolReceipts || {}).filter(([key]) => key.startsWith(`${runId}:`));
+            const pending = receipts
+                .filter(([, receipt]) => !receipt.revertedAt)
+                .sort((a, b) => a[1].appliedAt.localeCompare(b[1].appliedAt))
+                .reverse();
+            if (!receipts.length) throw new Error("本轮没有可撤销的画布记录");
+            const patches = pending.flatMap(([, receipt]) => {
+                if (receipt.result.status === "success" && !receipt.patch) throw new Error("本轮缺少局部撤销记录，已保留当前画布");
+                return receipt.patch ? [receipt.patch] : [];
+            });
+            const restored = revertAgentPatches(readAssistantCanvas(), patches);
+            nodesRef.current = restored.nodes;
+            connectionsRef.current = restored.connections;
+            setNodes(restored.nodes);
+            setConnections(restored.connections);
+            setSelectedNodeIds(new Set());
+            setSelectedConnectionId(null);
+            const savedReceipts = { ...useCanvasStore.getState().openProject(projectId)?.agentToolReceipts };
+            for (const [key, receipt] of pending) savedReceipts[key] = { ...receipt, revertedAt: new Date().toISOString() };
+            updateProject(projectId, { ...restored, agentToolReceipts: savedReceipts });
+            await flushActiveWorkspaceChanges();
+            await revertAgentRun(
+                runId,
+                receipts.filter(([, receipt]) => receipt.result.status === "success").map(([, receipt]) => receipt.result.callId),
+            );
             window.dispatchEvent(new CustomEvent(CANVAS_AGENT_RUN_REVERTED_EVENT, { detail: { runId } }));
             void message.success("已撤销本轮画布操作");
         },
-        [applyHistory, createHistoryEntry, message],
+        [message, projectId, readAssistantCanvas, updateProject],
     );
-
     const undoCanvas = useCallback(() => {
         if (historyCommitTimerRef.current && pendingAgentHistoryRef.current.size) {
             clearTimeout(historyCommitTimerRef.current);
@@ -3489,7 +3536,7 @@ function InfiniteCanvasPage() {
     }, []);
 
     const insertAssistantImages = useCallback(
-        async (images: CanvasAssistantImage[]) => {
+        async (images: CanvasAssistantImage[], signal?: AbortSignal) => {
             const stored = await Promise.all(
                 images.map(async (image) => {
                     const storedImage = await storeGeneratedImage(image);
@@ -3497,6 +3544,7 @@ function InfiniteCanvasPage() {
                     return { image, storedImage, meta, size: fitNodeSize(meta.width, meta.height) };
                 }),
             );
+            signal?.throwIfAborted();
             const agentImage = images.find((image) => image.agentRunId && image.agentToolCallId);
             const placeholders = agentImage
                 ? nodesRef.current
@@ -3568,7 +3616,8 @@ function InfiniteCanvasPage() {
     );
 
     const insertAssistantVideo = useCallback(
-        async (video: UploadedFile & CanvasAssistantVideo) => {
+        async (video: UploadedFile & CanvasAssistantVideo, signal?: AbortSignal) => {
+            signal?.throwIfAborted();
             if (!video.storageKey) throw new Error("视频尚未保存到工作区");
             const center = screenToCanvas((containerRef.current?.getBoundingClientRect().left || 0) + size.width / 2, (containerRef.current?.getBoundingClientRect().top || 0) + size.height / 2);
             const selected = nodesRef.current.filter((node) => video.sourceNodeIds?.includes(node.id));
@@ -3646,11 +3695,9 @@ function InfiniteCanvasPage() {
             if (agentMeta) markAssistantHistory(agentMeta.runId, agentMeta.callId);
             nodesRef.current = nextNodes;
             markAgentMovingNodes(nodeIds);
-            requestAnimationFrame(() => {
-                setNodes(nextNodes);
-                setSelectedNodeIds(new Set(nodeIds));
-                setSelectedConnectionId(null);
-            });
+            setNodes(nextNodes);
+            setSelectedNodeIds(new Set(nodeIds));
+            setSelectedConnectionId(null);
             if (agentMeta) focusAssistantNodes(resolved, true, agentMeta.runId);
             return positions;
         },
@@ -3666,15 +3713,18 @@ function InfiniteCanvasPage() {
             if (!project) throw new Error("当前画布项目不存在");
             const saved = project.agentToolReceipts?.[key];
             if (saved) return saved.result;
+            const current = readAssistantCanvas();
+            const patch = createAgentPatch(name, result, agentToolBeforeRef.current.get(key) || current, current);
             updateProject(projectId, {
                 nodes: nodesRef.current,
                 connections: connectionsRef.current,
-                agentToolReceipts: { ...project.agentToolReceipts, [key]: { name, result, appliedAt: new Date().toISOString() } },
+                agentToolReceipts: { ...project.agentToolReceipts, [key]: { name, result, patch, appliedAt: new Date().toISOString() } },
             });
             await flushActiveWorkspaceChanges();
+            agentToolBeforeRef.current.delete(key);
             return result;
         },
-        [projectId, updateProject],
+        [projectId, readAssistantCanvas, updateProject],
     );
 
     const applyDestructiveAssistantTool = useCallback(
@@ -3710,6 +3760,7 @@ function InfiniteCanvasPage() {
             const project = useCanvasStore.getState().openProject(projectId);
             if (!project) throw new Error("当前画布项目不存在");
             markAssistantHistory(runId, callId);
+            const patch = createAgentPatch(name, result, readAssistantCanvas(), { nodes: nextNodes, connections: nextConnections });
             nodesRef.current = nextNodes;
             connectionsRef.current = nextConnections;
             setNodes(nextNodes);
@@ -3717,12 +3768,12 @@ function InfiniteCanvasPage() {
             updateProject(projectId, {
                 nodes: nextNodes,
                 connections: nextConnections,
-                agentToolReceipts: { ...project.agentToolReceipts, [key]: { name, result, appliedAt: new Date().toISOString() } },
+                agentToolReceipts: { ...project.agentToolReceipts, [key]: { name, result, patch, appliedAt: new Date().toISOString() } },
             });
             await flushActiveWorkspaceChanges();
             return result;
         },
-        [markAssistantHistory, projectId, updateProject],
+        [markAssistantHistory, projectId, readAssistantCanvas, updateProject],
     );
 
     const insertAssistantText = useCallback(
@@ -3760,15 +3811,23 @@ function InfiniteCanvasPage() {
     );
 
     const insertAssistantConfig = useCallback(
-        (placement: AgentCanvasPlacement = "right_of_selection", agentMeta?: { runId: string; callId: string; sourceNodeIds?: string[] }) => {
+        (placement: AgentCanvasPlacement = "right_of_selection", agentMeta?: { runId: string; callId: string; sourceNodeIds?: string[]; settings?: AgentMediaOptions & { prompt?: string } }) => {
+            const settings = agentMeta?.settings;
+            const mode = settings?.mode || "image";
             const center = screenToCanvas((containerRef.current?.getBoundingClientRect().left || 0) + size.width / 2, (containerRef.current?.getBoundingClientRect().top || 0) + size.height / 2);
             const selected = nodesRef.current.filter((node) => agentMeta?.sourceNodeIds?.includes(node.id) || selectedNodeIdsRef.current.has(node.id));
             const spec = getNodeSpec(CanvasNodeType.Config);
             const node = createCanvasNode(CanvasNodeType.Config, resolveAgentPlacement(placement, selected, spec, center), {
-                generationMode: "image",
-                model: effectiveConfig.imageModel || effectiveConfig.model,
-                size: effectiveConfig.size,
-                count: getGenerationCount(effectiveConfig.canvasImageCount || effectiveConfig.count),
+                generationMode: mode,
+                model: settings?.model || (mode === "video" ? effectiveConfig.videoModel : effectiveConfig.imageModel) || effectiveConfig.model,
+                size: settings?.size || effectiveConfig.size,
+                quality: settings?.quality || (supportsImageQuality(settings?.model || effectiveConfig.imageModel || effectiveConfig.model) ? effectiveConfig.quality : "auto"),
+                vquality: settings?.resolution || effectiveConfig.vquality,
+                seconds: String(settings?.duration || effectiveConfig.videoSeconds || 6),
+                generateAudio: settings?.generateAudio == null ? effectiveConfig.videoGenerateAudio : String(settings.generateAudio),
+                count: settings?.count || 1,
+                prompt: settings?.prompt,
+                composerContent: settings?.prompt,
                 agentRunId: agentMeta?.runId,
                 agentToolCallId: agentMeta?.callId,
                 sourceNodeIds: agentMeta?.sourceNodeIds,
@@ -3798,7 +3857,7 @@ function InfiniteCanvasPage() {
             if (agentMeta) focusAssistantNodes([node], true, agentMeta.runId);
             return node.id;
         },
-        [effectiveConfig.canvasImageCount, effectiveConfig.count, effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, focusAssistantNodes, markAssistantHistory, markGrowingConnections, screenToCanvas, size.height, size.width],
+        [effectiveConfig, focusAssistantNodes, markAssistantHistory, markGrowingConnections, screenToCanvas, size.height, size.width],
     );
 
     const connectAssistantNodes = useCallback(
@@ -4008,30 +4067,18 @@ function InfiniteCanvasPage() {
                     onDrop={handleDrop}
                 >
                     <svg className="absolute left-0 top-0 h-[10000px] w-[10000px] overflow-visible" style={{ pointerEvents: "none", transform: "translateZ(0)", zIndex: 0 }}>
-                        {connections
-                            .filter((connection) => {
-                                const from = nodeById.get(connection.fromNodeId);
-                                const to = nodeById.get(connection.toNodeId);
-                                return Boolean(from && to && !isHiddenBatchConnectionEndpoint(from, nodes) && !isHiddenBatchConnectionEndpoint(to, nodes));
-                            })
-                            .map((connection) => {
-                                const from = nodeById.get(connection.fromNodeId);
-                                const to = nodeById.get(connection.toNodeId);
-                                if (!from || !to) return null;
-
-                                return (
-                                    <ConnectionPath
-                                        key={connection.id}
-                                        connection={connection}
-                                        from={from}
-                                        to={to}
-                                        active={selectedConnectionId === connection.id || relatedHighlight.connectionIds.has(connection.id)}
-                                        growing={growingConnectionIds.has(connection.id)}
-                                        onSelect={selectConnection}
-                                        onContextMenu={openConnectionContextMenu}
-                                    />
-                                );
-                            })}
+                        {visibleConnections.map(({ connection, from, to }) => (
+                            <ConnectionPath
+                                key={connection.id}
+                                connection={connection}
+                                from={from}
+                                to={to}
+                                active={selectedConnectionId === connection.id || relatedHighlight.connectionIds.has(connection.id)}
+                                growing={growingConnectionIds.has(connection.id)}
+                                onSelect={selectConnection}
+                                onContextMenu={openConnectionContextMenu}
+                            />
+                        ))}
                         {connectingParams ? <ActiveConnectionPath node={nodeById.get(connectingParams.nodeId)} handle={connectingParams} mouseWorld={mouseWorld} target={connectionTargetNodeId ? nodeById.get(connectionTargetNodeId) : undefined} /> : null}
                     </svg>
 
@@ -4298,6 +4345,7 @@ function InfiniteCanvasPage() {
                         connections={connections}
                         selectedNodeIds={selectedNodeIds}
                         visibleNodeIds={visibleNodes.map((node) => node.id)}
+                        onReadCanvas={readAssistantCanvas}
                         sessions={chatSessions}
                         activeSessionId={activeChatId}
                         onSelectNodeIds={setSelectedNodeIds}
@@ -4956,10 +5004,10 @@ function isHiddenBatchChild(node: CanvasNodeData, nodes: CanvasNodeData[], colla
     return Boolean(root && !root.metadata?.imageBatchExpanded);
 }
 
-function isHiddenBatchConnectionEndpoint(node: CanvasNodeData, nodes: CanvasNodeData[]) {
+function isHiddenBatchConnectionEndpoint(node: CanvasNodeData, nodes: Map<string, CanvasNodeData>) {
     const rootId = node.metadata?.batchRootId;
     if (!rootId) return false;
-    const root = nodes.find((item) => item.id === rootId);
+    const root = nodes.get(rootId);
     return Boolean(root && !root.metadata?.imageBatchExpanded);
 }
 

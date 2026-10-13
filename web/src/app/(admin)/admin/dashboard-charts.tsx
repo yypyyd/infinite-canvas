@@ -172,9 +172,7 @@ export function TrendArea({ points }: { points: TrendPoint[] }) {
                     );
                 })}
                 {points.map((item, index) =>
-                    item.tasks > 0 ? (
-                        <circle key={`dot-${item.label}`} cx={pointX(index)} cy={padY + (height - padY * 2) * (1 - item.tasks / maxValue)} r={hover === index ? 5 : 3.5} fill={colors.primary} stroke={colors.fg} strokeWidth="1" />
-                    ) : null,
+                    item.tasks > 0 ? <circle key={`dot-${item.label}`} cx={pointX(index)} cy={padY + (height - padY * 2) * (1 - item.tasks / maxValue)} r={hover === index ? 5 : 3.5} fill={colors.primary} stroke={colors.fg} strokeWidth="1" /> : null,
                 )}
                 {hover !== null && points[hover] ? <line x1={pointX(hover)} x2={pointX(hover)} y1={padY} y2={height - padY} stroke={colors.primary} strokeDasharray="3 4" /> : null}
             </svg>
@@ -206,7 +204,7 @@ function polar(cx: number, cy: number, radius: number, deg: number) {
 function arcPath(cx: number, cy: number, radius: number, startDeg: number, endDeg: number) {
     const start = polar(cx, cy, radius, startDeg);
     const end = polar(cx, cy, radius, endDeg);
-    const sweep = ((endDeg - startDeg) % 360 + 360) % 360;
+    const sweep = (((endDeg - startDeg) % 360) + 360) % 360;
     return `M ${start.x.toFixed(2)} ${start.y.toFixed(2)} A ${radius} ${radius} 0 ${sweep > 180 ? 1 : 0} 1 ${end.x.toFixed(2)} ${end.y.toFixed(2)}`;
 }
 

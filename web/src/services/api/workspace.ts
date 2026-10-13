@@ -59,9 +59,13 @@ export function fetchWorkspace(token: string) {
     return apiGet<WorkspacePayload>("/api/workspace", undefined, token);
 }
 
-export async function saveWorkspaceChanges(token: string, changes: WorkspaceChange[]) {
+export function syncWorkspace(token: string, versions: Array<Pick<WorkspaceRecord, "domain" | "objectId" | "version">>, organizationId: string) {
+    return apiPost<WorkspacePayload>("/api/workspace/sync", { versions }, token, { organizationId });
+}
+
+export async function saveWorkspaceChanges(token: string, changes: WorkspaceChange[], organizationId = getActiveOrganizationId()) {
     try {
-        return await apiPost<WorkspacePayload>("/api/workspace/changes", { changes }, token);
+        return await apiPost<WorkspacePayload>("/api/workspace/changes", { changes }, token, { organizationId });
     } catch (error) {
         const message = error instanceof Error ? error.message : "";
         if (message.includes("企业数据已被其他成员更新") || message.includes("刷新后重新编辑")) throw new WorkspaceVersionConflictError(message);
@@ -73,10 +77,9 @@ export function fetchWorkspaceStorageStatus(token: string) {
     return apiGet<WorkspaceStorageStatus>("/api/workspace/status", undefined, token);
 }
 
-export async function uploadWorkspaceFile(token: string, storageKey: string, file: Blob, signal?: AbortSignal) {
+export async function uploadWorkspaceFile(token: string, storageKey: string, file: Blob, signal?: AbortSignal, organizationId = getActiveOrganizationId()) {
     if (signal?.aborted) throw new Error("上传已取消");
     const mimeType = file.type || "application/octet-stream";
-    const organizationId = getActiveOrganizationId();
     const ticket = await serializeWorkspaceUploadMutation(() => apiPost<WorkspaceFileUploadTicket>("/api/workspace/files/upload-ticket", { storageKey, mimeType, size: file.size }, token, { signal, timeout: 30_000, organizationId }));
     if (!ticket.uploadRequired && ticket.file) return ticket.file;
     const { uploadId, uploadUrl, uploadToken, objectKey } = ticket;
@@ -89,7 +92,7 @@ export async function uploadWorkspaceFile(token: string, storageKey: string, fil
             form.append("file", file, workspaceFileName(storageKey, mimeType));
             await axios.post(uploadUrl, form, { signal, timeout: 15 * 60_000 });
         } else {
-            await axios.put(uploadUrl, file, { headers: { ...authorizationHeaders(token), ...organizationHeaders(), "Content-Type": mimeType }, signal, timeout: 15 * 60_000 });
+            await axios.put(uploadUrl, file, { headers: { ...authorizationHeaders(token), ...organizationHeaders(organizationId), "Content-Type": mimeType }, signal, timeout: 15 * 60_000 });
         }
         if (signal?.aborted) throw new Error("上传已取消");
         return await serializeWorkspaceUploadMutation(() => apiPost<WorkspaceFile>("/api/workspace/files/confirm", { uploadId, storageKey, objectKey, mimeType, size: file.size }, token, { signal, timeout: 30_000, organizationId }));
@@ -123,13 +126,11 @@ export function workspaceImageUrl(storageKey: string, variant: WorkspaceImageVar
     return workspaceFileUrl(storageKey, accountId, organizationId, variant);
 }
 
-export async function workspaceFileExists(token: string, storageKey: string) {
-    try {
-        const response = await axios.head(workspaceFileUrl(storageKey), { headers: authorizationHeaders(token), validateStatus: () => true });
-        return response.status >= 200 && response.status < 300;
-    } catch {
-        return false;
-    }
+export async function workspaceFileExists(token: string, storageKey: string, organizationId = getActiveOrganizationId()) {
+    const response = await axios.head(workspaceFileUrl(storageKey, "", organizationId), { headers: { ...authorizationHeaders(token), ...organizationHeaders(organizationId) }, validateStatus: () => true });
+    if (response.status === 404) return false;
+    if (response.status < 200 || response.status >= 300) throw new Error("媒体文件检查失败，请稍后重试");
+    return true;
 }
 
 function workspaceFileName(storageKey: string, mimeType: string) {

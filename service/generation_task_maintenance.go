@@ -16,9 +16,11 @@ import (
 )
 
 const (
-	generationTaskReconcileDelay = time.Minute
-	generationTaskTimeout        = 30 * time.Minute
-	maxGenerationTaskStatusSize  = 1 << 20
+	generationTaskReconcileDelay       = time.Minute
+	generationTaskTimeout              = 30 * time.Minute
+	generationTaskReconcileTimeout     = 15 * time.Minute
+	generationTaskReconcileConcurrency = 4
+	maxGenerationTaskStatusSize        = 1 << 20
 )
 
 var (
@@ -29,58 +31,104 @@ var (
 func StartGenerationTaskMaintenanceWorker() {
 	logWorkerInfo("generation_task", "worker_started", "reconcile_minutes", int(generationTaskReconcileDelay/time.Minute), "timeout_minutes", int(generationTaskTimeout/time.Minute))
 	go func() {
+		slots := make(chan struct{}, generationTaskReconcileConcurrency)
 		for {
-			expireStaleGenerationTasks(time.Now().UTC())
-			time.Sleep(time.Minute)
+			dispatchGenerationTaskReconciliations(time.Now().UTC(), slots)
+			time.Sleep(5 * time.Second)
 		}
 	}()
 }
 
-func expireStaleGenerationTasks(timestamp time.Time) {
-	tasks, err := repository.ListStaleRunningGenerationTasks(timestamp.Add(-generationTaskReconcileDelay).Format(timestampLayout), 100)
+func dispatchGenerationTaskReconciliations(timestamp time.Time, slots chan struct{}) {
+	available := cap(slots) - len(slots)
+	if available == 0 {
+		return
+	}
+	tasks, err := repository.ListStaleRunningGenerationTasks(timestamp.Add(-generationTaskReconcileDelay).Format(timestampLayout), timestamp.Format(timestampLayout), available)
 	if err != nil {
 		logWorkerError("generation_task", "stale_list_failed", err)
 		return
 	}
-	for _, task := range tasks {
-		autoDLTask := false
-		if task.UpstreamTaskID != "" {
-			channel, channelErr := generationTaskChannel(task.ChannelName)
-			if channelErr == nil && IsAutoDLComfyUIChannel(channel) {
-				autoDLTask = true
-				ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
-				settled, reconcileErr := ReconcileAutoDLGenerationTask(ctx, &task, channel)
-				cancel()
-				if reconcileErr != nil {
-					logWorkerError("generation_task", "autodl_reconcile_failed", reconcileErr, "task_id", task.ID)
-				}
-				if settled {
-					continue
-				}
-			}
+	for _, candidate := range tasks {
+		claimedAt := time.Now().UTC()
+		task, claimed, claimErr := repository.ClaimGenerationTaskReconcile(candidate.ID, newID("reconcile"), claimedAt.Format(timestampLayout), claimedAt.Add(generationTaskReconcileTimeout+time.Minute).Format(timestampLayout))
+		if claimErr != nil {
+			logWorkerError("generation_task", "reconcile_claim_failed", claimErr, "task_id", candidate.ID)
 		}
-		if !autoDLTask && task.Modality == "video" && task.UpstreamTaskID != "" {
-			settled, reconcileErr := reconcileRunningVideoTask(task)
-			if reconcileErr != nil {
-				logWorkerError("generation_task", "video_reconcile_failed", reconcileErr, "task_id", task.ID)
-			}
-			if settled {
-				continue
-			}
-		}
-		createdAt, parseErr := time.Parse(time.RFC3339, task.CreatedAt)
-		if parseErr == nil && timestamp.Sub(createdAt) < generationTaskTimeout {
+		if !claimed {
 			continue
 		}
-		if err := FinishGenerationTask(task, model.GenerationTaskStatusFailed, "生成任务超过 30 分钟未完成，已自动结束"); err != nil {
-			logWorkerError("generation_task", "stale_finalize_failed", err, "task_id", task.ID)
-			continue
-		}
-		logWorkerInfo("generation_task", "stale_finalized", "task_id", task.ID, "modality", task.Modality)
+		slots <- struct{}{}
+		go func() {
+			defer func() { <-slots }()
+			defer func() {
+				delay := generationTaskReconcileDelay
+				if task.ProtocolSnapshot != nil && task.UpstreamTaskID != "" {
+					delay = time.Duration(task.ProtocolSnapshot.Template.Operations[task.ProtocolSnapshot.Operation].PollSeconds) * time.Second
+				}
+				if err := repository.ReleaseGenerationTaskReconcile(task.ID, task.ReconcileLeaseToken, time.Now().UTC().Add(delay).Format(timestampLayout)); err != nil {
+					logWorkerError("generation_task", "reconcile_release_failed", err, "task_id", task.ID)
+				}
+			}()
+			ctx, cancel := context.WithTimeout(context.Background(), generationTaskReconcileTimeout)
+			defer cancel()
+			reconcileStaleGenerationTask(ctx, task)
+		}()
 	}
 }
 
-func reconcileRunningVideoTask(task model.GenerationTask) (bool, error) {
+func reconcileStaleGenerationTask(ctx context.Context, task model.GenerationTask) {
+	if task.ProtocolSnapshot != nil {
+		settled, err := ReconcileManagedMediaTask(ctx, &task, model.ModelChannel{})
+		if settled {
+			return
+		}
+		if err != nil && !errors.Is(err, ErrProtocolSubmissionUncertain) {
+			logWorkerError("generation_task", "protocol_reconcile_failed", err, "task_id", task.ID)
+		}
+		if time.Now().Before(ManagedMediaDeadline(task)) {
+			return
+		}
+		if err := FinishGenerationTask(task, model.GenerationTaskStatusFailed, "生成任务超过协议等待期限且结果未能归档，已结束并返还算力"); err != nil {
+			logWorkerError("generation_task", "protocol_finalize_failed", err, "task_id", task.ID)
+		}
+		return
+	}
+	autoDLTask := false
+	if task.UpstreamTaskID != "" {
+		channel, channelErr := generationTaskChannel(task.ChannelName)
+		if channelErr == nil && IsAutoDLComfyUIChannel(channel) {
+			autoDLTask = true
+			settled, reconcileErr := ReconcileAutoDLGenerationTask(ctx, &task, channel)
+			if reconcileErr != nil {
+				logWorkerError("generation_task", "autodl_reconcile_failed", reconcileErr, "task_id", task.ID)
+			}
+			if settled {
+				return
+			}
+		}
+	}
+	if !autoDLTask && task.Modality == "video" && task.UpstreamTaskID != "" {
+		settled, reconcileErr := reconcileRunningVideoTask(ctx, task)
+		if reconcileErr != nil {
+			logWorkerError("generation_task", "video_reconcile_failed", reconcileErr, "task_id", task.ID)
+		}
+		if settled {
+			return
+		}
+	}
+	createdAt, parseErr := time.Parse(time.RFC3339, task.CreatedAt)
+	if parseErr == nil && time.Since(createdAt) < generationTaskTimeout {
+		return
+	}
+	if err := FinishGenerationTask(task, model.GenerationTaskStatusFailed, "生成任务超过 30 分钟未完成，已自动结束"); err != nil {
+		logWorkerError("generation_task", "stale_finalize_failed", err, "task_id", task.ID)
+		return
+	}
+	logWorkerInfo("generation_task", "stale_finalized", "task_id", task.ID, "modality", task.Modality)
+}
+
+func reconcileRunningVideoTask(ctx context.Context, task model.GenerationTask) (bool, error) {
 	if len(task.StorageKeys) > 0 {
 		return true, FinishGenerationTask(task, model.GenerationTaskStatusSuccess, "")
 	}
@@ -89,7 +137,7 @@ func reconcileRunningVideoTask(task model.GenerationTask) (bool, error) {
 		return false, err
 	}
 	statusURL := BuildModelChannelURL(channel, "/videos/"+url.PathEscape(task.UpstreamTaskID))
-	request, err := http.NewRequest(http.MethodGet, statusURL, nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, statusURL, nil)
 	if err != nil {
 		return false, err
 	}
@@ -111,7 +159,7 @@ func reconcileRunningVideoTask(task model.GenerationTask) (bool, error) {
 	}
 	switch generationTaskVideoStatus(body) {
 	case "completed":
-		return archiveReconciledVideoTask(task, channel, body)
+		return archiveReconciledVideoTask(ctx, task, channel, body)
 	case "failed", "cancelled", "canceled":
 		if err := UpdateGenerationTaskRecovery(&task, task.UpstreamTaskID, body, nil); err != nil {
 			return false, err
@@ -128,10 +176,8 @@ func reconcileRunningVideoTask(task model.GenerationTask) (bool, error) {
 	}
 }
 
-func archiveReconciledVideoTask(task model.GenerationTask, channel model.ModelChannel, statusBody []byte) (bool, error) {
+func archiveReconciledVideoTask(ctx context.Context, task model.GenerationTask, channel model.ModelChannel, statusBody []byte) (bool, error) {
 	contentURL := BuildModelChannelURL(channel, "/videos/"+url.PathEscape(task.UpstreamTaskID)+"/content")
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
-	defer cancel()
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, contentURL, nil)
 	if err != nil {
 		return false, err

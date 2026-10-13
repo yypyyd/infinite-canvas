@@ -63,11 +63,15 @@ func GetAgentRunCredits(organizationID, userID, runID string) (int, error) {
 		return 0, err
 	}
 	var credits int
-	err = db.Model(&model.GenerationTask{}).Where(
+	err = agentRunCreditQuery(db, organizationID, userID, runID).Select("COALESCE(SUM(credits), 0)").Scan(&credits).Error
+	return credits, err
+}
+
+func agentRunCreditQuery(db *gorm.DB, organizationID, userID, runID string) *gorm.DB {
+	return db.Model(&model.GenerationTask{}).Where(
 		"organization_id = ? AND user_id = ? AND status != ? AND (request_id LIKE ? OR request_id LIKE ? OR request_id LIKE ?)",
 		organizationID, userID, model.GenerationTaskStatusFailed, runID+"-completion-%", "agent:"+runID+":%", "agent-inspect:"+runID+":%",
-	).Select("COALESCE(SUM(credits), 0)").Scan(&credits).Error
-	return credits, err
+	)
 }
 
 func ReplaceAgentPlan(organizationID, userID, runID, planCallID string, titles []string, timestamp string) ([]model.AgentPlanStep, error) {

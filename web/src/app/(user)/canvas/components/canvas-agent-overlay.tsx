@@ -10,19 +10,7 @@ import type { CanvasAgentOverlayState, CanvasNodeData, ViewportTransform } from 
 
 const OVERLAY_WIDTH = 300;
 
-export function CanvasAgentOverlay({
-    overlay,
-    nodes,
-    viewport,
-    containerWidth,
-    containerHeight,
-}: {
-    overlay: CanvasAgentOverlayState;
-    nodes: CanvasNodeData[];
-    viewport: ViewportTransform;
-    containerWidth: number;
-    containerHeight: number;
-}) {
+export function CanvasAgentOverlay({ overlay, nodes, viewport, containerWidth, containerHeight }: { overlay: CanvasAgentOverlayState; nodes: CanvasNodeData[]; viewport: ViewportTransform; containerWidth: number; containerHeight: number }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const [answer, setAnswer] = useState("");
     const askQuestion = overlay?.prompt.kind === "ask" ? overlay.prompt.question : "";
@@ -50,13 +38,7 @@ export function CanvasAgentOverlay({
     const selectedAnswer = overlay.prompt.kind === "ask" ? answer : "";
 
     return (
-        <div
-            data-canvas-no-zoom
-            className="pointer-events-auto absolute z-40"
-            style={{ left, top, width: OVERLAY_WIDTH, color: theme.node.text }}
-            onMouseDown={(event) => event.stopPropagation()}
-            onPointerDown={(event) => event.stopPropagation()}
-        >
+        <div data-canvas-no-zoom className="pointer-events-auto absolute z-40" style={{ left, top, width: OVERLAY_WIDTH, color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
             <div className="rounded-lg border px-3 py-2.5" style={{ background: theme.toolbar.panel, borderColor: theme.node.stroke }}>
                 {overlay.prompt.kind === "confirm" ? (
                     <>
@@ -105,15 +87,7 @@ export function CanvasAgentOverlay({
                                 </button>
                             ))}
                         </div>
-                        <Input
-                            className="mt-3"
-                            value={answer}
-                            maxLength={2000}
-                            disabled={busy}
-                            placeholder="输入其他回答"
-                            onChange={(event) => setAnswer(event.target.value)}
-                            onPressEnter={() => answer.trim() && overlay.onApprove(answer)}
-                        />
+                        <Input className="mt-3" value={answer} maxLength={2000} disabled={busy} placeholder="输入其他回答" onChange={(event) => setAnswer(event.target.value)} onPressEnter={() => answer.trim() && overlay.onApprove(answer)} />
                         {overlay.prompt.status === "failed" ? (
                             <div className="mt-2 text-xs" style={{ color: theme.node.activeStroke }}>
                                 提交失败，请重试

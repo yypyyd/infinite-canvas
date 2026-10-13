@@ -15,18 +15,18 @@ import (
 )
 
 const (
-	gptImage2RawBase                = "https://raw.githubusercontent.com/EvoLinkAI/awesome-gpt-image-2-API-and-Prompts/main"
-	awesomeGptImageRawBase          = "https://raw.githubusercontent.com/ZeroLu/awesome-gpt-image/main"
-	awesomeGpt4oImagePromptsBase    = "https://raw.githubusercontent.com/ImgEdify/Awesome-GPT4o-Image-Prompts/main"
-	youMindGptImage2RawBase         = "https://raw.githubusercontent.com/YouMind-OpenLab/awesome-gpt-image-2/main"
-	youMindNanoBananaProRawBase     = "https://raw.githubusercontent.com/YouMind-OpenLab/awesome-nano-banana-pro-prompts/main"
-	davidWuGptImage2RawBase         = "https://raw.githubusercontent.com/davidwuw0811-boop/awesome-gpt-image2-prompts/main"
-	freestyleGptImage2RawBase       = "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main"
-	seedanceRawBase                 = "https://raw.githubusercontent.com/ZeroLu/awesome-seedance/main"
-	wuyoscarGptImage2RawBase        = "https://raw.githubusercontent.com/wuyoscar/GPT-Image2-Skill/main"
-	jeremyProductPhotographyRawBase = "https://raw.githubusercontent.com/JeremyGDM/awesome-ai-product-photography-prompts/master"
-	joesaiCommercialPromptsRepo     = "a245800347-max/awesome-gpt-image-2-commercial-prompts"
-	joesaiCommercialPromptsRawBase  = "https://raw.githubusercontent.com/" + joesaiCommercialPromptsRepo + "/main"
+	gptImage2RawBase                  = "https://raw.githubusercontent.com/EvoLinkAI/awesome-gpt-image-2-API-and-Prompts/main"
+	awesomeGptImageRawBase            = "https://raw.githubusercontent.com/ZeroLu/awesome-gpt-image/main"
+	awesomeGpt4oImagePromptsBase      = "https://raw.githubusercontent.com/ImgEdify/Awesome-GPT4o-Image-Prompts/main"
+	youMindGptImage2RawBase           = "https://raw.githubusercontent.com/YouMind-OpenLab/awesome-gpt-image-2/main"
+	youMindNanoBananaProRawBase       = "https://raw.githubusercontent.com/YouMind-OpenLab/awesome-nano-banana-pro-prompts/main"
+	davidWuGptImage2RawBase           = "https://raw.githubusercontent.com/davidwuw0811-boop/awesome-gpt-image2-prompts/main"
+	freestyleGptImage2RawBase         = "https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main"
+	seedanceRawBase                   = "https://raw.githubusercontent.com/ZeroLu/awesome-seedance/main"
+	wuyoscarGptImage2RawBase          = "https://raw.githubusercontent.com/wuyoscar/GPT-Image2-Skill/main"
+	jeremyProductPhotographyRawBase   = "https://raw.githubusercontent.com/JeremyGDM/awesome-ai-product-photography-prompts/master"
+	joesaiCommercialPromptsRepo       = "a245800347-max/awesome-gpt-image-2-commercial-prompts"
+	joesaiCommercialPromptsRawBase    = "https://raw.githubusercontent.com/" + joesaiCommercialPromptsRepo + "/main"
 	joesaiCommercialPromptsLegacyRepo = "JoeSai/awesome-gpt-image-2-commercial-prompts"
 )
 

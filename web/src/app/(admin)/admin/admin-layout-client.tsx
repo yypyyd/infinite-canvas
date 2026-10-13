@@ -137,7 +137,15 @@ export function AdminLayoutClient({ children }: { children: ReactNode }) {
                 <Layout style={{ background: antToken.colorBgLayout }}>
                     {isDashboard ? null : (
                         <Layout.Header
-                            style={{ display: "flex", alignItems: "center", justifyContent: "space-between", height: adminLayoutStyle.headerHeight, padding: "0 24px", background: antToken.colorBgContainer, borderBottom: `1px solid ${antToken.colorBorder}` }}
+                            style={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                height: adminLayoutStyle.headerHeight,
+                                padding: "0 24px",
+                                background: antToken.colorBgContainer,
+                                borderBottom: `1px solid ${antToken.colorBorder}`,
+                            }}
                         >
                             <Typography.Title level={5} style={{ margin: 0 }}>
                                 {pageTitle}

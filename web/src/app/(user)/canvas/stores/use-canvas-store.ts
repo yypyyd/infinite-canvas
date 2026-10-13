@@ -5,11 +5,14 @@ import type { CanvasBackgroundMode } from "@/lib/canvas-theme";
 import { stageWorkspaceDelete, stageWorkspaceRecord } from "@/services/workspace-changes";
 import type { AgentToolName, AgentToolResult } from "@/services/api/agent";
 import type { CanvasAssistantSession, CanvasConnection, CanvasNodeData, ViewportTransform } from "../types";
+import type { CanvasAgentPatch } from "../utils/canvas-agent-undo";
 
 export type CanvasAgentToolReceipt = {
     name: AgentToolName;
     result: AgentToolResult;
     appliedAt: string;
+    patch?: CanvasAgentPatch;
+    revertedAt?: string;
 };
 
 export type CanvasProject = {

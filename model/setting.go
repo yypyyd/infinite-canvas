@@ -11,14 +11,16 @@ const (
 
 // ModelChannel stores a private upstream channel.
 type ModelChannel struct {
-	Protocol string         `json:"protocol"`
-	Name     string         `json:"name"`
-	BaseURL  string         `json:"baseUrl"`
-	APIKey   string         `json:"apiKey"`
-	Models   []ChannelModel `json:"models"`
-	Weight   int            `json:"weight"`
-	Enabled  bool           `json:"enabled"`
-	Remark   string         `json:"remark"`
+	ID         string         `json:"id,omitempty"`
+	Protocol   string         `json:"protocol"`
+	TemplateID string         `json:"templateId,omitempty"`
+	Name       string         `json:"name"`
+	BaseURL    string         `json:"baseUrl"`
+	APIKey     string         `json:"apiKey"`
+	Models     []ChannelModel `json:"models"`
+	Weight     int            `json:"weight"`
+	Enabled    bool           `json:"enabled"`
+	Remark     string         `json:"remark"`
 }
 
 // ChannelModel stores one public model's upstream mapping and channel-specific capabilities.
@@ -185,13 +187,14 @@ type CheckInSetting struct {
 
 // PrivateSetting stores backend-only settings.
 type PrivateSetting struct {
-	Channels         []ModelChannel         `json:"channels"`
-	Storage          StorageSetting         `json:"storage"`
-	PromptSync       PromptSyncSetting      `json:"promptSync"`
-	Email            EmailSetting           `json:"email"`
-	Payment          PaymentSetting         `json:"payment"`
-	Referral         ReferralSetting        `json:"referral"`
-	OperationsAlerts OperationsAlertSetting `json:"operationsAlerts"`
+	Channels          []ModelChannel         `json:"channels"`
+	ProtocolTemplates []ProtocolTemplate     `json:"protocolTemplates"`
+	Storage           StorageSetting         `json:"storage"`
+	PromptSync        PromptSyncSetting      `json:"promptSync"`
+	Email             EmailSetting           `json:"email"`
+	Payment           PaymentSetting         `json:"payment"`
+	Referral          ReferralSetting        `json:"referral"`
+	OperationsAlerts  OperationsAlertSetting `json:"operationsAlerts"`
 }
 
 type StorageSetting struct {

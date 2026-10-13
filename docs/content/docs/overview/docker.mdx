@@ -86,7 +86,7 @@ Worker 默认使用内置标准执行器：根据任务创建时固化的品牌�
 
 线上站点由 Nginx 反代本机 `127.0.0.1:3050`，数据在 `/opt/infinite-canvas/data`，环境变量在 `/opt/infinite-canvas/.env`。不要用仓库根目录的 Compose 去占用 3000。
 
-推送到 `main` 或打 `v*` 标签后，GitHub Actions 先运行同一提交的 Quality 检查，通过后构建 `ghcr.io/yypyyd/infinite-canvas`，再 SSH 到生产机执行 `scripts/deploy-production.sh`：拉取镜像、备份当前 SQLite、把旧容器改名为 `infinite-canvas-rollback`、新容器以固定名 `infinite-canvas` 占 3050，健康检查失败则切回。自动部署使用完整提交 SHA 标签，镜像仍同时提供 `main` 或版本标签供手动选择。部署成功后只保留当前和回滚这两份幻图镜像，更旧的版本镜像会删掉；SQLite 部署备份只留最近两份。新的质量检查与部署串联仍需在 Actions 实际验收。
+推送到 `main` 或打 `v*` 标签后，GitHub Actions 先运行同一提交的 Quality 检查，通过后构建 `ghcr.io/yypyyd/infinite-canvas`，再 SSH 到生产机执行 `scripts/deploy-production.sh`：拉取镜像、备份当前 SQLite、把旧容器改名为 `infinite-canvas-rollback`、新容器以固定名 `infinite-canvas` 占 3050，健康检查失败则切回。自动部署使用完整提交 SHA 标签，镜像仍同时提供 `main` 或版本标签供手动选择。部署成功后只保留当前和回滚这两份幻图镜像，更旧的版本镜像会删掉；SQLite 部署备份只留最近两份。`v0.2.29` 已通过 Actions 的检查、构建、按提交 SHA 部署及生产健康检查；回滚演练与 Docker 静态资源路径仍按待测试清单继续验收。
 
 仓库 Actions 需要这些 Secret：
 

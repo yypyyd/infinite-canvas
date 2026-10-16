@@ -8,6 +8,7 @@ docker ps -a --no-trunc --format '{{json .}}'
 while read -r container_id; do
   [[ -n "$container_id" ]] || continue
   docker inspect --format '{{.Id}} {{.Name}} {{.Image}} {{.State.Status}} {{.State.StartedAt}}' "$container_id"
+  docker inspect --format '{{.Name}} mounts={{range .Mounts}}{{.Type}}:{{.Destination}} {{end}}' "$container_id"
 done < <(docker ps -aq --no-trunc)
 printf '\nIMAGES\n'
 docker image ls --no-trunc --digests --format '{{json .}}'

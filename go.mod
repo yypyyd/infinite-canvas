@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/caarlos0/env/v11 v11.3.1
 	github.com/disintegration/imaging v1.6.2
+	github.com/emersion/go-message v0.18.2
 	github.com/gin-gonic/gin v1.11.0
 	github.com/glebarez/sqlite v1.11.0
 	github.com/go-sql-driver/mysql v1.8.1

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/rand"
@@ -12,7 +13,6 @@ import (
 	"html"
 	"log"
 	"math/big"
-	"mime"
 	"net"
 	netmail "net/mail"
 	"net/smtp"
@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/emersion/go-message/mail"
 	"github.com/yypyyd/infinite-canvas/config"
 	"github.com/yypyyd/infinite-canvas/model"
 	"github.com/yypyyd/infinite-canvas/repository"
@@ -214,18 +215,26 @@ func sendHTMLEmail(setting model.EmailSetting, receiver string, subject string, 
 	if strings.ContainsAny(fromName, "\r\n") {
 		return fmt.Errorf("invalid SMTP sender name")
 	}
-	from := (&netmail.Address{Name: fromName, Address: setting.SMTPFromEmail}).String()
-	message := strings.Join([]string{
-		"From: " + from,
-		"To: " + receiver,
-		"Subject: " + mime.QEncoding.Encode("UTF-8", subject),
-		"Date: " + time.Now().Format(time.RFC1123Z),
-		"MIME-Version: 1.0",
-		"Content-Type: text/html; charset=UTF-8",
-		"Content-Transfer-Encoding: 8bit",
-		"",
-		body,
-	}, "\r\n")
+	var header mail.Header
+	header.SetAddressList("From", []*mail.Address{{Name: fromName, Address: setting.SMTPFromEmail}})
+	header.SetAddressList("To", []*mail.Address{{Address: receiver}})
+	header.SetSubject(subject)
+	header.SetDate(time.Now())
+	header.SetContentType("text/html", map[string]string{"charset": "UTF-8"})
+	if err := header.GenerateMessageIDWithHostname(setting.SMTPFromEmail[strings.LastIndex(setting.SMTPFromEmail, "@")+1:]); err != nil {
+		return err
+	}
+	var message bytes.Buffer
+	messageWriter, err := mail.CreateSingleInlineWriter(&message, header)
+	if err != nil {
+		return err
+	}
+	if _, err := messageWriter.Write([]byte(body)); err != nil {
+		return err
+	}
+	if err := messageWriter.Close(); err != nil {
+		return err
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -233,7 +242,6 @@ func sendHTMLEmail(setting model.EmailSetting, receiver string, subject string, 
 	address := net.JoinHostPort(setting.SMTPHost, strconv.Itoa(setting.SMTPPort))
 	tlsConfig := &tls.Config{ServerName: setting.SMTPHost, MinVersion: tls.VersionTLS12}
 	var connection net.Conn
-	var err error
 	if setting.SMTPSecurity == "ssl" {
 		connection, err = tls.DialWithDialer(dialer, "tcp", address, tlsConfig)
 	} else {
@@ -272,7 +280,7 @@ func sendHTMLEmail(setting model.EmailSetting, receiver string, subject string, 
 	if err != nil {
 		return err
 	}
-	if _, err := writer.Write([]byte(message)); err != nil {
+	if _, err := writer.Write(message.Bytes()); err != nil {
 		_ = writer.Close()
 		return err
 	}

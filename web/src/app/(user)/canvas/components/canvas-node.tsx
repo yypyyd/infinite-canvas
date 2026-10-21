@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { ChevronRight, Image as ImageIcon, Music2, RefreshCw, Star, Video } from "lucide-react";
+import { ChevronRight, Image as ImageIcon, ImageOff, Music2, RefreshCw, Star, Video } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes } from "@/lib/image-utils";
@@ -610,12 +610,25 @@ function ImageContent({
 }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const isBatchChild = Boolean(node.metadata?.batchRootId);
-    const imageSrc = resolveImageVariantUrl(node.metadata?.storageKey, node.metadata?.content || "", "preview");
+    const previewSrc = resolveImageVariantUrl(node.metadata?.storageKey, node.metadata?.content || "", "preview");
+    const originalSrc = node.metadata?.content || "";
+    const [failedSrc, setFailedSrc] = useState<string[]>([]);
+    // 预览变体失败时回退原图一次；原图也失败（文件已被清理或存储不可用）时显示明确占位，而不是只剩替代文字
+    const imageSrc = failedSrc.includes(previewSrc) && originalSrc && !failedSrc.includes(originalSrc) ? originalSrc : previewSrc;
+    const imageUnavailable = failedSrc.includes(imageSrc);
 
     return (
         <BatchFrame batchCount={isBatchRoot ? batchCount : 0} batchExpanded={batchExpanded} batchOpening={batchOpening} batchRecovering={batchRecovering} onToggleBatch={onToggleBatch}>
             <div className="h-full w-full overflow-hidden rounded-lg">
+                {imageUnavailable ? (
+                    <div className="flex h-full w-full flex-col items-center justify-center gap-2 border border-dashed text-sm" style={{ background: theme.node.fill, borderColor: theme.toolbar.border, color: theme.node.text }} data-image-unavailable>
+                        <ImageOff className="size-8 opacity-60" />
+                        <span className="opacity-70">图片文件无法加载</span>
+                    </div>
+                ) : null}
                 <img
+                    hidden={imageUnavailable}
+                    onError={() => setFailedSrc((value) => (value.includes(imageSrc) ? value : [...value, imageSrc]))}
                     src={imageSrc}
                     alt={node.title}
                     draggable={false}

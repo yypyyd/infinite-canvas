@@ -1019,18 +1019,16 @@ function InfiniteCanvasPage() {
         });
     }, [nodeDragOffset, nodes]);
 
-    const viewBounds = useMemo(() => {
-        const padding = 280;
-        const rect = containerRef.current?.getBoundingClientRect();
-        const width = rect?.width || size.width;
-        const height = rect?.height || size.height;
-        const viewLeft = -viewport.x / viewport.k - padding;
-        const viewTop = -viewport.y / viewport.k - padding;
-        const viewRight = viewLeft + width / viewport.k + padding * 2;
-        const viewBottom = viewTop + height / viewport.k + padding * 2;
-
-        return { left: viewLeft, top: viewTop, right: viewRight, bottom: viewBottom };
-    }, [size.height, size.width, viewport.k, viewport.x, viewport.y]);
+    // 可视范围向外对齐到网格：平移/缩放的小幅变化不改变范围，节点与连线的裁剪列表保持引用稳定
+    const viewBoundsGrid = 256;
+    const viewBoundsRect = containerRef.current?.getBoundingClientRect();
+    const viewBoundsWidth = viewBoundsRect?.width || size.width;
+    const viewBoundsHeight = viewBoundsRect?.height || size.height;
+    const viewLeft = Math.floor((-viewport.x / viewport.k - 280) / viewBoundsGrid) * viewBoundsGrid;
+    const viewTop = Math.floor((-viewport.y / viewport.k - 280) / viewBoundsGrid) * viewBoundsGrid;
+    const viewRight = Math.ceil((-viewport.x / viewport.k + viewBoundsWidth / viewport.k + 280) / viewBoundsGrid) * viewBoundsGrid;
+    const viewBottom = Math.ceil((-viewport.y / viewport.k + viewBoundsHeight / viewport.k + 280) / viewBoundsGrid) * viewBoundsGrid;
+    const viewBounds = useMemo(() => ({ left: viewLeft, top: viewTop, right: viewRight, bottom: viewBottom }), [viewBottom, viewLeft, viewRight, viewTop]);
 
     const nodeById = useMemo(() => new Map(displayNodes.map((node) => [node.id, node])), [displayNodes]);
     const hiddenBatchNodeIds = useMemo(() => new Set(displayNodes.filter((node) => isHiddenBatchConnectionEndpoint(node, nodeById)).map((node) => node.id)), [displayNodes, nodeById]);

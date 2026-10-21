@@ -9,6 +9,8 @@ export type SafeAreaInsets = { left?: number; top?: number; right?: number; bott
 
 export const CANVAS_TOP_BAR_HEIGHT = 64;
 export const CANVAS_BOTTOM_TOOLBAR_HEIGHT = 80;
+/** 跟随助手时顶部“正在跟随”提示条（top-20 + 文字行高）占用的高度，镜头适配时一并避开。 */
+export const CANVAS_FOLLOW_BANNER_BOTTOM = 112;
 export const DEFAULT_SLOT_GAP = 32;
 const MIN_SAFE_WIDTH = 240;
 const MIN_SAFE_HEIGHT = 200;
@@ -100,4 +102,9 @@ export function interpolatePoint(from: LayoutPoint, to: LayoutPoint, progress: n
 
 export function prefersReducedMotion(): boolean {
     return typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+/** 画布顶部被遮挡的高度：顶栏，跟随助手时还要加上跟随提示条。 */
+export function canvasTopInset(following: boolean): number {
+    return following ? Math.max(CANVAS_TOP_BAR_HEIGHT, CANVAS_FOLLOW_BANNER_BOTTOM) : CANVAS_TOP_BAR_HEIGHT;
 }

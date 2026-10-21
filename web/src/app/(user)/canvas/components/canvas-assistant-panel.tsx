@@ -69,7 +69,7 @@ import {
 } from "../types";
 import { buildCanvasMentionReferences, type CanvasResourceReference } from "../utils/canvas-resource-references";
 import { buildAgentCanvasContext, resolveAgentMediaConfig, type AgentCanvasState } from "../utils/canvas-agent-context";
-import { formatAgentThinkingLabel } from "../utils/canvas-agent-thinking";
+import { agentThinkingKey, formatAgentThinkingLabel, shouldShowAgentThinking } from "../utils/canvas-agent-thinking";
 
 type AssistantMode = "ask" | "image";
 const PANEL_MOTION_MS = 500;
@@ -1916,15 +1916,8 @@ function AssistantMessages({
                             </div>
                         ) : null}
                         {message.references?.length ? <MessageReferences message={message} /> : null}
-                        {message.stages?.length ? (
-                            <AssistantStages message={message} onAnswer={onAnswer} />
-                        ) : message.isLoading ? (
-                            message.mode === "image" ? (
-                                <AssistantStatusCapsule label="图片生成中" status="pending" />
-                            ) : (
-                                <AssistantThinkingCapsule />
-                            )
-                        ) : null}
+                        {message.stages?.length ? <AssistantStages message={message} onAnswer={onAnswer} /> : null}
+                        {shouldShowAgentThinking(message) ? message.mode === "image" && !message.stages?.length ? <AssistantStatusCapsule label="图片生成中" status="pending" /> : <AssistantThinkingCapsule key={agentThinkingKey(message)} /> : null}
                         {message.confirmation && ["pending", "approving", "failed"].includes(message.confirmation.status) ? (
                             <div className="w-[280px] max-w-full rounded-lg border p-3 text-xs" style={{ background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.text }}>
                                 <p>{agentConfirmationDetail(message.confirmation)}</p>
@@ -2570,7 +2563,7 @@ function assistantStageDoneLabel(stage: CanvasAssistantStage) {
     if (stage.kind === "image") return `${stage.imageCount || ""} 张图片已生成`.trim();
     if (stage.kind === "image_edit") return `${stage.imageCount || ""} 张编辑图片已生成`.trim();
     if (stage.kind === "video") return "视频已生成";
-    if (stage.kind === "arrange") return "节点已排列";
+    if (stage.kind === "arrange") return stage.label.startsWith("正在编辑画布") ? stage.label.replace("正在编辑画布", "画布已编辑") : "节点已排列";
     if (stage.kind === "text") return "文本已添加";
     if (stage.kind === "config") return "配置节点已添加";
     if (stage.kind === "connect") return "连线已建立";

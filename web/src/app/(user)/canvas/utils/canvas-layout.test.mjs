@@ -54,3 +54,13 @@ test("同一批依次落位的节点互不重叠，x 间距小于节点宽也会
     expect(placed.map((rect) => rect.x)).toEqual([100, 472, 844]);
     for (let i = 0; i < placed.length; i += 1) for (let j = i + 1; j < placed.length; j += 1) expect(rectsOverlap(placed[i], placed[j])).toBe(false);
 });
+
+test("跟随助手时镜头适配避开顶栏与跟随提示条", async () => {
+    const { canvasTopInset, CANVAS_TOP_BAR_HEIGHT } = await import("./canvas-layout.ts");
+    expect(canvasTopInset(false)).toBe(CANVAS_TOP_BAR_HEIGHT);
+    const area = computeSafeArea(1400, 900, { top: canvasTopInset(true), right: 402, bottom: 80 });
+    // 上方场景行 + 新增一行：适配后两行的顶边都不进入提示条区域。
+    const view = fitRectInSafeArea({ x: 100, y: 200, width: 1084, height: 520 }, area);
+    expect(200 * view.k + view.y).toBeGreaterThanOrEqual(112);
+    expect((200 + 520) * view.k + view.y).toBeLessThanOrEqual(820);
+});

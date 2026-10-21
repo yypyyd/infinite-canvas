@@ -50,6 +50,7 @@ import { createAgentPatch, revertAgentPatches } from "../utils/canvas-agent-undo
 import {
     CANVAS_BOTTOM_TOOLBAR_HEIGHT,
     CANVAS_TOP_BAR_HEIGHT,
+    canvasTopInset,
     boundsOfRects,
     computeSafeArea,
     easeOutCubic,
@@ -181,7 +182,8 @@ const IMAGE_PROMPT_REVERSE_PRESET = `请根据参考图片反推一段适合用�
 2. 覆盖主体、构图、风格、光线、色彩、材质、镜头和氛围。
 3. 尽量写成可直接用于生图模型的完整提示词。`;
 
-const AGENT_OP_STEP_DELAY_MS = 120;
+const AGENT_OP_STEP_DELAY_MS = 260;
+const AGENT_OP_FOCUS_WAIT_MAX_MS = 600;
 
 type AssistantInsertMeta = { runId: string; callId: string; sourceNodeIds?: string[]; position?: Position; nodeSize?: { width?: number; height?: number }; batch?: boolean };
 
@@ -997,10 +999,14 @@ function InfiniteCanvasPage() {
     const getCanvasScale = useCallback(() => viewportRef.current.k, []);
 
     // 当前可见安全区（容器坐标）：扣除右侧助手面板、顶栏和底部工具栏。
-    const getSafeArea = useCallback(() => {
-        const rect = containerRef.current?.getBoundingClientRect();
-        return computeSafeArea(rect?.width || size.width, rect?.height || size.height, { top: CANVAS_TOP_BAR_HEIGHT, right: assistantInsetRef.current, bottom: CANVAS_BOTTOM_TOOLBAR_HEIGHT });
-    }, [size.height, size.width]);
+    // following 为 true 时还要避开顶部“正在跟随”提示条。
+    const getSafeArea = useCallback(
+        (following = false) => {
+            const rect = containerRef.current?.getBoundingClientRect();
+            return computeSafeArea(rect?.width || size.width, rect?.height || size.height, { top: canvasTopInset(following), right: assistantInsetRef.current, bottom: CANVAS_BOTTOM_TOOLBAR_HEIGHT });
+        },
+        [size.height, size.width],
+    );
 
     const getCanvasCenter = useCallback(() => {
         const rect = containerRef.current?.getBoundingClientRect();
@@ -1469,7 +1475,7 @@ function InfiniteCanvasPage() {
             if (prefersReducedMotion()) {
                 viewportRef.current = target;
                 setViewport(target);
-                return;
+                return 0;
             }
             // 从当前（可能仍在动画中的）位置继续驶向新目标，时长按距离在 200–600ms 间伸缩。
             const start = viewportRef.current;
@@ -1488,15 +1494,16 @@ function InfiniteCanvasPage() {
                 viewportAnimationRef.current = progress < 1 ? requestAnimationFrame(tick) : null;
             };
             viewportAnimationRef.current = requestAnimationFrame(tick);
+            return duration;
         },
         [getSafeArea],
     );
 
     const viewportForNodes = useCallback(
-        (targets: CanvasNodeData[]) => {
+        (targets: CanvasNodeData[], following = false) => {
             if (!targets.length) return null;
             const bounds = boundsOfRects(targets.map(nodeRect));
-            return bounds ? fitRectInSafeArea(bounds, getSafeArea()) : null;
+            return bounds ? fitRectInSafeArea(bounds, getSafeArea(following)) : null;
         },
         [getSafeArea],
     );
@@ -1520,19 +1527,21 @@ function InfiniteCanvasPage() {
     );
 
     const focusAssistantNodes = useCallback(
-        (targets: CanvasNodeData[], following: boolean, agentRunId?: string) => {
-            const next = viewportForNodes(targets);
-            if (!next) return;
+        // 返回镜头动画时长（ms），未移动镜头时返回 0。
+        (targets: CanvasNodeData[], following: boolean, agentRunId?: string): number => {
+            const next = viewportForNodes(targets, following);
+            if (!next) return 0;
             if (following && agentRunId && followedAgentRunRef.current !== agentRunId) {
                 followedAgentRunRef.current = agentRunId;
                 agentFollowSuppressedRef.current = false;
             }
-            if (following && agentFollowSuppressedRef.current) return;
-            if (following && agentBatchFocusRef.current) return;
+            if (following && agentFollowSuppressedRef.current) return 0;
+            if (following && agentBatchFocusRef.current) return 0;
             if (!following) stopAgentFollowing();
             setIsAgentFollowing(following);
-            animateViewportTo(next);
+            const duration = animateViewportTo(next);
             setContextMenu(null);
+            return duration;
         },
         [animateViewportTo, stopAgentFollowing, viewportForNodes],
     );
@@ -4082,6 +4091,9 @@ function InfiniteCanvasPage() {
     const applyAssistantOps = useCallback(
         async (ops: AgentCanvasOp[], agentMeta: { runId: string; callId: string }, signal?: AbortSignal): Promise<{ nodeIds: string[]; ops: AgentCanvasOpResult[] }> => {
             const key = `${agentMeta.runId}:${agentMeta.callId}`;
+            // 同一 callId 已在画布落地（如断线重连后重放）时直接返回原回执，不重复新增节点。
+            const applied = restoreAssistantToolResult(agentMeta.runId, agentMeta.callId);
+            if (applied?.status === "success" && "ops" in applied && Array.isArray(applied.ops) && applied.ops.length === ops.length) return { nodeIds: applied.nodeIds || [], ops: applied.ops };
             markAssistantHistory(agentMeta.runId, agentMeta.callId);
             const refs = new Map<string, string>();
             const resolve = (id: string) => refs.get(id) || id;
@@ -4104,9 +4116,11 @@ function InfiniteCanvasPage() {
                 return nodesRef.current.filter((node) => ids.includes(node.id)).map(nodeRect);
             });
             const plannedBounds = boundsOfRects(plannedRects);
-            if (plannedBounds) focusAssistantNodes([{ id: "agent-batch-bounds", position: { x: plannedBounds.x, y: plannedBounds.y }, width: plannedBounds.width, height: plannedBounds.height } as CanvasNodeData], true, agentMeta.runId);
+            const focusMs = plannedBounds ? focusAssistantNodes([{ id: "agent-batch-bounds", position: { x: plannedBounds.x, y: plannedBounds.y }, width: plannedBounds.width, height: plannedBounds.height } as CanvasNodeData], true, agentMeta.runId) : 0;
             agentBatchFocusRef.current = true;
             try {
+                // 先等镜头到位再逐个落节点，否则节点会在镜头移动途中一起出现，看起来像整批闪现。
+                if (focusMs > 0) await new Promise((resolveDelay) => window.setTimeout(resolveDelay, Math.min(focusMs, AGENT_OP_FOCUS_WAIT_MAX_MS)));
                 for (const [index, op] of ops.entries()) {
                     signal?.throwIfAborted();
                     if (index > 0) await new Promise((resolveDelay) => window.setTimeout(resolveDelay, AGENT_OP_STEP_DELAY_MS));
@@ -4170,11 +4184,12 @@ function InfiniteCanvasPage() {
                 throw error;
             }
             agentBatchFocusRef.current = false;
-            const finalNodes = nodesRef.current.filter((node) => touched.includes(node.id) || results.some((result) => result.fromNodeId === node.id || result.toNodeId === node.id));
+            const sourceIds = new Set(ops.flatMap((op) => (op.op === "add_text" || op.op === "add_config" ? (op.sourceNodeIds || []).map(resolve) : [])));
+            const finalNodes = nodesRef.current.filter((node) => touched.includes(node.id) || sourceIds.has(node.id) || results.some((result) => result.fromNodeId === node.id || result.toNodeId === node.id));
             if (finalNodes.length) focusAssistantNodes(finalNodes, true, agentMeta.runId);
             return { nodeIds: touched, ops: results };
         },
-        [connectAssistantNodes, flashAssistantNodes, focusAssistantNodes, insertAssistantConfig, insertAssistantText, markAgentMovingNodes, markAssistantHistory, readAssistantCanvas],
+        [connectAssistantNodes, flashAssistantNodes, focusAssistantNodes, insertAssistantConfig, insertAssistantText, markAgentMovingNodes, markAssistantHistory, readAssistantCanvas, restoreAssistantToolResult],
     );
 
     useEffect(() => {

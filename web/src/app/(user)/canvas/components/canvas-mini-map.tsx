@@ -84,6 +84,30 @@ export function Minimap({ nodes, viewport, viewportSize, onViewportChange }: { n
         };
     }, [toMinimap, viewport.k, viewport.x, viewport.y, viewportSize.height, viewportSize.width]);
 
+    // 节点缩略块只随节点和缩放比例变化，平移/缩放画布时不重新生成
+    const nodeRects = useMemo(
+        () =>
+            nodes.map((node) => {
+                    const pos = toMinimap(node.position.x, node.position.y);
+                    const color = node.type === CanvasNodeType.Image ? "#10b981" : node.type === CanvasNodeType.Video ? "#f97316" : node.type === CanvasNodeType.Audio ? "#a855f7" : node.type === CanvasNodeType.Config ? "#60a5fa" : theme.node.muted;
+                    return (
+                        <div
+                            key={node.id}
+                            className="absolute rounded-[1px]"
+                            style={{
+                                left: pos.x,
+                                top: pos.y,
+                                width: Math.max(node.width * scale, 2),
+                                height: Math.max(node.height * scale, 2),
+                                backgroundColor: color,
+                                opacity: 0.8,
+                            }}
+                        />
+                    );
+                }),
+        [nodes, toMinimap, scale, theme.node.muted],
+    );
+
     const updateViewportFromEvent = (event: React.PointerEvent) => {
         const rect = containerRef.current?.getBoundingClientRect();
         if (!rect) return;
@@ -113,24 +137,7 @@ export function Minimap({ nodes, viewport, viewportSize, onViewportChange }: { n
                 onPointerUp={() => setIsDragging(false)}
                 onPointerLeave={() => setIsDragging(false)}
             >
-                {nodes.map((node) => {
-                    const pos = toMinimap(node.position.x, node.position.y);
-                    const color = node.type === CanvasNodeType.Image ? "#10b981" : node.type === CanvasNodeType.Video ? "#f97316" : node.type === CanvasNodeType.Audio ? "#a855f7" : node.type === CanvasNodeType.Config ? "#60a5fa" : theme.node.muted;
-                    return (
-                        <div
-                            key={node.id}
-                            className="absolute rounded-[1px]"
-                            style={{
-                                left: pos.x,
-                                top: pos.y,
-                                width: Math.max(node.width * scale, 2),
-                                height: Math.max(node.height * scale, 2),
-                                backgroundColor: color,
-                                opacity: 0.8,
-                            }}
-                        />
-                    );
-                })}
+                {nodeRects}
                 <div className="pointer-events-none absolute border" style={{ left: viewportRect.x, top: viewportRect.y, width: viewportRect.w, height: viewportRect.h, borderColor: theme.node.activeStroke, background: `${theme.node.activeStroke}18` }} />
             </div>
         </div>

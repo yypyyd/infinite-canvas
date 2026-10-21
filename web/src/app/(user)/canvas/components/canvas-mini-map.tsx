@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -10,6 +10,15 @@ export function Minimap({ nodes, viewport, viewportSize, onViewportChange }: { n
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const containerRef = useRef<HTMLDivElement>(null);
     const [isDragging, setIsDragging] = useState(false);
+    const frameRef = useRef<number | null>(null);
+    const nextViewportRef = useRef<ViewportTransform | null>(null);
+
+    useEffect(
+        () => () => {
+            if (frameRef.current) cancelAnimationFrame(frameRef.current);
+        },
+        [],
+    );
     const width = 240;
     const height = 160;
 
@@ -88,23 +97,23 @@ export function Minimap({ nodes, viewport, viewportSize, onViewportChange }: { n
     const nodeRects = useMemo(
         () =>
             nodes.map((node) => {
-                    const pos = toMinimap(node.position.x, node.position.y);
-                    const color = node.type === CanvasNodeType.Image ? "#10b981" : node.type === CanvasNodeType.Video ? "#f97316" : node.type === CanvasNodeType.Audio ? "#a855f7" : node.type === CanvasNodeType.Config ? "#60a5fa" : theme.node.muted;
-                    return (
-                        <div
-                            key={node.id}
-                            className="absolute rounded-[1px]"
-                            style={{
-                                left: pos.x,
-                                top: pos.y,
-                                width: Math.max(node.width * scale, 2),
-                                height: Math.max(node.height * scale, 2),
-                                backgroundColor: color,
-                                opacity: 0.8,
-                            }}
-                        />
-                    );
-                }),
+                const pos = toMinimap(node.position.x, node.position.y);
+                const color = node.type === CanvasNodeType.Image ? "#10b981" : node.type === CanvasNodeType.Video ? "#f97316" : node.type === CanvasNodeType.Audio ? "#a855f7" : node.type === CanvasNodeType.Config ? "#60a5fa" : theme.node.muted;
+                return (
+                    <div
+                        key={node.id}
+                        className="absolute rounded-[1px]"
+                        style={{
+                            left: pos.x,
+                            top: pos.y,
+                            width: Math.max(node.width * scale, 2),
+                            height: Math.max(node.height * scale, 2),
+                            backgroundColor: color,
+                            opacity: 0.8,
+                        }}
+                    />
+                );
+            }),
         [nodes, toMinimap, scale, theme.node.muted],
     );
 
@@ -113,10 +122,15 @@ export function Minimap({ nodes, viewport, viewportSize, onViewportChange }: { n
         if (!rect) return;
 
         const world = toWorld(event.clientX - rect.left, event.clientY - rect.top);
-        onViewportChange({
+        nextViewportRef.current = {
             x: viewportSize.width / 2 - world.x * viewport.k,
             y: viewportSize.height / 2 - world.y * viewport.k,
             k: viewport.k,
+        };
+        if (frameRef.current) return;
+        frameRef.current = requestAnimationFrame(() => {
+            frameRef.current = null;
+            if (nextViewportRef.current) onViewportChange(nextViewportRef.current);
         });
     };
 

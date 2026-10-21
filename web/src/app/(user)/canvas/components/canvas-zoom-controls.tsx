@@ -64,6 +64,9 @@ export function CanvasZoomControls({ scale, onScaleChange, onReset, isMiniMapOpe
                     <Shortcut label="Ctrl / Cmd + 拖动" value="框选多个节点" />
                     <Shortcut label="Shift / Ctrl / Cmd + 点击" value="追加选择节点" />
                     <Shortcut label="Ctrl / Cmd + C / V" value="复制 / 粘贴节点" />
+                    <Shortcut label="Ctrl / Cmd + = / -" value="放大 / 缩小" />
+                    <Shortcut label="Ctrl / Cmd + 0" value="重置视图" />
+                    <Shortcut label="Shift + 1" value="适配选中或全部节点" />
                     <Shortcut label="Delete / Backspace" value="删除选中" />
                 </div>
             </Modal>

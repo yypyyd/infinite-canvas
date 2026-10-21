@@ -306,7 +306,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                 transform: `translate(${data.position.x}px, ${data.position.y}px)`,
                 width: data.width,
                 height: data.height,
-                transition: isAgentMoving ? "transform 320ms cubic-bezier(0.2, 0.85, 0.18, 1), box-shadow 200ms ease" : "box-shadow 200ms ease",
+                transition: "box-shadow 200ms ease",
                 contain: "layout style",
             }}
             onMouseEnter={() => {

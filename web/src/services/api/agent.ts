@@ -91,7 +91,7 @@ export type AgentCanvasOp =
     | { op: "move"; nodeId: string; x: number; y: number }
     | { op: "resize"; nodeId: string; width: number; height: number };
 
-export type AgentCanvasOpResult = { op: AgentCanvasOp["op"]; ref?: string; nodeId?: string; fromNodeId?: string; toNodeId?: string };
+export type AgentCanvasOpResult = { op: AgentCanvasOp["op"]; ref?: string; nodeId?: string; fromNodeId?: string; toNodeId?: string; x?: number; y?: number; adjusted?: boolean };
 
 export type AgentToolArguments =
     | { query?: string; nodeIds?: string[]; offset?: number }

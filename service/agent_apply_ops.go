@@ -53,6 +53,10 @@ type AgentToolOpResult struct {
 	NodeID     string `json:"nodeId,omitempty"`
 	FromNodeID string `json:"fromNodeId,omitempty"`
 	ToNodeID   string `json:"toNodeId,omitempty"`
+	// X/Y/Adjusted：新增或移动的节点与已有节点重叠时，画布会顺移到空位并回报实际左上角坐标。
+	X        *float64 `json:"x,omitempty"`
+	Y        *float64 `json:"y,omitempty"`
+	Adjusted bool     `json:"adjusted,omitempty"`
 }
 
 func validAgentCoordinate(value *float64) bool {
@@ -208,6 +212,11 @@ func validateCanvasApplyOpsResult(input canvasApplyOpsArguments, request *Submit
 		result.Op, result.Ref, result.NodeID, result.FromNodeID, result.ToNodeID = strings.TrimSpace(result.Op), strings.TrimSpace(result.Ref), strings.TrimSpace(result.NodeID), strings.TrimSpace(result.FromNodeID), strings.TrimSpace(result.ToNodeID)
 		if result.Op != op.Op || result.Ref != op.Ref {
 			return invalid
+		}
+		if result.Adjusted || result.X != nil || result.Y != nil {
+			if (op.Op != "add_text" && op.Op != "add_config" && op.Op != "move") || !result.Adjusted || !validAgentCoordinate(result.X) || !validAgentCoordinate(result.Y) {
+				return invalid
+			}
 		}
 		switch op.Op {
 		case "add_text", "add_config":

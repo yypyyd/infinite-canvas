@@ -47,6 +47,21 @@ import {
     type AgentMediaOptions,
 } from "@/services/api/agent";
 import { createAgentPatch, revertAgentPatches } from "../utils/canvas-agent-undo";
+import {
+    CANVAS_BOTTOM_TOOLBAR_HEIGHT,
+    CANVAS_TOP_BAR_HEIGHT,
+    boundsOfRects,
+    computeSafeArea,
+    easeOutCubic,
+    findFreeSlot,
+    fitRectInSafeArea,
+    interpolatePoint,
+    prefersReducedMotion,
+    safeAreaCenter,
+    viewportAnimationDuration,
+    type LayoutRect,
+    type SlotDirection,
+} from "../utils/canvas-layout";
 import type { AgentCanvasState } from "../utils/canvas-agent-context";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useUserStore } from "@/stores/use-user-store";
@@ -174,6 +189,17 @@ type AssistantInsertMeta = { runId: string; callId: string; sourceNodeIds?: stri
 function placeAssistantNode(node: CanvasNodeData, meta?: AssistantInsertMeta): CanvasNodeData {
     if (!meta?.position) return node;
     return { ...node, position: { x: meta.position.x, y: meta.position.y }, width: meta.nodeSize?.width || node.width, height: meta.nodeSize?.height || node.height };
+}
+
+function nodeRect(node: Pick<CanvasNodeData, "position" | "width" | "height">): LayoutRect {
+    return { x: node.position.x, y: node.position.y, width: node.width, height: node.height };
+}
+
+// 把节点挪到不与其他节点重叠的位置；ignoreIds 中的节点不参与碰撞。
+function placeNodeWithoutOverlap(node: CanvasNodeData, others: CanvasNodeData[], direction: SlotDirection = "right", ignoreIds?: Set<string>): CanvasNodeData {
+    const obstacles = others.filter((item) => item.id !== node.id && !ignoreIds?.has(item.id)).map(nodeRect);
+    const slot = findFreeSlot(nodeRect(node), obstacles, direction);
+    return slot.x === node.position.x && slot.y === node.position.y ? node : { ...node, position: slot };
 }
 
 function createCanvasNode(type: CanvasNodeType, position: Position, metadata?: CanvasNodeMetadata): CanvasNodeData {
@@ -419,6 +445,15 @@ function InfiniteCanvasPage() {
     const [assistantMounted, setAssistantMounted] = useState(false);
     const [isAgentFollowing, setIsAgentFollowing] = useState(false);
     const [agentMovingNodeIds, setAgentMovingNodeIds] = useState<Set<string>>(new Set());
+    const [assistantInset, setAssistantInset] = useState(0);
+    const assistantInsetRef = useRef(0);
+    const [tweenPositions, setTweenPositions] = useState<Map<string, Position> | null>(null);
+    const tweenPositionsRef = useRef<Map<string, Position> | null>(null);
+    const nodeTweenFrameRef = useRef<number | null>(null);
+    const agentBatchFocusRef = useRef(false);
+    useEffect(() => {
+        assistantInsetRef.current = assistantInset;
+    }, [assistantInset]);
     const [growingConnectionIds, setGrowingConnectionIds] = useState<Set<string>>(new Set());
     const [agentOverlay, setAgentOverlay] = useState<CanvasAgentOverlayState>(null);
     const [titleEditing, setTitleEditing] = useState(false);
@@ -961,10 +996,17 @@ function InfiniteCanvasPage() {
 
     const getCanvasScale = useCallback(() => viewportRef.current.k, []);
 
+    // 当前可见安全区（容器坐标）：扣除右侧助手面板、顶栏和底部工具栏。
+    const getSafeArea = useCallback(() => {
+        const rect = containerRef.current?.getBoundingClientRect();
+        return computeSafeArea(rect?.width || size.width, rect?.height || size.height, { top: CANVAS_TOP_BAR_HEIGHT, right: assistantInsetRef.current, bottom: CANVAS_BOTTOM_TOOLBAR_HEIGHT });
+    }, [size.height, size.width]);
+
     const getCanvasCenter = useCallback(() => {
         const rect = containerRef.current?.getBoundingClientRect();
-        return screenToCanvas((rect?.left || 0) + (rect?.width || size.width) / 2, (rect?.top || 0) + (rect?.height || size.height) / 2);
-    }, [screenToCanvas, size.height, size.width]);
+        const center = safeAreaCenter(getSafeArea());
+        return screenToCanvas((rect?.left || 0) + center.x, (rect?.top || 0) + center.y);
+    }, [getSafeArea, screenToCanvas]);
 
     const setConnecting = useCallback((next: ConnectionHandle | null) => {
         connectingParamsRef.current = next;
@@ -1077,13 +1119,20 @@ function InfiniteCanvasPage() {
     );
 
     const displayNodes = useMemo(() => {
-        if (!nodeDragOffset) return nodes;
+        // 助手移动节点时按帧补间位置，节点与连线读取同一份位置，避免连线先跳到终点。
+        const baseNodes = tweenPositions?.size
+            ? nodes.map((node) => {
+                  const position = tweenPositions.get(node.id);
+                  return position ? { ...node, position } : node;
+              })
+            : nodes;
+        if (!nodeDragOffset) return baseNodes;
         const initialPositions = new Map(dragRef.current.initialSelectedNodes.map((node) => [node.id, node]));
-        return nodes.map((node) => {
+        return baseNodes.map((node) => {
             const initial = initialPositions.get(node.id);
             return initial ? { ...node, position: { x: initial.x + nodeDragOffset.x, y: initial.y + nodeDragOffset.y } } : node;
         });
-    }, [nodeDragOffset, nodes]);
+    }, [nodeDragOffset, nodes, tweenPositions]);
 
     // 只订阅对齐到网格后的可视范围：平移时跨过网格才会让主页面重新计算裁剪列表
     const viewBoundsKey = useCanvasViewportStore(({ viewport }) => {
@@ -1413,47 +1462,51 @@ function InfiniteCanvasPage() {
         setIsAgentFollowing(false);
     }, []);
 
-    const animateViewportTo = useCallback((target: ViewportTransform) => {
-        if (viewportAnimationRef.current !== null) cancelAnimationFrame(viewportAnimationRef.current);
-        const start = viewportRef.current;
-        const startedAt = performance.now();
-        const tick = (timestamp: number) => {
-            const progress = Math.min(1, (timestamp - startedAt) / 320);
-            const eased = 1 - Math.pow(1 - progress, 3);
-            const next = {
-                x: start.x + (target.x - start.x) * eased,
-                y: start.y + (target.y - start.y) * eased,
-                k: start.k + (target.k - start.k) * eased,
+    const animateViewportTo = useCallback(
+        (target: ViewportTransform) => {
+            if (viewportAnimationRef.current !== null) cancelAnimationFrame(viewportAnimationRef.current);
+            viewportAnimationRef.current = null;
+            if (prefersReducedMotion()) {
+                viewportRef.current = target;
+                setViewport(target);
+                return;
+            }
+            // 从当前（可能仍在动画中的）位置继续驶向新目标，时长按距离在 200–600ms 间伸缩。
+            const start = viewportRef.current;
+            const duration = viewportAnimationDuration(start, target, getSafeArea());
+            const startedAt = performance.now();
+            const tick = (timestamp: number) => {
+                const progress = Math.min(1, (timestamp - startedAt) / duration);
+                const eased = easeOutCubic(progress);
+                const next = {
+                    x: start.x + (target.x - start.x) * eased,
+                    y: start.y + (target.y - start.y) * eased,
+                    k: start.k + (target.k - start.k) * eased,
+                };
+                viewportRef.current = next;
+                setViewport(next);
+                viewportAnimationRef.current = progress < 1 ? requestAnimationFrame(tick) : null;
             };
-            viewportRef.current = next;
-            setViewport(next);
-            viewportAnimationRef.current = progress < 1 ? requestAnimationFrame(tick) : null;
-        };
-        viewportAnimationRef.current = requestAnimationFrame(tick);
-    }, []);
+            viewportAnimationRef.current = requestAnimationFrame(tick);
+        },
+        [getSafeArea],
+    );
 
     const viewportForNodes = useCallback(
         (targets: CanvasNodeData[]) => {
             if (!targets.length) return null;
-            const rect = containerRef.current?.getBoundingClientRect();
-            const viewportWidth = rect?.width || size.width;
-            const viewportHeight = rect?.height || size.height;
-            const left = Math.min(...targets.map((node) => node.position.x));
-            const top = Math.min(...targets.map((node) => node.position.y));
-            const right = Math.max(...targets.map((node) => node.position.x + node.width));
-            const bottom = Math.max(...targets.map((node) => node.position.y + node.height));
-            const padding = Math.min(96, viewportWidth * 0.08, viewportHeight * 0.08);
-            const scale = Math.min(1, Math.max(0.2, Math.min((viewportWidth - padding * 2) / Math.max(1, right - left), (viewportHeight - padding * 2) / Math.max(1, bottom - top))));
-            return { x: viewportWidth / 2 - ((left + right) / 2) * scale, y: viewportHeight / 2 - ((top + bottom) / 2) * scale, k: scale };
+            const bounds = boundsOfRects(targets.map(nodeRect));
+            return bounds ? fitRectInSafeArea(bounds, getSafeArea()) : null;
         },
-        [size.height, size.width],
+        [getSafeArea],
     );
 
     const resetViewport = useCallback(() => {
         stopAgentFollowing();
-        setViewport({ x: size.width / 2, y: size.height / 2, k: 1 });
+        const center = safeAreaCenter(getSafeArea());
+        setViewport({ x: center.x, y: center.y, k: 1 });
         setContextMenu(null);
-    }, [size.height, size.width, stopAgentFollowing]);
+    }, [getSafeArea, stopAgentFollowing]);
 
     const focusCanvasNodes = useCallback(
         (targets: CanvasNodeData[]) => {
@@ -1475,6 +1528,7 @@ function InfiniteCanvasPage() {
                 agentFollowSuppressedRef.current = false;
             }
             if (following && agentFollowSuppressedRef.current) return;
+            if (following && agentBatchFocusRef.current) return;
             if (!following) stopAgentFollowing();
             setIsAgentFollowing(following);
             animateViewportTo(next);
@@ -1491,13 +1545,47 @@ function InfiniteCanvasPage() {
         [focusAssistantNodes],
     );
 
-    const markAgentMovingNodes = useCallback((nodeIds: string[]) => {
-        setAgentMovingNodeIds(new Set(nodeIds));
+    // from 为移动前的位置；按帧把显示位置从 from 补间到 nodesRef 中的最终位置。
+    const markAgentMovingNodes = useCallback((from: Map<string, Position>) => {
+        setAgentMovingNodeIds(new Set(from.keys()));
         if (agentMoveTimerRef.current) window.clearTimeout(agentMoveTimerRef.current);
         agentMoveTimerRef.current = setTimeout(() => {
             setAgentMovingNodeIds(new Set());
             agentMoveTimerRef.current = null;
         }, 320);
+        if (nodeTweenFrameRef.current !== null) cancelAnimationFrame(nodeTweenFrameRef.current);
+        nodeTweenFrameRef.current = null;
+        if (prefersReducedMotion()) {
+            tweenPositionsRef.current = null;
+            setTweenPositions(null);
+            return;
+        }
+        const starts = new Map<string, Position>();
+        tweenPositionsRef.current?.forEach((position, id) => starts.set(id, position));
+        from.forEach((position, id) => starts.set(id, tweenPositionsRef.current?.get(id) || position));
+        const startedAt = performance.now();
+        const frame = (now: number) => {
+            const progress = Math.min(1, (now - startedAt) / 320);
+            if (progress >= 1) {
+                tweenPositionsRef.current = null;
+                nodeTweenFrameRef.current = null;
+                setTweenPositions(null);
+                return;
+            }
+            const eased = easeOutCubic(progress);
+            const targets = new Map(nodesRef.current.map((node) => [node.id, node.position]));
+            const next = new Map<string, Position>();
+            starts.forEach((start, id) => {
+                const target = targets.get(id);
+                if (target) next.set(id, interpolatePoint(start, target, eased));
+            });
+            tweenPositionsRef.current = next;
+            setTweenPositions(next);
+            nodeTweenFrameRef.current = requestAnimationFrame(frame);
+        };
+        tweenPositionsRef.current = new Map(starts);
+        setTweenPositions(new Map(starts));
+        nodeTweenFrameRef.current = requestAnimationFrame(frame);
     }, []);
 
     const markGrowingConnections = useCallback((ids: string[]) => {
@@ -1539,14 +1627,15 @@ function InfiniteCanvasPage() {
         (scale: number) => {
             stopAgentFollowing();
             const nextScale = Math.min(Math.max(scale, 0.05), 5);
+            const center = safeAreaCenter(getSafeArea());
             setViewport((prev) => ({
-                x: size.width / 2 - ((size.width / 2 - prev.x) / prev.k) * nextScale,
-                y: size.height / 2 - ((size.height / 2 - prev.y) / prev.k) * nextScale,
+                x: center.x - ((center.x - prev.x) / prev.k) * nextScale,
+                y: center.y - ((center.y - prev.y) / prev.k) * nextScale,
                 k: nextScale,
             }));
             setContextMenu(null);
         },
-        [size.height, size.width, stopAgentFollowing],
+        [getSafeArea, stopAgentFollowing],
     );
 
     useEffect(() => {
@@ -2648,14 +2737,14 @@ function InfiniteCanvasPage() {
                 setSelectedConnectionId(null);
                 setDialogNodeId(target.nodeId);
             } else {
-                const position = target?.position || screenToCanvas((containerRef.current?.getBoundingClientRect().left || 0) + size.width / 2, (containerRef.current?.getBoundingClientRect().top || 0) + size.height / 2);
+                const position = target?.position || getCanvasCenter();
                 void (isAudioFile(file) ? createAudioFileNode(file, position) : file.type.startsWith("video/") ? createVideoFileNode(file, position) : createImageFileNode(file, position));
             }
 
             uploadTargetRef.current = null;
             event.target.value = "";
         },
-        [createAudioFileNode, createImageFileNode, createVideoFileNode, screenToCanvas, size.height, size.width],
+        [createAudioFileNode, createImageFileNode, createVideoFileNode, getCanvasCenter, screenToCanvas, size.height, size.width],
     );
 
     const handleDrop = useCallback(
@@ -2672,11 +2761,11 @@ function InfiniteCanvasPage() {
 
     const pasteAssistantImage = useCallback(
         (file: File) => {
-            const position = screenToCanvas((containerRef.current?.getBoundingClientRect().left || 0) + size.width / 2, (containerRef.current?.getBoundingClientRect().top || 0) + size.height / 2);
+            const position = getCanvasCenter();
             void createImageFileNode(file, position);
             message.success("已从剪切板添加图片");
         },
-        [createImageFileNode, message, screenToCanvas, size.height, size.width],
+        [createImageFileNode, message, getCanvasCenter, screenToCanvas, size.height, size.width],
     );
 
     const handleAssistantSessionsChange = useCallback((sessions: CanvasAssistantSession[], activeId: string | null) => {
@@ -3514,13 +3603,13 @@ function InfiniteCanvasPage() {
             const storedImage = await storeGeneratedImage(image);
             const meta = storedImage;
             const config = fitNodeSize(meta.width, meta.height);
-            const center = screenToCanvas((containerRef.current?.getBoundingClientRect().left || 0) + size.width / 2, (containerRef.current?.getBoundingClientRect().top || 0) + size.height / 2);
+            const center = getCanvasCenter();
             const id = `image-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
             const node: CanvasNodeData = {
                 id,
                 type: CanvasNodeType.Image,
                 title: image.prompt.slice(0, 32) || "Generated Image",
-                position: { x: center.x - config.width / 2, y: center.y - config.height / 2 },
+                position: findFreeSlot({ x: center.x - config.width / 2, y: center.y - config.height / 2, width: config.width, height: config.height }, nodesRef.current.map(nodeRect)),
                 width: config.width,
                 height: config.height,
                 metadata: { ...imageMetadata({ ...storedImage, width: meta.width, height: meta.height }), prompt: image.prompt },
@@ -3531,7 +3620,7 @@ function InfiniteCanvasPage() {
             setSelectedConnectionId(null);
             setDialogNodeId(id);
         },
-        [screenToCanvas, size.height, size.width],
+        [getCanvasCenter, screenToCanvas, size.height, size.width],
     );
 
     const startAssistantGeneration = useCallback(
@@ -3543,13 +3632,15 @@ function InfiniteCanvasPage() {
                 .filter((node) => node.type === nodeType && node.metadata?.agentRunId === runId && node.metadata?.agentToolCallId === callId)
                 .sort((left, right) => (left.metadata?.agentGenerationIndex || 0) - (right.metadata?.agentGenerationIndex || 0));
             const sources = nodesRef.current.filter((node) => sourceNodeIds.includes(node.id));
-            const center = screenToCanvas((containerRef.current?.getBoundingClientRect().left || 0) + size.width / 2, (containerRef.current?.getBoundingClientRect().top || 0) + size.height / 2);
+            const center = getCanvasCenter();
             const gap = 32;
             const columns = Math.min(expectedCount, 4);
             const rows = Math.ceil(expectedCount / columns);
-            const origin = sources.length
+            const preferredOrigin = sources.length
                 ? { x: Math.max(...sources.map((node) => node.position.x + node.width)) + 64, y: Math.min(...sources.map((node) => node.position.y)) }
                 : { x: center.x - (columns * spec.width + (columns - 1) * gap) / 2, y: center.y - (rows * spec.height + (rows - 1) * gap) / 2 };
+            // 新的一组占位整体避开已有节点；续生成时沿用已有占位的位置。
+            const origin = existing.length ? existing[0].position : findFreeSlot({ ...preferredOrigin, width: columns * spec.width + (columns - 1) * gap, height: rows * spec.height + (rows - 1) * gap }, nodesRef.current.map(nodeRect), "right");
             const created = Array.from({ length: Math.max(0, expectedCount - existing.length) }, (_, offset) => {
                 const index = existing.length + offset;
                 return {
@@ -3596,7 +3687,7 @@ function InfiniteCanvasPage() {
             markGrowingConnections(createdConnections.map((connection) => connection.id));
             focusAssistantNodes(targets, true, runId);
         },
-        [focusAssistantNodes, markGrowingConnections, screenToCanvas, size.height, size.width],
+        [focusAssistantNodes, markGrowingConnections, getCanvasCenter, screenToCanvas, size.height, size.width],
     );
 
     const settleAssistantGeneration = useCallback((runId: string, callId: string | undefined, status: "failed" | "cancelled", error?: string) => {
@@ -3635,7 +3726,7 @@ function InfiniteCanvasPage() {
                       .filter((node) => node.type === CanvasNodeType.Image && node.metadata?.agentRunId === agentImage.agentRunId && node.metadata?.agentToolCallId === agentImage.agentToolCallId)
                       .sort((left, right) => (left.metadata?.agentGenerationIndex || 0) - (right.metadata?.agentGenerationIndex || 0))
                 : [];
-            const center = screenToCanvas((containerRef.current?.getBoundingClientRect().left || 0) + size.width / 2, (containerRef.current?.getBoundingClientRect().top || 0) + size.height / 2);
+            const center = getCanvasCenter();
             const gap = 32;
             const totalWidth = stored.reduce((sum, item) => sum + item.size.width, 0) + Math.max(0, stored.length - 1) * gap;
             let x = center.x - totalWidth / 2;
@@ -3696,14 +3787,14 @@ function InfiniteCanvasPage() {
             focusAssistantNodes(resolved, true, agentImage?.agentRunId);
             return resolved.map((node, index) => ({ nodeId: node.id, storageKey: stored[index].storedImage.storageKey }));
         },
-        [focusAssistantNodes, markAssistantHistory, markGrowingConnections, screenToCanvas, size.height, size.width],
+        [focusAssistantNodes, markAssistantHistory, markGrowingConnections, getCanvasCenter, screenToCanvas, size.height, size.width],
     );
 
     const insertAssistantVideo = useCallback(
         async (video: UploadedFile & CanvasAssistantVideo, signal?: AbortSignal) => {
             signal?.throwIfAborted();
             if (!video.storageKey) throw new Error("视频尚未保存到工作区");
-            const center = screenToCanvas((containerRef.current?.getBoundingClientRect().left || 0) + size.width / 2, (containerRef.current?.getBoundingClientRect().top || 0) + size.height / 2);
+            const center = getCanvasCenter();
             const selected = nodesRef.current.filter((node) => video.sourceNodeIds?.includes(node.id));
             const nodeSize = fitNodeSize(video.width || 1280, video.height || 720, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
             const placeholder = nodesRef.current.find((node) => node.type === CanvasNodeType.Video && node.metadata?.agentRunId === video.agentRunId && node.metadata?.agentToolCallId === video.agentToolCallId);
@@ -3742,7 +3833,7 @@ function InfiniteCanvasPage() {
             focusAssistantNodes([node], true, video.agentRunId);
             return { nodeId: node.id, storageKey: video.storageKey };
         },
-        [focusAssistantNodes, markAssistantHistory, markGrowingConnections, screenToCanvas, size.height, size.width],
+        [focusAssistantNodes, markAssistantHistory, markGrowingConnections, getCanvasCenter, screenToCanvas, size.height, size.width],
     );
 
     const arrangeAssistantNodes = useCallback(
@@ -3774,11 +3865,22 @@ function InfiniteCanvasPage() {
                     y: originY + rowHeights.slice(0, row).reduce((sum, height) => sum + height + gap, 0),
                 };
             });
+            // 排列结果整体避开其他节点。
+            const arrangedBounds = boundsOfRects(positions.map((position) => ({ x: position.x, y: position.y, width: resolved.find((node) => node.id === position.nodeId)!.width, height: resolved.find((node) => node.id === position.nodeId)!.height })));
+            if (arrangedBounds) {
+                const slot = findFreeSlot(arrangedBounds, nodesRef.current.filter((node) => !requested.has(node.id)).map(nodeRect), mode === "vertical" ? "right" : "down");
+                const dx = slot.x - arrangedBounds.x;
+                const dy = slot.y - arrangedBounds.y;
+                positions.forEach((position) => {
+                    position.x += dx;
+                    position.y += dy;
+                });
+            }
             const positionById = new Map(positions.map((position) => [position.nodeId, position]));
             const nextNodes = nodesRef.current.map((node) => (requested.has(node.id) ? { ...node, position: { x: positionById.get(node.id)!.x, y: positionById.get(node.id)!.y } } : node));
             if (agentMeta) markAssistantHistory(agentMeta.runId, agentMeta.callId);
             nodesRef.current = nextNodes;
-            markAgentMovingNodes(nodeIds);
+            markAgentMovingNodes(new Map(resolved.map((node) => [node.id, node.position])));
             setNodes(nextNodes);
             setSelectedNodeIds(new Set(nodeIds));
             setSelectedConnectionId(null);
@@ -3862,16 +3964,20 @@ function InfiniteCanvasPage() {
 
     const insertAssistantText = useCallback(
         (text: string, placement: AgentCanvasPlacement = "right_of_selection", agentMeta?: AssistantInsertMeta) => {
-            const center = screenToCanvas((containerRef.current?.getBoundingClientRect().left || 0) + size.width / 2, (containerRef.current?.getBoundingClientRect().top || 0) + size.height / 2);
+            const center = getCanvasCenter();
             const selected = nodesRef.current.filter((node) => agentMeta?.sourceNodeIds?.includes(node.id) || selectedNodeIdsRef.current.has(node.id));
             const textSpec = getNodeSpec(CanvasNodeType.Text);
             const position = resolveAgentPlacement(placement, selected, textSpec, center);
-            const node = placeAssistantNode(
-                {
-                    ...createCanvasNode(CanvasNodeType.Text, position, { content: text, status: NODE_STATUS_SUCCESS, agentRunId: agentMeta?.runId, agentToolCallId: agentMeta?.callId, sourceNodeIds: agentMeta?.sourceNodeIds }),
-                    title: text.slice(0, 32) || "Assistant Text",
-                },
-                agentMeta,
+            const node = placeNodeWithoutOverlap(
+                placeAssistantNode(
+                    {
+                        ...createCanvasNode(CanvasNodeType.Text, position, { content: text, status: NODE_STATUS_SUCCESS, agentRunId: agentMeta?.runId, agentToolCallId: agentMeta?.callId, sourceNodeIds: agentMeta?.sourceNodeIds }),
+                        title: text.slice(0, 32) || "Assistant Text",
+                    },
+                    agentMeta,
+                ),
+                nodesRef.current,
+                placement === "below_selection" && !agentMeta?.position ? "down" : "right",
             );
 
             const nextNodes = [...nodesRef.current, node];
@@ -3894,14 +4000,14 @@ function InfiniteCanvasPage() {
             if (agentMeta) focusAssistantNodes([node], true, agentMeta.runId);
             return node.id;
         },
-        [focusAssistantNodes, markAssistantHistory, markGrowingConnections, screenToCanvas, size.height, size.width],
+        [focusAssistantNodes, markAssistantHistory, markGrowingConnections, getCanvasCenter, screenToCanvas, size.height, size.width],
     );
 
     const insertAssistantConfig = useCallback(
         (placement: AgentCanvasPlacement = "right_of_selection", agentMeta?: AssistantInsertMeta & { settings?: AgentMediaOptions & { prompt?: string } }) => {
             const settings = agentMeta?.settings;
             const mode = settings?.mode || "image";
-            const center = screenToCanvas((containerRef.current?.getBoundingClientRect().left || 0) + size.width / 2, (containerRef.current?.getBoundingClientRect().top || 0) + size.height / 2);
+            const center = getCanvasCenter();
             const selected = nodesRef.current.filter((node) => agentMeta?.sourceNodeIds?.includes(node.id) || selectedNodeIdsRef.current.has(node.id));
             const spec = getNodeSpec(CanvasNodeType.Config);
             const created = createCanvasNode(CanvasNodeType.Config, resolveAgentPlacement(placement, selected, spec, center), {
@@ -3919,7 +4025,7 @@ function InfiniteCanvasPage() {
                 agentToolCallId: agentMeta?.callId,
                 sourceNodeIds: agentMeta?.sourceNodeIds,
             });
-            const node = placeAssistantNode(created, agentMeta);
+            const node = placeNodeWithoutOverlap(placeAssistantNode(created, agentMeta), nodesRef.current, placement === "below_selection" && !agentMeta?.position ? "down" : "right");
             const nextNodes = [...nodesRef.current, node];
             const existingConnections = new Set(connectionsRef.current.map((connection) => `${connection.fromNodeId}:${connection.toNodeId}`));
             const createdConnections = (agentMeta?.sourceNodeIds || []).flatMap((sourceNodeId) => {
@@ -3945,7 +4051,7 @@ function InfiniteCanvasPage() {
             if (agentMeta) focusAssistantNodes([node], true, agentMeta.runId);
             return node.id;
         },
-        [effectiveConfig, focusAssistantNodes, markAssistantHistory, markGrowingConnections, screenToCanvas, size.height, size.width],
+        [effectiveConfig, focusAssistantNodes, markAssistantHistory, markGrowingConnections, getCanvasCenter, screenToCanvas, size.height, size.width],
     );
 
     const connectAssistantNodes = useCallback(
@@ -3984,6 +4090,22 @@ function InfiniteCanvasPage() {
                 if (!touched.includes(id)) touched.push(id);
             };
             const results: AgentCanvasOpResult[] = [];
+            // 整批只在开始和结束各聚焦一次，避免每步重启镜头动画。
+            const plannedRects = ops.flatMap((op): LayoutRect[] => {
+                if (op.op === "add_text" || op.op === "add_config") {
+                    const spec = getNodeSpec(op.op === "add_text" ? CanvasNodeType.Text : CanvasNodeType.Config);
+                    return [{ x: op.x, y: op.y, width: op.width || spec.width, height: op.height || spec.height }];
+                }
+                if (op.op === "move") {
+                    const node = nodesRef.current.find((item) => item.id === op.nodeId);
+                    return node ? [nodeRect(node), { x: op.x, y: op.y, width: node.width, height: node.height }] : [];
+                }
+                const ids = op.op === "connect" ? [op.from, op.to] : [op.nodeId];
+                return nodesRef.current.filter((node) => ids.includes(node.id)).map(nodeRect);
+            });
+            const plannedBounds = boundsOfRects(plannedRects);
+            if (plannedBounds) focusAssistantNodes([{ id: "agent-batch-bounds", position: { x: plannedBounds.x, y: plannedBounds.y }, width: plannedBounds.width, height: plannedBounds.height } as CanvasNodeData], true, agentMeta.runId);
+            agentBatchFocusRef.current = true;
             try {
                 for (const [index, op] of ops.entries()) {
                     signal?.throwIfAborted();
@@ -4008,7 +4130,9 @@ function InfiniteCanvasPage() {
                         refs.set(op.ref, nodeId);
                         touch(nodeId);
                         flashAssistantNodes([nodeId]);
-                        results.push({ op: op.op, ref: op.ref, nodeId });
+                        const placed = nodesRef.current.find((node) => node.id === nodeId);
+                        const adjusted = Boolean(placed && (placed.position.x !== op.x || placed.position.y !== op.y));
+                        results.push(adjusted && placed ? { op: op.op, ref: op.ref, nodeId, x: placed.position.x, y: placed.position.y, adjusted: true } : { op: op.op, ref: op.ref, nodeId });
                     } else if (op.op === "connect") {
                         const connected = connectAssistantNodes(resolve(op.from), resolve(op.to), { ...agentMeta, batch: true });
                         results.push({ op: "connect", fromNodeId: connected.fromNodeId, toNodeId: connected.toNodeId });
@@ -4017,18 +4141,20 @@ function InfiniteCanvasPage() {
                         const target = nodesRef.current.find((node) => node.id === nodeId);
                         if (!target) throw new Error("待调整的节点已不存在");
                         if (target.metadata?.isBatchRoot || target.metadata?.batchRootId) throw new Error("批次节点暂不支持助手移动或缩放");
-                        const next = op.op === "move" ? { ...target, position: { x: op.x, y: op.y } } : { ...target, width: op.width, height: op.height };
+                        // 移动目标与其他节点重叠时顺移到空位，并在回执中告知实际坐标。
+                        const next = op.op === "move" ? placeNodeWithoutOverlap({ ...target, position: { x: op.x, y: op.y } }, nodesRef.current) : { ...target, width: op.width, height: op.height };
                         const nextNodes = nodesRef.current.map((node) => (node.id === nodeId ? next : node));
                         nodesRef.current = nextNodes;
                         setNodes(nextNodes);
-                        markAgentMovingNodes([nodeId]);
+                        if (op.op === "move") markAgentMovingNodes(new Map([[nodeId, target.position]]));
                         flashAssistantNodes([nodeId]);
-                        focusAssistantNodes([next], true, agentMeta.runId);
                         touch(nodeId);
-                        results.push({ op: op.op, nodeId });
+                        const adjusted = op.op === "move" && (next.position.x !== op.x || next.position.y !== op.y);
+                        results.push(adjusted ? { op: op.op, nodeId, x: next.position.x, y: next.position.y, adjusted: true } : { op: op.op, nodeId });
                     }
                 }
             } catch (error) {
+                agentBatchFocusRef.current = false;
                 const before = agentToolBeforeRef.current.get(key);
                 if (before && (touched.length || results.length)) {
                     const current = readAssistantCanvas();
@@ -4043,6 +4169,9 @@ function InfiniteCanvasPage() {
                 pendingAgentHistoryRef.current.delete(key);
                 throw error;
             }
+            agentBatchFocusRef.current = false;
+            const finalNodes = nodesRef.current.filter((node) => touched.includes(node.id) || results.some((result) => result.fromNodeId === node.id || result.toNodeId === node.id));
+            if (finalNodes.length) focusAssistantNodes(finalNodes, true, agentMeta.runId);
             return { nodeIds: touched, ops: results };
         },
         [connectAssistantNodes, flashAssistantNodes, focusAssistantNodes, insertAssistantConfig, insertAssistantText, markAgentMovingNodes, markAssistantHistory, readAssistantCanvas],
@@ -4052,6 +4181,7 @@ function InfiniteCanvasPage() {
         return () => {
             if (highlightTimerRef.current) window.clearTimeout(highlightTimerRef.current);
             if (agentMoveTimerRef.current) window.clearTimeout(agentMoveTimerRef.current);
+            if (nodeTweenFrameRef.current !== null) cancelAnimationFrame(nodeTweenFrameRef.current);
             growingTimersRef.current.forEach((timer) => window.clearTimeout(timer));
             growingTimersRef.current.clear();
         };
@@ -4077,7 +4207,7 @@ function InfiniteCanvasPage() {
                 insertAssistantText(payload.content);
             } else if (payload.kind === "video") {
                 const spec = NODE_DEFAULT_SIZE[CanvasNodeType.Video];
-                const center = screenToCanvas((containerRef.current?.getBoundingClientRect().left || 0) + size.width / 2, (containerRef.current?.getBoundingClientRect().top || 0) + size.height / 2);
+                const center = getCanvasCenter();
                 const id = `video-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
                 const nextSize = fitNodeSize(payload.width || spec.width, payload.height || spec.height, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
                 setNodes((prev) => [
@@ -4098,7 +4228,7 @@ function InfiniteCanvasPage() {
             }
             setAssetPickerOpen(false);
         },
-        [insertAssistantImage, insertAssistantText, screenToCanvas, size.height, size.width],
+        [insertAssistantImage, insertAssistantText, getCanvasCenter, screenToCanvas, size.height, size.width],
     );
 
     const handleViewportChange = useCallback(
@@ -4532,6 +4662,7 @@ function InfiniteCanvasPage() {
                         onLocateNode={locateAssistantNode}
                         onPasteImage={pasteAssistantImage}
                         collapsed={assistantCollapsed}
+                        onLayoutInsetChange={setAssistantInset}
                         onCollapseStart={() => setAssistantCollapsed(true)}
                         onCollapse={() => undefined}
                     />

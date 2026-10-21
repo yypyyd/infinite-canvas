@@ -122,6 +122,7 @@ type CanvasAssistantPanelProps = {
     onLocateNode: (nodeId: string) => void;
     onPasteImage: (file: File) => void;
     collapsed: boolean;
+    onLayoutInsetChange?: (inset: number) => void;
     onCollapseStart: () => void;
     onCollapse: () => void;
 };
@@ -156,6 +157,7 @@ export function CanvasAssistantPanel({
     onFlashAssistantNodes,
     onLocateNode,
     onPasteImage,
+    onLayoutInsetChange,
     collapsed,
     onCollapseStart,
     onCollapse,
@@ -1411,6 +1413,11 @@ export function CanvasAssistantPanel({
         onCollapseStart();
         window.setTimeout(onCollapse, PANEL_MOTION_MS);
     };
+
+    useEffect(() => {
+        // 告诉画布右侧被面板占住的宽度（含 12px 外边距），用于聚焦和落位时避开面板。
+        onLayoutInsetChange?.(closing || collapsed || isMobile ? 0 : width + 12);
+    }, [closing, collapsed, isMobile, onLayoutInsetChange, width]);
 
     return (
         <motion.div

@@ -478,6 +478,13 @@ export function ModelCatalogEditor({ value, pricingRules, channels, isSaving, on
                                 <Switch />
                             </Form.Item>
                         </Col>
+                        {selectedModality === "text" ? (
+                            <Col span={6}>
+                                <Form.Item name="supportsTools" label="支持工具调用" valuePropName="checked" getValueProps={(value) => ({ checked: value !== false })} tooltip="关闭后画布 Agent 不会使用该模型，普通对话不受影响">
+                                    <Switch />
+                                </Form.Item>
+                            </Col>
+                        ) : null}
                         {selectedModality === "image" || selectedModality === "video" ? (
                             <Col span={12}>
                                 <Form.Item name="aspectRatios" label="支持宽高比">

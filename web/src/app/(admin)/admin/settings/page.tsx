@@ -571,6 +571,7 @@ function normalizeManagedModels(items: Partial<AdminManagedModel>[], availableMo
                 supportsAudioOutput: modality === "video" && item.supportsAudioOutput === true,
                 referenceMode: supportsResolution ? normalizeReferenceMode(item.referenceMode) : "none",
                 remark: item.remark || "",
+                ...(typeof (item as Partial<AdminManagedModel>).supportsTools === "boolean" ? { supportsTools: (item as Partial<AdminManagedModel>).supportsTools } : {}),
             } as AdminManagedModel;
         })
         .filter(Boolean)

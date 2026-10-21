@@ -69,6 +69,7 @@ import {
 } from "../types";
 import { buildCanvasMentionReferences, type CanvasResourceReference } from "../utils/canvas-resource-references";
 import { buildAgentCanvasContext, resolveAgentMediaConfig, type AgentCanvasState } from "../utils/canvas-agent-context";
+import { formatAgentThinkingLabel } from "../utils/canvas-agent-thinking";
 
 type AssistantMode = "ask" | "image";
 const PANEL_MOTION_MS = 500;
@@ -1908,7 +1909,15 @@ function AssistantMessages({
                             </div>
                         ) : null}
                         {message.references?.length ? <MessageReferences message={message} /> : null}
-                        {message.stages?.length ? <AssistantStages message={message} onAnswer={onAnswer} /> : message.isLoading ? <AssistantStatusCapsule label={message.mode === "image" ? "图片生成中" : "正在理解需求"} status="pending" /> : null}
+                        {message.stages?.length ? (
+                            <AssistantStages message={message} onAnswer={onAnswer} />
+                        ) : message.isLoading ? (
+                            message.mode === "image" ? (
+                                <AssistantStatusCapsule label="图片生成中" status="pending" />
+                            ) : (
+                                <AssistantThinkingCapsule />
+                            )
+                        ) : null}
                         {message.confirmation && ["pending", "approving", "failed"].includes(message.confirmation.status) ? (
                             <div className="w-[280px] max-w-full rounded-lg border p-3 text-xs" style={{ background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.text }}>
                                 <p>{agentConfirmationDetail(message.confirmation)}</p>
@@ -2025,6 +2034,16 @@ function AssistantInspectionStage({ stage }: { stage: CanvasAssistantStage }) {
             ) : null}
         </div>
     );
+}
+
+function AssistantThinkingCapsule() {
+    const [seconds, setSeconds] = useState(0);
+    useEffect(() => {
+        const startedAt = Date.now();
+        const timer = window.setInterval(() => setSeconds(Math.floor((Date.now() - startedAt) / 1000)), 1000);
+        return () => window.clearInterval(timer);
+    }, []);
+    return <AssistantStatusCapsule label={formatAgentThinkingLabel(seconds)} status="pending" />;
 }
 
 function AssistantStatusCapsule({ label, status }: { label: string; status: CanvasAssistantStage["status"] }) {

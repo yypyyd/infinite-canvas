@@ -117,6 +117,7 @@ func SaveSettings(settings model.Settings) (model.Settings, error) {
 		return model.Settings{}, safeMessageError{message: "启用邮箱域名限制前请至少填写一个有效域名"}
 	}
 	keepPrivateAPIKeys(&settings, normalizeSettings(saved))
+	keepModelToolSupport(&settings, saved)
 	for i := range settings.Private.Channels {
 		if settings.Private.Channels[i].ID == "" {
 			settings.Private.Channels[i].ID = newID("channel")

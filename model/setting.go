@@ -86,6 +86,8 @@ type ModelDefinition struct {
 	SupportsAudioOutput bool     `json:"supportsAudioOutput"`
 	ReferenceMode       string   `json:"referenceMode"`
 	Remark              string   `json:"remark"`
+	// SupportsTools 标记文本模型是否支持 function calling；nil 表示未标注，画布 Agent 视为支持。
+	SupportsTools *bool `json:"supportsTools,omitempty"`
 }
 
 // PublicAPIModel describes one non-text model exposed to API Key callers.

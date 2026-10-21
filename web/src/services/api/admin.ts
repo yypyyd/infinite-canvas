@@ -420,6 +420,8 @@ export type AdminPublicModelChannelSettings = {
 };
 
 export type AdminManagedModel = {
+    /** 文本模型是否支持工具调用；false 时画布 Agent 不使用该模型。 */
+    supportsTools?: boolean;
     id: string;
     name: string;
     modality: string;

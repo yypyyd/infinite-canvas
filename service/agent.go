@@ -440,6 +440,11 @@ func SubmitAgentMessage(user model.AuthUser, sessionID string, request SubmitAge
 	if request.Model == "" || len(request.Model) > 191 {
 		return AgentRunSubmission{}, safeMessageError{message: "模型不能为空或过长"}
 	}
+	resolvedModel, err := resolveAgentModel(request.Model)
+	if err != nil {
+		return AgentRunSubmission{}, err
+	}
+	request.Model = resolvedModel
 	canvasContext, err := normalizeAgentCanvasContext(request.CanvasContext)
 	if err != nil {
 		return AgentRunSubmission{}, err
@@ -3097,6 +3102,7 @@ func agentParallelToolCall(run model.AgentRun, toolSteps []model.AgentStep, acce
 // requestAgentUpstreamMessage 优先流式请求；上游不支持流式（4xx 或返回普通 JSON）时自动回退。
 func requestAgentUpstreamMessage(ctx context.Context, channel model.ModelChannel, requestID string, bodyValue map[string]any, requestMessages *[]agentChatMessage, hasPreviewImages bool, publisher *agentRunStreamPublisher) (agentUpstreamMessage, error) {
 	streaming := true
+	plainRetried := false
 	client := &http.Client{Timeout: 2 * time.Minute}
 	for attempt := 0; attempt < 4; attempt++ {
 		bodyValue["stream"] = streaming
@@ -3135,20 +3141,15 @@ func requestAgentUpstreamMessage(ctx context.Context, channel model.ModelChannel
 		}
 		statusCode := response.StatusCode
 		if statusCode >= 200 && statusCode < 300 {
-			defer response.Body.Close()
-			if streaming && strings.Contains(strings.ToLower(response.Header.Get("Content-Type")), "text/event-stream") {
-				return parseAgentCompletionStream(response.Body, publisher.content, publisher.toolReady)
+			message, parseErr := readAgentUpstreamSuccess(response, streaming, publisher)
+			_ = response.Body.Close()
+			if parseErr == nil && streaming && !plainRetried && agentStreamNeedsPlainRetry(bodyValue, message) {
+				// 部分代理在流式模式下把工具调用写成文本或界面标记，改用非流式重试一次。
+				plainRetried = true
+				streaming = false
+				continue
 			}
-			responseBody, readErr := io.ReadAll(io.LimitReader(response.Body, 4<<20))
-			if readErr != nil {
-				return agentUpstreamMessage{}, readErr
-			}
-			trimmed := bytes.TrimSpace(responseBody)
-			if streaming && bytes.HasPrefix(trimmed, []byte("data:")) {
-				// 个别网关流式返回却缺少 Content-Type。
-				return parseAgentCompletionStream(bytes.NewReader(trimmed), publisher.content, publisher.toolReady)
-			}
-			return parseAgentCompletionJSON(responseBody)
+			return message, parseErr
 		}
 		responseBody, readErr := io.ReadAll(io.LimitReader(response.Body, 4<<20))
 		_ = response.Body.Close()
@@ -3168,4 +3169,20 @@ func requestAgentUpstreamMessage(ctx context.Context, channel model.ModelChannel
 		return agentUpstreamMessage{}, fmt.Errorf("agent upstream returned status %d: %s", statusCode, truncateAgentUpstreamError(responseBody))
 	}
 	return agentUpstreamMessage{}, errors.New("agent upstream request failed")
+}
+
+// readAgentUpstreamSuccess 解析 2xx 响应：SSE 流、缺少 Content-Type 的流或普通 JSON。
+func readAgentUpstreamSuccess(response *http.Response, streaming bool, publisher *agentRunStreamPublisher) (agentUpstreamMessage, error) {
+	if streaming && strings.Contains(strings.ToLower(response.Header.Get("Content-Type")), "text/event-stream") {
+		return parseAgentCompletionStream(response.Body, publisher.content, publisher.toolReady)
+	}
+	responseBody, readErr := io.ReadAll(io.LimitReader(response.Body, 4<<20))
+	if readErr != nil {
+		return agentUpstreamMessage{}, readErr
+	}
+	trimmed := bytes.TrimSpace(responseBody)
+	if streaming && bytes.HasPrefix(trimmed, []byte("data:")) {
+		return parseAgentCompletionStream(bytes.NewReader(trimmed), publisher.content, publisher.toolReady)
+	}
+	return parseAgentCompletionJSON(responseBody)
 }

@@ -25,6 +25,13 @@ function responseHeaders(response: Response) {
     return headers;
 }
 
+function shouldCompress(request: NextRequest, response: Response) {
+    if (request.method === "HEAD" || response.status === 204 || response.status === 304) return false;
+    if (!/\bgzip\b/i.test(request.headers.get("accept-encoding") || "")) return false;
+    const contentType = response.headers.get("content-type") || "";
+    return /^application\/json\b/i.test(contentType) && !response.headers.has("content-range");
+}
+
 async function proxy(request: NextRequest, context: RouteContext) {
     const { path } = await context.params;
     const apiBaseUrl = process.env.API_BASE_URL || "http://127.0.0.1:8080";
@@ -40,10 +47,18 @@ async function proxy(request: NextRequest, context: RouteContext) {
             redirect: "manual",
         } as RequestInit & { duplex?: "half" });
 
-        return new Response(response.body, {
+        const headers = responseHeaders(response);
+        let body: ReadableStream<Uint8Array> | null = response.body;
+        // fetch 会自动解压后端响应，直接透传会让 JSON（如整个工作区快照）以未压缩形式发给浏览器
+        if (body && shouldCompress(request, response)) {
+            body = (body as unknown as ReadableStream<BufferSource>).pipeThrough(new CompressionStream("gzip"));
+            headers.set("content-encoding", "gzip");
+            headers.append("vary", "Accept-Encoding");
+        }
+        return new Response(body, {
             status: response.status,
             statusText: response.statusText,
-            headers: responseHeaders(response),
+            headers,
         });
     } catch (error) {
         console.error("Failed to proxy", target, error);

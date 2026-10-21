@@ -34,7 +34,11 @@ var (
 
 func transactionWithSQLiteRetry(db *gorm.DB, fn func(*gorm.DB) error) error {
 	for attempt := 0; ; attempt++ {
-		err := db.Transaction(fn)
+		scoped, pending := withAgentEventNotifications(db)
+		err := scoped.Transaction(fn)
+		if err == nil {
+			pending.flush()
+		}
 		if err == nil || !strings.Contains(strings.ToLower(err.Error()), "sqlite") || (!strings.Contains(strings.ToLower(err.Error()), "busy") && !strings.Contains(strings.ToLower(err.Error()), "locked")) || attempt >= 5 {
 			return err
 		}

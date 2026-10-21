@@ -36,6 +36,8 @@ const (
 	AgentEventRunStarted               AgentEventType = "run.started"
 	AgentEventPlanCreated              AgentEventType = "plan.created"
 	AgentEventMessageDelta             AgentEventType = "message.delta"
+	AgentEventMessageStream            AgentEventType = "message.stream"
+	AgentEventToolPreview              AgentEventType = "tool.preview"
 	AgentEventToolConfirmationRequired AgentEventType = "tool.confirmation_required"
 	AgentEventToolCall                 AgentEventType = "tool.call"
 	AgentEventToolCompleted            AgentEventType = "tool.completed"

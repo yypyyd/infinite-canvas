@@ -259,6 +259,14 @@ func CompleteAgentRun(organizationID, userID, runID, messageID, deltaEventID, co
 }
 
 func WaitAgentRunForTool(organizationID, userID, runID, completionOutput string, toolStep model.AgentStep, timestamp string, events ...model.AgentEvent) error {
+	return WaitAgentRunForTools(organizationID, userID, runID, completionOutput, []model.AgentStep{toolStep}, timestamp, events...)
+}
+
+// WaitAgentRunForTools 一次登记本轮并行下发的全部工具步骤，运行进入等待工具结果状态。
+func WaitAgentRunForTools(organizationID, userID, runID, completionOutput string, toolSteps []model.AgentStep, timestamp string, events ...model.AgentEvent) error {
+	if len(toolSteps) == 0 {
+		return gorm.ErrRecordNotFound
+	}
 	db, err := DB()
 	if err != nil {
 		return err
@@ -275,8 +283,10 @@ func WaitAgentRunForTool(organizationID, userID, runID, completionOutput string,
 		if result.RowsAffected != 1 {
 			return gorm.ErrRecordNotFound
 		}
-		if err := tx.Create(&toolStep).Error; err != nil {
-			return err
+		for i := range toolSteps {
+			if err := tx.Create(&toolSteps[i]).Error; err != nil {
+				return err
+			}
 		}
 		for _, event := range events {
 			if err := appendAgentEvent(tx, run, event); err != nil {
@@ -546,6 +556,19 @@ func SubmitAgentToolResult(organizationID, userID, runID, callID, executionToken
 				return gorm.ErrRecordNotFound
 			}
 			run.Status, run.Error, run.CompletedAt, run.UpdatedAt = model.AgentRunStatusFailed, toolError, timestamp, timestamp
+			toolStep.Status, toolStep.Output, toolStep.Error, toolStep.CompletedAt, toolStep.UpdatedAt = stepStatus, output, toolError, timestamp, timestamp
+			return nil
+		}
+		// 并行下发的工具全部返回后才继续规划；其余步骤仍在执行时保持等待状态。
+		var pendingTools int64
+		if err := tx.Model(&model.AgentStep{}).Where("organization_id = ? AND user_id = ? AND run_id = ? AND type = ? AND status = ?", organizationID, userID, runID, model.AgentStepTypeTool, model.AgentStepStatusRunning).Count(&pendingTools).Error; err != nil {
+			return err
+		}
+		if pendingTools > 0 {
+			if err := tx.Model(&model.AgentRun{}).Where("organization_id = ? AND user_id = ? AND id = ? AND status = ?", organizationID, userID, runID, model.AgentRunStatusWaitingTool).Update("updated_at", timestamp).Error; err != nil {
+				return err
+			}
+			run.UpdatedAt = timestamp
 			toolStep.Status, toolStep.Output, toolStep.Error, toolStep.CompletedAt, toolStep.UpdatedAt = stepStatus, output, toolError, timestamp, timestamp
 			return nil
 		}
@@ -973,5 +996,9 @@ func appendAgentEvent(tx *gorm.DB, run model.AgentRun, event model.AgentEvent) e
 		return err
 	}
 	event.OrganizationID, event.UserID, event.RunID, event.Sequence = run.OrganizationID, run.UserID, run.ID, sequence+1
-	return tx.Create(&event).Error
+	if err := tx.Create(&event).Error; err != nil {
+		return err
+	}
+	notifyAgentEventAfterCommit(tx, run.ID)
+	return nil
 }

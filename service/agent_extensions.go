@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	agentDefaultMaxToolCalls   = 8
+	agentDefaultMaxToolCalls   = 20
 	agentDefaultMaxMediaCalls  = 3
 	agentDefaultMaxDurationSec = 900
 	agentDefaultMaxCredits     = 100
@@ -78,7 +78,7 @@ func normalizeAgentRunBudget(value AgentRunBudget) (AgentRunBudget, error) {
 	if value.MaxCredits == 0 {
 		value.MaxCredits = agentDefaultMaxCredits
 	}
-	if value.MaxToolCalls < 1 || value.MaxToolCalls > 12 || value.MaxMediaCalls < 1 || value.MaxMediaCalls > 6 || value.MaxDurationSec < 60 || value.MaxDurationSec > 1800 || value.MaxCredits < 1 || value.MaxCredits > 10000 {
+	if value.MaxToolCalls < 1 || value.MaxToolCalls > 30 || value.MaxMediaCalls < 1 || value.MaxMediaCalls > 6 || value.MaxDurationSec < 60 || value.MaxDurationSec > 1800 || value.MaxCredits < 1 || value.MaxCredits > 10000 {
 		return AgentRunBudget{}, safeMessageError{message: "Agent 运行预算无效"}
 	}
 	return value, nil

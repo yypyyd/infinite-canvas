@@ -333,9 +333,10 @@ func AgentRunEvents(w http.ResponseWriter, r *http.Request, runID string) {
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
-	pollTimer := time.NewTimer(agentEventPollMin)
+	// 先订阅再读库，避免读库与订阅之间写入的事件丢失唤醒。
+	subscription := service.SubscribeAgentRunEvents(runID)
+	defer subscription.Close()
 	heartbeatTicker := time.NewTicker(15 * time.Second)
-	defer pollTimer.Stop()
 	defer heartbeatTicker.Stop()
 	idlePolls := 0
 
@@ -365,18 +366,42 @@ func AgentRunEvents(w http.ResponseWriter, r *http.Request, runID string) {
 			continue
 		}
 
-		select {
-		case <-r.Context().Done():
-			return
-		case <-pollTimer.C:
-			pollTimer.Reset(agentEventPollDelay(idlePolls))
-		case <-heartbeatTicker.C:
-			if _, err := io.WriteString(w, ": heartbeat\n\n"); err != nil {
+		// 持久化事件由内存通知即时唤醒；兜底轮询只为跨进程或通知丢失时补读。
+		fallback := time.NewTimer(agentEventFallbackDelay(idlePolls))
+	wait:
+		for {
+			select {
+			case <-r.Context().Done():
+				fallback.Stop()
 				return
+			case <-subscription.Wake:
+				break wait
+			case <-fallback.C:
+				break wait
+			case event := <-subscription.Events:
+				if err := writeAgentEvent(w, event); err != nil {
+					fallback.Stop()
+					return
+				}
+				flusher.Flush()
+			case <-heartbeatTicker.C:
+				if _, err := io.WriteString(w, ": heartbeat\n\n"); err != nil {
+					fallback.Stop()
+					return
+				}
+				flusher.Flush()
 			}
-			flusher.Flush()
 		}
+		fallback.Stop()
 	}
+}
+
+func agentEventFallbackDelay(idlePolls int) time.Duration {
+	delay := agentEventPollDelay(idlePolls) * 2
+	if delay < agentEventPollMax {
+		return agentEventPollMax
+	}
+	return delay
 }
 
 func agentEventPollDelay(idlePolls int) time.Duration {
@@ -437,6 +462,11 @@ func writeAgentEvent(w io.Writer, event model.AgentEvent) error {
 		Data: payload, CreatedAt: event.CreatedAt,
 	})
 	if err != nil {
+		return err
+	}
+	if event.Sequence <= 0 {
+		// 临时事件不带 id，避免浏览器把重连游标回退到 0。
+		_, err = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event.Type, data)
 		return err
 	}
 	_, err = fmt.Fprintf(w, "id: %d\nevent: %s\ndata: %s\n\n", event.Sequence, event.Type, data)

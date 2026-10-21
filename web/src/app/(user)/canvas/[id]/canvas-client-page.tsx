@@ -66,6 +66,7 @@ import type { AssetPickerTab, InsertAssetPayload } from "../components/asset-pic
 import { CanvasToolbar } from "../components/canvas-toolbar";
 import { CanvasZoomControls } from "../components/canvas-zoom-controls";
 import { CANVAS_PROJECTS_REPLACED_EVENT, useCanvasStore, type CanvasProject } from "../stores/use-canvas-store";
+import { useCanvasViewportStore } from "../stores/use-canvas-viewport-store";
 import { boundsIntersect, connectionBounds } from "../utils/canvas-connection-bounds";
 import { buildCanvasMentionReferences, buildCanvasResourceReferences, buildNodeMentionReferenceMap, type CanvasResourceReference } from "../utils/canvas-resource-references";
 import { resolveCanvasVideoConfig } from "../utils/canvas-video-config";
@@ -345,7 +346,16 @@ function InfiniteCanvasPage() {
     const [connections, setConnections] = useState<CanvasConnection[]>([]);
     const [chatSessions, setChatSessions] = useState<CanvasAssistantSession[]>([]);
     const [activeChatId, setActiveChatId] = useState<string | null>(null);
-    const [viewport, setViewport] = useState<ViewportTransform>({ x: 0, y: 0, k: 1 });
+    const viewportRef = useRef<ViewportTransform>({ x: 0, y: 0, k: 1 });
+    // 视口只写入独立 store，平移/缩放时由订阅组件各自更新，主页面不随每帧重渲染
+    const setViewport = useCallback((next: ViewportTransform | ((prev: ViewportTransform) => ViewportTransform)) => {
+        const value = typeof next === "function" ? next(viewportRef.current) : next;
+        viewportRef.current = value;
+        useCanvasViewportStore.setState({ viewport: value });
+    }, []);
+    useLayoutEffect(() => {
+        useCanvasViewportStore.setState({ viewport: viewportRef.current });
+    }, []);
     const [size, setSize] = useState({ width: 1200, height: 720 });
     const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
     const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
@@ -406,7 +416,6 @@ function InfiniteCanvasPage() {
     const chatSessionsRef = useRef(chatSessions);
     const activeChatIdRef = useRef(activeChatId);
     const selectedNodeIdsRef = useRef(selectedNodeIds);
-    const viewportRef = useRef(viewport);
     const connectingParamsRef = useRef(connectingParams);
     const connectionTargetNodeIdRef = useRef(connectionTargetNodeId);
     const selectionBoxRef = useRef(selectionBox);
@@ -786,11 +795,17 @@ function InfiniteCanvasPage() {
         };
     }, [activeChatId, backgroundMode, chatSessions, connections, createHistoryEntry, nodes, projectLoaded, showImageInfo]);
 
-    useEffect(() => {
+    const scheduleAutoSave = useCallback(() => {
         if (!projectLoaded || historyPausedRef.current) return;
         const next = createSaveSnapshot();
         const previous = lastSavedProjectRef.current;
-        if (previous && isSameSaveSnapshot(previous, next)) return;
+        if (previous && isSameSaveSnapshot(previous, next)) {
+            if (canvasSaveTimerRef.current) {
+                clearTimeout(canvasSaveTimerRef.current);
+                canvasSaveTimerRef.current = null;
+            }
+            return;
+        }
 
         restoreRequestRef.current += 1;
         hasUnsavedChangesRef.current = true;
@@ -812,14 +827,24 @@ function InfiniteCanvasPage() {
             setHasUnsavedChanges(false);
             canvasSaveTimerRef.current = null;
         }, 500);
+    }, [autoSaveEnabled, createSaveSnapshot, projectId, projectLoaded, updateProject]);
 
-        return () => {
+    useEffect(() => {
+        scheduleAutoSave();
+    }, [activeChatId, backgroundMode, chatSessions, connections, nodes, scheduleAutoSave, showImageInfo]);
+
+    // 视口变化不触发主页面渲染，直接订阅 store 走同一套自动保存
+    useEffect(() => useCanvasViewportStore.subscribe(scheduleAutoSave), [scheduleAutoSave]);
+
+    useEffect(
+        () => () => {
             if (canvasSaveTimerRef.current) {
                 clearTimeout(canvasSaveTimerRef.current);
                 canvasSaveTimerRef.current = null;
             }
-        };
-    }, [activeChatId, autoSaveEnabled, backgroundMode, chatSessions, connections, createSaveSnapshot, nodes, projectId, projectLoaded, showImageInfo, updateProject, viewport]);
+        },
+        [],
+    );
 
     useEffect(() => {
         if (!dialogNodeId) setNodeImageSettingsOpen(false);
@@ -852,11 +877,10 @@ function InfiniteCanvasPage() {
         chatSessionsRef.current = chatSessions;
         activeChatIdRef.current = activeChatId;
         selectedNodeIdsRef.current = selectedNodeIds;
-        viewportRef.current = viewport;
         connectingParamsRef.current = connectingParams;
         connectionTargetNodeIdRef.current = connectionTargetNodeId;
         pendingConnectionCreateRef.current = pendingConnectionCreate;
-    }, [nodes, connections, chatSessions, activeChatId, selectedNodeIds, viewport, connectingParams, connectionTargetNodeId, pendingConnectionCreate, projectLoaded]);
+    }, [nodes, connections, chatSessions, activeChatId, selectedNodeIds, connectingParams, connectionTargetNodeId, pendingConnectionCreate, projectLoaded]);
 
     useLayoutEffect(() => {
         selectionBoxRef.current = selectionBox;
@@ -1019,16 +1043,19 @@ function InfiniteCanvasPage() {
         });
     }, [nodeDragOffset, nodes]);
 
-    // 可视范围向外对齐到网格：平移/缩放的小幅变化不改变范围，节点与连线的裁剪列表保持引用稳定
-    const viewBoundsGrid = 256;
-    const viewBoundsRect = containerRef.current?.getBoundingClientRect();
-    const viewBoundsWidth = viewBoundsRect?.width || size.width;
-    const viewBoundsHeight = viewBoundsRect?.height || size.height;
-    const viewLeft = Math.floor((-viewport.x / viewport.k - 280) / viewBoundsGrid) * viewBoundsGrid;
-    const viewTop = Math.floor((-viewport.y / viewport.k - 280) / viewBoundsGrid) * viewBoundsGrid;
-    const viewRight = Math.ceil((-viewport.x / viewport.k + viewBoundsWidth / viewport.k + 280) / viewBoundsGrid) * viewBoundsGrid;
-    const viewBottom = Math.ceil((-viewport.y / viewport.k + viewBoundsHeight / viewport.k + 280) / viewBoundsGrid) * viewBoundsGrid;
-    const viewBounds = useMemo(() => ({ left: viewLeft, top: viewTop, right: viewRight, bottom: viewBottom }), [viewBottom, viewLeft, viewRight, viewTop]);
+    // 只订阅对齐到网格后的可视范围：平移时跨过网格才会让主页面重新计算裁剪列表
+    const viewBoundsKey = useCanvasViewportStore(({ viewport }) => {
+        const grid = 256;
+        const left = Math.floor((-viewport.x / viewport.k - 280) / grid) * grid;
+        const top = Math.floor((-viewport.y / viewport.k - 280) / grid) * grid;
+        const right = Math.ceil((-viewport.x / viewport.k + size.width / viewport.k + 280) / grid) * grid;
+        const bottom = Math.ceil((-viewport.y / viewport.k + size.height / viewport.k + 280) / grid) * grid;
+        return `${left},${top},${right},${bottom}`;
+    });
+    const viewBounds = useMemo(() => {
+        const [left, top, right, bottom] = viewBoundsKey.split(",").map(Number);
+        return { left, top, right, bottom };
+    }, [viewBoundsKey]);
 
     const nodeById = useMemo(() => new Map(displayNodes.map((node) => [node.id, node])), [displayNodes]);
     const hiddenBatchNodeIds = useMemo(() => new Set(displayNodes.filter((node) => isHiddenBatchConnectionEndpoint(node, nodeById)).map((node) => node.id)), [displayNodes, nodeById]);
@@ -4071,7 +4098,6 @@ function InfiniteCanvasPage() {
 
                 <InfiniteCanvas
                     containerRef={containerRef}
-                    viewport={viewport}
                     tool={canvasTool}
                     backgroundMode={backgroundMode}
                     onViewportChange={handleViewportChange}
@@ -4162,12 +4188,11 @@ function InfiniteCanvasPage() {
                     </button>
                 ) : null}
 
-                <CanvasAgentOverlay overlay={agentOverlay} nodes={displayNodes} viewport={viewport} containerWidth={size.width} containerHeight={size.height} />
+                <CanvasAgentOverlay overlay={agentOverlay} nodes={displayNodes} containerWidth={size.width} containerHeight={size.height} />
 
                 <CanvasNodeHoverToolbar
                     node={isNodeDragging || isNodeResizing || nodeImageSettingsOpen ? null : toolbarNode}
                     canEditImage={supportsImageReferences(toolbarNode?.metadata?.model || effectiveConfig.imageModel || effectiveConfig.model, managedModels)}
-                    viewport={viewport}
                     onKeep={keepNodeToolbar}
                     onLeave={hideNodeToolbar}
                     onInfo={(node) => setInfoNodeId(node.id)}
@@ -4247,9 +4272,9 @@ function InfiniteCanvasPage() {
                     />
                 ) : null}
 
-                {isMiniMapOpen ? <Minimap nodes={displayNodes} viewport={viewport} viewportSize={size} onViewportChange={handleViewportChange} /> : null}
+                {isMiniMapOpen ? <Minimap nodes={displayNodes} viewportSize={size} onViewportChange={handleViewportChange} /> : null}
 
-                <CanvasZoomControls scale={viewport.k} onScaleChange={setZoomScale} onReset={resetViewport} isMiniMapOpen={isMiniMapOpen} onToggleMiniMap={() => setIsMiniMapOpen((value) => !value)} />
+                <CanvasZoomControls onScaleChange={setZoomScale} onReset={resetViewport} isMiniMapOpen={isMiniMapOpen} onToggleMiniMap={() => setIsMiniMapOpen((value) => !value)} />
 
                 {contextMenu ? (
                     <CanvasNodeContextMenu

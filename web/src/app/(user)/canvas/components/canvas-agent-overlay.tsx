@@ -6,12 +6,14 @@ import { MessageCircleQuestion } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
-import type { CanvasAgentOverlayState, CanvasNodeData, ViewportTransform } from "../types";
+import { useCanvasViewportStore } from "../stores/use-canvas-viewport-store";
+import type { CanvasAgentOverlayState, CanvasNodeData } from "../types";
 
 const OVERLAY_WIDTH = 300;
 
-export function CanvasAgentOverlay({ overlay, nodes, viewport, containerWidth, containerHeight }: { overlay: CanvasAgentOverlayState; nodes: CanvasNodeData[]; viewport: ViewportTransform; containerWidth: number; containerHeight: number }) {
+export function CanvasAgentOverlay({ overlay, nodes, containerWidth, containerHeight }: { overlay: CanvasAgentOverlayState; nodes: CanvasNodeData[]; containerWidth: number; containerHeight: number }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const viewport = useCanvasViewportStore((state) => state.viewport);
     const [answer, setAnswer] = useState("");
     const askQuestion = overlay?.prompt.kind === "ask" ? overlay.prompt.question : "";
     useEffect(() => {

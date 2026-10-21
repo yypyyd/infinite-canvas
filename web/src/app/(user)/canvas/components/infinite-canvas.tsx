@@ -4,13 +4,13 @@ import React, { useEffect, useRef, useState } from "react";
 
 import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
+import { useCanvasViewportStore } from "../stores/use-canvas-viewport-store";
 import type { CanvasTool, ViewportTransform } from "../types";
 
 const CANVAS_WHEEL_EXCLUSION_SELECTOR = "[data-canvas-no-zoom],.ant-modal,.ant-popover,.ant-dropdown,.ant-select-dropdown,.ant-picker-dropdown";
 
 type InfiniteCanvasProps = {
     containerRef: React.RefObject<HTMLDivElement | null>;
-    viewport: ViewportTransform;
     backgroundMode?: CanvasBackgroundMode;
     tool?: CanvasTool;
     onViewportChange: (viewport: ViewportTransform) => void;
@@ -22,8 +22,9 @@ type InfiniteCanvasProps = {
     children: React.ReactNode;
 };
 
-export function InfiniteCanvas({ containerRef, viewport, backgroundMode = "lines", tool = "pan", onViewportChange, onCanvasMouseDown, onCanvasDoubleClick, onCanvasDeselect, onContextMenu, onDrop, children }: InfiniteCanvasProps) {
+export function InfiniteCanvas({ containerRef, backgroundMode = "lines", tool = "pan", onViewportChange, onCanvasMouseDown, onCanvasDoubleClick, onCanvasDeselect, onContextMenu, onDrop, children }: InfiniteCanvasProps) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const viewport = useCanvasViewportStore((state) => state.viewport);
     const panState = useRef({
         isPanning: false,
         pointerId: -1,

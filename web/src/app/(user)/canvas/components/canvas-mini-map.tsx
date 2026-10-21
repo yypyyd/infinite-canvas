@@ -4,10 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
+import { useCanvasViewportStore } from "../stores/use-canvas-viewport-store";
 import { CanvasNodeType, type CanvasNodeData, type ViewportTransform } from "../types";
 
-export function Minimap({ nodes, viewport, viewportSize, onViewportChange }: { nodes: CanvasNodeData[]; viewport: ViewportTransform; viewportSize: { width: number; height: number }; onViewportChange: (viewport: ViewportTransform) => void }) {
+export function Minimap({ nodes, viewportSize, onViewportChange }: { nodes: CanvasNodeData[]; viewportSize: { width: number; height: number }; onViewportChange: (viewport: ViewportTransform) => void }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const viewport = useCanvasViewportStore((state) => state.viewport);
     const containerRef = useRef<HTMLDivElement>(null);
     const [isDragging, setIsDragging] = useState(false);
     const frameRef = useRef<number | null>(null);

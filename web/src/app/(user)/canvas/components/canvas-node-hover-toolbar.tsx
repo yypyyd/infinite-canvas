@@ -9,14 +9,14 @@ import { formatBytes, getDataUrlByteSize } from "@/lib/image-utils";
 import { useCopyText } from "@/hooks/use-copy-text";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { getImageQuickToolsPreference, updateImageQuickToolsPreference, USER_PREFERENCES_APPLIED_EVENT } from "@/lib/user-preferences";
-import { CanvasNodeType, type CanvasNodeData, type ViewportTransform } from "../types";
+import { useCanvasViewportStore } from "../stores/use-canvas-viewport-store";
+import { CanvasNodeType, type CanvasNodeData } from "../types";
 import { ImageToolSettingsModal, type ImageToolbarSettingsTool } from "./canvas-image-toolbar-settings-modal";
 import { buildImageToolbarTools, defaultImageQuickToolIds, readImageQuickToolsConfig, type ImageQuickToolId } from "./canvas-image-toolbar-tools";
 
 type CanvasNodeHoverToolbarProps = {
     node: CanvasNodeData | null;
     canEditImage: boolean;
-    viewport: ViewportTransform;
     onKeep: (nodeId: string) => void;
     onLeave: () => void;
     onInfo: (node: CanvasNodeData) => void;
@@ -56,7 +56,6 @@ type ToolbarTool = {
 export function CanvasNodeHoverToolbar({
     node,
     canEditImage,
-    viewport,
     onKeep,
     onLeave,
     onInfo,
@@ -82,6 +81,7 @@ export function CanvasNodeHoverToolbar({
     onToggleFreeResize,
     onDelete,
 }: CanvasNodeHoverToolbarProps) {
+    const viewport = useCanvasViewportStore((state) => state.viewport);
     const [quickImageToolIds, setQuickImageToolIds] = useState<ImageQuickToolId[]>(defaultImageQuickToolIds);
     const [showImageToolLabels, setShowImageToolLabels] = useState(true);
     const [draftImageToolIds, setDraftImageToolIds] = useState<ImageQuickToolId[]>(defaultImageQuickToolIds);

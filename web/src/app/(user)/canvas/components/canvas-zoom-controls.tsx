@@ -5,16 +5,17 @@ import { Button, Modal, Tooltip } from "antd";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
+import { useCanvasViewportStore } from "../stores/use-canvas-viewport-store";
 
 type CanvasZoomControlsProps = {
-    scale: number;
     onScaleChange: (scale: number) => void;
     onReset: () => void;
     isMiniMapOpen: boolean;
     onToggleMiniMap: () => void;
 };
 
-export function CanvasZoomControls({ scale, onScaleChange, onReset, isMiniMapOpen, onToggleMiniMap }: CanvasZoomControlsProps) {
+export function CanvasZoomControls({ onScaleChange, onReset, isMiniMapOpen, onToggleMiniMap }: CanvasZoomControlsProps) {
+    const scale = useCanvasViewportStore((state) => state.viewport.k);
     const [shortcutsOpen, setShortcutsOpen] = useState(false);
     const colorTheme = useThemeStore((state) => state.theme);
     const theme = canvasThemes[colorTheme];

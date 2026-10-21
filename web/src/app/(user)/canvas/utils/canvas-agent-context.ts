@@ -1,12 +1,13 @@
-import type { AgentCanvasContext, AgentMediaOptions } from "@/services/api/agent";
+import type { AgentCanvasContext, AgentCanvasViewport, AgentMediaOptions } from "@/services/api/agent";
 import type { AiConfig } from "@/stores/use-config-store";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "../types";
 
-export type AgentCanvasState = { nodes: CanvasNodeData[]; connections: CanvasConnection[] };
+export type AgentCanvasState = { nodes: CanvasNodeData[]; connections: CanvasConnection[]; visibleArea?: AgentCanvasViewport };
 
 export function buildAgentCanvasContext(state: AgentCanvasState, selected: string[], visible: string[], autonomy: AgentCanvasContext["autonomy"], config: AiConfig): AgentCanvasContext {
     return {
         autonomy,
+        ...(state.visibleArea ? { viewport: state.visibleArea } : {}),
         selectedNodeIds: selected,
         focusNodeIds: selected.slice(0, 20),
         visibleNodeIds: visible.slice(0, 40),

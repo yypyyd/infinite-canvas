@@ -69,8 +69,11 @@ export type AgentCanvasConnection = {
     to: string;
 };
 
+export type AgentCanvasViewport = { x: number; y: number; width: number; height: number; zoom?: number };
+
 export type AgentCanvasContext = {
     autonomy: "cautious" | "standard" | "autonomous";
+    viewport?: AgentCanvasViewport;
     selectedNodeIds: string[];
     focusNodeIds: string[];
     visibleNodeIds?: string[];
@@ -80,6 +83,15 @@ export type AgentCanvasContext = {
 };
 
 export type AgentCanvasPlacement = "center" | "right_of_selection" | "below_selection" | "viewport";
+
+export type AgentCanvasOp =
+    | { op: "add_text"; ref: string; text: string; x: number; y: number; width?: number; height?: number; sourceNodeIds?: string[] }
+    | (Omit<AgentMediaOptions, "configNodeId"> & { op: "add_config"; ref: string; x: number; y: number; width?: number; height?: number; prompt?: string; sourceNodeIds?: string[] })
+    | { op: "connect"; from: string; to: string }
+    | { op: "move"; nodeId: string; x: number; y: number }
+    | { op: "resize"; nodeId: string; width: number; height: number };
+
+export type AgentCanvasOpResult = { op: AgentCanvasOp["op"]; ref?: string; nodeId?: string; fromNodeId?: string; toNodeId?: string };
 
 export type AgentToolArguments =
     | { query?: string; nodeIds?: string[]; offset?: number }
@@ -97,7 +109,8 @@ export type AgentToolArguments =
     | { nodeId: string; text: string }
     | { question: string; options: string[] }
     | { kind: "preference" | "fact" | "constraint" | "experience"; key: string; content: string; scope: "project" | "user"; confidence: number; expiresInDays: number }
-    | { key: string; scope: "project" | "user" };
+    | { key: string; scope: "project" | "user" }
+    | { ops: AgentCanvasOp[] };
 
 export type AgentToolName =
     | "canvas.read"
@@ -111,6 +124,7 @@ export type AgentToolName =
     | "canvas.add_text"
     | "canvas.add_config"
     | "canvas.connect"
+    | "canvas.apply_ops"
     | "canvas.delete"
     | "canvas.update_text"
     | "agent.ask_user"
@@ -128,9 +142,11 @@ export type AgentEvent = {
     id: string;
     runId: string;
     sequence: number;
-    type: "run.started" | "plan.created" | "message.delta" | "tool.confirmation_required" | "tool.call" | "tool.completed" | "tool.reverted" | "run.completed" | "run.failed" | "run.cancelled";
+    type: "run.started" | "plan.created" | "message.delta" | "message.stream" | "tool.preview" | "tool.confirmation_required" | "tool.call" | "tool.completed" | "tool.reverted" | "run.completed" | "run.failed" | "run.cancelled";
     data: {
         content?: string;
+        streaming?: boolean;
+        index?: number;
         error?: string;
         status?: "success" | "failed" | "approved" | "rejected";
         reason?: "tool_reverted";
@@ -342,6 +358,24 @@ export type AgentToolResult =
       }
     | {
           callId: string;
+          status: "success";
+          nodeIds: string[];
+          ops: AgentCanvasOpResult[];
+          positions?: never;
+          plan?: never;
+          inspection?: never;
+          images?: never;
+          video?: never;
+          nodeId?: never;
+          fromNodeId?: never;
+          toNodeId?: never;
+          text?: never;
+          placement?: never;
+          memory?: never;
+          error?: never;
+      }
+    | {
+          callId: string;
           status: "failed";
           error: string;
           plan?: never;
@@ -483,7 +517,8 @@ export async function streamAgentRun(runId: string, onEvent: (event: AgentEvent)
             if (data) {
                 const event = JSON.parse(data) as AgentEvent;
                 await onEvent(event);
-                onProcessed?.(event.sequence);
+                // 流式正文等临时事件没有序号，不能推进重连游标。
+                if (event.sequence > 0) onProcessed?.(event.sequence);
             }
         }
     }

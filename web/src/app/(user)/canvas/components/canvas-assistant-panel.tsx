@@ -30,6 +30,8 @@ import {
     submitAgentFeedback,
     submitAgentMessage,
     submitAgentToolResult,
+    type AgentCanvasOp,
+    type AgentCanvasOpResult,
     type AgentEvent,
     type AgentRunDiagnostics,
     type AgentToolArguments,
@@ -73,7 +75,7 @@ const PANEL_MOTION_MS = 500;
 const PANEL_MOTION_SECONDS = PANEL_MOTION_MS / 1000;
 const AGENT_RECONNECT_MAX_ATTEMPTS = 16;
 const AGENT_RECONNECT_MAX_DELAY_MS = 8_000;
-const DEFAULT_AGENT_BUDGET = { maxToolCalls: 8, maxMediaCalls: 3, maxDurationSec: 900, maxCredits: 100 };
+const DEFAULT_AGENT_BUDGET = { maxToolCalls: 20, maxMediaCalls: 3, maxDurationSec: 900, maxCredits: 100 };
 const agentBudgetFromSettings = (settings?: AgentSettingsPreference | null) => ({
     maxToolCalls: settings?.maxToolCalls || DEFAULT_AGENT_BUDGET.maxToolCalls,
     maxMediaCalls: settings?.maxMediaCalls || DEFAULT_AGENT_BUDGET.maxMediaCalls,
@@ -109,6 +111,7 @@ type CanvasAssistantPanelProps = {
     onInsertText: (text: string, placement?: AgentCanvasPlacement, agentMeta?: { runId: string; callId: string; sourceNodeIds?: string[] }) => string;
     onInsertConfig: (placement?: AgentCanvasPlacement, agentMeta?: { runId: string; callId: string; sourceNodeIds?: string[]; settings?: AgentMediaOptions & { prompt?: string } }) => string;
     onConnectNodes: (fromNodeId: string, toNodeId: string, agentMeta?: { runId: string; callId: string }) => { fromNodeId: string; toNodeId: string };
+    onApplyOps: (ops: AgentCanvasOp[], agentMeta: { runId: string; callId: string }, signal?: AbortSignal) => Promise<{ nodeIds: string[]; ops: AgentCanvasOpResult[] }>;
     onPersistToolResult: (runId: string, callId: string, name: NonNullable<AgentEvent["data"]["name"]>, result: AgentToolResult) => Promise<AgentToolResult>;
     onApplyDestructiveTool: (runId: string, callId: string, name: "canvas.delete" | "canvas.update_text", argumentsValue: { nodeIds: string[] } | { nodeId: string; text: string }) => Promise<AgentToolResult>;
     onCanvasOverlayChange: (overlay: CanvasAgentOverlayState) => void;
@@ -143,6 +146,7 @@ export function CanvasAssistantPanel({
     onInsertText,
     onInsertConfig,
     onConnectNodes,
+    onApplyOps,
     onPersistToolResult,
     onApplyDestructiveTool,
     onCanvasOverlayChange,
@@ -518,6 +522,18 @@ export function CanvasAssistantPanel({
                             const advanceEvent = (patch: Partial<CanvasAssistantMessage> = {}) => updateMessageWith(sessionId, assistantMessageId, (message) => ({ ...message, ...patch, lastEventSequence: event.sequence }));
                             const advanceStages = (updater: (stages: CanvasAssistantStage[]) => CanvasAssistantStage[], patch: Partial<CanvasAssistantMessage> = {}) =>
                                 updateMessageWith(sessionId, assistantMessageId, (message) => ({ ...message, ...patch, stages: updater(message.stages || []), lastEventSequence: event.sequence }));
+                            if (event.type === "message.stream") {
+                                // 模型流式正文：只更新显示文字，不推进事件游标（临时事件没有序号）。
+                                const content = event.data.content || "";
+                                if (content) updateMessageWith(sessionId, assistantMessageId, (message) => ({ ...message, text: content, isLoading: true }));
+                                return;
+                            }
+                            if (event.type === "tool.preview") {
+                                const preview = event.data.arguments;
+                                const previewNodeIds = preview ? agentPreviewNodeIds(preview).filter((id) => nodesRef.current.some((node) => node.id === id)) : [];
+                                if (previewNodeIds.length) onFlashAssistantNodes(previewNodeIds);
+                                return;
+                            }
                             if (event.type === "message.delta") {
                                 advanceEvent({ text: event.data.content || "", isLoading: true });
                                 return;
@@ -800,6 +816,10 @@ export function CanvasAssistantPanel({
                                     await renewToolLease();
                                     const nodeId = onInsertConfig(toolArguments.placement, { runId, callId, sourceNodeIds: toolArguments.sourceNodeIds || [], settings: toolArguments });
                                     result = { callId, status: "success", nodeId, placement: toolArguments.placement };
+                                } else if (toolName === "canvas.apply_ops" && "ops" in toolArguments && Array.isArray(toolArguments.ops)) {
+                                    await renewToolLease();
+                                    const applied = await onApplyOps(toolArguments.ops, { runId, callId }, toolAbortController.signal);
+                                    result = { callId, status: "success", nodeIds: applied.nodeIds, ops: applied.ops };
                                 } else if (toolName === "canvas.connect" && "fromNodeId" in toolArguments && "toNodeId" in toolArguments) {
                                     await renewToolLease();
                                     const connected = onConnectNodes(toolArguments.fromNodeId, toolArguments.toNodeId, { runId, callId });
@@ -1583,7 +1603,7 @@ export function CanvasAssistantPanel({
                             })}
                         </div>
                         <div className="grid grid-cols-2 gap-2 rounded-lg border p-3" style={{ borderColor: theme.node.stroke, background: theme.node.fill }}>
-                            <AgentBudgetField label="工具次数" value={agentBudget.maxToolCalls} min={1} max={12} onChange={(value) => setAgentBudget((current) => ({ ...current, maxToolCalls: value }))} />
+                            <AgentBudgetField label="工具次数" value={agentBudget.maxToolCalls} min={1} max={30} onChange={(value) => setAgentBudget((current) => ({ ...current, maxToolCalls: value }))} />
                             <AgentBudgetField label="媒体次数" value={agentBudget.maxMediaCalls} min={1} max={6} onChange={(value) => setAgentBudget((current) => ({ ...current, maxMediaCalls: value }))} />
                             <AgentBudgetField label="最长分钟" value={Math.round(agentBudget.maxDurationSec / 60)} min={1} max={30} onChange={(value) => setAgentBudget((current) => ({ ...current, maxDurationSec: value * 60 }))} />
                             <AgentBudgetField label="算力上限" value={agentBudget.maxCredits} min={1} max={10000} onChange={(value) => setAgentBudget((current) => ({ ...current, maxCredits: value }))} />
@@ -2358,6 +2378,8 @@ function assistantStageForTool(name: AgentToolName, callId: string, argumentsVal
     if (name === "canvas.add_text" && "text" in argumentsValue && "placement" in argumentsValue) return { callId, kind: "text", label: "文本添加中", status: "pending" };
     if (name === "canvas.add_config" && "placement" in argumentsValue && !("text" in argumentsValue)) return { callId, kind: "config", label: "配置节点添加中", status: "pending" };
     if (name === "canvas.connect" && "fromNodeId" in argumentsValue) return { callId, kind: "connect", label: "连线中", status: "pending", nodeIds: [argumentsValue.fromNodeId, argumentsValue.toNodeId] };
+    if (name === "canvas.apply_ops" && "ops" in argumentsValue && Array.isArray(argumentsValue.ops))
+        return { callId, kind: "arrange", label: `正在编辑画布（${argumentsValue.ops.length} 步）`, status: "pending", nodeIds: agentPreviewNodeIds(argumentsValue) };
     if (name === "canvas.delete" && "nodeIds" in argumentsValue && !("mode" in argumentsValue)) return { callId, kind: "delete", label: "节点删除中", status: "pending", nodeIds: argumentsValue.nodeIds };
     if (name === "canvas.update_text" && "nodeId" in argumentsValue) return { callId, kind: "update_text", label: "文本更新中", status: "pending", nodeId: argumentsValue.nodeId };
     if (name === "agent.remember" && "content" in argumentsValue && "key" in argumentsValue) return { callId, kind: "remember", label: "正在保存记忆", status: "pending", memoryKey: argumentsValue.key };
@@ -2600,6 +2622,7 @@ function agentToolLabel(name: AgentToolName) {
         "canvas.add_text": "添加文本",
         "canvas.add_config": "添加配置",
         "canvas.connect": "建立连线",
+        "canvas.apply_ops": "批量编辑画布",
         "canvas.delete": "删除节点",
         "canvas.update_text": "修改文本",
         "agent.ask_user": "等待回答",
@@ -2647,6 +2670,26 @@ function restoreAgentToolResult(runId: string, callId: string, name: NonNullable
         return config ? { callId, status: "success", nodeId: config.id, placement: argumentsValue.placement } : undefined;
     }
     return undefined;
+}
+
+// 从工具参数里取出引用的已有节点 id，用于预告高亮；批量操作里的 ref 不是节点 id，会在调用方按画布过滤掉。
+function agentPreviewNodeIds(argumentsValue: AgentToolArguments): string[] {
+    const value = argumentsValue as Record<string, unknown>;
+    const ids: string[] = [];
+    const push = (item: unknown) => {
+        if (typeof item === "string" && item && !ids.includes(item)) ids.push(item);
+    };
+    for (const key of ["nodeId", "fromNodeId", "toNodeId", "imageNodeId", "configNodeId"]) push(value[key]);
+    for (const key of ["nodeIds", "referenceNodeIds", "sourceNodeIds", "imageNodeIds"]) if (Array.isArray(value[key])) (value[key] as unknown[]).forEach(push);
+    if (Array.isArray(value.ops)) {
+        for (const op of value.ops as Record<string, unknown>[]) {
+            push(op?.nodeId);
+            push(op?.from);
+            push(op?.to);
+            if (Array.isArray(op?.sourceNodeIds)) (op.sourceNodeIds as unknown[]).forEach(push);
+        }
+    }
+    return ids.slice(0, 40);
 }
 
 function uniqueNodeIds(...ids: (string | undefined)[]) {

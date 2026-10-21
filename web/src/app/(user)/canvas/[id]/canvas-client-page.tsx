@@ -33,7 +33,19 @@ import { videoReferenceCapabilities } from "@/lib/video-reference";
 import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { flushActiveWorkspaceChanges, isWorkspaceVersionConflictError } from "@/components/layout/workspace-provider";
-import { cancelAgentRun, listRecoverableAgentRuns, revertAgentRun, revertAgentTool, submitAgentFeedback, type AgentCanvasPlacement, type AgentToolName, type AgentToolResult, type AgentMediaOptions } from "@/services/api/agent";
+import {
+    cancelAgentRun,
+    listRecoverableAgentRuns,
+    revertAgentRun,
+    revertAgentTool,
+    submitAgentFeedback,
+    type AgentCanvasOp,
+    type AgentCanvasOpResult,
+    type AgentCanvasPlacement,
+    type AgentToolName,
+    type AgentToolResult,
+    type AgentMediaOptions,
+} from "@/services/api/agent";
 import { createAgentPatch, revertAgentPatches } from "../utils/canvas-agent-undo";
 import type { AgentCanvasState } from "../utils/canvas-agent-context";
 import { useAssetStore } from "@/stores/use-asset-store";
@@ -153,6 +165,16 @@ const IMAGE_PROMPT_REVERSE_PRESET = `请根据参考图片反推一段适合用�
 1. 只输出提示词正文，不要解释。
 2. 覆盖主体、构图、风格、光线、色彩、材质、镜头和氛围。
 3. 尽量写成可直接用于生图模型的完整提示词。`;
+
+const AGENT_OP_STEP_DELAY_MS = 120;
+
+type AssistantInsertMeta = { runId: string; callId: string; sourceNodeIds?: string[]; position?: Position; nodeSize?: { width?: number; height?: number }; batch?: boolean };
+
+// 批量操作给出的是节点左上角坐标和可选尺寸，覆盖默认的居中落位。
+function placeAssistantNode(node: CanvasNodeData, meta?: AssistantInsertMeta): CanvasNodeData {
+    if (!meta?.position) return node;
+    return { ...node, position: { x: meta.position.x, y: meta.position.y }, width: meta.nodeSize?.width || node.width, height: meta.nodeSize?.height || node.height };
+}
 
 function createCanvasNode(type: CanvasNodeType, position: Position, metadata?: CanvasNodeMetadata): CanvasNodeData {
     const spec = getNodeSpec(type);
@@ -412,7 +434,21 @@ function InfiniteCanvasPage() {
 
     const nodesRef = useRef(nodes);
     const connectionsRef = useRef(connections);
-    const readAssistantCanvas = useCallback(() => ({ nodes: nodesRef.current, connections: connectionsRef.current }), []);
+    const assistantSizeRef = useRef(size);
+    useEffect(() => {
+        assistantSizeRef.current = size;
+    }, [size]);
+    // 给助手的画布状态附带当前视口（画布坐标），方便模型按坐标摆放新内容。
+    const readAssistantCanvas = useCallback((): AgentCanvasState => {
+        const view = viewportRef.current;
+        const k = view.k || 1;
+        const area = assistantSizeRef.current;
+        return {
+            nodes: nodesRef.current,
+            connections: connectionsRef.current,
+            visibleArea: { x: Math.round(-view.x / k), y: Math.round(-view.y / k), width: Math.round(area.width / k), height: Math.round(area.height / k), zoom: Number(k.toFixed(3)) },
+        };
+    }, []);
     const chatSessionsRef = useRef(chatSessions);
     const activeChatIdRef = useRef(activeChatId);
     const selectedNodeIdsRef = useRef(selectedNodeIds);
@@ -3825,15 +3861,18 @@ function InfiniteCanvasPage() {
     );
 
     const insertAssistantText = useCallback(
-        (text: string, placement: AgentCanvasPlacement = "right_of_selection", agentMeta?: { runId: string; callId: string; sourceNodeIds?: string[] }) => {
+        (text: string, placement: AgentCanvasPlacement = "right_of_selection", agentMeta?: AssistantInsertMeta) => {
             const center = screenToCanvas((containerRef.current?.getBoundingClientRect().left || 0) + size.width / 2, (containerRef.current?.getBoundingClientRect().top || 0) + size.height / 2);
             const selected = nodesRef.current.filter((node) => agentMeta?.sourceNodeIds?.includes(node.id) || selectedNodeIdsRef.current.has(node.id));
             const textSpec = getNodeSpec(CanvasNodeType.Text);
             const position = resolveAgentPlacement(placement, selected, textSpec, center);
-            const node = {
-                ...createCanvasNode(CanvasNodeType.Text, position, { content: text, status: NODE_STATUS_SUCCESS, agentRunId: agentMeta?.runId, agentToolCallId: agentMeta?.callId, sourceNodeIds: agentMeta?.sourceNodeIds }),
-                title: text.slice(0, 32) || "Assistant Text",
-            };
+            const node = placeAssistantNode(
+                {
+                    ...createCanvasNode(CanvasNodeType.Text, position, { content: text, status: NODE_STATUS_SUCCESS, agentRunId: agentMeta?.runId, agentToolCallId: agentMeta?.callId, sourceNodeIds: agentMeta?.sourceNodeIds }),
+                    title: text.slice(0, 32) || "Assistant Text",
+                },
+                agentMeta,
+            );
 
             const nextNodes = [...nodesRef.current, node];
             const existingConnections = new Set(connectionsRef.current.map((connection) => `${connection.fromNodeId}:${connection.toNodeId}`));
@@ -3844,7 +3883,7 @@ function InfiniteCanvasPage() {
                 return [{ id: nanoid(), ...connection }];
             });
             const nextConnections = [...connectionsRef.current, ...createdConnections];
-            if (agentMeta) markAssistantHistory(agentMeta.runId, agentMeta.callId);
+            if (agentMeta && !agentMeta.batch) markAssistantHistory(agentMeta.runId, agentMeta.callId);
             nodesRef.current = nextNodes;
             connectionsRef.current = nextConnections;
             setNodes(nextNodes);
@@ -3859,13 +3898,13 @@ function InfiniteCanvasPage() {
     );
 
     const insertAssistantConfig = useCallback(
-        (placement: AgentCanvasPlacement = "right_of_selection", agentMeta?: { runId: string; callId: string; sourceNodeIds?: string[]; settings?: AgentMediaOptions & { prompt?: string } }) => {
+        (placement: AgentCanvasPlacement = "right_of_selection", agentMeta?: AssistantInsertMeta & { settings?: AgentMediaOptions & { prompt?: string } }) => {
             const settings = agentMeta?.settings;
             const mode = settings?.mode || "image";
             const center = screenToCanvas((containerRef.current?.getBoundingClientRect().left || 0) + size.width / 2, (containerRef.current?.getBoundingClientRect().top || 0) + size.height / 2);
             const selected = nodesRef.current.filter((node) => agentMeta?.sourceNodeIds?.includes(node.id) || selectedNodeIdsRef.current.has(node.id));
             const spec = getNodeSpec(CanvasNodeType.Config);
-            const node = createCanvasNode(CanvasNodeType.Config, resolveAgentPlacement(placement, selected, spec, center), {
+            const created = createCanvasNode(CanvasNodeType.Config, resolveAgentPlacement(placement, selected, spec, center), {
                 generationMode: mode,
                 model: settings?.model || (mode === "video" ? effectiveConfig.videoModel : effectiveConfig.imageModel) || effectiveConfig.model,
                 size: settings?.size || effectiveConfig.size,
@@ -3880,6 +3919,7 @@ function InfiniteCanvasPage() {
                 agentToolCallId: agentMeta?.callId,
                 sourceNodeIds: agentMeta?.sourceNodeIds,
             });
+            const node = placeAssistantNode(created, agentMeta);
             const nextNodes = [...nodesRef.current, node];
             const existingConnections = new Set(connectionsRef.current.map((connection) => `${connection.fromNodeId}:${connection.toNodeId}`));
             const createdConnections = (agentMeta?.sourceNodeIds || []).flatMap((sourceNodeId) => {
@@ -3889,7 +3929,7 @@ function InfiniteCanvasPage() {
                 return [{ id: nanoid(), ...connection }];
             });
             const nextConnections = [...connectionsRef.current, ...createdConnections];
-            if (agentMeta) markAssistantHistory(agentMeta.runId, agentMeta.callId);
+            if (agentMeta && !agentMeta.batch) markAssistantHistory(agentMeta.runId, agentMeta.callId);
             nodesRef.current = nextNodes;
             connectionsRef.current = nextConnections;
             setNodes(nextNodes);
@@ -3909,7 +3949,7 @@ function InfiniteCanvasPage() {
     );
 
     const connectAssistantNodes = useCallback(
-        (fromNodeId: string, toNodeId: string, agentMeta?: { runId: string; callId: string }) => {
+        (fromNodeId: string, toNodeId: string, agentMeta?: { runId: string; callId: string; batch?: boolean }) => {
             const connection = normalizeConnection(fromNodeId, toNodeId, nodesRef.current, "source");
             if (!connection) throw new Error("这两个节点不能连线");
             const existing = connectionsRef.current.find((item) => item.fromNodeId === connection.fromNodeId && item.toNodeId === connection.toNodeId);
@@ -3919,7 +3959,7 @@ function InfiniteCanvasPage() {
             }
             const created = { id: nanoid(), ...connection };
             const nextConnections = [...connectionsRef.current, created];
-            if (agentMeta) markAssistantHistory(agentMeta.runId, agentMeta.callId);
+            if (agentMeta && !agentMeta.batch) markAssistantHistory(agentMeta.runId, agentMeta.callId);
             connectionsRef.current = nextConnections;
             setConnections(nextConnections);
             setSelectedConnectionId(created.id);
@@ -3930,6 +3970,82 @@ function InfiniteCanvasPage() {
             return { fromNodeId: connection.fromNodeId, toNodeId: connection.toNodeId };
         },
         [flashAssistantNodes, focusAssistantNodes, markAssistantHistory, markGrowingConnections],
+    );
+
+    // canvas.apply_ops：逐步执行并短暂停顿，让用户看到画布一步步被搭起来；整批作为一个撤销单元，中途失败则回滚本批改动。
+    const applyAssistantOps = useCallback(
+        async (ops: AgentCanvasOp[], agentMeta: { runId: string; callId: string }, signal?: AbortSignal): Promise<{ nodeIds: string[]; ops: AgentCanvasOpResult[] }> => {
+            const key = `${agentMeta.runId}:${agentMeta.callId}`;
+            markAssistantHistory(agentMeta.runId, agentMeta.callId);
+            const refs = new Map<string, string>();
+            const resolve = (id: string) => refs.get(id) || id;
+            const touched: string[] = [];
+            const touch = (id: string) => {
+                if (!touched.includes(id)) touched.push(id);
+            };
+            const results: AgentCanvasOpResult[] = [];
+            try {
+                for (const [index, op] of ops.entries()) {
+                    signal?.throwIfAborted();
+                    if (index > 0) await new Promise((resolveDelay) => window.setTimeout(resolveDelay, AGENT_OP_STEP_DELAY_MS));
+                    signal?.throwIfAborted();
+                    if (op.op === "add_text" || op.op === "add_config") {
+                        const meta = {
+                            runId: agentMeta.runId,
+                            callId: agentMeta.callId,
+                            sourceNodeIds: (op.sourceNodeIds || []).map(resolve),
+                            position: { x: op.x, y: op.y },
+                            nodeSize: op.width || op.height ? { width: op.width, height: op.height } : undefined,
+                            batch: true,
+                        };
+                        const nodeId =
+                            op.op === "add_text"
+                                ? insertAssistantText(op.text, "viewport", meta)
+                                : insertAssistantConfig("viewport", {
+                                      ...meta,
+                                      settings: { mode: op.mode, prompt: op.prompt, model: op.model, size: op.size, quality: op.quality, resolution: op.resolution, count: op.count, duration: op.duration, generateAudio: op.generateAudio },
+                                  });
+                        refs.set(op.ref, nodeId);
+                        touch(nodeId);
+                        flashAssistantNodes([nodeId]);
+                        results.push({ op: op.op, ref: op.ref, nodeId });
+                    } else if (op.op === "connect") {
+                        const connected = connectAssistantNodes(resolve(op.from), resolve(op.to), { ...agentMeta, batch: true });
+                        results.push({ op: "connect", fromNodeId: connected.fromNodeId, toNodeId: connected.toNodeId });
+                    } else {
+                        const nodeId = resolve(op.nodeId);
+                        const target = nodesRef.current.find((node) => node.id === nodeId);
+                        if (!target) throw new Error("待调整的节点已不存在");
+                        if (target.metadata?.isBatchRoot || target.metadata?.batchRootId) throw new Error("批次节点暂不支持助手移动或缩放");
+                        const next = op.op === "move" ? { ...target, position: { x: op.x, y: op.y } } : { ...target, width: op.width, height: op.height };
+                        const nextNodes = nodesRef.current.map((node) => (node.id === nodeId ? next : node));
+                        nodesRef.current = nextNodes;
+                        setNodes(nextNodes);
+                        markAgentMovingNodes([nodeId]);
+                        flashAssistantNodes([nodeId]);
+                        focusAssistantNodes([next], true, agentMeta.runId);
+                        touch(nodeId);
+                        results.push({ op: op.op, nodeId });
+                    }
+                }
+            } catch (error) {
+                const before = agentToolBeforeRef.current.get(key);
+                if (before && (touched.length || results.length)) {
+                    const current = readAssistantCanvas();
+                    const partial = createAgentPatch("canvas.apply_ops", { callId: agentMeta.callId, status: "success", nodeIds: touched, ops: results }, before, current);
+                    const restored = revertAgentPatches(current, [partial]);
+                    nodesRef.current = restored.nodes;
+                    connectionsRef.current = restored.connections;
+                    setNodes(restored.nodes);
+                    setConnections(restored.connections);
+                }
+                agentToolBeforeRef.current.delete(key);
+                pendingAgentHistoryRef.current.delete(key);
+                throw error;
+            }
+            return { nodeIds: touched, ops: results };
+        },
+        [connectAssistantNodes, flashAssistantNodes, focusAssistantNodes, insertAssistantConfig, insertAssistantText, markAgentMovingNodes, markAssistantHistory, readAssistantCanvas],
     );
 
     useEffect(() => {
@@ -4406,6 +4522,7 @@ function InfiniteCanvasPage() {
                         onInsertText={insertAssistantText}
                         onInsertConfig={insertAssistantConfig}
                         onConnectNodes={connectAssistantNodes}
+                        onApplyOps={applyAssistantOps}
                         onPersistToolResult={persistAssistantToolResult}
                         onApplyDestructiveTool={applyDestructiveAssistantTool}
                         onCanvasOverlayChange={setAgentOverlay}

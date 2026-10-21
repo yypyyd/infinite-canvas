@@ -2,12 +2,13 @@ import type { AgentToolName, AgentToolResult } from "@/services/api/agent";
 import type { CanvasConnection, CanvasNodeData } from "../types";
 import type { AgentCanvasState } from "./canvas-agent-context";
 
-type NodeChange = { id: string; kind: "created" | "deleted" | "position" | "text"; before?: CanvasNodeData; after?: CanvasNodeData };
+type NodeChange = { id: string; kind: "created" | "deleted" | "position" | "geometry" | "text"; before?: CanvasNodeData; after?: CanvasNodeData };
 export type CanvasAgentPatch = { nodes: NodeChange[]; addedConnections: CanvasConnection[]; removedConnections: CanvasConnection[] };
 
 export function createAgentPatch(name: AgentToolName, result: AgentToolResult, before: AgentCanvasState, after: AgentCanvasState): CanvasAgentPatch {
     const patch: CanvasAgentPatch = { nodes: [], addedConnections: [], removedConnections: [] };
     if (result.status !== "success") return patch;
+    if (name === "canvas.apply_ops") return createApplyOpsPatch(result.nodeIds || [], before, after);
     const createdIds = new Set(result.images?.map((item) => item.nodeId) || (result.video ? [result.video.nodeId] : name === "canvas.add_text" || name === "canvas.add_config" ? [result.nodeId!] : []));
     const ids = createdIds.size ? [...createdIds] : name === "canvas.delete" || name === "canvas.arrange" ? result.nodeIds || [] : name === "canvas.update_text" ? [result.nodeId!] : [];
     for (const id of ids) {
@@ -27,6 +28,20 @@ export function createAgentPatch(name: AgentToolName, result: AgentToolResult, b
         return name === "canvas.connect" && edge.fromNodeId === result.fromNodeId && edge.toNodeId === result.toNodeId && !previousEdges.has(edge.id);
     });
     if (name === "canvas.delete") patch.removedConnections = before.connections.filter((edge) => !nextEdges.has(edge.id) && (ids.includes(edge.fromNodeId) || ids.includes(edge.toNodeId)));
+    return patch;
+}
+
+// 批量操作整批作为一个撤销单元：新建节点删除，移动/缩放的节点恢复原位置和尺寸，本批新增连线移除。
+function createApplyOpsPatch(nodeIds: string[], before: AgentCanvasState, after: AgentCanvasState): CanvasAgentPatch {
+    const patch: CanvasAgentPatch = { nodes: [], addedConnections: [], removedConnections: [] };
+    for (const id of nodeIds) {
+        const previous = before.nodes.find((node) => node.id === id);
+        const next = after.nodes.find((node) => node.id === id);
+        if (!next) throw new Error("批量操作后的节点缺失");
+        patch.nodes.push(previous ? { id, kind: "geometry", before: previous, after: next } : { id, kind: "created", after: next });
+    }
+    const previousEdges = new Set(before.connections.map((edge) => edge.id));
+    patch.addedConnections = after.connections.filter((edge) => !previousEdges.has(edge.id));
     return patch;
 }
 
@@ -70,6 +85,9 @@ export function revertAgentPatches(state: AgentCanvasState, patches: CanvasAgent
                 if (change.kind === "position") {
                     if (current.position.x !== change.after.position.x || current.position.y !== change.after.position.y) conflict();
                     nodes.set(change.id, { ...current, position: change.before.position });
+                } else if (change.kind === "geometry") {
+                    if (current.position.x !== change.after.position.x || current.position.y !== change.after.position.y || current.width !== change.after.width || current.height !== change.after.height) conflict();
+                    nodes.set(change.id, { ...current, position: change.before.position, width: change.before.width, height: change.before.height });
                 } else {
                     if (current.title !== change.after.title || current.metadata?.content !== change.after.metadata?.content) conflict();
                     nodes.set(change.id, { ...current, title: change.before.title, metadata: { ...current.metadata, content: change.before.metadata?.content } });

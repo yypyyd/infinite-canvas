@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Check, Download, Images, Pencil, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button, Input } from "antd";
@@ -18,8 +18,29 @@ function useProjectCovers(project: CanvasProject) {
             project.nodes
                 .filter((node) => node.type === CanvasNodeType.Image && node.metadata?.storageKey)
                 .slice(0, 4)
-                .map((node) => workspaceImageUrl(node.metadata!.storageKey!, "thumb")),
+                .map((node) => workspaceImageUrl(node.metadata!.storageKey!, "cover")),
         [project.nodes],
+    );
+}
+
+// 缩略图变体失败时回退原图一次；原图也失败（文件已过期或被清理）时显示占位底色，避免整格破图图标
+function ProjectCoverImage({ url, eager }: { url: string; eager: boolean }) {
+    const [src, setSrc] = useState(url);
+    const [failed, setFailed] = useState(false);
+    if (failed) return <div className="size-full bg-surface-2" aria-hidden />;
+    return (
+        <img
+            src={src}
+            alt=""
+            loading={eager ? "eager" : "lazy"}
+            decoding="async"
+            className="size-full object-cover"
+            onError={() => {
+                const original = src.replace(/([?&])variant=[^&]*(&|$)/, "$1").replace(/[?&]$/, "");
+                if (original !== src) setSrc(original);
+                else setFailed(true);
+            }}
+        />
     );
 }
 
@@ -55,7 +76,7 @@ export function CanvasProjectCard({ project, featured = false }: { project: Canv
                 {covers.length ? (
                     <div className={cn("grid h-full gap-px", covers.length > 1 && "grid-cols-2", covers.length > 2 && "grid-rows-2")}>
                         {covers.map((url) => (
-                            <img key={url} src={url} alt="" loading={featured ? "eager" : "lazy"} decoding="async" className="size-full object-cover" />
+                            <ProjectCoverImage key={url} url={url} eager={featured} />
                         ))}
                     </div>
                 ) : (

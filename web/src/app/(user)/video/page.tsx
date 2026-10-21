@@ -18,7 +18,7 @@ import { useOpenMedia } from "@/hooks/use-open-media";
 import { videoReferenceCapabilities, videoReferenceLabel, VIDEO_REFERENCE_LIMITS } from "@/lib/video-reference";
 import { resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
 import { deleteStoredGenerationRecord, GENERATION_HISTORY_CHANGED_EVENT, readWorkbenchGenerationRecords, saveGenerationRecord, type GenerationRecordStatus } from "@/services/generation-history";
-import { resolveImageUrl, uploadImage } from "@/services/image-storage";
+import { resolveImageUrl, resolveImageVariantUrl, uploadImage } from "@/services/image-storage";
 import { workspaceOwnerId } from "@/services/workspace-changes";
 import { requestVideoGeneration, storeGeneratedVideo } from "@/services/api/video";
 import { useAssetStore } from "@/stores/use-asset-store";
@@ -477,7 +477,7 @@ export default function VideoPage() {
                                     <div className="hover-scrollbar hover-scrollbar-hint flex min-h-24 w-full min-w-0 max-w-full gap-2 overflow-x-scroll overflow-y-hidden rounded-lg border border-dashed border-neutral-300 p-2 pb-3 overscroll-x-contain dark:border-neutral-700">
                                         {references.map((item, index) => (
                                             <div key={item.id} className="group relative size-20 shrink-0 overflow-hidden rounded-md border border-neutral-200 dark:border-neutral-800">
-                                                <img src={item.dataUrl} alt={item.name} className="size-full object-cover" />
+                                                <img src={resolveImageVariantUrl(item.storageKey, item.dataUrl, "thumb")} alt={item.name} loading="lazy" decoding="async" className="size-full object-cover" />
                                                 <span className="absolute left-1 top-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">{videoReferenceLabel("image", index)}</span>
                                                 <ReferenceOrderButtons index={index} total={references.length} onMove={(offset) => setReferences((value) => moveListItem(value, index, offset))} />
                                                 <button

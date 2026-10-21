@@ -3,7 +3,7 @@ import axios from "axios";
 import { apiGet, apiPost, authorizationHeaders, getActiveOrganizationId, organizationHeaders } from "@/services/api/request";
 
 export type WorkspaceDomain = "canvas_project" | "asset" | "generation_record";
-export type WorkspaceImageVariant = "thumb" | "preview";
+export type WorkspaceImageVariant = "thumb" | "cover" | "preview";
 
 export type WorkspaceRecord = {
     domain: WorkspaceDomain;

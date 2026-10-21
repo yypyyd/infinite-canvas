@@ -391,6 +391,8 @@ func userFileImageVariantQuery(mimeType, variant string) (string, bool) {
 	switch variant {
 	case "thumb":
 		return "imageView2/1/w/160/h/160/format/webp/q/75", true
+	case "cover":
+		return "imageView2/2/w/640/h/640/format/webp/q/75", true
 	case "preview":
 		return "imageView2/2/w/1280/h/1280/format/webp/q/80", true
 	default:

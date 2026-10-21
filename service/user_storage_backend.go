@@ -147,6 +147,7 @@ func deleteUserStorageObject(setting model.StorageSetting, driver, objectKey str
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
+		removeLocalImageVariants(setting, objectKey)
 		return nil
 	}
 	err := qiniuBucketManager(setting).Delete(setting.QiniuBucket, objectKey)

@@ -138,6 +138,20 @@ func UserWorkspaceFile(w http.ResponseWriter, r *http.Request, storageKey string
 		Fail(w, "未登录或权限不足")
 		return
 	}
+	if r.Method != http.MethodHead {
+		if file, mimeType, exists := service.OpenLocalUserWorkspaceImageVariant(user, storageKey, r.URL.Query().Get("variant")); exists {
+			defer file.Close()
+			info, err := file.Stat()
+			if err != nil {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", mimeType)
+			w.Header().Set("Cache-Control", "private, no-store")
+			http.ServeContent(w, r, storageKey, info.ModTime(), file)
+			return
+		}
+	}
 	if file, item, exists := service.OpenLocalUserWorkspaceFile(user, storageKey); exists {
 		defer file.Close()
 		info, err := file.Stat()

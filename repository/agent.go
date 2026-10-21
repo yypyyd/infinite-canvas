@@ -746,16 +746,28 @@ func RevertAgentRun(organizationID, userID, runID string, callIDs []string, time
 		if count != int64(len(callIDs)) || len(revertedEvents) != len(callIDs) {
 			return ErrAgentToolNotRevertible
 		}
-		for _, event := range revertedEvents {
-			var eventCount int64
-			if err := tx.Model(&model.AgentEvent{}).Where("organization_id = ? AND user_id = ? AND run_id = ? AND type = ? AND payload = ?", organizationID, userID, runID, model.AgentEventToolReverted, event.Payload).Count(&eventCount).Error; err != nil {
+		payloads := make([]string, len(revertedEvents))
+		for i, event := range revertedEvents {
+			payloads[i] = event.Payload
+		}
+		var existingPayloads []string
+		if len(payloads) > 0 {
+			if err := tx.Model(&model.AgentEvent{}).Where("organization_id = ? AND user_id = ? AND run_id = ? AND type = ? AND payload IN ?", organizationID, userID, runID, model.AgentEventToolReverted, payloads).Distinct().Pluck("payload", &existingPayloads).Error; err != nil {
 				return err
 			}
-			if eventCount == 0 {
-				if err := appendAgentEvent(tx, run, event); err != nil {
-					return err
-				}
+		}
+		existing := make(map[string]bool, len(existingPayloads))
+		for _, payload := range existingPayloads {
+			existing[payload] = true
+		}
+		for _, event := range revertedEvents {
+			if existing[event.Payload] {
+				continue
 			}
+			if err := appendAgentEvent(tx, run, event); err != nil {
+				return err
+			}
+			existing[event.Payload] = true
 		}
 		if run.Terminal() {
 			return nil

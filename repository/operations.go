@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/yypyyd/infinite-canvas/model"
 )
@@ -40,10 +41,31 @@ func GetOperationsQueueHealth(timestamp string) (model.OperationsQueueHealth, er
 		{&result.ObjectDeletionFailed, &model.UserObjectDeletion{}, "status = ?", []any{"failed"}},
 		{&result.ObjectDeletionExpiredLeases, &model.UserObjectDeletion{}, "status = ? AND lease_expires_at <> '' AND lease_expires_at <= ?", []any{"processing", timestamp}},
 	}
-	for _, count := range counts {
-		if err := db.Model(count.query).Where(count.where, count.args...).Count(count.target).Error; err != nil {
+	sql := "SELECT "
+	subqueries := make([]any, len(counts))
+	for i, count := range counts {
+		if i > 0 {
+			sql += ", "
+		}
+		sql += fmt.Sprintf("(?) AS c%d", i)
+		subqueries[i] = db.Model(count.query).Select("COUNT(*)").Where(count.where, count.args...)
+	}
+	rows, err := db.Raw(sql, subqueries...).Rows()
+	if err != nil {
+		return model.OperationsQueueHealth{}, err
+	}
+	defer rows.Close()
+	targets := make([]any, len(counts))
+	for i, count := range counts {
+		targets[i] = count.target
+	}
+	if rows.Next() {
+		if err := rows.Scan(targets...); err != nil {
 			return model.OperationsQueueHealth{}, err
 		}
+	}
+	if err := rows.Err(); err != nil {
+		return model.OperationsQueueHealth{}, err
 	}
 	return result, nil
 }

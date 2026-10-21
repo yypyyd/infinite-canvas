@@ -592,23 +592,24 @@ func OrganizationStats(organizationID string) (model.OrganizationWorkspaceStats,
 	if err != nil {
 		return model.OrganizationWorkspaceStats{}, err
 	}
-	stats := model.OrganizationWorkspaceStats{}
-	counts := []struct {
-		model any
-		value *int64
-	}{
-		{&model.Brand{}, &stats.Brands},
-		{&model.Product{}, &stats.Products},
-		{&model.ProductSKU{}, &stats.SKUs},
-		{&model.BatchProductionJob{}, &stats.BatchJobs},
+	count := func(value any, where string, args ...any) *gorm.DB {
+		return db.Model(value).Select("COUNT(*)").Where(where, args...)
 	}
-	for _, item := range counts {
-		if err := db.Model(item.model).Where("organization_id = ?", organizationID).Count(item.value).Error; err != nil {
-			return stats, err
-		}
+	var row struct {
+		Brands       int64 `gorm:"column:brands"`
+		Products     int64 `gorm:"column:products"`
+		SKUs         int64 `gorm:"column:skus"`
+		BatchJobs    int64 `gorm:"column:batch_jobs"`
+		PendingItems int64 `gorm:"column:pending_items"`
 	}
-	err = db.Model(&model.BatchProductionItem{}).Where("organization_id = ? AND status IN ?", organizationID, []model.BatchProductionStatus{model.BatchProductionStatusQueued, model.BatchProductionStatusRunning}).Count(&stats.PendingItems).Error
-	return stats, err
+	err = db.Raw("SELECT (?) AS brands, (?) AS products, (?) AS skus, (?) AS batch_jobs, (?) AS pending_items",
+		count(&model.Brand{}, "organization_id = ?", organizationID),
+		count(&model.Product{}, "organization_id = ?", organizationID),
+		count(&model.ProductSKU{}, "organization_id = ?", organizationID),
+		count(&model.BatchProductionJob{}, "organization_id = ?", organizationID),
+		count(&model.BatchProductionItem{}, "organization_id = ? AND status IN ?", organizationID, []model.BatchProductionStatus{model.BatchProductionStatusQueued, model.BatchProductionStatusRunning}),
+	).Scan(&row).Error
+	return model.OrganizationWorkspaceStats{Brands: row.Brands, Products: row.Products, SKUs: row.SKUs, BatchJobs: row.BatchJobs, PendingItems: row.PendingItems}, err
 }
 
 func ListBrands(organizationID string, q model.Query) ([]model.Brand, int64, error) {

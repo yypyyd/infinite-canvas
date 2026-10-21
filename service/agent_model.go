@@ -1,8 +1,13 @@
 package service
 
 import (
+	"errors"
+	"io"
 	"regexp"
 	"sort"
+	"strings"
+	"syscall"
+	"time"
 
 	"github.com/yypyyd/infinite-canvas/model"
 	"github.com/yypyyd/infinite-canvas/repository"
@@ -96,4 +101,35 @@ func agentStreamNeedsPlainRetry(bodyValue map[string]any, message agentUpstreamM
 		return false
 	}
 	return agentFakeToolCallPattern.MatchString(message.Content)
+}
+
+// agentUpstreamConnectAttempts 是单次模型请求在连接层失败时的最多尝试次数。
+const agentUpstreamConnectAttempts = 4
+
+// agentUpstreamRetryDelay 返回第 retry 次重试前的等待：0.5s、1s、2s……
+func agentUpstreamRetryDelay(retry int) time.Duration {
+	if retry < 0 {
+		retry = 0
+	}
+	if retry > 4 {
+		retry = 4
+	}
+	return time.Duration(500<<retry) * time.Millisecond
+}
+
+// isAgentTransportError 判断是否为连接被对端关闭、重置等可安全重试的传输层错误。
+func isAgentTransportError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE) {
+		return true
+	}
+	text := strings.ToLower(err.Error())
+	for _, marker := range []string{"connection reset", "unexpected eof", "eof", "broken pipe", "server closed", "connection refused", "http2: stream closed"} {
+		if strings.Contains(text, marker) {
+			return true
+		}
+	}
+	return false
 }

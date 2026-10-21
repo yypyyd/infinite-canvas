@@ -44,3 +44,13 @@ test("镜头动画时长在 200–600ms 内随距离增长", () => {
     expect(far).toBe(600);
     expect(easeOutCubic(1)).toBe(1);
 });
+
+test("同一批依次落位的节点互不重叠，x 间距小于节点宽也会被修正", () => {
+    const placed = [];
+    for (const x of [100, 400, 700]) {
+        const slot = findFreeSlot({ x, y: 200, width: 340, height: 240 }, placed);
+        placed.push({ ...slot, width: 340, height: 240 });
+    }
+    expect(placed.map((rect) => rect.x)).toEqual([100, 472, 844]);
+    for (let i = 0; i < placed.length; i += 1) for (let j = i + 1; j < placed.length; j += 1) expect(rectsOverlap(placed[i], placed[j])).toBe(false);
+});

@@ -3103,8 +3103,9 @@ func agentParallelToolCall(run model.AgentRun, toolSteps []model.AgentStep, acce
 func requestAgentUpstreamMessage(ctx context.Context, channel model.ModelChannel, requestID string, bodyValue map[string]any, requestMessages *[]agentChatMessage, hasPreviewImages bool, publisher *agentRunStreamPublisher) (agentUpstreamMessage, error) {
 	streaming := true
 	plainRetried := false
+	streamRetries := 0
 	client := &http.Client{Timeout: 2 * time.Minute}
-	for attempt := 0; attempt < 4; attempt++ {
+	for attempt := 0; attempt < 6; attempt++ {
 		bodyValue["stream"] = streaming
 		if !streaming {
 			delete(bodyValue, "stream_options")
@@ -3114,7 +3115,7 @@ func requestAgentUpstreamMessage(ctx context.Context, channel model.ModelChannel
 			return agentUpstreamMessage{}, err
 		}
 		var response *http.Response
-		for retry := 0; retry < 2; retry++ {
+		for retry := 0; retry < agentUpstreamConnectAttempts; retry++ {
 			request, requestErr := http.NewRequestWithContext(ctx, http.MethodPost, BuildModelChannelURL(channel, "/chat/completions"), bytes.NewReader(body))
 			if requestErr != nil {
 				return agentUpstreamMessage{}, requestErr
@@ -3130,19 +3131,30 @@ func requestAgentUpstreamMessage(ctx context.Context, channel model.ModelChannel
 			if err == nil {
 				break
 			}
-			if retry > 0 || ctx.Err() != nil {
+			// 上游（经 Cloudflare 的代理）偶尔在出响应头前直接断开，连接类错误多重试几次；其他错误只重试一次。
+			if ctx.Err() != nil || retry == agentUpstreamConnectAttempts-1 || (retry > 0 && !isAgentTransportError(err)) {
 				return agentUpstreamMessage{}, err
 			}
 			select {
 			case <-ctx.Done():
 				return agentUpstreamMessage{}, ctx.Err()
-			case <-time.After(300 * time.Millisecond):
+			case <-time.After(agentUpstreamRetryDelay(retry)):
 			}
 		}
 		statusCode := response.StatusCode
 		if statusCode >= 200 && statusCode < 300 {
 			message, parseErr := readAgentUpstreamSuccess(response, streaming, publisher)
 			_ = response.Body.Close()
+			if parseErr != nil && streamRetries < 2 && ctx.Err() == nil && isAgentTransportError(parseErr) {
+				// 响应体读到一半连接被掐断：整轮重新请求。
+				streamRetries++
+				select {
+				case <-ctx.Done():
+					return agentUpstreamMessage{}, ctx.Err()
+				case <-time.After(agentUpstreamRetryDelay(streamRetries)):
+				}
+				continue
+			}
 			if parseErr == nil && streaming && !plainRetried && agentStreamNeedsPlainRetry(bodyValue, message) {
 				// 部分代理在流式模式下把工具调用写成文本或界面标记，改用非流式重试一次。
 				plainRetried = true

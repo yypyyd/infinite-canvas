@@ -285,7 +285,7 @@ func agentApplyOpsSchema() map[string]any {
 	}
 	return map[string]any{"type": "function", "function": map[string]any{
 		"name":        "canvas_apply_ops",
-		"description": "按画布坐标批量编辑画布，按顺序逐步执行并实时展示：add_text(ref,text,x,y[,width,height,sourceNodeIds])、add_config(ref,x,y,mode,prompt[,生成规格,sourceNodeIds])、connect(from,to)、move(nodeId,x,y)、resize(nodeId,width,height)。x/y 是节点左上角坐标；只能引用本轮授权节点或本批更早的 ref；不能删除节点或修改已有文本",
+		"description": "按画布坐标批量编辑画布，按顺序逐步执行并实时展示：add_text(ref,text,x,y[,width,height,sourceNodeIds])、add_config(ref,x,y,mode,prompt[,生成规格,sourceNodeIds])、connect(from,to)、move(nodeId,x,y)、resize(nodeId,width,height)。x/y 是节点左上角坐标；文本/配置节点默认 340×240，横排时相邻节点 x 间距至少 380、竖排时 y 间距至少 280；与已有或本批更早节点重叠时画布会顺移到空位，并在回执中返回 adjusted 与实际 x/y；只能引用本轮授权节点或本批更早的 ref；不能删除节点或修改已有文本",
 		"parameters": map[string]any{
 			"type":                 "object",
 			"properties":           map[string]any{"ops": map[string]any{"type": "array", "minItems": 1, "maxItems": agentApplyOpsMax, "items": op}},

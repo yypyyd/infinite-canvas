@@ -1942,6 +1942,9 @@ function InfiniteCanvasPage() {
                 return;
             }
 
+            // 弹窗打开时画布快捷键不生效，避免误删、误撤销或误缩放弹窗背后的画布
+            if (Array.from(document.querySelectorAll(".ant-modal-wrap")).some((element) => getComputedStyle(element).display !== "none")) return;
+
             if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement || target?.closest("[contenteditable='true'],[data-canvas-no-zoom]")) return;
 
             if (isModifierShortcut && !event.altKey && key === "z") {

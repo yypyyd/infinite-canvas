@@ -171,9 +171,13 @@ export function WorkspaceProvider() {
         };
         activeWorkspaceFlush = flush;
 
+        // 节流而非防抖：持续变更（如长时间拖动画布）时也至少每 1.2s 同步一次；保存结束仍有待同步变更时会再次排期
         const schedule = () => {
-            if (timer) clearTimeout(timer);
-            timer = setTimeout(() => void save(false), 1200);
+            if (timer) return;
+            timer = setTimeout(() => {
+                timer = null;
+                void save(false);
+            }, 1200);
         };
         const saveWhenVisible = () => {
             if (document.visibilityState === "visible") void save(false);

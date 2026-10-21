@@ -565,6 +565,10 @@ function InfiniteCanvasPage() {
         }),
         [backgroundMode, showImageInfo],
     );
+    const createSaveSnapshotRef = useRef(createSaveSnapshot);
+    useLayoutEffect(() => {
+        createSaveSnapshotRef.current = createSaveSnapshot;
+    }, [createSaveSnapshot]);
 
     const saveCanvas = useCallback(
         (successText = "画布已保存", nextAutoSaveEnabled = autoSaveEnabled) => {
@@ -811,21 +815,23 @@ function InfiniteCanvasPage() {
         hasUnsavedChangesRef.current = true;
         setHasUnsavedChanges(true);
 
-        if (canvasSaveTimerRef.current) {
-            clearTimeout(canvasSaveTimerRef.current);
-            canvasSaveTimerRef.current = null;
-        }
-
         if (!autoSaveEnabled) {
+            if (canvasSaveTimerRef.current) {
+                clearTimeout(canvasSaveTimerRef.current);
+                canvasSaveTimerRef.current = null;
+            }
             return;
         }
 
+        // 节流而非防抖：连续拖动时最多每 500ms 保存一次，到点保存最新快照；松手后的最终状态在下一次计时内保存
+        if (canvasSaveTimerRef.current) return;
         canvasSaveTimerRef.current = setTimeout(() => {
-            updateProject(projectId, { ...next, autoSaveEnabled });
-            lastSavedProjectRef.current = next;
+            canvasSaveTimerRef.current = null;
+            const latest = createSaveSnapshotRef.current();
+            updateProject(projectId, { ...latest, autoSaveEnabled });
+            lastSavedProjectRef.current = latest;
             hasUnsavedChangesRef.current = false;
             setHasUnsavedChanges(false);
-            canvasSaveTimerRef.current = null;
         }, 500);
     }, [autoSaveEnabled, createSaveSnapshot, projectId, projectLoaded, updateProject]);
 

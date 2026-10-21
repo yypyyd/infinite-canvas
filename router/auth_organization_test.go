@@ -236,7 +236,7 @@ func TestWorkspaceFileRedirectIsTenantScoped(t *testing.T) {
 			t.Fatal(err)
 		}
 		response.Body.Close()
-		if response.StatusCode != http.StatusTemporaryRedirect || response.Header.Get("Cache-Control") != "private, no-store" || !strings.Contains(response.Header.Get("Location"), item.ObjectKey) {
+		if response.StatusCode != http.StatusTemporaryRedirect || !strings.HasPrefix(response.Header.Get("Cache-Control"), "private, max-age=") || !strings.Contains(strings.Join(response.Header.Values("Vary"), ","), "X-Organization-ID") || !strings.Contains(response.Header.Get("Location"), item.ObjectKey) {
 			t.Fatalf("unexpected file redirect for %s: status=%d, location=%q, cache=%q", item.OrganizationID, response.StatusCode, response.Header.Get("Location"), response.Header.Get("Cache-Control"))
 		}
 		other := files[0].ObjectKey

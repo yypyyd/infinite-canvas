@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -335,6 +336,44 @@ func CancelUserWorkspaceFileUpload(user model.AuthUser, uploadID string) error {
 
 func UserWorkspaceFileURL(user model.AuthUser, storageKey, variant string) (string, bool) {
 	return organizationFileURL(user.OrganizationID, storageKey, variant, 10*time.Minute)
+}
+
+// UserWorkspaceFileRedirect signs cloud media with a deadline aligned to a 30-minute window, so the
+// same file keeps the same URL for a while and the browser can reuse both the redirect and the
+// downloaded bytes. cacheSeconds is how long the redirect itself may be cached (0 = do not cache).
+func UserWorkspaceFileRedirect(user model.AuthUser, storageKey, variant string, now time.Time) (fileURL string, cacheSeconds int, ok bool) {
+	item, exists, err := repository.GetUserFile(user.OrganizationID, strings.TrimSpace(storageKey))
+	if err != nil || !exists {
+		return "", 0, false
+	}
+	if effectiveStorageDriver(item.StorageDriver) == "local" {
+		fileURL, ok = signedOrganizationFileURL(item, variant, 10*time.Minute)
+		return fileURL, 0, ok
+	}
+	const window = 30 * time.Minute
+	deadline := now.Truncate(window).Add(2 * window)
+	fileURL, ok = signedOrganizationFileURL(item, variant, deadline.Sub(now))
+	cacheSeconds = int(deadline.Sub(now).Seconds()) - 10*60
+	if cacheSeconds > 3600 {
+		cacheSeconds = 3600
+	}
+	if cacheSeconds < 0 {
+		cacheSeconds = 0
+	}
+	return fileURL, cacheSeconds, ok
+}
+
+// UserWorkspaceFileETag identifies the stored content; a re-uploaded file under the same storage
+// key gets a new hash/object key and therefore a new ETag.
+func UserWorkspaceFileETag(item model.UserFile, variant string) string {
+	tag := strings.TrimSpace(item.Hash)
+	if tag == "" {
+		tag = item.ObjectKey + "-" + strconv.FormatInt(item.Size, 10)
+	}
+	if variant = strings.TrimSpace(variant); variant != "" {
+		tag += "-" + variant
+	}
+	return `"` + strings.NewReplacer(`"`, "", "/", "_", " ", "_").Replace(tag) + `"`
 }
 
 func ResolveUserWorkspaceMedia(user model.AuthUser, storageKey string) (UserWorkspaceMedia, error) {

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/yypyyd/infinite-canvas/service"
 )
@@ -139,7 +140,7 @@ func UserWorkspaceFile(w http.ResponseWriter, r *http.Request, storageKey string
 		return
 	}
 	if r.Method != http.MethodHead {
-		if file, mimeType, exists := service.OpenLocalUserWorkspaceImageVariant(user, storageKey, r.URL.Query().Get("variant")); exists {
+		if file, mimeType, item, exists := service.OpenLocalUserWorkspaceImageVariant(user, storageKey, r.URL.Query().Get("variant")); exists {
 			defer file.Close()
 			info, err := file.Stat()
 			if err != nil {
@@ -147,7 +148,8 @@ func UserWorkspaceFile(w http.ResponseWriter, r *http.Request, storageKey string
 				return
 			}
 			w.Header().Set("Content-Type", mimeType)
-			w.Header().Set("Cache-Control", "private, no-store")
+			setPrivateMediaCache(w, mediaCacheSeconds)
+			w.Header().Set("ETag", service.UserWorkspaceFileETag(item, r.URL.Query().Get("variant")))
 			http.ServeContent(w, r, storageKey, info.ModTime(), file)
 			return
 		}
@@ -160,12 +162,14 @@ func UserWorkspaceFile(w http.ResponseWriter, r *http.Request, storageKey string
 			return
 		}
 		w.Header().Set("Content-Type", item.MimeType)
-		w.Header().Set("Content-Length", strconv.FormatInt(item.Size, 10))
 		w.Header().Set("Cache-Control", "private, no-store")
 		if r.Method == http.MethodHead {
+			w.Header().Set("Content-Length", strconv.FormatInt(item.Size, 10))
 			w.WriteHeader(http.StatusOK)
 			return
 		}
+		setPrivateMediaCache(w, mediaCacheSeconds)
+		w.Header().Set("ETag", service.UserWorkspaceFileETag(item, ""))
 		http.ServeContent(w, r, item.StorageKey, info.ModTime(), file)
 		return
 	}
@@ -177,13 +181,30 @@ func UserWorkspaceFile(w http.ResponseWriter, r *http.Request, storageKey string
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	fileURL, ok := service.UserWorkspaceFileURL(user, storageKey, r.URL.Query().Get("variant"))
+	fileURL, cacheSeconds, ok := service.UserWorkspaceFileRedirect(user, storageKey, r.URL.Query().Get("variant"), time.Now())
 	if !ok {
 		http.NotFound(w, r)
 		return
 	}
-	w.Header().Set("Cache-Control", "private, no-store")
+	if cacheSeconds > 0 {
+		setPrivateMediaCache(w, cacheSeconds)
+	} else {
+		w.Header().Set("Cache-Control", "private, no-store")
+	}
 	http.Redirect(w, r, fileURL, http.StatusTemporaryRedirect)
+}
+
+// Media URLs are not content-addressed (a storage key can be re-uploaded after its object went
+// missing), so keep the TTL short and rely on ETag revalidation afterwards. Vary on the session
+// cookie and Authorization so another account in the same browser never reuses a cached response
+// without passing the server's auth check.
+const mediaCacheSeconds = 3600
+
+func setPrivateMediaCache(w http.ResponseWriter, seconds int) {
+	w.Header().Set("Cache-Control", "private, max-age="+strconv.Itoa(seconds))
+	w.Header().Add("Vary", "Cookie")
+	w.Header().Add("Vary", "Authorization")
+	w.Header().Add("Vary", "X-Organization-ID")
 }
 
 func PublicLocalStorageReference(w http.ResponseWriter, r *http.Request, fileID string) {

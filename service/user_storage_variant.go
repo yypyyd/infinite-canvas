@@ -25,39 +25,45 @@ const localImageVariantMaxSourceBytes = 64 << 20
 
 // OpenLocalUserWorkspaceImageVariant returns a cached thumb/preview for a local image file.
 // ok=false means the caller should serve the original file instead.
-func OpenLocalUserWorkspaceImageVariant(user model.AuthUser, storageKey, variant string) (*os.File, string, bool) {
+func OpenLocalUserWorkspaceImageVariant(user model.AuthUser, storageKey, variant string) (*os.File, string, model.UserFile, bool) {
+	file, mimeType, item, ok := openLocalUserWorkspaceImageVariant(user, storageKey, variant)
+	return file, mimeType, item, ok
+}
+
+func openLocalUserWorkspaceImageVariant(user model.AuthUser, storageKey, variant string) (*os.File, string, model.UserFile, bool) {
 	variant = strings.TrimSpace(variant)
 	if variant != "thumb" && variant != "cover" && variant != "preview" {
-		return nil, "", false
+		return nil, "", model.UserFile{}, false
 	}
 	item, ok, err := repository.GetUserFile(user.OrganizationID, strings.TrimSpace(storageKey))
 	if err != nil || !ok || effectiveStorageDriver(item.StorageDriver) != "local" || !localImageVariantSupported(item.MimeType) || item.Size > localImageVariantMaxSourceBytes {
-		return nil, "", false
+		return nil, "", model.UserFile{}, false
 	}
 	setting, err := currentUserStorageSetting()
 	if err != nil {
-		return nil, "", false
+		return nil, "", model.UserFile{}, false
 	}
 	source, err := localStorageObjectPath(setting, item.ObjectKey)
 	if err != nil {
-		return nil, "", false
+		return nil, "", model.UserFile{}, false
 	}
 	cacheBase, err := localImageVariantCacheBase(setting, item.ObjectKey, variant)
 	if err != nil {
-		return nil, "", false
+		return nil, "", model.UserFile{}, false
 	}
 	if file, mimeType, ok := openLocalImageVariant(cacheBase); ok {
-		return file, mimeType, true
+		return file, mimeType, item, true
 	}
 	localImageVariantSlots <- struct{}{}
 	defer func() { <-localImageVariantSlots }()
 	if file, mimeType, ok := openLocalImageVariant(cacheBase); ok {
-		return file, mimeType, true
+		return file, mimeType, item, true
 	}
 	if err := writeLocalImageVariant(source, cacheBase, variant); err != nil {
-		return nil, "", false
+		return nil, "", model.UserFile{}, false
 	}
-	return openLocalImageVariant(cacheBase)
+	file, mimeType, ok := openLocalImageVariant(cacheBase)
+	return file, mimeType, item, ok
 }
 
 func localImageVariantSupported(mimeType string) bool {

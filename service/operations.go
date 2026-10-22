@@ -2,18 +2,37 @@ package service
 
 import (
 	"context"
+	"errors"
 	"math"
 	"sort"
 	"time"
 
+	"github.com/yypyyd/infinite-canvas/gateway"
 	"github.com/yypyyd/infinite-canvas/model"
 	"github.com/yypyyd/infinite-canvas/repository"
 )
 
 type RuntimeHealth struct {
-	Status   string `json:"status"`
-	Database string `json:"database"`
+	Status   string          `json:"status"`
+	Database string          `json:"database"`
+	Gateway  *gateway.Health `json:"gateway,omitempty"`
 }
+
+// gatewayHealthCheck is replaceable in tests. It returns nil health when the
+// gateway is disabled.
+var gatewayHealthCheck = func(ctx context.Context, timeout time.Duration) (*gateway.Health, error) {
+	if !gateway.Enabled() {
+		return nil, nil
+	}
+	m := gateway.Current()
+	if m == nil {
+		return &gateway.Health{Status: "unavailable", Database: "unavailable", Redis: "unavailable"}, errors.New("gateway enabled but not running")
+	}
+	h, err := m.CheckHealth(ctx, timeout)
+	return &h, err
+}
+
+const readinessTimeout = 2 * time.Second
 
 type OperationsHealth struct {
 	RuntimeHealth
@@ -24,12 +43,28 @@ type OperationsHealth struct {
 }
 
 func CheckReadiness(ctx context.Context) (RuntimeHealth, error) {
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, readinessTimeout)
 	defer cancel()
-	if err := repository.CheckDatabase(ctx); err != nil {
-		return RuntimeHealth{Status: "unavailable", Database: "unavailable"}, err
+	var dbErr, gwErr error
+	var gw *gateway.Health
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		gw, gwErr = gatewayHealthCheck(ctx, readinessTimeout)
+	}()
+	dbErr = repository.CheckDatabase(ctx)
+	<-done
+	result := RuntimeHealth{Status: "ok", Database: "ok", Gateway: gw}
+	if dbErr != nil {
+		result.Database = "unavailable"
 	}
-	return RuntimeHealth{Status: "ok", Database: "ok"}, nil
+	if dbErr != nil || gwErr != nil {
+		result.Status = "unavailable"
+	}
+	if dbErr != nil {
+		return result, dbErr
+	}
+	return result, gwErr
 }
 
 func GetOperationsHealth(ctx context.Context) (OperationsHealth, error) {

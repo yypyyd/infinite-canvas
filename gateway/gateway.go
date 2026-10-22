@@ -17,6 +17,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -204,3 +205,67 @@ type memoryAddr struct{}
 
 func (memoryAddr) Network() string { return "memory" }
 func (memoryAddr) String() string  { return InternalHost }
+
+// Health is the connectivity state of the gateway's dependencies. Values are
+// "ok" or "unavailable"; error details are never included.
+type Health struct {
+	Status   string `json:"status"`
+	Database string `json:"database"`
+	Redis    string `json:"redis"`
+}
+
+// withDeadline returns when fn does or ctx ends, whichever is first, because
+// drivers may enforce their own (longer) socket timeouts instead of ctx.
+func withDeadline(ctx context.Context, fn func() error) error {
+	done := make(chan error, 1)
+	go func() { done <- fn() }()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// CheckHealth pings the gateway Postgres and Redis concurrently. Each ping is
+// bounded by timeout (and ctx). It returns the first error for logging.
+func (m *Module) CheckHealth(ctx context.Context, timeout time.Duration) (Health, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	var dbErr, redisErr error
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		dbErr = errors.New("gateway database not configured")
+		if m.app.DB != nil {
+			if sqlDB, err := m.app.DB.DB(); err != nil {
+				dbErr = err
+			} else {
+				dbErr = withDeadline(ctx, func() error { return sqlDB.PingContext(ctx) })
+			}
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		redisErr = errors.New("gateway redis not configured")
+		if m.app.Redis != nil {
+			redisErr = withDeadline(ctx, func() error { return m.app.Redis.Ping(ctx).Err() })
+		}
+	}()
+	wg.Wait()
+	h := Health{Status: "ok", Database: "ok", Redis: "ok"}
+	if dbErr != nil {
+		h.Status, h.Database = "unavailable", "unavailable"
+	}
+	if redisErr != nil {
+		h.Status, h.Redis = "unavailable", "unavailable"
+	}
+	if dbErr != nil {
+		return h, fmt.Errorf("gateway database: %w", dbErr)
+	}
+	if redisErr != nil {
+		return h, fmt.Errorf("gateway redis: %w", redisErr)
+	}
+	return h, nil
+}

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/yypyyd/infinite-canvas/service"
@@ -13,6 +14,7 @@ func Liveness(w http.ResponseWriter, _ *http.Request) {
 func Readiness(w http.ResponseWriter, r *http.Request) {
 	result, err := service.CheckReadiness(r.Context())
 	if err != nil {
+		log.Printf("readiness check failed: %v", err)
 		writeJSONStatus(w, http.StatusServiceUnavailable, response{Code: 1, Data: result, Msg: "服务暂未就绪"})
 		return
 	}

@@ -12,7 +12,7 @@ func New() *gin.Engine {
 	router.RedirectTrailingSlash = false
 	_ = router.SetTrustedProxies(nil)
 	api := router.Group("/api")
-	api.GET("/health", gin.WrapF(handler.Liveness))
+	api.GET("/health", gin.WrapF(handler.Readiness))
 	api.GET("/health/live", gin.WrapF(handler.Liveness))
 	api.GET("/health/ready", gin.WrapF(handler.Readiness))
 	api.POST("/auth/register", gin.WrapF(handler.Register))

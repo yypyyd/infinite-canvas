@@ -91,10 +91,13 @@ func builtinPoolChannel() (model.ModelChannel, bool) {
 }
 
 func isBuiltinPoolChannel(channel model.ModelChannel) bool {
-	if channel.ID == BuiltinPoolChannelID {
-		return true
-	}
-	parsed, err := url.Parse(strings.TrimSpace(channel.BaseURL))
+	return channel.ID == BuiltinPoolChannelID || IsBuiltinPoolBaseURL(channel.BaseURL)
+}
+
+// IsBuiltinPoolBaseURL reports whether a channel base URL is the in-process
+// account pool.
+func IsBuiltinPoolBaseURL(baseURL string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(baseURL))
 	return err == nil && gateway.IsInternalURL(parsed.Hostname())
 }
 

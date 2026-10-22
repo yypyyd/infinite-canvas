@@ -737,6 +737,13 @@ func supportsAsyncImageTasks(baseURL string, path string) bool {
 	if path != "/images/generations" && path != "/images/edits" {
 		return false
 	}
+	// The built-in account pool answers 202 + task polling as well. Using it
+	// keeps the connection alive with heartbeats while slow providers (ChatGPT
+	// images routinely take 1-3 minutes) finish or go through recovery,
+	// instead of holding one silent request open.
+	if service.IsBuiltinPoolBaseURL(baseURL) {
+		return true
+	}
 	parsed, err := url.Parse(strings.TrimSpace(baseURL))
 	return err == nil && strings.EqualFold(parsed.Hostname(), "api.huantu.xyz")
 }
@@ -917,6 +924,17 @@ func normalizeChatGPT2APIImageTaskData(baseURL string, apiKey string, data []map
 	return result
 }
 
+// imageTaskRecoveryWindow bounds how long a request waits on task polling.
+// The built-in pool keeps recovering an accepted provider task for up to 12
+// minutes after the initial attempt (itself up to 8), so wait long enough to
+// pick up a late result instead of failing a task that still lands.
+func imageTaskRecoveryWindow(requestURL string) time.Duration {
+	if service.IsBuiltinPoolBaseURL(requestURL) {
+		return 20 * time.Minute
+	}
+	return 7 * time.Minute
+}
+
 func recoverImageTask(w http.ResponseWriter, request *http.Request, knownSupported bool) ([]byte, string, imageTaskRecoveryState) {
 	requestID := strings.TrimSpace(request.Header.Get("Idempotency-Key"))
 	path := request.URL.Path
@@ -934,7 +952,7 @@ func recoverImageTask(w http.ResponseWriter, request *http.Request, knownSupport
 	taskURL.RawQuery = query.Encode()
 	baseURL := request.URL.Scheme + "://" + request.URL.Host
 	apiKey := strings.TrimSpace(strings.TrimPrefix(request.Header.Get("Authorization"), "Bearer "))
-	deadline := time.Now().Add(7 * time.Minute)
+	deadline := time.Now().Add(imageTaskRecoveryWindow(request.URL.String()))
 	supported := knownSupported
 
 	for {

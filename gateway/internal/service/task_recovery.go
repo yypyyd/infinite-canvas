@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log"
 	"strings"
 	"time"
 
@@ -71,6 +72,9 @@ func (s *V1Service) startAcceptedImageRecovery(parent context.Context, event *mo
 			data, _, resumeErr = s.byteplus.ResumeImageTask(ctx, account.Value, attempt.UpstreamTaskID, true)
 		}
 		if resumeErr != nil {
+			if event.Provider == "chatgpt" {
+				log.Printf("account pool: image recovery for event %s not finished (%s)", event.ID, chatgpt.FailureSummary(resumeErr))
+			}
 			// A transient poll/download failure keeps the accepted task recoverable.
 			// Explicit terminal provider outcomes can safely close the event.
 			if errors.Is(resumeErr, byteplus.ErrQuotaExhausted) || errors.Is(resumeErr, byteplus.ErrRiskControl) || errors.Is(resumeErr, byteplus.ErrInvalidParams) || errors.Is(resumeErr, byteplus.ErrTaskFailed) || errors.Is(resumeErr, chatgpt.ErrContentPolicy) {

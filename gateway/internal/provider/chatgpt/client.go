@@ -1685,6 +1685,12 @@ func (c *Client) pollForImage(ctx context.Context, session tlsclient.HttpClient,
 				time.Sleep(time.Duration(minInt(1<<minInt(attempt, 4), 8)) * time.Second)
 				continue
 			}
+			// The task is already accepted, so a 429 on this read is read rate
+			// limiting, not a reason to abandon it. Back off and keep polling.
+			if errors.Is(err, ErrQuotaExhausted) {
+				time.Sleep(time.Duration(minInt(5*attempt, 20)) * time.Second)
+				continue
+			}
 			return nil, nil, err
 		}
 		newFiles, newSeds := extractImageIDs(conv)

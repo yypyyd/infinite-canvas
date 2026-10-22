@@ -1084,7 +1084,7 @@ func (s *V1Service) PrepareImageRequest(ctx context.Context, principal *APIPrinc
 		case <-ctx.Done():
 			return nil, fmt.Errorf("%w: waiting for idempotent image request: %v", ErrProviderTemporary, ctx.Err())
 		case <-job.done:
-			if noRouteFailover(job.err) {
+			if imageJobStillPending(job.err) {
 				if existing, lookupErr := s.imageTaskFromEvent(ctx, principal, in.RequestID, fingerprint); lookupErr == nil {
 					return s.waitForImageResult(ctx, principal, in.RequestID, fingerprint, existing)
 				}
@@ -1290,11 +1290,19 @@ func asyncImagePendingResponse(requestID, pollURL string) map[string]any {
 	}
 }
 
+// imageJobStillPending reports whether a finished local execution only
+// handed off to durable recovery. Synchronous requests whose provider accepted
+// the task return ErrGenerationAccepted; that is not a failure, so pollers must
+// keep reading the event row until recovery stores the result.
+func imageJobStillPending(err error) bool {
+	return noRouteFailover(err) || errors.Is(err, ErrGenerationAccepted)
+}
+
 func asyncImageJobResponse(job *asyncImageJob, requestID, pollURL string) (map[string]any, bool) {
 	select {
 	case <-job.done:
 		if job.err != nil {
-			if noRouteFailover(job.err) {
+			if imageJobStillPending(job.err) {
 				return asyncImagePendingResponse(requestID, pollURL), true
 			}
 			return map[string]any{
@@ -1457,6 +1465,9 @@ func (s *V1Service) prepareImageExecution(ctx context.Context, principal *APIPri
 				return nil, publicGenerationError(execErr)
 			}
 			if errors.Is(execErr, byteplus.ErrTaskAccepted) || errors.Is(execErr, chatgpt.ErrTaskAccepted) {
+				if errors.Is(execErr, chatgpt.ErrTaskAccepted) {
+					log.Printf("account pool: image event %s accepted upstream, continuing in recovery (%s)", eventID, chatgpt.FailureSummary(execErr))
+				}
 				if event, lookupErr := s.events.GetByID(ctx, eventID); lookupErr == nil {
 					s.startAcceptedImageRecovery(ctx, event)
 				} else {
@@ -1534,7 +1545,6 @@ func (s *V1Service) prepareImageExecution(ctx context.Context, principal *APIPri
 				"kind":       "image",
 				"b64_json":   b64,
 				"elapsed_ms": elapsedMS,
-				"charged":    price,
 				"credits":    principalCredits(principal),
 			}, nil
 		}
@@ -1547,7 +1557,6 @@ func (s *V1Service) prepareImageExecution(ctx context.Context, principal *APIPri
 				"kind":       "image",
 				"url":        fileURL,
 				"elapsed_ms": elapsedMS,
-				"charged":    price,
 				"credits":    principalCredits(principal),
 			}, nil
 		}
@@ -1564,7 +1573,6 @@ func (s *V1Service) prepareImageExecution(ctx context.Context, principal *APIPri
 				"kind":       "image",
 				"url":        outURL,
 				"elapsed_ms": elapsedMS,
-				"charged":    price,
 				"credits":    principalCredits(principal),
 			}, nil
 		}
@@ -1578,7 +1586,6 @@ func (s *V1Service) prepareImageExecution(ctx context.Context, principal *APIPri
 			"kind":       "image",
 			"b64_json":   b64,
 			"elapsed_ms": elapsedMS,
-			"charged":    price,
 			"credits":    principalCredits(principal),
 		}, nil
 	}
@@ -1590,7 +1597,6 @@ func (s *V1Service) prepareImageExecution(ctx context.Context, principal *APIPri
 		"url":        fileURL,
 		"event_id":   eventID,
 		"elapsed_ms": elapsedMS,
-		"charged":    price,
 		"credits":    principalCredits(principal),
 	}, nil
 }
@@ -1610,7 +1616,7 @@ func (s *V1Service) ImageTask(ctx context.Context, principal *APIPrincipal, requ
 		}
 		select {
 		case <-job.done:
-			if job.err == nil || !noRouteFailover(job.err) {
+			if job.err == nil || !imageJobStillPending(job.err) {
 				return response, nil
 			}
 		default:

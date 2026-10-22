@@ -33,6 +33,7 @@ type Client struct {
 	bucket   string
 	ak, sk   string
 	http     *http.Client
+	local    string // non-empty: objects live on the local disk under this root
 }
 
 // Object is one entry returned by List.
@@ -61,13 +62,16 @@ func New(endpoint, bucket, accessKey, secretKey string) *Client {
 
 // Configured reports whether the client has the minimum config to be usable.
 func (c *Client) Configured() bool {
-	return c != nil && c.endpoint != "" && c.bucket != "" && c.ak != "" && c.sk != ""
+	return c != nil && (c.local != "" || c.endpoint != "" && c.bucket != "" && c.ak != "" && c.sk != "")
 }
 
 // Check verifies both the configured credentials and access to the target
 // bucket without reading or mutating any object. It is used by readiness, so a
 // pod never advertises itself while generated media would be lost.
 func (c *Client) Check(ctx context.Context) error {
+	if c != nil && c.local != "" {
+		return c.localCheck()
+	}
 	if !c.Configured() {
 		return fmt.Errorf("rustfs is not configured")
 	}
@@ -85,6 +89,9 @@ func (c *Client) Check(ctx context.Context) error {
 // EnsureBucket creates only a missing bucket. Existing buckets are left intact;
 // authentication errors must never be mistaken for a missing bucket.
 func (c *Client) EnsureBucket(ctx context.Context) error {
+	if c != nil && c.local != "" {
+		return c.localEnsure()
+	}
 	if !c.Configured() {
 		return fmt.Errorf("rustfs is not configured")
 	}
@@ -120,6 +127,9 @@ func (c *Client) EnsureBucket(ctx context.Context) error {
 
 // Put uploads body under key with the given content type.
 func (c *Client) Put(ctx context.Context, key string, body []byte, contentType string) error {
+	if c.local != "" {
+		return c.localPut(key, body)
+	}
 	resp, err := c.do(ctx, http.MethodPut, c.bucket+"/"+key, nil, body, contentType, nil)
 	if err != nil {
 		return err
@@ -135,6 +145,9 @@ func (c *Client) Put(ctx context.Context, key string, body []byte, contentType s
 // non-empty rangeHeader is forwarded verbatim (for video seeking). Returns the
 // raw *http.Response so headers/status can be passed through by the proxy.
 func (c *Client) Get(ctx context.Context, key, rangeHeader string) (*http.Response, error) {
+	if c.local != "" {
+		return c.localGet(key, rangeHeader)
+	}
 	extra := map[string]string{}
 	if strings.TrimSpace(rangeHeader) != "" {
 		extra["Range"] = rangeHeader
@@ -144,6 +157,9 @@ func (c *Client) Get(ctx context.Context, key, rangeHeader string) (*http.Respon
 
 // Delete removes key. A missing object is not an error.
 func (c *Client) Delete(ctx context.Context, key string) error {
+	if c.local != "" {
+		return c.localDelete(key)
+	}
 	resp, err := c.do(ctx, http.MethodDelete, c.bucket+"/"+key, nil, nil, "", nil)
 	if err != nil {
 		return err
@@ -157,6 +173,9 @@ func (c *Client) Delete(ctx context.Context, key string) error {
 
 // List returns every object whose key starts with prefix (paginated internally).
 func (c *Client) List(ctx context.Context, prefix string) ([]Object, error) {
+	if c.local != "" {
+		return c.localList(prefix)
+	}
 	var out []Object
 	token := ""
 	for {

@@ -3,6 +3,7 @@ package chatgpt
 import (
 	"context"
 	"errors"
+	"regexp"
 	"strings"
 )
 
@@ -53,7 +54,11 @@ func (c *Client) ResumeImageTask(ctx context.Context, accessToken, conversationI
 	}
 	conversation, err := c.getConversation(ctx, session, accessToken, conversationID)
 	if err != nil {
-		return nil, nil, AcceptedFailure(conversationID, err)
+		// A throttled or flaky read is retried by the poll loop below.
+		if !errors.Is(err, ErrTemporaryUpstream) && !errors.Is(err, ErrQuotaExhausted) {
+			return nil, nil, AcceptedFailure(conversationID, err)
+		}
+		conversation = nil
 	}
 	refs := conversationReferenceIDs(conversation)
 	files, sediments := extractImageIDs(conversation)
@@ -90,4 +95,38 @@ func conversationReferenceIDs(conversation map[string]any) map[string]bool {
 		}
 	}
 	return refs
+}
+
+var failureStatusRE = regexp.MustCompile(`\b([a-z_]+):? ([1-5][0-9]{2})\b`)
+
+// FailureSummary describes why an accepted task has not finished yet, for
+// operator logs. It keeps only the error class, the request stage and the HTTP
+// status, never response bodies, URLs or tokens.
+func FailureSummary(err error) string {
+	if err == nil {
+		return ""
+	}
+	var task *ImageTaskError
+	if errors.As(err, &task) && task.Cause != nil {
+		err = task.Cause
+	}
+	class := "error"
+	switch {
+	case errors.Is(err, ErrAuth):
+		class = "auth"
+	case errors.Is(err, ErrQuotaExhausted):
+		class = "rate_limited"
+	case errors.Is(err, ErrTemporaryUpstream):
+		class = "temporary"
+	case errors.Is(err, ErrContentPolicy):
+		class = "content_policy"
+	case errors.Is(err, context.DeadlineExceeded):
+		class = "deadline"
+	case errors.Is(err, context.Canceled):
+		class = "canceled"
+	}
+	if match := failureStatusRE.FindStringSubmatch(err.Error()); len(match) == 3 {
+		return class + " " + match[1] + " " + match[2]
+	}
+	return class
 }

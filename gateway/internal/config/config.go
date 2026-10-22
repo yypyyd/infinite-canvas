@@ -30,6 +30,7 @@ type Config struct {
 	RedisPassword   string
 	RedisDB         int
 	GeneratedRoot   string
+	ObjectRoot      string
 	RustFSEndpoint  string
 	RustFSBucket    string
 	RustFSAccessKey string
@@ -78,7 +79,9 @@ func Load() (*Config, error) {
 		RedisDB:       envInt("REDIS_DB", 0),
 		// Generated outputs and uploaded reference images live under 幻图's
 		// data dir so the production volume (/app/data) persists them.
-		GeneratedRoot:   filepath.Clean(envString("GENERATED_ROOT", filepath.Join(wd, "data", "generated"))),
+		GeneratedRoot: filepath.Clean(envString("GENERATED_ROOT", filepath.Join(wd, "data", "generated"))),
+		// Used for generated media when RustFS is not configured.
+		ObjectRoot:      filepath.Clean(envString("OBJECT_ROOT", filepath.Join(wd, "data", "pool-objects"))),
 		RustFSEndpoint:  envString("RUSTFS_ENDPOINT", ""),
 		RustFSBucket:    envString("RUSTFS_BUCKET", ""),
 		RustFSAccessKey: envString("RUSTFS_ACCESS_KEY", ""),

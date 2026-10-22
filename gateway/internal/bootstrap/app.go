@@ -186,6 +186,13 @@ func NewApp(ctx context.Context) (*App, error) {
 	grokClient := grok.NewClient("")
 
 	objectStore := storage.New(cfg.RustFSEndpoint, cfg.RustFSBucket, cfg.RustFSAccessKey, cfg.RustFSSecretKey)
+	if !objectStore.Configured() {
+		// Zero-config: keep generated media on the local data volume.
+		objectStore = storage.NewLocal(cfg.ObjectRoot)
+		if err := objectStore.EnsureBucket(ctx); err != nil {
+			return nil, fmt.Errorf("create pool object root %s: %w", cfg.ObjectRoot, err)
+		}
+	}
 
 	tokenSvc := service.NewTokenService(
 		tokenRepo, refreshRepo, eventRepo, settingsRepo,

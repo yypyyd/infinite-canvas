@@ -68,6 +68,19 @@ func OpenDB(ctx context.Context, dsn, schema string, gormLogger logger.Interface
 	if err != nil {
 		return nil, fmt.Errorf("connect gateway postgres: %w", err)
 	}
+	// Postgres' default search_path is "$user", public. If the gateway schema
+	// is named after the login role, every other client of this database that
+	// uses the same role (幻图 itself) would silently create its tables in the
+	// gateway schema once it exists.
+	var currentUser string
+	if err = bootstrapConn.QueryRow(ctx, "SELECT current_user").Scan(&currentUser); err != nil {
+		_ = bootstrapConn.Close(ctx)
+		return nil, fmt.Errorf("read gateway postgres role: %w", err)
+	}
+	if currentUser == schema {
+		_ = bootstrapConn.Close(ctx)
+		return nil, fmt.Errorf("GATEWAY_DB_SCHEMA %q must differ from the PostgreSQL role name; use another role or schema", schema)
+	}
 	_, err = bootstrapConn.Exec(ctx, "CREATE SCHEMA IF NOT EXISTS "+pgx.Identifier{schema}.Sanitize())
 	_ = bootstrapConn.Close(ctx)
 	if err != nil {

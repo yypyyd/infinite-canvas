@@ -37,7 +37,7 @@ services:
     image: postgres:16-alpine
     profiles: ["gateway"]
     environment:
-      POSTGRES_USER: ${GATEWAY_PG_USER:-gateway}
+      POSTGRES_USER: ${GATEWAY_PG_USER:-huantu}
       POSTGRES_PASSWORD: ${GATEWAY_PG_PASSWORD:?set GATEWAY_PG_PASSWORD}
       POSTGRES_DB: ${GATEWAY_PG_DB:-huantu}
     volumes:

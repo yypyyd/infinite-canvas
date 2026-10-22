@@ -12,6 +12,7 @@ Nexa 网关已并入幻图，作为 `gateway/` 模块随主进程启动，由幻
 | 管理页面 | `web/src/app/(admin)/admin/gateway/**` |
 
 - 数据库：PostgreSQL，表放在独立 schema（`GATEWAY_DB_SCHEMA`，默认 `gateway`），启动时自动建 schema 并迁移，不与幻图表冲突。
+- `GATEWAY_DB_SCHEMA` 不能与 PostgreSQL 登录用户同名：Postgres 默认 `search_path` 为 `"$user", public`，同名时幻图自身的表会被建进网关 schema。网关启动时会拒绝这种配置；compose 默认用户为 `huantu`。
 - Redis：必需。建议单独的 `GATEWAY_REDIS_DB`（设置缓存键为 `setting:<key>`）。
 - RustFS/S3：可选。未配置时跳过图片缓存、无法回放已存储的视频；配置了 `GATEWAY_RUSTFS_ENDPOINT` 时生产环境会校验 bucket 与访问密钥（ACCESS_KEY ≥16 位、SECRET_KEY ≥32 位）。
 - 支持的上游：ChatGPT、Grok、Adobe Firefly、BytePlus。Dola 已移除（见下文“Dola 移除”）。

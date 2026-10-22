@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"math/rand"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -1141,12 +1140,11 @@ func SelectModelChannel(request PricingRequest) (ModelChannelSelection, error) {
 }
 
 func SelectModelChannelByName(request PricingRequest, channelName string) (ModelChannelSelection, error) {
-	settings, err := repository.GetSettings()
+	selections, _, err := channelSelectionsFor(request)
 	if err != nil {
 		return ModelChannelSelection{}, err
 	}
-	request = normalizePricingRequest(request)
-	for _, selection := range modelChannelSelectionsForRequest(runtimeChannels(normalizePrivateSetting(settings.Private).Channels), request) {
+	for _, selection := range selections {
 		if selection.Channel.Name == channelName {
 			return selection, nil
 		}
@@ -1156,35 +1154,19 @@ func SelectModelChannelByName(request PricingRequest, channelName string) (Model
 
 // SelectModelChannelExcluding selects a compatible channel that has not already failed this request.
 func SelectModelChannelExcluding(request PricingRequest, excludedChannels []string) (ModelChannelSelection, error) {
-	settings, err := repository.GetSettings()
+	selections, request, err := channelSelectionsFor(request)
 	if err != nil {
 		return ModelChannelSelection{}, err
 	}
-	request = normalizePricingRequest(request)
-	selections := modelChannelSelectionsForRequest(runtimeChannels(normalizePrivateSetting(settings.Private).Channels), request)
 	selections = modelChannelSelectionsExcluding(selections, excludedChannels)
-	if pool, ok := preferBuiltinPool(selections); ok {
-		return pool, nil
+	if selection, ok := pickChannelSelection(selections, nil); ok {
+		return selection, nil
 	}
-	if len(selections) == 0 {
-		reason := "当前操作或规格"
-		if request.ReferenceImages > 0 {
-			reason = "当前操作、规格或参考图数量"
-		}
-		return ModelChannelSelection{}, safeMessageError{message: fmt.Sprintf("模型 %s 没有支持%s的可用渠道", request.Model, reason)}
+	reason := "当前操作或规格"
+	if request.ReferenceImages > 0 {
+		reason = "当前操作、规格或参考图数量"
 	}
-	total := 0
-	for _, selection := range selections {
-		total += selection.Channel.Weight
-	}
-	hit := rand.Intn(total)
-	for _, selection := range selections {
-		hit -= selection.Channel.Weight
-		if hit < 0 {
-			return selection, nil
-		}
-	}
-	return selections[0], nil
+	return ModelChannelSelection{}, safeMessageError{message: fmt.Sprintf("模型 %s 没有支持%s的可用渠道", request.Model, reason)}
 }
 
 func modelChannelSelectionsExcluding(selections []ModelChannelSelection, excludedChannels []string) []ModelChannelSelection {

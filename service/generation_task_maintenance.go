@@ -229,16 +229,14 @@ func archiveReconciledVideoTask(ctx context.Context, task model.GenerationTask, 
 }
 
 func generationTaskChannel(name string) (model.ModelChannel, error) {
-	settings, err := repository.GetSettings()
+	channel, ok, err := runtimeChannelByName(name)
 	if err != nil {
 		return model.ModelChannel{}, err
 	}
-	for _, channel := range runtimeChannels(normalizePrivateSetting(settings.Private).Channels) {
-		if channel.Name == name && channel.BaseURL != "" && channel.APIKey != "" {
-			return channel, nil
-		}
+	if !ok {
+		return model.ModelChannel{}, errors.New("generation task channel is unavailable")
 	}
-	return model.ModelChannel{}, errors.New("generation task channel is unavailable")
+	return channel, nil
 }
 
 func generationTaskVideoPayload(body []byte) map[string]any {

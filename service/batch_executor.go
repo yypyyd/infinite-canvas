@@ -272,12 +272,10 @@ func selectStandardBatchModelChannel(request PricingRequest, task *model.Generat
 		channel.Protocol = modelChannelProtocolCustomHTTP
 		return ModelChannelSelection{Channel: channel, Model: model.ChannelModel{Model: task.Model, UpstreamModel: task.UpstreamModel, Modality: task.Modality}}, err
 	}
-	settings, err := repository.GetSettings()
+	selections, _, err := channelSelectionsFor(request)
 	if err != nil {
 		return ModelChannelSelection{}, err
 	}
-	request = normalizePricingRequest(request)
-	selections := modelChannelSelectionsForRequest(runtimeChannels(normalizePrivateSetting(settings.Private).Channels), request)
 	if task != nil {
 		for _, selection := range selections {
 			if selection.Channel.Name == task.ChannelName && selection.Model.UpstreamModel == task.UpstreamModel {
@@ -285,25 +283,15 @@ func selectStandardBatchModelChannel(request PricingRequest, task *model.Generat
 			}
 		}
 	}
-	if pool, ok := preferBuiltinPool(selections); ok {
-		return pool, nil
-	}
-	if len(selections) == 0 {
+	// A stable hash of the batch key keeps one item on one channel across retries.
+	sum := sha256.Sum256([]byte(key))
+	selection, ok := pickChannelSelection(selections, func(total int) int {
+		return int(binary.BigEndian.Uint64(sum[:8]) % uint64(total))
+	})
+	if !ok {
 		return ModelChannelSelection{}, errors.New("batch image model has no compatible channel")
 	}
-	total := 0
-	for _, selection := range selections {
-		total += selection.Channel.Weight
-	}
-	sum := sha256.Sum256([]byte(key))
-	hit := int(binary.BigEndian.Uint64(sum[:8]) % uint64(total))
-	for _, selection := range selections {
-		hit -= selection.Channel.Weight
-		if hit < 0 {
-			return selection, nil
-		}
-	}
-	return selections[0], nil
+	return selection, nil
 }
 
 func beginOrResumeBatchGeneration(input GenerationTaskInput) (model.GenerationTask, error) {

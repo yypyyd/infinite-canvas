@@ -61,6 +61,18 @@ export async function apiPost<T>(url: string, body?: unknown, token?: string, op
     });
 }
 
+export async function apiPatch<T>(url: string, body?: unknown, token?: string) {
+    return apiRequest<T>({
+        url,
+        method: "PATCH",
+        data: body ?? {},
+        headers: {
+            "Content-Type": "application/json",
+            ...authorizationHeaders(token),
+        },
+    });
+}
+
 export async function apiUpload<T>(url: string, form: FormData, token?: string) {
     return apiRequest<T>({
         url,
@@ -82,7 +94,7 @@ export function authorizationHeaders(token?: string): Record<string, string> {
     return token && token !== COOKIE_SESSION_TOKEN ? { Authorization: `Bearer ${token}` } : {};
 }
 
-async function apiRequest<T>(config: { url: string; method: "GET" | "POST" | "DELETE"; params?: ApiParams; data?: unknown; headers?: Record<string, string>; signal?: AbortSignal; timeout?: number; organizationId?: string }) {
+async function apiRequest<T>(config: { url: string; method: "GET" | "POST" | "PATCH" | "DELETE"; params?: ApiParams; data?: unknown; headers?: Record<string, string>; signal?: AbortSignal; timeout?: number; organizationId?: string }) {
     let response;
     try {
         const organizationId = config.organizationId === undefined ? activeOrganizationId : config.organizationId.trim();

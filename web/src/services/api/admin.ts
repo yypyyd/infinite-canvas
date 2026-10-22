@@ -1,4 +1,4 @@
-import { apiDelete, apiGet, apiPost, authorizationHeaders, compactApiParams } from "@/services/api/request";
+import { apiDelete, apiGet, apiPatch, apiPost, authorizationHeaders, compactApiParams } from "@/services/api/request";
 import type { Prompt, PromptListResponse } from "@/services/api/prompts";
 
 export type AdminPromptCategory = {
@@ -356,6 +356,8 @@ export type AdminModelChannel = {
     apiKey: string;
     models: AdminChannelModel[];
     weight: number;
+    /** Higher goes first; channels default to 0, the built-in pool to 100. */
+    priority?: number;
     enabled: boolean;
     remark: string;
 };
@@ -425,6 +427,11 @@ export type AdminChannelModel = {
         requestTemplate: string;
         valueMaps: string;
     };
+    /** Takes this model out of the channel without deleting the mapping. */
+    disabled?: boolean;
+    /** Per-model overrides of the channel priority/weight. */
+    priority?: number;
+    weight?: number;
 };
 
 export type AdminDiscoveredModel = {
@@ -552,6 +559,92 @@ export type AdminPoolModelAlias = {
     remark: string;
 };
 
+export type AdminBuiltinPoolSource = {
+    enabled?: boolean;
+    priority?: number;
+    weight?: number;
+    models?: { model: string; disabled?: boolean; priority?: number; weight?: number }[];
+};
+
+export type AdminPoolRouteOverview = {
+    logicalModelId: string;
+    routeId: string;
+    provider: string;
+    upstreamModel: string;
+    enabled: boolean;
+    providerEnabled: boolean;
+    priority: number | null;
+    weight: number | null;
+    effectivePriority: number;
+    effectiveWeight: number;
+    boundAccounts: number;
+    availableAccounts: number;
+    cooldownAccounts: number;
+    available: boolean;
+    reasons: string[];
+};
+
+export type AdminModelSourceOverview = {
+    kind: "channel" | "pool";
+    channelId?: string;
+    channelName: string;
+    upstreamModel: string;
+    aliasTarget?: string;
+    enabled: boolean;
+    active: boolean;
+    reasons: string[];
+    priority: number;
+    weight: number;
+    priorityOverride?: number;
+    weightOverride?: number;
+    channelPriority: number;
+    channelWeight: number;
+    rank: number;
+    capabilities?: AdminChannelModel;
+    routes?: AdminPoolRouteOverview[];
+};
+
+export type AdminModelOverviewItem = {
+    id: string;
+    name: string;
+    modality: string;
+    managed: boolean;
+    enabled: boolean;
+    definition?: AdminManagedModel;
+    available: boolean;
+    reasons: string[];
+    warnings: string[];
+    sources: AdminModelSourceOverview[];
+    pricingRules: AdminPricingRule[];
+    pricingGaps: AdminPoolPricingGap[];
+};
+
+export type AdminModelOverview = {
+    models: AdminModelOverviewItem[];
+    pool: { running: boolean; enabled: boolean; priority: number; weight: number; defaultPriority: number; routesKnown: boolean };
+    channels: { id: string; name: string; protocol: string; enabled: boolean; priority: number; weight: number; models: number }[];
+};
+
+/** null clears an override; an absent field is left unchanged. */
+export type AdminModelSourcePatch = {
+    kind: "channel" | "pool" | "pool-route";
+    channelId?: string;
+    model?: string;
+    logicalModelId?: string;
+    routeId?: string;
+    enabled?: boolean;
+    priority?: number | null;
+    weight?: number | null;
+};
+
+export async function fetchAdminModelOverview(token: string) {
+    return apiGet<AdminModelOverview>("/api/admin/model-overview", undefined, token);
+}
+
+export async function patchAdminModelSource(token: string, patch: AdminModelSourcePatch) {
+    return apiPatch<{ ok: boolean }>("/api/admin/model-sources", patch, token);
+}
+
 export type AdminPoolModelOption = {
     id: string;
     name: string;
@@ -562,6 +655,7 @@ export type AdminPrivateSettings = {
     channels: AdminModelChannel[];
     /** Omitted on save keeps the stored list. */
     poolModelAliases?: AdminPoolModelAlias[];
+    builtinPool?: AdminBuiltinPoolSource;
     protocolTemplates: ProtocolTemplate[];
     storage: AdminStorageSetting;
     promptSync: {

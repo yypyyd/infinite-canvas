@@ -18,13 +18,12 @@ import {
 } from "@/services/api/admin";
 import { useUserStore } from "@/stores/use-user-store";
 import { inferModelModality, inferModelOperations } from "../model-capabilities";
-import { ModelCatalogEditor, capabilitySummary, hasPricing } from "./components/model-catalog-editor";
-import { PoolPricingGaps } from "./components/pool-pricing-gaps";
-import { PoolModelAliasesEditor } from "./components/pool-model-aliases-editor";
+import { ModelCatalogEditor, NEW_MODEL_REQUEST, capabilitySummary, hasPricing } from "./components/model-catalog-editor";
+import { UnifiedModels } from "./components/unified-models";
 import { ChannelModelCapabilitiesEditor } from "./components/channel-model-capabilities-editor";
 import { ProtocolTemplatesEditor } from "./components/protocol-templates-editor";
 
-const emptyChannel: AdminModelChannel = { id: "", templateId: "", protocol: "openai", name: "", baseUrl: "", apiKey: "", models: [], weight: 1, enabled: true, remark: "" };
+const emptyChannel: AdminModelChannel = { id: "", templateId: "", protocol: "openai", name: "", baseUrl: "", apiKey: "", models: [], weight: 1, priority: 0, enabled: true, remark: "" };
 const modalityLabels: Record<string, string> = { image: "图片", video: "视频", text: "文本", audio: "音频" };
 type ModelSelectTabKey = "new" | "current";
 
@@ -37,8 +36,11 @@ export default function AdminModelsPage() {
     const [viewChannelIndex, setViewChannelIndex] = useState<number | null>(null);
     const [channelEditorTab, setChannelEditorTab] = useState("connection");
     const [detailKeyword, setDetailKeyword] = useState("");
+    const [initialSourceFilter, setInitialSourceFilter] = useState<"all" | "pool" | null>(null);
     useEffect(() => {
-        if (new URLSearchParams(window.location.search).get("tab") === "channels") setActiveTab("channels");
+        const params = new URLSearchParams(window.location.search);
+        if (params.get("tab") === "channels") setActiveTab("channels");
+        setInitialSourceFilter(params.get("source") === "pool" ? "pool" : "all");
     }, []);
     const [settings, setSettings] = useState<AdminSettings | null>(null);
     const [channels, setChannels] = useState<AdminModelChannel[]>([]);
@@ -124,6 +126,10 @@ export default function AdminModelsPage() {
             setChannelEditorTab(fields?.[0]?.name[0] === "models" ? "models" : "connection");
             message.warning("请先修正表单中的配置错误");
             return;
+        }
+        if (editingChannelIndex !== null) {
+            const previous = channels[editingChannelIndex]?.models || [];
+            channel = { ...channel, models: channel.models.map((model) => ({ ...sourceOverrides(previous.find((item) => item.model === model.model) || {}), ...model })) };
         }
         const nextChannels = [...channels];
         if (editingChannelIndex === null) nextChannels.push(channel);
@@ -343,13 +349,26 @@ export default function AdminModelsPage() {
             <Spin spinning={isLoading}>
                 {settings ? (
                     <div hidden={activeTab !== "models"}>
-                        <PoolPricingGaps token={token} refreshKey={settings.public.modelChannel.pricingRules} onDraftsCreated={() => void loadChannels()} onOpenModel={showModel} />
-                        <PoolModelAliasesEditor
-                            token={token}
-                            value={settings.private.poolModelAliases || []}
-                            isSaving={isSaving}
-                            onSave={(aliases) => persistSettings((latest) => ({ ...latest, private: { ...latest.private, poolModelAliases: aliases } }))}
-                        />
+                        {initialSourceFilter ? (
+                            <UnifiedModels
+                                token={token}
+                                channels={channels}
+                                aliases={settings.private.poolModelAliases || []}
+                                refreshKey={settings}
+                                isSaving={isSaving}
+                                initialFilter={initialSourceFilter}
+                                onOpenModel={showModel}
+                                onNewModel={() => showModel(NEW_MODEL_REQUEST)}
+                                onOpenChannel={(channelId) => {
+                                    const index = channels.findIndex((channel) => channel.id === channelId);
+                                    setActiveTab("channels");
+                                    if (index >= 0) openChannelDrawer(index);
+                                }}
+                                buildChannelModel={(model) => createChannelModel(model, managedModels)}
+                                onSaveChannels={persistChannels}
+                                onSaveAliases={(aliases) => persistSettings((latest) => ({ ...latest, private: { ...latest.private, poolModelAliases: aliases } }))}
+                            />
+                        ) : null}
                         <ModelCatalogEditor
                             value={managedModels}
                             pricingRules={settings.public.modelChannel.pricingRules}
@@ -362,6 +381,7 @@ export default function AdminModelsPage() {
                             }}
                             requestedModel={requestedModel}
                             onModelOpened={() => setRequestedModel(null)}
+                            drawerOnly
                         />
                     </div>
                 ) : null}
@@ -423,7 +443,8 @@ export default function AdminModelsPage() {
                                     </Flex>
                                 ),
                             },
-                            { title: "权重", dataIndex: "weight", width: 88 },
+                            { title: "默认优先级", dataIndex: "priority", width: 100, render: (value?: number) => value || 0 },
+                            { title: "默认权重", dataIndex: "weight", width: 88 },
                             {
                                 title: "操作",
                                 key: "actions",
@@ -585,8 +606,13 @@ export default function AdminModelsPage() {
                                 </Col>
                             ) : null}
                             <Col xs={12} md={5}>
-                                <Form.Item name="weight" label="权重">
-                                    <InputNumber min={1} step={1} className="!w-full" />
+                                <Form.Item name="weight" label="默认权重" tooltip="同优先级的来源按权重分流；可在模型的来源列表中按模型覆盖">
+                                    <InputNumber min={1} max={1000} step={1} className="!w-full" />
+                                </Form.Item>
+                            </Col>
+                            <Col xs={12} md={5}>
+                                <Form.Item name="priority" label="默认优先级" tooltip="数值越大越先使用。第三方渠道默认 0，内置账号池默认 100（先走账号池）">
+                                    <InputNumber min={0} max={1000} step={1} className="!w-full" />
                                 </Form.Item>
                             </Col>
                             <Col xs={12} md={5}>
@@ -822,7 +848,8 @@ function normalizeChannel(item: Partial<AdminModelChannel> = {}): AdminModelChan
         baseUrl: item.baseUrl?.trim() || "",
         apiKey: item.apiKey || "",
         models: normalizeChannelModels(item.models || []),
-        weight: Math.max(1, Number(item.weight) || 1),
+        weight: Math.min(1000, Math.max(1, Number(item.weight) || 1)),
+        priority: Math.min(1000, Math.max(0, Math.floor(Number(item.priority) || 0))),
         enabled: item.enabled !== false,
         remark: item.remark || "",
     };
@@ -856,9 +883,19 @@ function normalizeChannelModels(items: Partial<AdminChannelModel>[] = []): Admin
                           valueMaps: item.workflow.valueMaps?.trim() || "{}",
                       }
                     : undefined,
+                ...sourceOverrides(item),
             },
         ];
     });
+}
+
+// sourceOverrides keeps the per-model source settings edited on the models tab.
+function sourceOverrides(item: Partial<AdminChannelModel>): Pick<AdminChannelModel, "disabled" | "priority" | "weight"> {
+    const out: Pick<AdminChannelModel, "disabled" | "priority" | "weight"> = {};
+    if (item.disabled) out.disabled = true;
+    if (typeof item.priority === "number" && Number.isFinite(item.priority)) out.priority = Math.min(1000, Math.max(0, Math.floor(item.priority)));
+    if (typeof item.weight === "number" && Number.isFinite(item.weight)) out.weight = Math.min(1000, Math.max(1, Math.floor(item.weight)));
+    return out;
 }
 
 function defaultComfyUIWorkflow() {

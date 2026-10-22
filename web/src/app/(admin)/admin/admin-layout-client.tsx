@@ -5,7 +5,6 @@ import {
     AuditOutlined,
     BarChartOutlined,
     ClusterOutlined,
-    DeploymentUnitOutlined,
     ProfileOutlined,
     StopOutlined,
     TeamOutlined,
@@ -51,7 +50,6 @@ const adminMenus: AdminMenuItem[] = [
     // Built-in account pool (formerly the standalone Nexa console).
     { key: "/admin/account-pool", icon: <ClusterOutlined />, label: "账号池概览", exact: true },
     { key: "/admin/account-pool/accounts", icon: <TeamOutlined />, label: "账号池账号" },
-    { key: "/admin/account-pool/models", icon: <DeploymentUnitOutlined />, label: "账号池模型路由" },
     { key: "/admin/account-pool/logs", icon: <ProfileOutlined />, label: "账号池日志" },
     { key: "/admin/account-pool/banned-words", icon: <StopOutlined />, label: "违禁词" },
     { key: "/admin/account-pool/settings", icon: <AuditOutlined />, label: "账号池设置" },
@@ -69,7 +67,6 @@ const pageTitles: Record<string, string> = {
     "/admin/settings": "系统设置",
     "/admin/account-pool": "账号池概览",
     "/admin/account-pool/accounts": "账号池账号",
-    "/admin/account-pool/models": "账号池模型路由",
     "/admin/account-pool/logs": "账号池日志与素材",
     "/admin/account-pool/banned-words": "违禁词",
     "/admin/account-pool/settings": "账号池设置",

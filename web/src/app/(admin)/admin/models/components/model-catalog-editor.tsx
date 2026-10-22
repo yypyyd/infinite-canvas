@@ -21,6 +21,9 @@ const modalityLabel = Object.fromEntries(modalityOptions.map((item) => [item.val
 const operationLabel: Record<string, string> = { generation: "生成", edit: "编辑", completion: "补全", speech: "语音" };
 const unitLabel: Record<string, string> = { image: "张", second: "秒", request: "次", token: "Token" };
 
+/** requestedModel value that opens the drawer for a new model. */
+export const NEW_MODEL_REQUEST = "\u0000new";
+
 type Props = {
     value: AdminManagedModel[];
     pricingRules: AdminPricingRule[];
@@ -30,9 +33,11 @@ type Props = {
     onOpenChannel: (index: number) => void;
     requestedModel: string | null;
     onModelOpened: () => void;
+    /** Render only the editing drawers; the list lives in the unified models view. */
+    drawerOnly?: boolean;
 };
 
-export function ModelCatalogEditor({ value, pricingRules, channels, isSaving, onSave, onOpenChannel, requestedModel, onModelOpened }: Props) {
+export function ModelCatalogEditor({ value, pricingRules, channels, isSaving, onSave, onOpenChannel, requestedModel, onModelOpened, drawerOnly }: Props) {
     const { message, modal } = App.useApp();
     const { token } = theme.useToken();
     const [form] = Form.useForm<AdminManagedModel>();
@@ -210,6 +215,11 @@ export function ModelCatalogEditor({ value, pricingRules, channels, isSaving, on
     const setModelEnabled = (id: string, enabled: boolean) => updateModels(models.map((model) => (model.id === id ? { ...model, enabled } : model)));
     useEffect(() => {
         if (!requestedModel) return;
+        if (requestedModel === NEW_MODEL_REQUEST) {
+            openCreate();
+            onModelOpened();
+            return;
+        }
         const model = models.find((item) => item.id === requestedModel);
         if (model) openEdit(model);
         else openCreate(requestedModel);
@@ -245,136 +255,139 @@ export function ModelCatalogEditor({ value, pricingRules, channels, isSaving, on
 
     return (
         <>
-            <Flex justify="space-between" align="center" gap={12} wrap className="mb-4">
-                <Space wrap>
-                    <Button type="text" onClick={() => setOnlyUnpriced(false)} disabled={!onlyUnpriced}>
-                        全部 {models.length}
-                    </Button>
-                    <Button type={onlyUnpriced ? "link" : "text"} onClick={() => setOnlyUnpriced(!onlyUnpriced)}>
-                        待定价 {unconfiguredCount}
-                    </Button>
-                </Space>
-                <Space wrap>
-                    <Button href="/admin/settings">默认与分组设置</Button>
-                    <Button icon={<SyncOutlined />} disabled={isSaving} onClick={syncChannelModels}>
-                        从渠道导入
-                    </Button>
-                    <Button type="primary" icon={<PlusOutlined />} disabled={isSaving} onClick={() => openCreate()}>
-                        添加模型
-                    </Button>
-                </Space>
-            </Flex>
-            <Flex vertical gap={14}>
-                <Flex justify="space-between" align="center" gap={12} wrap>
-                    <Space wrap>
-                        {selectedIds.length ? (
-                            <Button danger size="small" disabled={isSaving} icon={<DeleteOutlined />} onClick={removeSelectedModels}>
-                                删除选中（{selectedIds.length}）
+            {drawerOnly ? null : (
+                <>
+                    <Flex justify="space-between" align="center" gap={12} wrap className="mb-4">
+                        <Space wrap>
+                            <Button type="text" onClick={() => setOnlyUnpriced(false)} disabled={!onlyUnpriced}>
+                                全部 {models.length}
                             </Button>
-                        ) : null}
-                    </Space>
-                    <Space wrap>
-                        <Input.Search allowClear placeholder="搜索模型 ID 或名称" value={keyword} onChange={(event) => setKeyword(event.target.value)} style={{ width: 240 }} />
-                        <Segmented value={modality} onChange={(value) => setModality(String(value))} options={[{ label: "全部", value: "all" }, ...modalityOptions]} />
-                    </Space>
-                </Flex>
-                <Table
-                    rowKey="id"
-                    loading={isSaving}
-                    size="small"
-                    pagination={{ pageSize: 20, hideOnSinglePage: true }}
-                    dataSource={filteredModels}
-                    rowSelection={{ selectedRowKeys: selectedIds, onChange: (keys) => setSelectedIds(keys.map(String)) }}
-                    locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无模型，先从渠道同步或手动添加" /> }}
-                    columns={[
-                        {
-                            title: "模型",
-                            dataIndex: "id",
-                            render: (_: unknown, model: AdminManagedModel) => (
-                                <Flex vertical gap={2}>
-                                    <Typography.Link strong onClick={() => openEdit(model)}>
-                                        {model.name || model.id}
-                                    </Typography.Link>
-                                    {model.name !== model.id ? (
-                                        <Typography.Text type="secondary" copyable={{ text: model.id }} className="text-xs">
-                                            {model.id}
-                                        </Typography.Text>
-                                    ) : null}
-                                    <Typography.Text type="secondary" className="text-xs">
-                                        {modalityLabel[model.modality] || model.modality}
-                                    </Typography.Text>
-                                </Flex>
-                            ),
-                        },
-                        {
-                            title: "计费",
-                            width: 280,
-                            render: (_: unknown, model: AdminManagedModel) => (
-                                <Flex vertical gap={4}>
-                                    <RuleSummary rules={rulesByModel.get(model.id) || []} />
-                                    {(rulesByModel.get(model.id) || []).length > 0 && !hasPricing(model, rulesByModel.get(model.id) || []) ? (
-                                        <Typography.Text type="warning" className="text-xs">
-                                            计费规格未配齐
-                                        </Typography.Text>
-                                    ) : null}
-                                </Flex>
-                            ),
-                        },
-                        {
-                            title: "接入渠道",
-                            width: 150,
-                            render: (_: unknown, model: AdminManagedModel) => {
-                                const related = channels.filter((channel) => channel.models.some((item) => item.model === model.id));
-                                return related.length ? (
-                                    <Flex vertical gap={2}>
-                                        <Typography.Link onClick={() => setRelatedModel(model.id)}>{related.length} 个渠道 →</Typography.Link>
-                                        {!related.some((channel) => channel.enabled) ? (
-                                            <Typography.Text type="warning" className="text-xs">
-                                                渠道均已停用
-                                            </Typography.Text>
-                                        ) : null}
-                                    </Flex>
-                                ) : (
-                                    <Typography.Text type="warning">未接入渠道</Typography.Text>
-                                );
-                            },
-                        },
-                        {
-                            title: "开放",
-                            dataIndex: "enabled",
-                            width: 76,
-                            render: (enabled: boolean, model: AdminManagedModel) => <Switch size="small" checked={enabled} disabled={isSaving} onChange={(checked) => void setModelEnabled(model.id, checked)} />,
-                        },
-                        {
-                            title: "操作",
-                            width: 112,
-                            fixed: "end" as const,
-                            render: (_: unknown, model: AdminManagedModel) => (
-                                <Space size={4}>
-                                    <Button type="text" size="small" icon={<EditOutlined />} onClick={() => openEdit(model)}>
-                                        编辑
+                            <Button type={onlyUnpriced ? "link" : "text"} onClick={() => setOnlyUnpriced(!onlyUnpriced)}>
+                                待定价 {unconfiguredCount}
+                            </Button>
+                        </Space>
+                        <Space wrap>
+                            <Button href="/admin/settings">默认与分组设置</Button>
+                            <Button icon={<SyncOutlined />} disabled={isSaving} onClick={syncChannelModels}>
+                                从渠道导入
+                            </Button>
+                            <Button type="primary" icon={<PlusOutlined />} disabled={isSaving} onClick={() => openCreate()}>
+                                添加模型
+                            </Button>
+                        </Space>
+                    </Flex>
+                    <Flex vertical gap={14}>
+                        <Flex justify="space-between" align="center" gap={12} wrap>
+                            <Space wrap>
+                                {selectedIds.length ? (
+                                    <Button danger size="small" disabled={isSaving} icon={<DeleteOutlined />} onClick={removeSelectedModels}>
+                                        删除选中（{selectedIds.length}）
                                     </Button>
-                                    <Dropdown
-                                        menu={{
-                                            items: [
-                                                { key: "copy", label: "复制为独立定价模型", disabled: isSaving, onClick: () => openCopy(model) },
-                                                { key: "delete", label: "删除模型", danger: true, disabled: isSaving || channelModelSet.has(model.id), onClick: () => removeModel(model) },
-                                            ],
-                                        }}
-                                        trigger={["click"]}
-                                    >
-                                        <Button type="text" size="small" aria-label="更多模型操作">
-                                            ···
-                                        </Button>
-                                    </Dropdown>
-                                </Space>
-                            ),
-                        },
-                    ]}
-                    scroll={{ x: 960 }}
-                />
-            </Flex>
-
+                                ) : null}
+                            </Space>
+                            <Space wrap>
+                                <Input.Search allowClear placeholder="搜索模型 ID 或名称" value={keyword} onChange={(event) => setKeyword(event.target.value)} style={{ width: 240 }} />
+                                <Segmented value={modality} onChange={(value) => setModality(String(value))} options={[{ label: "全部", value: "all" }, ...modalityOptions]} />
+                            </Space>
+                        </Flex>
+                        <Table
+                            rowKey="id"
+                            loading={isSaving}
+                            size="small"
+                            pagination={{ pageSize: 20, hideOnSinglePage: true }}
+                            dataSource={filteredModels}
+                            rowSelection={{ selectedRowKeys: selectedIds, onChange: (keys) => setSelectedIds(keys.map(String)) }}
+                            locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无模型，先从渠道同步或手动添加" /> }}
+                            columns={[
+                                {
+                                    title: "模型",
+                                    dataIndex: "id",
+                                    render: (_: unknown, model: AdminManagedModel) => (
+                                        <Flex vertical gap={2}>
+                                            <Typography.Link strong onClick={() => openEdit(model)}>
+                                                {model.name || model.id}
+                                            </Typography.Link>
+                                            {model.name !== model.id ? (
+                                                <Typography.Text type="secondary" copyable={{ text: model.id }} className="text-xs">
+                                                    {model.id}
+                                                </Typography.Text>
+                                            ) : null}
+                                            <Typography.Text type="secondary" className="text-xs">
+                                                {modalityLabel[model.modality] || model.modality}
+                                            </Typography.Text>
+                                        </Flex>
+                                    ),
+                                },
+                                {
+                                    title: "计费",
+                                    width: 280,
+                                    render: (_: unknown, model: AdminManagedModel) => (
+                                        <Flex vertical gap={4}>
+                                            <RuleSummary rules={rulesByModel.get(model.id) || []} />
+                                            {(rulesByModel.get(model.id) || []).length > 0 && !hasPricing(model, rulesByModel.get(model.id) || []) ? (
+                                                <Typography.Text type="warning" className="text-xs">
+                                                    计费规格未配齐
+                                                </Typography.Text>
+                                            ) : null}
+                                        </Flex>
+                                    ),
+                                },
+                                {
+                                    title: "接入渠道",
+                                    width: 150,
+                                    render: (_: unknown, model: AdminManagedModel) => {
+                                        const related = channels.filter((channel) => channel.models.some((item) => item.model === model.id));
+                                        return related.length ? (
+                                            <Flex vertical gap={2}>
+                                                <Typography.Link onClick={() => setRelatedModel(model.id)}>{related.length} 个渠道 →</Typography.Link>
+                                                {!related.some((channel) => channel.enabled) ? (
+                                                    <Typography.Text type="warning" className="text-xs">
+                                                        渠道均已停用
+                                                    </Typography.Text>
+                                                ) : null}
+                                            </Flex>
+                                        ) : (
+                                            <Typography.Text type="warning">未接入渠道</Typography.Text>
+                                        );
+                                    },
+                                },
+                                {
+                                    title: "开放",
+                                    dataIndex: "enabled",
+                                    width: 76,
+                                    render: (enabled: boolean, model: AdminManagedModel) => <Switch size="small" checked={enabled} disabled={isSaving} onChange={(checked) => void setModelEnabled(model.id, checked)} />,
+                                },
+                                {
+                                    title: "操作",
+                                    width: 112,
+                                    fixed: "end" as const,
+                                    render: (_: unknown, model: AdminManagedModel) => (
+                                        <Space size={4}>
+                                            <Button type="text" size="small" icon={<EditOutlined />} onClick={() => openEdit(model)}>
+                                                编辑
+                                            </Button>
+                                            <Dropdown
+                                                menu={{
+                                                    items: [
+                                                        { key: "copy", label: "复制为独立定价模型", disabled: isSaving, onClick: () => openCopy(model) },
+                                                        { key: "delete", label: "删除模型", danger: true, disabled: isSaving || channelModelSet.has(model.id), onClick: () => removeModel(model) },
+                                                    ],
+                                                }}
+                                                trigger={["click"]}
+                                            >
+                                                <Button type="text" size="small" aria-label="更多模型操作">
+                                                    ···
+                                                </Button>
+                                            </Dropdown>
+                                        </Space>
+                                    ),
+                                },
+                            ]}
+                            scroll={{ x: 960 }}
+                        />
+                    </Flex>
+                </>
+            )}
             <Drawer
                 title={editingModel ? "编辑模型与计费" : copiedFrom ? "复制为独立定价模型" : "添加模型与计费"}
                 width="min(720px, 100vw)"

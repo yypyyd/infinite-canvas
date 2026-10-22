@@ -47,23 +47,30 @@ func poolPricingSpecs(aliases []model.PoolModelAlias) []PoolPricingGap {
 		}
 	}()
 	for _, item := range channel.Models {
-		switch item.Modality {
-		case "image":
-			for _, operation := range []string{"generation", "edit"} {
-				if !containsString(item.Operations, operation) {
-					continue
-				}
-				for _, tier := range item.ResolutionTiers {
-					specs = append(specs, PoolPricingGap{Model: item.Model, Modality: "image", Operation: operation, Unit: "image", ResolutionTier: normalizeResolutionTier(tier)})
-				}
+		specs = append(specs, channelModelPricingSpecs(item)...)
+	}
+	return specs
+}
+
+// channelModelPricingSpecs lists the specs billed for one source model.
+func channelModelPricingSpecs(item model.ChannelModel) []PoolPricingGap {
+	var specs []PoolPricingGap
+	switch item.Modality {
+	case "image":
+		for _, operation := range []string{"generation", "edit"} {
+			if !containsString(item.Operations, operation) {
+				continue
 			}
-		case "video":
 			for _, tier := range item.ResolutionTiers {
-				specs = append(specs, PoolPricingGap{Model: item.Model, Modality: "video", Operation: "generation", Unit: "second", ResolutionTier: normalizeResolutionTier(tier)})
+				specs = append(specs, PoolPricingGap{Model: item.Model, Modality: "image", Operation: operation, Unit: "image", ResolutionTier: normalizeResolutionTier(tier)})
 			}
-		case "text":
-			specs = append(specs, PoolPricingGap{Model: item.Model, Modality: "text", Operation: "completion", Unit: "request"})
 		}
+	case "video":
+		for _, tier := range item.ResolutionTiers {
+			specs = append(specs, PoolPricingGap{Model: item.Model, Modality: "video", Operation: "generation", Unit: "second", ResolutionTier: normalizeResolutionTier(tier)})
+		}
+	case "text":
+		specs = append(specs, PoolPricingGap{Model: item.Model, Modality: "text", Operation: "completion", Unit: "request"})
 	}
 	return specs
 }

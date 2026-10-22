@@ -127,3 +127,28 @@ func AdminCreatePoolPricingDrafts(w http.ResponseWriter, r *http.Request) {
 	}
 	OK(w, map[string]any{"created": created})
 }
+
+// AdminModelOverview lists every public model with its ordered sources,
+// availability and pricing.
+func AdminModelOverview(w http.ResponseWriter, r *http.Request) {
+	overview, err := service.AdminModelOverview()
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, overview)
+}
+
+// AdminPatchModelSource enables/disables a source or sets its priority/weight.
+func AdminPatchModelSource(w http.ResponseWriter, r *http.Request) {
+	var patch service.ModelSourcePatch
+	if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
+		Fail(w, "请求格式错误")
+		return
+	}
+	if err := service.PatchModelSource(patch); err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, map[string]any{"ok": true})
+}

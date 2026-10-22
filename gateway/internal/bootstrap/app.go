@@ -36,6 +36,7 @@ type App struct {
 	Handlers router.Handlers
 	Builtin  *model.APICredential
 	V1       *service.V1Service
+	Admin    *service.AdminConsoleService
 
 	cancel context.CancelFunc
 }
@@ -219,7 +220,7 @@ func NewApp(ctx context.Context) (*App, error) {
 		BannedWords: handler.NewBannedWordsHandler(bannedRepo),
 	}
 
-	return &App{Config: cfg, DB: db, Redis: rdb, Handlers: handlers, Builtin: builtin, V1: v1Svc, cancel: cancelMaintenance}, nil
+	return &App{Config: cfg, DB: db, Redis: rdb, Handlers: handlers, Builtin: builtin, V1: v1Svc, Admin: adminConsoleSvc, cancel: cancelMaintenance}, nil
 }
 
 func (a *App) Close() error {

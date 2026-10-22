@@ -85,8 +85,7 @@ export function PoolModelAliasesEditor({ token, value, isSaving, onSave }: Props
             }
         >
             <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-                用自定义公开名对外提供内置账号池模型：能力与单次图片上限继承目标模型，请求转发时自动换成目标模型
-                ID；计价规则与用量按公开名统计。第三方渠道也可在「上游渠道」里添加同名模型，与账号池一起提供服务（优先账号池，失败后切换）。
+                用自定义公开名对外提供内置账号池模型：能力与单次图片上限继承目标模型，请求转发时自动换成目标模型 ID；计价规则与用量按公开名统计。第三方渠道也可在「上游渠道」里添加同名模型，与账号池一起提供服务（优先账号池，失败后切换）。
             </Typography.Paragraph>
             <Table<Row>
                 size="small"
@@ -104,7 +103,11 @@ export function PoolModelAliasesEditor({ token, value, isSaving, onSave }: Props
                             return (
                                 <Flex vertical gap={4}>
                                     <Input value={row.name} placeholder="例如 my-image-pro" status={issue && !issue.startsWith("目标模型") ? "error" : undefined} onChange={(event) => update(row.key, { name: event.target.value })} />
-                                    {issue ? <Typography.Text type={issue.startsWith("目标模型已不在") ? "warning" : "danger"} style={{ fontSize: 12 }}>{issue}</Typography.Text> : null}
+                                    {issue ? (
+                                        <Typography.Text type={issue.startsWith("目标模型已不在") ? "warning" : "danger"} style={{ fontSize: 12 }}>
+                                            {issue}
+                                        </Typography.Text>
+                                    ) : null}
                                 </Flex>
                             );
                         },

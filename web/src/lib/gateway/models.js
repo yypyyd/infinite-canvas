@@ -1,14 +1,7 @@
 // Ported from imageNexa (MIT): closed model catalog and account providers.
 export const TEXT_MODELS = Object.freeze(["gpt-5-5-mini", "gpt-5-5-thinking", "grok-4.5", "grok-chat-fast"]);
 
-export const IMAGE_MODELS = Object.freeze([
-    "gpt-image-2",
-    "seedream-5.0-pro",
-    "seedream-5.0-lite",
-    "nano-banana-2",
-    "nano-banana-pro",
-    "grok-imagine-image",
-]);
+export const IMAGE_MODELS = Object.freeze(["gpt-image-2", "seedream-5.0-pro", "seedream-5.0-lite", "nano-banana-2", "nano-banana-pro", "grok-imagine-image"]);
 
 export const VIDEO_MODELS = Object.freeze(["kling-3", "kling-o3", "seedance-2.0", "seedance-2.0-fast", "grok-imagine-video", "firefly-video"]);
 

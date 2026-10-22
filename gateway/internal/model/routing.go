@@ -27,12 +27,12 @@ type LogicalModel struct {
 // RuntimeModel is the legacy/provider adapter selector. UpstreamModel is the id
 // sent over the wire when it differs from RuntimeModel.
 type ModelRoute struct {
-	ID             string         `gorm:"primaryKey;size:191"`
-	LogicalModelID string         `gorm:"size:191;not null;uniqueIndex:ux_route_identity,priority:1;index"`
-	Provider       string         `gorm:"size:64;not null;uniqueIndex:ux_route_identity,priority:2;index"`
-	RuntimeModel   string         `gorm:"size:255;not null;uniqueIndex:ux_route_identity,priority:3"`
-	UpstreamModel  string         `gorm:"size:255;not null;default:''"`
-	Enabled        bool           `gorm:"not null;default:true;index"`
+	ID             string `gorm:"primaryKey;size:191"`
+	LogicalModelID string `gorm:"size:191;not null;uniqueIndex:ux_route_identity,priority:1;index"`
+	Provider       string `gorm:"size:64;not null;uniqueIndex:ux_route_identity,priority:2;index"`
+	RuntimeModel   string `gorm:"size:255;not null;uniqueIndex:ux_route_identity,priority:3"`
+	UpstreamModel  string `gorm:"size:255;not null;default:''"`
+	Enabled        bool   `gorm:"not null;default:true;index"`
 	// Priority/Weight are nullable overrides; NULL inherits the provider
 	// default (see service/provider_priority.go).
 	Priority       *int           `gorm:"index"`

@@ -200,7 +200,7 @@ func (s *AdminConsoleService) ListLogicalModels(ctx context.Context) ([]map[stri
 				"id": route.ID, "provider": route.Provider, "upstream_model": route.UpstreamModel,
 				"enabled": route.Enabled, "priority": route.Priority, "weight": route.Weight,
 				"capabilities": json.RawMessage(route.Capabilities), "account_count": accountCount,
-				"healthy_accounts": healthyCount,
+				"healthy_accounts":   healthyCount,
 				"effective_priority": schedule.Priority, "effective_weight": schedule.Weight,
 				"priority_inherited": schedule.PriorityInherited, "weight_inherited": schedule.WeightInherited,
 			})

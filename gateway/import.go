@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/yypyyd/infinite-canvas/gateway/internal/bootstrap"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/config"
@@ -136,6 +137,7 @@ func ImportStandalone(ctx context.Context, opts ImportOptions) error {
 		if err := resetSequences(ctx, target, targetSchema, out); err != nil {
 			return err
 		}
+		invalidateSettingsCache(ctx, target, targetSchema, cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB, out)
 	}
 	if len(failures) > 0 {
 		return fmt.Errorf("import failed for %d table(s): %s", len(failures), strings.Join(failures, ", "))
@@ -405,4 +407,29 @@ func resetSequences(ctx context.Context, conn *pgx.Conn, schema string, out io.W
 		fmt.Fprintf(out, "seq  %s.%s -> %s\n", item.table, item.column, item.name)
 	}
 	return nil
+}
+
+// invalidateSettingsCache drops the gateway's Redis copies of site settings
+// ("setting:<key>") so a running 幻图 picks up imported values immediately.
+func invalidateSettingsCache(ctx context.Context, conn *pgx.Conn, schema, addr, password string, db int, out io.Writer) {
+	rows, err := conn.Query(ctx, "SELECT key FROM "+pgx.Identifier{schema, "site_settings"}.Sanitize())
+	if err != nil {
+		fmt.Fprintf(out, "warn settings cache not invalidated: %v\n", err)
+		return
+	}
+	keys, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil || len(keys) == 0 {
+		return
+	}
+	client := redis.NewClient(&redis.Options{Addr: addr, Password: password, DB: db})
+	defer client.Close()
+	cacheKeys := make([]string, len(keys))
+	for i, key := range keys {
+		cacheKeys[i] = "setting:" + key
+	}
+	if err := client.Del(ctx, cacheKeys...).Err(); err != nil {
+		fmt.Fprintf(out, "warn settings cache not invalidated (restart 幻图 or wait 5 min): %v\n", err)
+		return
+	}
+	fmt.Fprintf(out, "cache invalidated %d setting keys\n", len(cacheKeys))
 }

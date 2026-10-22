@@ -188,14 +188,21 @@ func (s *AdminConsoleService) ListLogicalModels(ctx context.Context) ([]map[stri
 	out := make([]map[string]any, 0, len(items))
 	for _, item := range items {
 		routes := routesByModel[item.ID]
+		schedules, scheduleErr := routeSchedules(ctx, s.settingsReader(), routes)
+		if scheduleErr != nil {
+			return nil, scheduleErr
+		}
 		routeRows := make([]map[string]any, 0, len(routes))
-		for _, route := range routes {
+		for index, route := range routes {
+			schedule := schedules[index]
 			accountCount, healthyCount := counts.lookup(route.ID, route.Provider)
 			routeRows = append(routeRows, map[string]any{
 				"id": route.ID, "provider": route.Provider, "upstream_model": route.UpstreamModel,
 				"enabled": route.Enabled, "priority": route.Priority, "weight": route.Weight,
 				"capabilities": json.RawMessage(route.Capabilities), "account_count": accountCount,
 				"healthy_accounts": healthyCount,
+				"effective_priority": schedule.Priority, "effective_weight": schedule.Weight,
+				"priority_inherited": schedule.PriorityInherited, "weight_inherited": schedule.WeightInherited,
 			})
 		}
 		out = append(out, map[string]any{
@@ -214,7 +221,17 @@ func (s *AdminConsoleService) UpdateLogicalModel(ctx context.Context, id string,
 	return map[string]any{"id": item.ID, "enabled": item.Enabled}, nil
 }
 
-func (s *AdminConsoleService) UpdateLogicalRoute(ctx context.Context, logicalID, routeID string, enabled bool) (map[string]any, error) {
+// RouteUpdate patches one route. A nil field is left unchanged; for
+// Priority/Weight, Clear* resets the override so the provider default applies.
+type RouteUpdate struct {
+	Enabled       *bool
+	Priority      *int
+	Weight        *int
+	ClearPriority bool
+	ClearWeight   bool
+}
+
+func (s *AdminConsoleService) UpdateLogicalRoute(ctx context.Context, logicalID, routeID string, update RouteUpdate) (map[string]any, error) {
 	routes, err := s.models.Routes().ListRoutes(ctx, logicalID, false)
 	if err != nil {
 		return nil, err
@@ -229,11 +246,50 @@ func (s *AdminConsoleService) UpdateLogicalRoute(ctx context.Context, logicalID,
 	if !found {
 		return nil, gorm.ErrRecordNotFound
 	}
-	item, err := s.models.Routes().UpdateRoute(ctx, routeID, map[string]any{"enabled": enabled})
+	patch := map[string]any{}
+	if update.Enabled != nil {
+		patch["enabled"] = *update.Enabled
+	}
+	if update.ClearPriority {
+		patch["priority"] = nil
+	} else if update.Priority != nil {
+		if *update.Priority < routePriorityMin || *update.Priority > routePriorityMax {
+			return nil, fmt.Errorf("priority must be between %d and %d", routePriorityMin, routePriorityMax)
+		}
+		patch["priority"] = *update.Priority
+	}
+	if update.ClearWeight {
+		patch["weight"] = nil
+	} else if update.Weight != nil {
+		if *update.Weight < routeWeightMin || *update.Weight > routeWeightMax {
+			return nil, fmt.Errorf("weight must be between %d and %d", routeWeightMin, routeWeightMax)
+		}
+		patch["weight"] = *update.Weight
+	}
+	if len(patch) == 0 {
+		return nil, errors.New("nothing to update")
+	}
+	item, err := s.models.Routes().UpdateRoute(ctx, routeID, patch)
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"id": item.ID, "enabled": item.Enabled}, nil
+	schedules, err := routeSchedules(ctx, s.settingsReader(), []model.ModelRoute{*item})
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"id": item.ID, "enabled": item.Enabled, "priority": item.Priority, "weight": item.Weight,
+		"effective_priority": schedules[0].Priority, "effective_weight": schedules[0].Weight,
+		"priority_inherited": schedules[0].PriorityInherited, "weight_inherited": schedules[0].WeightInherited,
+	}, nil
+}
+
+// settingsReader avoids a typed-nil interface when no settings store is wired.
+func (s *AdminConsoleService) settingsReader() settingValueReader {
+	if s.settings == nil {
+		return nil
+	}
+	return s.settings
 }
 
 func (s *AdminConsoleService) ListAccounts(ctx context.Context, filter AccountListFilter) ([]map[string]any, int64, error) {
@@ -796,6 +852,17 @@ func (s *AdminConsoleService) GetSettings(ctx context.Context) (map[string]any, 
 		providers[pool] = enabled
 	}
 	values["providers_enabled"] = providers
+	priorities := map[string]int{}
+	weights := map[string]int{}
+	for _, pool := range SchedulableProviders() {
+		schedule, err := providerSchedule(ctx, s.settings, pool)
+		if err != nil {
+			return nil, err
+		}
+		priorities[pool], weights[pool] = schedule.Priority, schedule.Weight
+	}
+	values["providers_priority"] = priorities
+	values["providers_weight"] = weights
 	proxies := map[string]string{}
 	extracts := map[string]string{}
 	for _, pool := range SchedulableProviders() {
@@ -916,6 +983,34 @@ func (s *AdminConsoleService) UpdateSettings(ctx context.Context, input map[stri
 				return nil, fmt.Errorf("providers_enabled.%s must be a boolean", pool)
 			}
 			updates[providerSettingKey(normalized)] = strconv.FormatBool(enabled)
+		}
+	}
+	for _, field := range []struct {
+		input    string
+		key      func(string) string
+		min, max int
+	}{
+		{"providers_priority", providerPrioritySettingKey, routePriorityMin, routePriorityMax},
+		{"providers_weight", providerWeightSettingKey, routeWeightMin, routeWeightMax},
+	} {
+		raw, ok := input[field.input]
+		if !ok {
+			continue
+		}
+		values, ok := raw.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("%s must be an object of pool => integer", field.input)
+		}
+		for pool, value := range values {
+			normalized := normalizePool(pool)
+			if normalized == "" {
+				return nil, fmt.Errorf("%s contains unknown provider %q", field.input, pool)
+			}
+			number, isNumber := value.(float64)
+			if !isNumber || number != math.Trunc(number) || int(number) < field.min || int(number) > field.max {
+				return nil, fmt.Errorf("%s.%s must be an integer between %d and %d", field.input, pool, field.min, field.max)
+			}
+			updates[field.key(normalized)] = strconv.Itoa(int(number))
 		}
 	}
 	if err := s.settings.UpsertValues(ctx, updates); err != nil {

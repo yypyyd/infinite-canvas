@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -48,17 +49,46 @@ func (h *AdminConsoleHandler) UpdateLogicalModel(c *gin.Context) {
 }
 
 func (h *AdminConsoleHandler) UpdateLogicalRoute(c *gin.Context) {
-	var body struct {
-		Enabled *bool `json:"enabled"`
-	}
-	if !bindAdminJSON(c, &body, "enabled is required") {
+	// priority/weight: a number sets the route override, null clears it so the
+	// provider default applies, absent leaves it unchanged.
+	var body map[string]json.RawMessage
+	if !bindAdminJSON(c, &body, "invalid request body") {
 		return
 	}
-	if body.Enabled == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"detail": "enabled is required"})
+	var update service.RouteUpdate
+	if raw, ok := body["enabled"]; ok {
+		var enabled bool
+		if err := json.Unmarshal(raw, &enabled); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"detail": "enabled must be a boolean"})
+			return
+		}
+		update.Enabled = &enabled
+	}
+	for _, field := range []struct {
+		name   string
+		target **int
+		clear  *bool
+	}{{"priority", &update.Priority, &update.ClearPriority}, {"weight", &update.Weight, &update.ClearWeight}} {
+		raw, ok := body[field.name]
+		if !ok {
+			continue
+		}
+		if string(raw) == "null" {
+			*field.clear = true
+			continue
+		}
+		var value int
+		if err := json.Unmarshal(raw, &value); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"detail": field.name + " must be an integer or null"})
+			return
+		}
+		*field.target = &value
+	}
+	if update.Enabled == nil && update.Priority == nil && update.Weight == nil && !update.ClearPriority && !update.ClearWeight {
+		c.JSON(http.StatusBadRequest, gin.H{"detail": "enabled, priority or weight is required"})
 		return
 	}
-	item, err := h.console.UpdateLogicalRoute(c.Request.Context(), c.Param("id"), c.Param("route_id"), *body.Enabled)
+	item, err := h.console.UpdateLogicalRoute(c.Request.Context(), c.Param("id"), c.Param("route_id"), update)
 	if err != nil {
 		adminConsoleError(c, err)
 		return

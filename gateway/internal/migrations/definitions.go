@@ -1880,4 +1880,13 @@ WHERE logical.id IN (SELECT old_id FROM migration_000034_merge)
 
 DROP TABLE migration_000034_merge;
 `,
+	"000035_route_priority_inherits_provider.sql": `-- Route priority/weight become nullable overrides. NULL inherits the
+-- provider default (site setting provider.<pool>.priority/.weight, falling
+-- back to built-in defaults chatgpt/grok 100, byteplus 90, adobe 80, weight 1).
+ALTER TABLE model_routes ALTER COLUMN priority DROP NOT NULL;
+ALTER TABLE model_routes ALTER COLUMN priority DROP DEFAULT;
+ALTER TABLE model_routes ALTER COLUMN weight DROP NOT NULL;
+ALTER TABLE model_routes ALTER COLUMN weight DROP DEFAULT;
+UPDATE model_routes SET priority = NULL, weight = NULL, updated_at = NOW();
+`,
 }

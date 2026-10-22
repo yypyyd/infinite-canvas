@@ -72,15 +72,9 @@ func fallbackRoutes(logicalID string) []model.ModelRoute {
 }
 
 func sortRoutes(routes []model.ModelRoute) {
-	sort.SliceStable(routes, func(i, j int) bool {
-		if routes[i].Priority != routes[j].Priority {
-			return routes[i].Priority > routes[j].Priority
-		}
-		if routes[i].Weight != routes[j].Weight {
-			return routes[i].Weight > routes[j].Weight
-		}
-		return routes[i].ID < routes[j].ID
-	})
+	// Deterministic only: the scheduling order (effective priority/weight,
+	// which needs provider settings) is applied by the dispatch service.
+	sort.SliceStable(routes, func(i, j int) bool { return routes[i].ID < routes[j].ID })
 }
 
 func (r *ModelRouteRepository) hasRoutingTables() bool {
@@ -164,7 +158,7 @@ func (r *ModelRouteRepository) ListRoutes(ctx context.Context, logicalID string,
 		return items, nil
 	}
 	var items []model.ModelRoute
-	query := r.db.WithContext(ctx).Where("logical_model_id = ?", logicalID).Order("priority desc, weight desc, id asc")
+	query := r.db.WithContext(ctx).Where("logical_model_id = ?", logicalID).Order("id asc")
 	query = query.Where("id IN ?", canonicalRouteIDs())
 	if enabledOnly {
 		query = query.Where("enabled = ?", true)

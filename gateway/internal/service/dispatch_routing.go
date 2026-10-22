@@ -70,7 +70,15 @@ func (s *V1Service) matchingRoutes(ctx context.Context, logicalID string, req mo
 	if len(routes) > 0 && len(enabled) == 0 {
 		return nil, ErrProviderDisabled
 	}
-	return enabled, nil
+	return orderRoutes(ctx, s.settingsReader(), enabled)
+}
+
+// settingsReader avoids a typed-nil interface when no settings store is wired.
+func (s *V1Service) settingsReader() settingValueReader {
+	if s.settings == nil {
+		return nil
+	}
+	return s.settings
 }
 
 func (s *V1Service) routeHasAccount(ctx context.Context, route model.ModelRoute, kind string) (bool, error) {

@@ -114,6 +114,9 @@ func SaveSettings(settings model.Settings) (model.Settings, error) {
 	if settings.Private.PoolModelAliases == nil {
 		settings.Private.PoolModelAliases = saved.Private.PoolModelAliases
 	}
+	if settings.Private.BuiltinPool == nil {
+		settings.Private.BuiltinPool = saved.Private.BuiltinPool
+	}
 	settings = normalizeSettings(settings)
 	if emailDomainRestriction && len(settings.Public.Auth.EmailDomains) == 0 {
 		return model.Settings{}, safeMessageError{message: "启用邮箱域名限制前请至少填写一个有效域名"}
@@ -173,7 +176,7 @@ func AdminTestChannelModel(index *int, channel model.ModelChannel, modelName str
 
 func normalizeSettings(settings model.Settings) model.Settings {
 	settings.Private = normalizePrivateSetting(settings.Private)
-	settings.Public = normalizePublicSettingWithChannels(settings.Public, runtimeChannels(settings.Private.Channels, settings.Private.PoolModelAliases))
+	settings.Public = normalizePublicSettingWithChannels(settings.Public, runtimeChannelsFor(settings.Private))
 	return settings
 }
 
@@ -892,6 +895,7 @@ func normalizePrivateSetting(setting model.PrivateSetting) model.PrivateSetting 
 	setting.Referral = normalizeReferralSetting(setting.Referral)
 	setting.OperationsAlerts = normalizeOperationsAlertSetting(setting.OperationsAlerts)
 	setting.PoolModelAliases = normalizePoolModelAliases(setting.PoolModelAliases)
+	setting.BuiltinPool = normalizeBuiltinPoolSource(setting.BuiltinPool)
 	if setting.PoolModelAliases == nil {
 		setting.PoolModelAliases = []model.PoolModelAlias{}
 	}
@@ -1355,6 +1359,8 @@ func normalizeModelChannel(channel model.ModelChannel) model.ModelChannel {
 		item.MaxReferenceAudios = max(0, item.MaxReferenceAudios)
 		item.MaxReferenceMedia = max(0, item.MaxReferenceMedia)
 		item.ReferenceMode = normalizeReferenceMode(item.ReferenceMode)
+		item.Priority = clampPriorityPtr(item.Priority)
+		item.Weight = clampWeightPtr(item.Weight)
 		if item.Workflow != nil {
 			item.Workflow.WorkflowID = strings.TrimSpace(item.Workflow.WorkflowID)
 			item.Workflow.RequestTemplate = strings.TrimSpace(item.Workflow.RequestTemplate)
@@ -1382,6 +1388,7 @@ func normalizeModelChannel(channel model.ModelChannel) model.ModelChannel {
 		models = append(models, item)
 	}
 	channel.Models = models
+	channel.Priority = clampPriority(channel.Priority)
 	if channel.Weight <= 0 {
 		channel.Weight = 1
 	}

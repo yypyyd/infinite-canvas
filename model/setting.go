@@ -19,8 +19,11 @@ type ModelChannel struct {
 	APIKey     string         `json:"apiKey"`
 	Models     []ChannelModel `json:"models"`
 	Weight     int            `json:"weight"`
-	Enabled    bool           `json:"enabled"`
-	Remark     string         `json:"remark"`
+	// Priority orders sources: higher goes first, a weighted pick runs
+	// among sources of equal priority. Third-party channels default to 0.
+	Priority int    `json:"priority"`
+	Enabled  bool   `json:"enabled"`
+	Remark   string `json:"remark"`
 }
 
 // ChannelModel stores one public model's upstream mapping and channel-specific capabilities.
@@ -39,6 +42,11 @@ type ChannelModel struct {
 	SupportsAudioOutput bool                   `json:"supportsAudioOutput"`
 	ReferenceMode       string                 `json:"referenceMode"`
 	Workflow            *ComfyUIWorkflowConfig `json:"workflow,omitempty"`
+	// Disabled takes this model out of the channel without deleting its mapping.
+	Disabled bool `json:"disabled,omitempty"`
+	// Priority and Weight override the channel values for this model only.
+	Priority *int `json:"priority,omitempty"`
+	Weight   *int `json:"weight,omitempty"`
 }
 
 // ComfyUIWorkflowConfig maps the unified generation request to one configured workflow.
@@ -206,6 +214,27 @@ type PrivateSetting struct {
 	// PoolModelAliases publishes built-in account pool models under custom
 	// public names. nil means "not sent" and keeps the saved list.
 	PoolModelAliases []PoolModelAlias `json:"poolModelAliases"`
+	// BuiltinPool configures the built-in account pool as one model source.
+	// nil means "not sent" and keeps the saved value.
+	BuiltinPool *BuiltinPoolSource `json:"builtinPool,omitempty"`
+}
+
+// BuiltinPoolSource sets the pool's enable switch, priority and weight, with
+// optional per-public-model overrides. Unset values use the defaults, which
+// keep the pool ahead of third-party channels.
+type BuiltinPoolSource struct {
+	Enabled  *bool                    `json:"enabled,omitempty"`
+	Priority *int                     `json:"priority,omitempty"`
+	Weight   *int                     `json:"weight,omitempty"`
+	Models   []BuiltinPoolModelSource `json:"models,omitempty"`
+}
+
+// BuiltinPoolModelSource overrides the pool source for one public model.
+type BuiltinPoolModelSource struct {
+	Model    string `json:"model"`
+	Disabled bool   `json:"disabled,omitempty"`
+	Priority *int   `json:"priority,omitempty"`
+	Weight   *int   `json:"weight,omitempty"`
 }
 
 // PoolModelAlias serves the public model Name from the built-in account pool

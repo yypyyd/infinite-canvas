@@ -229,18 +229,6 @@ func runtimeChannels(saved []model.ModelChannel, aliases []model.PoolModelAlias)
 	return append(out, pool)
 }
 
-// preferBuiltinPool puts the pool first: for a model it serves, the pool is
-// used and third-party channels remain as failover (the retry path excludes
-// a failed channel and selects again).
-func preferBuiltinPool(selections []ModelChannelSelection) (ModelChannelSelection, bool) {
-	for _, selection := range selections {
-		if isBuiltinPoolChannel(selection.Channel) {
-			return selection, true
-		}
-	}
-	return ModelChannelSelection{}, false
-}
-
 // appendBuiltinPoolDefinitions adds pool models that the admin has not yet
 // managed, so they show up without any setup. Existing definitions (renamed,
 // sorted or disabled by the admin) are kept as they are.

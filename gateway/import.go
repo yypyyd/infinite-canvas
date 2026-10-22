@@ -33,6 +33,51 @@ type ImportOptions struct {
 // target, and the standalone admin login is replaced by 幻图's super admin.
 var importSkipTables = map[string]bool{"schema_migrations": true, "admins": true}
 
+// Dola was removed from 幻图's gateway. dolaExclusion returns a source-side
+// WHERE clause (table alias t) that drops Dola accounts, routes, Dola-only
+// logical models and every row that references them, so an import never brings
+// Dola data or dangling references into the target. Migration 000031 applies the
+// same rules to databases that already contain Dola rows.
+func dolaExclusion(schema, table string) string {
+	q := func(name string) string { return pgx.Identifier{schema, name}.Sanitize() }
+	accounts := "SELECT id FROM " + q("provider_accounts") + " WHERE pool = 'dola'"
+	routes := "SELECT id FROM " + q("model_routes") + " WHERE provider = 'dola'"
+	dolaOnlyModels := "SELECT r.logical_model_id FROM " + q("model_routes") + " r GROUP BY r.logical_model_id HAVING bool_and(r.provider = 'dola')"
+	attempts := "SELECT d.id FROM " + q("dispatch_attempts") + " d WHERE COALESCE(d.account_id, '') IN (" + accounts + ") OR COALESCE(d.model_route_id, '') IN (" + routes + ")"
+	buckets := "SELECT b.id FROM " + q("account_quota_buckets") + " b WHERE b.account_id IN (" + accounts + ")"
+	switch table {
+	case "provider_accounts":
+		return "t.pool <> 'dola'"
+	case "logical_models":
+		return "t.id NOT IN (" + dolaOnlyModels + ")"
+	case "model_routes":
+		return "t.provider <> 'dola' AND t.logical_model_id NOT IN (" + dolaOnlyModels + ")"
+	case "account_model_routes":
+		return "t.account_id NOT IN (" + accounts + ") AND t.model_route_id NOT IN (" + routes + ")"
+	case "account_quota_buckets":
+		return "t.account_id NOT IN (" + accounts + ")"
+	case "dispatch_attempts":
+		return "t.id NOT IN (" + attempts + ")"
+	case "quota_reservations":
+		return "t.quota_bucket_id NOT IN (" + buckets + ") AND COALESCE(t.dispatch_attempt_id, '') NOT IN (" + attempts + ")"
+	case "event_logs":
+		return "COALESCE(t.provider, '') <> 'dola' AND COALESCE(t.account_id, '') NOT IN (" + accounts + ")"
+	case "refresh_profiles":
+		return "t.pool <> 'dola'"
+	case "site_settings":
+		return "t.key NOT LIKE 'provider.dola.%' AND t.key NOT LIKE 'proxy.dola.%'"
+	}
+	return ""
+}
+
+func sourceFrom(schema, table string) string {
+	from := " FROM " + pgx.Identifier{schema, table}.Sanitize() + " t"
+	if where := dolaExclusion(schema, table); where != "" {
+		from += " WHERE " + where
+	}
+	return from
+}
+
 // ImportStandalone copies data from a standalone Nexa database into the
 // embedded gateway schema (GATEWAY_POSTGRES_DSN / GATEWAY_DB_SCHEMA).
 //
@@ -40,6 +85,7 @@ var importSkipTables = map[string]bool{"schema_migrations": true, "admins": true
 // foreign-key order, rows are upserted by primary key (source wins), tables
 // without a primary key use ON CONFLICT DO NOTHING, and serial sequences are
 // advanced past the imported ids. Running it again re-applies the same rows.
+// Dola rows are never copied (see dolaExclusion).
 func ImportStandalone(ctx context.Context, opts ImportOptions) error {
 	out := opts.Log
 	if out == nil {
@@ -278,7 +324,7 @@ func importTable(ctx context.Context, source, target *pgx.Conn, sourceSchema, ta
 	}
 	if dryRun {
 		var count int64
-		err := source.QueryRow(ctx, "SELECT COUNT(*) FROM "+pgx.Identifier{sourceSchema, table}.Sanitize()).Scan(&count)
+		err := source.QueryRow(ctx, "SELECT COUNT(*)"+sourceFrom(sourceSchema, table)).Scan(&count)
 		return count, err
 	}
 	pk, err := primaryKey(ctx, target, targetSchema, table)
@@ -319,11 +365,15 @@ func importTable(ctx context.Context, source, target *pgx.Conn, sourceSchema, ta
 		insert += " ON CONFLICT DO NOTHING"
 	}
 
-	selectSQL := "SELECT " + strings.Join(quoted, ", ") + " FROM " + pgx.Identifier{sourceSchema, table}.Sanitize()
+	selected := make([]string, len(quoted))
+	for i, name := range quoted {
+		selected[i] = "t." + name
+	}
+	selectSQL := "SELECT " + strings.Join(selected, ", ") + sourceFrom(sourceSchema, table)
 	if len(pk) > 0 {
 		quotedPK := make([]string, len(pk))
 		for i, name := range pk {
-			quotedPK[i] = pgx.Identifier{name}.Sanitize()
+			quotedPK[i] = "t." + pgx.Identifier{name}.Sanitize()
 		}
 		selectSQL += " ORDER BY " + strings.Join(quotedPK, ", ")
 	}

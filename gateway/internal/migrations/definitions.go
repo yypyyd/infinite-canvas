@@ -1709,4 +1709,68 @@ ALTER TABLE dispatch_attempts ADD CONSTRAINT dispatch_attempts_state_valid CHECK
 ALTER TABLE dispatch_attempts DROP CONSTRAINT IF EXISTS dispatch_attempts_failure_valid;
 ALTER TABLE dispatch_attempts ADD CONSTRAINT dispatch_attempts_failure_valid CHECK (failure_class IN ('','auth','quota','entitlement','temporary','request','content','outcome_unknown'));
 `,
+	"000031_remove_dola.sql": `-- Dola was removed from the embedded gateway. Purge its accounts, routes,
+-- Dola-only logical models, settings and every row referencing them so no
+-- credentials or dangling references remain. Other providers are untouched.
+-- Some tables are only created by AutoMigrate after the SQL migrations on a
+-- fresh database, so every statement is guarded by table existence.
+DO $dola$
+DECLARE
+  has_accounts boolean := to_regclass('provider_accounts') IS NOT NULL;
+  has_routes boolean := to_regclass('model_routes') IS NOT NULL;
+  has_attempts boolean := to_regclass('dispatch_attempts') IS NOT NULL;
+  has_buckets boolean := to_regclass('account_quota_buckets') IS NOT NULL;
+BEGIN
+  CREATE TEMP TABLE dola_accounts (id text) ON COMMIT DROP;
+  CREATE TEMP TABLE dola_routes (id text) ON COMMIT DROP;
+  CREATE TEMP TABLE dola_models (id text) ON COMMIT DROP;
+  CREATE TEMP TABLE dola_attempts (id text) ON COMMIT DROP;
+  IF has_accounts THEN
+    INSERT INTO dola_accounts SELECT id FROM provider_accounts WHERE pool = 'dola';
+  END IF;
+  IF has_routes THEN
+    INSERT INTO dola_routes SELECT id FROM model_routes WHERE provider = 'dola';
+    INSERT INTO dola_models SELECT logical_model_id FROM model_routes GROUP BY logical_model_id HAVING bool_and(provider = 'dola');
+  END IF;
+  IF has_attempts THEN
+    INSERT INTO dola_attempts SELECT id FROM dispatch_attempts
+      WHERE COALESCE(account_id, '') IN (SELECT id FROM dola_accounts) OR COALESCE(model_route_id, '') IN (SELECT id FROM dola_routes);
+  END IF;
+  IF to_regclass('quota_reservations') IS NOT NULL THEN
+    DELETE FROM quota_reservations WHERE dispatch_attempt_id IN (SELECT id FROM dola_attempts);
+    IF has_buckets THEN
+      DELETE FROM quota_reservations
+        WHERE quota_bucket_id IN (SELECT id FROM account_quota_buckets WHERE account_id IN (SELECT id FROM dola_accounts));
+    END IF;
+  END IF;
+  IF has_attempts THEN
+    DELETE FROM dispatch_attempts WHERE id IN (SELECT id FROM dola_attempts);
+  END IF;
+  IF to_regclass('event_logs') IS NOT NULL THEN
+    DELETE FROM event_logs WHERE provider = 'dola' OR COALESCE(account_id, '') IN (SELECT id FROM dola_accounts);
+  END IF;
+  IF to_regclass('account_model_routes') IS NOT NULL THEN
+    DELETE FROM account_model_routes WHERE account_id IN (SELECT id FROM dola_accounts) OR model_route_id IN (SELECT id FROM dola_routes);
+  END IF;
+  IF has_buckets THEN
+    DELETE FROM account_quota_buckets WHERE account_id IN (SELECT id FROM dola_accounts);
+  END IF;
+  IF has_accounts THEN
+    DELETE FROM provider_accounts WHERE id IN (SELECT id FROM dola_accounts);
+  END IF;
+  IF to_regclass('refresh_profiles') IS NOT NULL THEN
+    DELETE FROM refresh_profiles WHERE pool = 'dola';
+  END IF;
+  IF to_regclass('site_settings') IS NOT NULL THEN
+    DELETE FROM site_settings WHERE key LIKE 'provider.dola.%' OR key LIKE 'proxy.dola.%';
+  END IF;
+  IF has_routes THEN
+    DELETE FROM model_routes WHERE id IN (SELECT id FROM dola_routes);
+  END IF;
+  IF to_regclass('logical_models') IS NOT NULL THEN
+    DELETE FROM logical_models WHERE id IN (SELECT id FROM dola_models);
+  END IF;
+END
+$dola$;
+`,
 }

@@ -2612,13 +2612,18 @@ func (s *V1Service) prepareImage(ctx context.Context, principal *APIPrincipal, i
 	if len(in.ReferenceImages) > 0 {
 		operation = "edit"
 	}
+	preflightResolution := resolution
+	if imageResolutionDefaulted(in) {
+		// Any route may serve the request at its own default resolution.
+		preflightResolution = ""
+	}
 	if _, err := s.firstAvailableRoute(ctx, modelItem.ID, "image", model.RouteRequirements{Operation: operation,
-		Ratio: aspectRatio, Resolution: resolution, Quality: in.Quality, ReferenceImages: len(in.ReferenceImages)}); err != nil {
-		if modelItem.ID == "gpt-image-2" && errors.Is(err, ErrUnsupportedParams) {
+		Ratio: aspectRatio, Resolution: preflightResolution, Quality: in.Quality, ReferenceImages: len(in.ReferenceImages)}); err != nil {
+		if errors.Is(err, ErrUnsupportedParams) {
 			// Rejected events predate route selection and omit these fields. Keep
 			// bounded parameter diagnostics without prompts, references, or keys.
-			log.Printf("image preflight rejected: request_id=%.191q model=gpt-image-2 size=%.64q quality=%.16q aspect_ratio=%.32q resolution=%.16q resolved_ratio=%.32q resolved_resolution=%.16q n=%d references=%d",
-				in.RequestID, in.Size, in.Quality, in.AspectRatio, in.Resolution, aspectRatio, resolution, n, len(in.ReferenceImages))
+			log.Printf("image preflight rejected: request_id=%.191q model=%.64q size=%.64q quality=%.16q aspect_ratio=%.32q resolution=%.16q resolved_ratio=%.32q resolved_resolution=%.16q n=%d references=%d",
+				in.RequestID, modelItem.ID, in.Size, in.Quality, in.AspectRatio, in.Resolution, aspectRatio, resolution, n, len(in.ReferenceImages))
 		}
 		return nil, "", "", err
 	}
@@ -3434,24 +3439,54 @@ func parseImageSize(size, aspectRatio, resolution string) (string, string) {
 }
 
 func resolveImageSize(item *model.ModelConfig, in V1ImageRequest) (string, string) {
-	aspectRatio, resolution := parseImageSize(in.Size, in.AspectRatio, in.Resolution)
-	// The ChatGPT GPT Image 2 ID exposes only its 1K route. Compatible clients
-	// commonly omit size or send "auto"; letting the generic image default choose
-	// 2K makes those otherwise valid requests fail capability matching before an
-	// account is selected. Preserve every explicit size/resolution choice.
-	if item.ID == "gpt-image-2" && strings.TrimSpace(in.Resolution) == "" {
-		size := strings.TrimSpace(in.Size)
-		if size == "" || strings.EqualFold(size, "auto") {
-			resolution = "1K"
+	return parseImageSize(in.Size, in.AspectRatio, in.Resolution)
+}
+
+// imageResolutionDefaulted reports whether the client left the resolution to
+// the server (no resolution and no pixel size, or size "auto"). Each route then
+// uses its own default (see routeImageResolution) instead of one model-wide
+// value, so a 1K-only route and a 2K/4K route can serve the same request.
+func imageResolutionDefaulted(in V1ImageRequest) bool {
+	if strings.TrimSpace(in.Resolution) != "" {
+		return false
+	}
+	size := strings.TrimSpace(in.Size)
+	return size == "" || strings.EqualFold(size, "auto")
+}
+
+// routeImageResolution picks the resolution sent to one route. An explicit
+// resolution is kept. A defaulted one keeps the generic default when the route
+// supports it and otherwise falls back to the route's first listed resolution
+// (e.g. 1K for the ChatGPT route), driven purely by route capabilities.
+func routeImageResolution(route model.ModelRoute, req model.RouteRequirements, generic string, defaulted bool) string {
+	if !defaulted {
+		return generic
+	}
+	fallback := ""
+	for _, profile := range model.DecodeCapabilityProfiles(route.Capabilities) {
+		probe := req
+		probe.Resolution = generic
+		if routeProfileSupports(profile, probe) {
+			return generic
+		}
+		probe.Resolution = ""
+		if fallback == "" && routeProfileSupports(profile, probe) && len(profile.Resolutions) > 0 {
+			fallback = profile.Resolutions[0]
 		}
 	}
-	return aspectRatio, resolution
+	if fallback == "" {
+		return generic
+	}
+	return fallback
+}
+
+func routeProfileSupports(profile model.CapabilityProfile, req model.RouteRequirements) bool {
+	return profile.Supports(req)
 }
 
 func supportsQualityResolutionModel(modelID string) bool {
 	switch strings.ToLower(strings.TrimSpace(modelID)) {
-	case "gpt-image-2", "firefly-gpt-image-2", "lumina-gpt-image-2",
-		"chatgpt-gpt-image-2", "byteplus-gpt-image-2", "adobe-gpt-image-2":
+	case "gpt-image-2", "firefly-gpt-image-2", "lumina-gpt-image-2":
 		return true
 	default:
 		return false

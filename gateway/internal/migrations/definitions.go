@@ -1889,4 +1889,13 @@ ALTER TABLE model_routes ALTER COLUMN weight DROP NOT NULL;
 ALTER TABLE model_routes ALTER COLUMN weight DROP DEFAULT;
 UPDATE model_routes SET priority = NULL, weight = NULL, updated_at = NOW();
 `,
+	"000036_route_max_images_per_request.sql": `-- Pool image routes render one image per upstream request. Record that as
+-- capability data (max_images_per_request) instead of a provider special case.
+UPDATE model_routes r
+SET capabilities = (
+	SELECT COALESCE(jsonb_agg(profile || '{"max_images_per_request":1}'::jsonb), '[]'::jsonb)
+	FROM jsonb_array_elements(r.capabilities) AS profile
+), updated_at = NOW()
+WHERE r.id LIKE 'image.%' AND jsonb_typeof(r.capabilities) = 'array';
+`,
 }

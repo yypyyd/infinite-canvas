@@ -8,32 +8,8 @@ import (
 	"github.com/yypyyd/infinite-canvas/gateway/internal/repo"
 )
 
-func TestResolveImageSizeGPTImage2DefaultsTo1K(t *testing.T) {
-	item := &model.ModelConfig{ID: "gpt-image-2"}
-	tests := []struct {
-		name string
-		in   V1ImageRequest
-		ar   string
-		res  string
-	}{
-		{name: "omitted size", in: V1ImageRequest{}, ar: "1:1", res: "1K"},
-		{name: "auto size", in: V1ImageRequest{Size: "auto"}, ar: "1:1", res: "1K"},
-		{name: "explicit aspect ratio", in: V1ImageRequest{AspectRatio: "16:9"}, ar: "16:9", res: "1K"},
-		{name: "explicit pixel size", in: V1ImageRequest{Size: "2048x2048"}, ar: "1:1", res: "2K"},
-		{name: "explicit resolution", in: V1ImageRequest{Resolution: "2K"}, ar: "1:1", res: "2K"},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			ar, res := resolveImageSize(item, test.in)
-			if ar != test.ar || res != test.res {
-				t.Fatalf("resolveImageSize() = (%q, %q), want (%q, %q)", ar, res, test.ar, test.res)
-			}
-		})
-	}
-}
-
 func TestResolveImageSizeKeepsGenericDefault(t *testing.T) {
-	for _, modelID := range []string{"seedream-5.0-lite", "nano-banana-2"} {
+	for _, modelID := range []string{"gpt-image-2", "seedream-5.0-lite", "nano-banana-2"} {
 		t.Run(modelID, func(t *testing.T) {
 			item := &model.ModelConfig{ID: modelID}
 			for _, size := range []string{"", "auto"} {
@@ -59,7 +35,7 @@ func TestGPTImageSizeRouteMatching(t *testing.T) {
 		resolution string
 		supported  bool
 	}{
-		{"", "1:1", "1K", true}, {"auto", "1:1", "1K", true}, {"1024x1024", "1:1", "1K", true},
+		{"", "1:1", "2K", true}, {"auto", "1:1", "2K", true}, {"1024x1024", "1:1", "1K", true},
 		{"1024x576", "16:9", "1K", true}, {"576x1024", "9:16", "1K", true},
 		{"1024x768", "4:3", "1K", true}, {"768x1024", "3:4", "1K", true},
 		{"1200x800", "3:2", "1K", true}, {"1536x1024", "3:2", "1K", true},

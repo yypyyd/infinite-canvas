@@ -59,6 +59,8 @@ type CapabilityProfile struct {
 	SupportsAudioOutput bool     `json:"supports_audio_output,omitempty"`
 	ReferenceMode       string   `json:"reference_mode,omitempty"`
 	RequiresReference   bool     `json:"requires_reference,omitempty"`
+	// MaxImagesPerRequest caps images per request on this route; 0 = no cap.
+	MaxImagesPerRequest int `json:"max_images_per_request,omitempty"`
 }
 
 type RouteRequirements struct {
@@ -242,7 +244,7 @@ func imageProfile(ratios, resolutions []string, maxRefs int) CapabilityProfile {
 	if maxRefs > 0 {
 		ops = append(ops, "edit")
 	}
-	return CapabilityProfile{Operations: ops, Ratios: ratios, Resolutions: resolutions, MaxReferenceImages: maxRefs, ReferenceMode: "asset"}
+	return CapabilityProfile{Operations: ops, Ratios: ratios, Resolutions: resolutions, MaxReferenceImages: maxRefs, ReferenceMode: "asset", MaxImagesPerRequest: 1}
 }
 
 func videoProfile(ratios, resolutions, durations []string, maxImages, maxVideos, maxAudios, maxMedia int, audio bool, mode string) CapabilityProfile {
@@ -375,6 +377,9 @@ func (r ModelRoute) Supports(req RouteRequirements) bool {
 	}
 	return false
 }
+
+// Supports reports whether this single profile accepts the request.
+func (p CapabilityProfile) Supports(req RouteRequirements) bool { return capabilitySupports(p, req) }
 
 func capabilitySupports(profile CapabilityProfile, req RouteRequirements) bool {
 	contains := func(values []string, wanted string) bool {

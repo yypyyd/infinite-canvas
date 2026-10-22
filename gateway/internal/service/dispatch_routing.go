@@ -342,7 +342,11 @@ func (s *V1Service) dispatchImageRoutes(ctx context.Context, eventID string, log
 	if len(in.ReferenceImages) > 0 {
 		operation = "edit"
 	}
+	defaulted := imageResolutionDefaulted(in)
 	requirements := model.RouteRequirements{Operation: operation, Ratio: ratio, Resolution: resolution, Quality: in.Quality, ReferenceImages: len(in.ReferenceImages)}
+	if defaulted {
+		requirements.Resolution = ""
+	}
 	routes, err := s.matchingRoutes(ctx, logical.ID, requirements)
 	if err != nil {
 		return nil, "", err
@@ -350,8 +354,12 @@ func (s *V1Service) dispatchImageRoutes(ctx context.Context, eventID string, log
 	if len(routes) == 0 {
 		return nil, "", ErrUnsupportedParams
 	}
+	genericResolution := resolution
 	return runMediaRouteFailover(ctx, routes, strings.TrimSpace(in.AccountID), func(ctx context.Context, route model.ModelRoute) ([]byte, string, error) {
-		routeCtx := withDispatchRoute(ctx, route, defaultRouteCost(route, requirements))
+		resolution := routeImageResolution(route, requirements, genericResolution, defaulted)
+		routeRequirements := requirements
+		routeRequirements.Resolution = resolution
+		routeCtx := withDispatchRoute(ctx, route, defaultRouteCost(route, routeRequirements))
 		available, accountErr := s.routeHasAccount(routeCtx, route, "image")
 		if accountErr != nil {
 			return nil, "", accountErr

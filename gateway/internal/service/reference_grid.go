@@ -14,8 +14,6 @@ const (
 var facePanelModels = map[string]bool{
 	"firefly-seedance-2":      true,
 	"firefly-seedance-2-fast": true,
-	"adobe-seedance-2.0":      true,
-	"adobe-seedance-2.0-fast": true,
 	"seedance20":              true,
 	"seedance20-fast":         true,
 	"sd2.0":                   true,
@@ -29,9 +27,26 @@ const facePanelTransformEnabled = true
 // shouldApplyReferenceGrid is retained as the wire-compatible name for the
 // reference_grid flag. Models outside facePanelModels receive the original
 // reference bytes unchanged, even when the legacy flag is present.
-func (s *V1Service) shouldApplyReferenceGrid(_ context.Context, modelID string, _ bool) bool {
+func (s *V1Service) shouldApplyReferenceGrid(ctx context.Context, modelID string, _ bool) bool {
 	if !facePanelTransformEnabled {
 		return false
 	}
-	return facePanelModels[strings.ToLower(strings.TrimSpace(modelID))]
+	if facePanelModels[strings.ToLower(strings.TrimSpace(modelID))] {
+		return true
+	}
+	// Public IDs carry no provider. The transform belongs to routes whose
+	// runtime model needs it (Adobe Seedance), so decide from the model's routes.
+	if s == nil || s.models == nil {
+		return false
+	}
+	routes, err := s.models.Routes().ListRoutes(ctx, strings.TrimSpace(modelID), true)
+	if err != nil {
+		return false
+	}
+	for _, route := range routes {
+		if facePanelModels[strings.ToLower(route.RuntimeModel)] {
+			return true
+		}
+	}
+	return false
 }

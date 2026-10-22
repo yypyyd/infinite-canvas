@@ -142,8 +142,8 @@ curl -X POST "https://huantu.xyz/api/v1/images/generations" \
 ## 健康检查
 
 - `GET /api/health/live` 是进程存活检查，不访问任何依赖。
-- `GET /api/health` 与 `GET /api/health/ready` 是就绪检查：并发 ping 幻图数据库，以及 `GATEWAY_ENABLED=true` 时网关的 PostgreSQL 与 Redis（只做 ping，无查询）。全部可用时返回 HTTP 200；任一失败或超过 2 秒时返回 HTTP 503。这是业务接口统一 HTTP 200 规则的明确例外。
-- 响应只包含 `ok` / `unavailable` 状态（网关启用时多一个 `gateway: {status, database, redis}`），不含错误详情、地址或 DSN；失败原因只写入服务端日志。Docker 健康检查使用 `/api/health`，依赖不可用时容器会被标记为 unhealthy。
+- `GET /api/health` 与 `GET /api/health/ready` 是就绪检查：并发 ping 幻图数据库，以及内置账号池运行时它的 PostgreSQL 与 Redis（未配置 Redis 时为 `disabled`，不检查；只做 ping，无查询）。全部可用时返回 HTTP 200；任一失败或超过 2 秒时返回 HTTP 503。这是业务接口统一 HTTP 200 规则的明确例外。
+- 响应只包含 `ok` / `unavailable` 状态（账号池运行时多一个 `pool: {status, database, redis}`），不含错误详情、地址或 DSN；失败原因只写入服务端日志。Docker 健康检查使用 `/api/health`，依赖不可用时容器会被标记为 unhealthy。
 - `GET /api/admin/operations/health` 仅管理员可访问，返回批量生产队列、邀请邮件 Outbox 和对象删除 Outbox 的等待数、失败数及过期租约数，并返回最近 24 小时生成任务的总数、运行中/成功/失败数、终态成功率、平均耗时和 P95 耗时。
 - 管理员可在“系统设置 → 运维告警”配置各类积压、失败和过期租约阈值。阈值达到时响应中的 `alerts` 返回 `key`、当前值和阈值，整体状态为 `degraded`；单项阈值设为 `0` 时不告警。
 - 队列积压和运维告警不会直接让 readiness 失败，避免探针重启进一步放大积压；外部告警系统应读取管理员健康摘要中的 `status` 与 `alerts`。

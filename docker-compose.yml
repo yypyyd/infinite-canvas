@@ -16,10 +16,10 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      gateway-postgres:
+      postgres:
         condition: service_healthy
         required: false
-      gateway-redis:
+      redis:
         condition: service_healthy
         required: false
     restart: unless-stopped
@@ -32,56 +32,60 @@ services:
       - ./data:/app/data
     command: ["/app/batch-worker"]
     restart: unless-stopped
-  # 内置 API 网关（原 Nexa）依赖，使用 `--profile gateway` 启用，并在 .env 设置 GATEWAY_ENABLED=true
-  gateway-postgres:
+  # 可选：幻图与内置账号池共用的 PostgreSQL，使用 `--profile postgres` 启用，
+  # 并在 .env 设置 STORAGE_DRIVER=postgres、DATABASE_DSN=postgres://huantu:<POSTGRES_PASSWORD>@postgres:5432/huantu?sslmode=disable。
+  # 不启用时（默认 SQLite），镜像内会自动为账号池启动嵌入式 PostgreSQL，无需额外服务。
+  postgres:
     image: postgres:16-alpine
-    profiles: ["gateway"]
+    profiles: ["postgres"]
     environment:
-      POSTGRES_USER: ${GATEWAY_PG_USER:-huantu}
-      POSTGRES_PASSWORD: ${GATEWAY_PG_PASSWORD:?set GATEWAY_PG_PASSWORD}
-      POSTGRES_DB: ${GATEWAY_PG_DB:-huantu}
+      POSTGRES_USER: ${POSTGRES_USER:-huantu}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+      POSTGRES_DB: ${POSTGRES_DB:-huantu}
     volumes:
-      - gateway-postgres-data:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       retries: 20
     restart: unless-stopped
-  gateway-redis:
+  # 可选：多个幻图实例共享账号池时才需要 Redis（`--profile redis`，并设置 POOL_REDIS_ADDR=redis:6379）。
+  # 单实例无需 Redis：并发闸门、轮询游标与配置缓存在进程内完成。
+  redis:
     image: redis:7-alpine
-    profiles: ["gateway"]
-    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${GATEWAY_REDIS_PASSWORD:?set GATEWAY_REDIS_PASSWORD}"]
+    profiles: ["redis"]
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${POOL_REDIS_PASSWORD:-}"]
     volumes:
-      - gateway-redis-data:/data
+      - redis-data:/data
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a \"$$GATEWAY_REDIS_PASSWORD\" ping | grep PONG"]
+      test: ["CMD-SHELL", "redis-cli -a \"$$POOL_REDIS_PASSWORD\" ping | grep PONG"]
       interval: 5s
       retries: 20
     environment:
-      GATEWAY_REDIS_PASSWORD: ${GATEWAY_REDIS_PASSWORD}
+      POOL_REDIS_PASSWORD: ${POOL_REDIS_PASSWORD:-}
     restart: unless-stopped
-  # 可选：生成图片对象存储（RustFS / S3 兼容），使用 `--profile gateway-storage` 启用
-  gateway-rustfs:
+  # 可选：账号池生成图片对象存储（RustFS / S3 兼容），使用 `--profile pool-storage` 启用
+  pool-rustfs:
     image: rustfs/rustfs:latest
-    profiles: ["gateway-storage"]
+    profiles: ["pool-storage"]
     environment:
-      RUSTFS_ACCESS_KEY: ${GATEWAY_RUSTFS_ACCESS_KEY:-}
-      RUSTFS_SECRET_KEY: ${GATEWAY_RUSTFS_SECRET_KEY:-}
+      RUSTFS_ACCESS_KEY: ${POOL_RUSTFS_ACCESS_KEY:-}
+      RUSTFS_SECRET_KEY: ${POOL_RUSTFS_SECRET_KEY:-}
     volumes:
-      - gateway-rustfs-data:/data
+      - pool-rustfs-data:/data
     restart: unless-stopped
-  gateway-createbucket:
+  pool-createbucket:
     image: ${INFINITE_CANVAS_IMAGE:-infinite-canvas:local}
-    profiles: ["gateway-storage"]
-    depends_on: [gateway-rustfs]
+    profiles: ["pool-storage"]
+    depends_on: [pool-rustfs]
     environment:
-      RUSTFS_ENDPOINT: ${GATEWAY_RUSTFS_ENDPOINT:-http://gateway-rustfs:9000}
-      RUSTFS_BUCKET: ${GATEWAY_RUSTFS_BUCKET:-generated}
-      RUSTFS_ACCESS_KEY: ${GATEWAY_RUSTFS_ACCESS_KEY:-}
-      RUSTFS_SECRET_KEY: ${GATEWAY_RUSTFS_SECRET_KEY:-}
+      RUSTFS_ENDPOINT: ${POOL_RUSTFS_ENDPOINT:-http://pool-rustfs:9000}
+      RUSTFS_BUCKET: ${POOL_RUSTFS_BUCKET:-generated}
+      RUSTFS_ACCESS_KEY: ${POOL_RUSTFS_ACCESS_KEY:-}
+      RUSTFS_SECRET_KEY: ${POOL_RUSTFS_SECRET_KEY:-}
     command: ["/app/gateway-init-bucket"]
     restart: "no"
 volumes:
-  gateway-postgres-data:
-  gateway-redis-data:
-  gateway-rustfs-data:
+  postgres-data:
+  redis-data:
+  pool-rustfs-data:

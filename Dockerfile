@@ -61,12 +61,20 @@ ENV NODE_ENV=production
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
 ENV PROMPT_DATA_DIR=/app/data/prompts
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates default-mysql-client postgresql-client && rm -rf /var/lib/apt/lists/*
+# postgresql 提供内置账号池的嵌入式数据库：幻图使用 SQLite 且未配置 POOL_POSTGRES_DSN 时，
+# 入口脚本在容器内启动它（仅 Unix socket，数据在 /app/data/pool-postgres）。
+# 去掉 PostgreSQL 的 LLVM JIT（约 130MB），入口脚本以 jit=off 启动嵌入式库。
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates default-mysql-client postgresql postgresql-client \
+ && rm -f /usr/lib/postgresql/*/lib/llvmjit* && rm -rf /usr/lib/postgresql/*/lib/bitcode \
+ && dpkg -r --force-depends libllvm14 libz3-4 \
+ && rm -rf /var/lib/apt/lists/*
 RUN mkdir -p /app/data/prompts /app/data/generated
+COPY scripts/docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN sed -i 's/\r$//' /app/docker-entrypoint.sh && chmod +x /app/docker-entrypoint.sh
 
 EXPOSE 3000
-# 先启动内部 Go API，再由 Next.js 提供页面并代理 /api/*。
+# 入口脚本按需启动嵌入式 PostgreSQL，再启动内部 Go API 和 Next.js（代理 /api/*）。
 # 任一进程退出即让容器退出，交由 restart 策略重启，避免 Go 后端失败后只剩页面在跑。
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:8080/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-CMD ["bash", "-c", "PORT=8080 /app/server & (cd /app/web && PORT=3000 exec node server.js) & wait -n; status=$?; echo \"process exited with status $status\" >&2; exit $status"]
+CMD ["/app/docker-entrypoint.sh"]

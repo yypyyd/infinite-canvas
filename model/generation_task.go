@@ -59,8 +59,8 @@ type GenerationTask struct {
 	CreditSource     CreditSource                `json:"creditSource" gorm:"size:16;not null;default:personal;index"`
 	Status           GenerationTaskStatus        `json:"status" gorm:"index"`
 	UpstreamTaskID   string                      `json:"-" gorm:"index"`
-	ProtocolSnapshot *GenerationProtocolSnapshot `json:"-" gorm:"serializer:json;type:longtext"`
-	ResultJSON       string                      `json:"-" gorm:"type:longtext"`
+	ProtocolSnapshot *GenerationProtocolSnapshot `json:"-" gorm:"serializer:json"`
+	ResultJSON       string                      `json:"-"`
 	StorageKeys      []string                    `json:"storageKeys,omitempty" gorm:"serializer:json;type:text"`
 	ErrorMessage     string                      `json:"errorMessage" gorm:"type:text"`
 	DurationMs       int64                       `json:"durationMs"`

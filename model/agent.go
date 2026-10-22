@@ -121,7 +121,7 @@ type AgentRunSnapshot struct {
 	UserID         string `json:"userId" gorm:"uniqueIndex:idx_agent_run_snapshot_owner,priority:2"`
 	RunID          string `json:"runId" gorm:"uniqueIndex:idx_agent_run_snapshot_owner,priority:3;index"`
 	ProjectID      string `json:"projectId" gorm:"index"`
-	Payload        string `json:"-" gorm:"type:longtext"`
+	Payload        string `json:"-"`
 	Checksum       string `json:"checksum"`
 	CreatedAt      string `json:"createdAt" gorm:"index"`
 	RestoredAt     string `json:"restoredAt,omitempty"`

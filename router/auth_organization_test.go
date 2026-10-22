@@ -53,6 +53,12 @@ func TestMain(m *testing.M) {
 		QiniuRegion:         "as0",
 		QiniuDownloadDomain: "https://cdn.example.com",
 	}
+	// Optional: run the router suite against another database, e.g.
+	// INFINITE_CANVAS_TEST_DATABASE_DRIVER=postgres INFINITE_CANVAS_TEST_DATABASE_DSN=postgres://...
+	if driver := strings.TrimSpace(os.Getenv("INFINITE_CANVAS_TEST_DATABASE_DRIVER")); driver != "" {
+		config.Cfg.StorageDriver = driver
+		config.Cfg.DatabaseDSN = os.Getenv("INFINITE_CANVAS_TEST_DATABASE_DSN")
+	}
 	code := m.Run()
 	if database, databaseErr := repository.DB(); databaseErr == nil {
 		if sqlDB, sqlErr := database.DB(); sqlErr == nil {

@@ -70,9 +70,6 @@ func (s *TokenService) storeImportQuota(ctx context.Context, account model.Token
 }
 
 func shouldRefreshDispatchQuota(plan dispatchPlan, pool string, reservation *model.QuotaReservation, generationErr error) bool {
-	if pool == "dola" {
-		return false
-	}
 	if bytePlusBetaRetryVerified(generationErr) {
 		return true
 	}

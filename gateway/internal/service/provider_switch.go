@@ -22,6 +22,7 @@ var deferredAccountProviders = map[string]bool{
 	"runway": true,
 	"custom": true,
 	"oreate": true,
+	"dola":   true,
 }
 
 func isDeferredAccountProvider(pool string) bool {

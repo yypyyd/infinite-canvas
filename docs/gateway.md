@@ -9,12 +9,12 @@ Nexa 网关已并入幻图，作为 `gateway/` 模块随主进程启动，由幻
 | 网关后端（路由、账号池、并发、额度、故障转移、额度刷新、密钥、日志、资产、违禁词、设置、封闭模型目录） | `gateway/internal/**` |
 | 模块入口（启动、挂载、进程内通道） | `gateway/gateway.go` |
 | 导入命令 | `cmd/gateway-import`、`gateway/import.go` |
-| Dola 签名脚本 | `gateway/scripts/dola-protocol`（镜像内 `/app/scripts/dola-protocol`） |
 | 管理页面 | `web/src/app/(admin)/admin/gateway/**` |
 
 - 数据库：PostgreSQL，表放在独立 schema（`GATEWAY_DB_SCHEMA`，默认 `gateway`），启动时自动建 schema 并迁移，不与幻图表冲突。
 - Redis：必需。建议单独的 `GATEWAY_REDIS_DB`（设置缓存键为 `setting:<key>`）。
 - RustFS/S3：可选。未配置时跳过图片缓存、无法回放已存储的视频；配置了 `GATEWAY_RUSTFS_ENDPOINT` 时生产环境会校验 bucket 与访问密钥（ACCESS_KEY ≥16 位、SECRET_KEY ≥32 位）。
+- 支持的上游：ChatGPT、Grok、Adobe Firefly、BytePlus。Dola 已移除（见下文“Dola 移除”）。
 - `GATEWAY_ENABLED=true` 时启用，配置只读取 `GATEWAY_*` 环境变量（见 `.env.example`）。
 - `GATEWAY_APP_ENV=production` 时必须设置 `GATEWAY_PUBLIC_BASE_URL` 为站点 HTTPS 源地址（不带路径），否则后端启动失败、容器会退出重启。
 
@@ -51,6 +51,7 @@ Nexa 网关已并入幻图，作为 `gateway/` 模块随主进程启动，由幻
 - 跳过 `schema_migrations` 和 `admins`（管理员改由幻图负责）。
 - 源库迁移版本不得高于本网关版本，否则拒绝导入。
 - **不迁移** RustFS 对象与本地生成文件，如需保留请单独拷贝 `data/generated` / 存储桶。
+- **不导入 Dola 数据**：跳过 `pool = 'dola'` 的账号、`provider = 'dola'` 的路由、只有 Dola 路由的逻辑模型，以及引用它们的账号路由绑定、额度桶、额度预留、调度记录、事件日志、`provider.dola.*` / `proxy.dola.*` 设置和 Dola 刷新配置，因此不会留下悬空引用。`-dry-run` 显示的就是过滤后的行数。
 
 ## 部署
 
@@ -60,7 +61,15 @@ docker compose --profile gateway up -d                       # 含 Postgres + Re
 docker compose --profile gateway --profile gateway-storage up -d   # 另含 RustFS 与建桶任务
 ```
 
-镜像已包含 `/app/gateway-import`、`/app/gateway-init-bucket`、Dola 签名脚本，以及 `/app/data/generated`、`/app/data/dola-profiles` 目录。Dola 视频的页内模式需要 Chromium（`DOLA_CHROME`），镜像默认未安装。
+镜像已包含 `/app/gateway-import`、`/app/gateway-init-bucket` 和 `/app/data/generated` 目录。
+
+## Dola 移除
+
+Dola 渠道（代码、签名脚本、模型目录中的 Dola 模型/路由、管理界面入口、相关环境变量）已整体移除。
+
+- 已有数据库：迁移 `000031_remove_dola` 在启动时自动删除 Dola 账号（含其 Cookie）、路由、只有 Dola 路由的逻辑模型、Dola 设置，以及引用它们的绑定、额度桶、预留、调度记录与事件日志。该迁移不可逆，升级前请先备份。
+- 运行时 `dola` 被视为已退役的提供方，即使库中残留相关路由也不会被调度。
+- 旧 Dola 生成的视频记录随事件日志一并删除。
 
 ## 许可证
 

@@ -7,7 +7,6 @@ import (
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/adobe"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/byteplus"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/chatgpt"
-	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/dola"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/grok"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/proxypool"
 )
@@ -15,7 +14,6 @@ import (
 const (
 	settingProxyURL        = "proxy.url"
 	settingExtractAPI      = "proxy.extract_api"
-	settingDolaSessionAPI  = "proxy.dola.session_api"
 	settingProviderProxyNS = "proxy."
 )
 
@@ -31,7 +29,6 @@ type providerProxySnapshot struct {
 	DefaultExtract    string
 	ExtractByProvider map[string]string
 	ExtractStored     map[string]string
-	DolaSessionAPI    string
 }
 
 func providerProxySettingKey(pool string) string {
@@ -43,15 +40,14 @@ func providerExtractSettingKey(pool string) string {
 }
 
 func proxyAwareProviders() []string {
-	return []string{"chatgpt", "grok", "dola", "adobe", "byteplus"}
+	return []string{"chatgpt", "grok", "adobe", "byteplus"}
 }
 
 // inheritDefaultProxy reports whether an empty per-channel URL should fall back
-// to proxy.url. Adobe and BytePlus stay direct unless their own URL is set, so a
-// Dola JP/KR pool is not silently attached to Firefly or Lumina.
+// to proxy.url. Adobe and BytePlus stay direct unless their own URL is set.
 func inheritDefaultProxy(pool string) bool {
 	switch strings.ToLower(strings.TrimSpace(pool)) {
-	case "chatgpt", "grok", "dola":
+	case "chatgpt", "grok":
 		return true
 	default:
 		return false
@@ -104,11 +100,6 @@ func loadProviderProxies(ctx context.Context, settings settingValueReader) (prov
 		return snap, err
 	}
 	snap.DefaultExtract = strings.TrimSpace(defaultExtract)
-	sessionAPI, err := settings.GetValue(ctx, settingDolaSessionAPI)
-	if err != nil {
-		return snap, err
-	}
-	snap.DolaSessionAPI = strings.TrimSpace(sessionAPI)
 	for _, pool := range proxyAwareProviders() {
 		raw, getErr := settings.GetValue(ctx, providerProxySettingKey(pool))
 		if getErr != nil {
@@ -122,22 +113,13 @@ func loadProviderProxies(ctx context.Context, settings settingValueReader) (prov
 			return snap, getErr
 		}
 		extract = strings.TrimSpace(extract)
-		if pool == "dola" && extract == "" {
-			extract = snap.DolaSessionAPI
-		}
 		snap.ExtractStored[pool] = extract
 		snap.ExtractByProvider[pool] = resolveProviderExtract(pool, extract, snap.DefaultExtract)
-	}
-	if snap.ExtractStored["dola"] == "" {
-		snap.ExtractStored["dola"] = snap.DolaSessionAPI
-	}
-	if snap.DolaSessionAPI == "" {
-		snap.DolaSessionAPI = snap.ExtractStored["dola"]
 	}
 	return snap, nil
 }
 
-func assignProviderProxies(snap providerProxySnapshot, chatgptClient *chatgpt.Client, grokClient *grok.Client, dolaClient *dola.Client, adobeClient *adobe.Client, byteplusClient *byteplus.Client) {
+func assignProviderProxies(snap providerProxySnapshot, chatgptClient *chatgpt.Client, grokClient *grok.Client, adobeClient *adobe.Client, byteplusClient *byteplus.Client) {
 	for _, pool := range proxyAwareProviders() {
 		extractManager.Configure(pool, snap.ExtractByProvider[pool])
 	}
@@ -150,10 +132,6 @@ func assignProviderProxies(snap providerProxySnapshot, chatgptClient *chatgpt.Cl
 		grokClient.SetAssigner(extractManager.Bind("grok"))
 	}
 
-	if dolaClient != nil {
-		dolaClient.SetProxy(snap.ByProvider["dola"])
-		dolaClient.SetAssigner(extractManager.Bind("dola"))
-	}
 	if adobeClient != nil {
 		adobeClient.SetProxy(snap.ByProvider["adobe"])
 		adobeClient.SetAssigner(extractManager.Bind("adobe"))

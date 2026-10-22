@@ -15,7 +15,6 @@ import (
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/adobe"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/byteplus"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/chatgpt"
-	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/dola"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/grok"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/repo"
 
@@ -331,10 +330,6 @@ func (s *V1Service) tryAccount(ctx context.Context, eventID, pool string, token 
 	retry bool,
 ) ([]byte, bool, bool, error) {
 	routeID := dispatchRouteFromContext(ctx)
-	if plan, ok := dispatchPlanFromContext(ctx); ok && pool == "dola" {
-		plan.QuotaDay = time.Now()
-		ctx = context.WithValue(ctx, dispatchRouteKey, plan)
-	}
 	fresh, validationErr := s.revalidateDispatchAccount(ctx, pool, token.ID, kind, retry)
 	if validationErr != nil {
 		return nil, errors.Is(validationErr, ErrNoProviderAccount) || routeFailoverSafe(validationErr), false, validationErr
@@ -404,10 +399,10 @@ func (s *V1Service) tryAccount(ctx context.Context, eventID, pool string, token 
 		state, failureClass := dispatchFailureClass(err)
 		if reservation != nil {
 			quotaCtx := context.WithoutCancel(ctx)
-			if errors.Is(err, dola.ErrTaskAccepted) || errors.Is(err, chatgpt.ErrTaskAccepted) || errors.Is(err, grok.ErrTaskAccepted) {
+			if errors.Is(err, chatgpt.ErrTaskAccepted) || errors.Is(err, grok.ErrTaskAccepted) {
 				// A terminal content rejection still consumed an accepted attempt.
 				// Closing its dispatch must not refund the daily generation.
-				recordBookkeepingError("settle accepted Dola dispatch quota", s.models.Quotas().Settle(quotaCtx, reservation.ID, upstreamRemaining))
+				recordBookkeepingError("settle accepted dispatch quota", s.models.Quotas().Settle(quotaCtx, reservation.ID, upstreamRemaining))
 			} else if errors.Is(err, byteplus.ErrRetryableTaskFailed) && !bytePlusBetaRetryVerified(err) {
 				// The task is definitely terminal, so close its dispatch; without a
 				// no-charge proof, settle rather than refund the reservation.
@@ -514,10 +509,6 @@ func dispatchUpstreamTaskID(err error) string {
 	if taskURL := grok.AcceptedTaskURL(err); taskURL != "" {
 		return taskURL
 	}
-	var dolaErr *dola.VideoSubmissionError
-	if errors.As(err, &dolaErr) {
-		return dolaErr.ConversationID
-	}
 	if err == nil {
 		return ""
 	}
@@ -536,9 +527,6 @@ func providerQuotaError(pool string, cause error) error {
 	case "grok":
 		return fmt.Errorf("%w: %w", grok.ErrQuotaExhausted, cause)
 
-	case "dola":
-		return fmt.Errorf("%w: %w", dola.ErrQuotaExhausted, cause)
-
 	default:
 		return fmt.Errorf("%w: %v", ErrProviderQuota, cause)
 	}
@@ -551,7 +539,7 @@ func (s *V1Service) refreshDispatchQuota(parent context.Context, pool string, to
 	if !ok || strings.TrimSpace(plan.Route.QuotaBucketKey) == "" {
 		return nil
 	}
-	if pool == "dola" || pool == "chatgpt" && kind != "image" || pool == "grok" && kind == "text" {
+	if pool == "chatgpt" && kind != "image" || pool == "grok" && kind == "text" {
 		return nil
 	}
 	probeTimeout := 30 * time.Second
@@ -784,10 +772,6 @@ func (s *V1Service) rotateAccountProxy(pool string, token model.TokenAccount) {
 	case "grok":
 		if s.grok != nil {
 			s.grok.RotateProxySession(token.Value)
-		}
-	case "dola":
-		if s.dola != nil {
-			s.dola.RotateProxySession(token.ID)
 		}
 	case "adobe":
 		if s.adobe != nil {

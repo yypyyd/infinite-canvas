@@ -58,7 +58,7 @@ func (m *MaintenanceService) reconcileInterruptedDispatches(ctx context.Context)
 			m.recovery.startAcceptedImageRecovery(ctx, event)
 			continue
 		}
-		if attempt.UpstreamTaskID != "" && event.Kind == "video" && (event.Provider == "dola" || event.Provider == "grok") && time.Since(event.TS) < 30*24*time.Hour {
+		if attempt.UpstreamTaskID != "" && event.Kind == "video" && event.Provider == "grok" && time.Since(event.TS) < 30*24*time.Hour {
 			if attempt.State != "accepted" {
 				recordBookkeepingError("adopt interrupted video task", m.models.Dispatch().Finish(ctx, attempt.ID, "accepted", "temporary", attempt.UpstreamTaskID, nil))
 			}

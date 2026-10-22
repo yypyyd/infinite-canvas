@@ -257,7 +257,6 @@ func safeAdminValidationMessage(err error) (string, bool) {
 		"outbound_proxy must not contain a query or fragment",
 		"provider_proxies must be an object of pool => URL",
 		"provider_extract_apis must be an object of pool => URL",
-		"dola_session_api must be an absolute http(s) URL",
 		"outbound_extract_api must be an absolute http(s) URL",
 		"deai_enabled must be a boolean",
 		"public_base_url must be an http(s) URL",
@@ -287,8 +286,7 @@ func safeAdminValidationMessage(err error) (string, bool) {
 		strings.HasPrefix(message, "provider_proxies contains unknown provider") ||
 		strings.HasPrefix(message, "provider_extract_apis.") ||
 		strings.HasPrefix(message, "provider_extract_apis contains unknown provider") ||
-		strings.HasPrefix(message, "outbound_extract_api ") ||
-		strings.HasPrefix(message, "dola_session_api ") {
+		strings.HasPrefix(message, "outbound_extract_api ") {
 		return message, true
 	}
 	if strings.HasPrefix(message, "invalid base_url: public HTTPS on port 443 is required") ||

@@ -188,7 +188,7 @@ export default function GatewayAccountsPage() {
                                 <Switch
                                     size="small"
                                     checked={item.status === "active"}
-                                    disabled={item.provider !== "dola" && !["active", "disabled"].includes(item.status)}
+                                    disabled={!["active", "disabled"].includes(item.status)}
                                     onChange={(checked) => void run((t) => gatewayApi.updateAccount(t, item.id, { status: checked ? "active" : "disabled" }), "状态已更新")}
                                 />
                             ),

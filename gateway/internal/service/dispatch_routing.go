@@ -11,7 +11,6 @@ import (
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/adobe"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/byteplus"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/chatgpt"
-	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/dola"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/grok"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/repo"
 	"gorm.io/gorm"
@@ -413,9 +412,6 @@ func (s *V1Service) dispatchVideoRoutes(ctx context.Context, eventID string, log
 		case "grok":
 			data, url, lastErr = s.generateGrokVideo(routeCtx, eventID, item, in, ratio, resolution, seconds, download)
 
-		case "dola":
-			data, url, lastErr = s.generateDolaVideo(routeCtx, eventID, item, in, ratio, seconds, download)
-
 		default:
 			lastErr = ErrProviderUnsupported
 		}
@@ -467,13 +463,6 @@ func evaluateRouteCost(route model.ModelRoute, req model.RouteRequirements) (flo
 			return 0, false
 		}
 		return credits, true
-
-	case "dola_video":
-		credits, err := dola.RequiredCredits(parseDurationSeconds(req.Duration))
-		if err != nil || credits < 0 {
-			return 0, false
-		}
-		return float64(credits), true
 	default:
 		return 0, false
 	}
@@ -481,7 +470,6 @@ func evaluateRouteCost(route model.ModelRoute, req model.RouteRequirements) (flo
 
 func noRouteFailover(err error) bool {
 	return errors.Is(err, chatgpt.ErrTaskAccepted) || errors.Is(err, chatgpt.ErrTaskSubmissionUnknown) ||
-		errors.Is(err, dola.ErrTaskAccepted) || errors.Is(err, dola.ErrTaskSubmissionUnknown) ||
 		errors.Is(err, grok.ErrTaskAccepted) ||
 		errors.Is(err, byteplus.ErrTaskAccepted) || errors.Is(err, byteplus.ErrTaskSubmissionUnknown) ||
 		errors.Is(err, byteplus.ErrRetryableTaskFailed) || errors.Is(err, errBytePlusRetryBudgetExhausted)
@@ -495,9 +483,7 @@ func routeFailoverSafe(err error) bool {
 		errors.Is(err, adobe.ErrEntitlement) || errors.Is(err, adobe.ErrAuth) || errors.Is(err, adobe.ErrQuotaExhausted) || errors.Is(err, adobe.ErrTemporaryUpstream) ||
 		errors.Is(err, byteplus.ErrAuth) || errors.Is(err, byteplus.ErrQuotaExhausted) || errors.Is(err, byteplus.ErrTemporaryUpstream) ||
 		errors.Is(err, chatgpt.ErrAuth) || errors.Is(err, chatgpt.ErrQuotaExhausted) || errors.Is(err, chatgpt.ErrTemporaryUpstream) ||
-		errors.Is(err, grok.ErrAuth) || errors.Is(err, grok.ErrQuotaExhausted) || errors.Is(err, grok.ErrTemporaryUpstream) ||
-		errors.Is(err, dola.ErrAuth) || errors.Is(err, dola.ErrQuotaExhausted) || errors.Is(err, dola.ErrTemporaryUpstream)
-
+		errors.Is(err, grok.ErrAuth) || errors.Is(err, grok.ErrQuotaExhausted) || errors.Is(err, grok.ErrTemporaryUpstream)
 }
 
 // runTextRouteFailover keeps route selection separate from account failover.
@@ -527,12 +513,6 @@ func dispatchFailureClass(err error) (state, class string) {
 	if errors.Is(err, chatgpt.ErrContentPolicy) {
 		return "failed", "content"
 	}
-	var dolaSubmission *dola.VideoSubmissionError
-	if errors.As(err, &dolaSubmission) && (errors.Is(dolaSubmission.Cause, dola.ErrContentRejected) || errors.Is(dolaSubmission.Cause, dola.ErrVideoFailed)) {
-		// A final rejection is no longer in flight. Keep the accepted wrapper
-		// for no-retry and quota settlement, separately from dispatch lifecycle.
-		return "failed", "request"
-	}
 	var grokSubmission *grok.VideoSubmissionError
 	if errors.As(err, &grokSubmission) {
 		switch {
@@ -550,9 +530,9 @@ func dispatchFailureClass(err error) (state, class string) {
 		// decides whether a verified uncharged attempt is released or conservatively
 		// settled, while this failed dispatch always retains its upstream task ID.
 		return "failed", "temporary"
-	case errors.Is(err, byteplus.ErrTaskAccepted), errors.Is(err, dola.ErrTaskAccepted), errors.Is(err, chatgpt.ErrTaskAccepted), errors.Is(err, grok.ErrTaskAccepted):
+	case errors.Is(err, byteplus.ErrTaskAccepted), errors.Is(err, chatgpt.ErrTaskAccepted), errors.Is(err, grok.ErrTaskAccepted):
 		return "accepted", "temporary"
-	case errors.Is(err, byteplus.ErrTaskSubmissionUnknown), errors.Is(err, dola.ErrTaskSubmissionUnknown), errors.Is(err, chatgpt.ErrTaskSubmissionUnknown):
+	case errors.Is(err, byteplus.ErrTaskSubmissionUnknown), errors.Is(err, chatgpt.ErrTaskSubmissionUnknown):
 		return "unknown", "temporary"
 	case errors.Is(err, adobe.ErrTrialExhausted):
 		// A daily model allowance can recover without reimporting credentials.
@@ -560,9 +540,9 @@ func dispatchFailureClass(err error) (state, class string) {
 		return "failed", "model_quota"
 	case errors.Is(err, adobe.ErrEntitlement):
 		return "failed", "entitlement"
-	case errors.Is(err, adobe.ErrAuth), errors.Is(err, byteplus.ErrAuth), errors.Is(err, chatgpt.ErrAuth), errors.Is(err, grok.ErrAuth), errors.Is(err, dola.ErrAuth):
+	case errors.Is(err, adobe.ErrAuth), errors.Is(err, byteplus.ErrAuth), errors.Is(err, chatgpt.ErrAuth), errors.Is(err, grok.ErrAuth):
 		return "failed", "auth"
-	case errors.Is(err, adobe.ErrQuotaExhausted), errors.Is(err, byteplus.ErrQuotaExhausted), errors.Is(err, chatgpt.ErrQuotaExhausted), errors.Is(err, grok.ErrQuotaExhausted), errors.Is(err, dola.ErrQuotaExhausted):
+	case errors.Is(err, adobe.ErrQuotaExhausted), errors.Is(err, byteplus.ErrQuotaExhausted), errors.Is(err, chatgpt.ErrQuotaExhausted), errors.Is(err, grok.ErrQuotaExhausted):
 		return "failed", "quota"
 	case routeFailoverSafe(err):
 		return "failed", "temporary"
@@ -572,12 +552,5 @@ func dispatchFailureClass(err error) (state, class string) {
 }
 
 func dispatchQuotaBucket(plan dispatchPlan, fallback string) string {
-	if plan.Route.Provider == "dola" && strings.HasPrefix(plan.Route.ID, "video.") {
-		day := plan.QuotaDay
-		if day.IsZero() {
-			day = time.Now()
-		}
-		return model.DolaVideoBucketAt(day)
-	}
 	return fallback
 }

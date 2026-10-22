@@ -87,7 +87,6 @@ func (r *QuotaRepository) ClaimRefreshDue(ctx context.Context, now time.Time, li
 	var items []model.AccountQuotaBucket
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
-			Where("bucket_key NOT LIKE ?", model.DolaDailyVideoBucket+":%").
 			Where("bucket_key IN ?", []string{"chatgpt.image", "byteplus.computing_points", "grok.media", "adobe.credits", "runway.credits", "oreate.points"}).
 			Where("probe_until IS NULL OR probe_until <= ?", now).
 			Where("reserved = 0").
@@ -187,17 +186,6 @@ func (r *QuotaRepository) ReserveWithUnit(ctx context.Context, eventID, attemptI
 	var result model.QuotaReservation
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var bucket model.AccountQuotaBucket
-		if day, daily := model.DolaVideoBucketDay(bucketKey); daily {
-			if unit != "generations" || amount != 1 {
-				return errors.New("invalid Dola daily reservation")
-			}
-			total, remaining := float64(model.DolaDailyVideoLimit), float64(model.DolaDailyVideoLimit)
-			reset := day.AddDate(0, 0, 1)
-			initial := model.AccountQuotaBucket{ID: quotaBucketID(accountID, bucketKey), AccountID: accountID, BucketKey: bucketKey, Unit: unit, Total: &total, Remaining: &remaining, ResetAt: &reset}
-			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&initial).Error; err != nil {
-				return err
-			}
-		}
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&bucket, "account_id = ? AND bucket_key = ?", accountID, bucketKey).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			bucket = model.AccountQuotaBucket{ID: quotaBucketID(accountID, bucketKey), AccountID: accountID, BucketKey: bucketKey, Unit: unit}
@@ -293,14 +281,10 @@ func (r *QuotaRepository) finishReservation(ctx context.Context, reservationID, 
 		}
 		released := math.Min(bucket.Reserved, reservation.Amount)
 		bucket.Reserved -= released
-		if target == "released" && bucket.Remaining != nil && !dolaBucketExhausted(bucket) {
+		if target == "released" && bucket.Remaining != nil {
 			remaining := *bucket.Remaining + released
 			bucket.Remaining = &remaining
 		} else if upstreamRemaining != nil {
-			if _, daily := model.DolaVideoBucketDay(bucket.BucketKey); daily && *upstreamRemaining <= 0 {
-				now := time.Now()
-				bucket.RefreshedAt = &now // explicit upstream exhaustion seals this day, including later releases
-			}
 			remaining := *upstreamRemaining - bucket.Reserved
 			if remaining < 0 {
 				remaining = 0
@@ -330,9 +314,4 @@ func cloneFloat(value *float64) *float64 {
 	}
 	copy := *value
 	return &copy
-}
-
-func dolaBucketExhausted(bucket model.AccountQuotaBucket) bool {
-	_, daily := model.DolaVideoBucketDay(bucket.BucketKey)
-	return daily && bucket.RefreshedAt != nil
 }

@@ -193,10 +193,6 @@ func routeQuotaCosts(routeID, provider string) datatypes.JSON {
 		policy = QuotaCostPolicy{Mode: "metered", Unit: "points", Calculator: "byteplus_image"}
 	case provider == "oreate" && strings.HasPrefix(routeID, "video."):
 		policy = QuotaCostPolicy{Mode: "metered", Unit: "points", Calculator: "oreate_seedance"}
-	case provider == "dola" && strings.HasPrefix(routeID, "video."):
-		policy = QuotaCostPolicy{Mode: "metered", Unit: "generations", Calculator: "dola_video"}
-	case provider == "dola" && strings.HasPrefix(routeID, "image."):
-		policy = QuotaCostPolicy{Mode: "metered", Unit: "credits", Calculator: "dola_image"}
 	case provider == "runway" && strings.HasPrefix(routeID, "video."):
 		policy = QuotaCostPolicy{Mode: "metered", Unit: "credits", Calculator: "per_second", PerSecond: 5}
 	case provider == "chatgpt" && strings.HasPrefix(routeID, "image."):
@@ -228,14 +224,6 @@ func routeQuotaBucket(routeID, logicalID, provider string) string {
 		return "grok.media"
 	case "oreate":
 		return "oreate.points"
-	case "dola":
-		// Dola meters daily free video allowance per account; the bucket is
-		// reservation-only because no upstream balance endpoint exists. Image
-		// generation draws its own daily free allowance, tracked separately.
-		if strings.HasPrefix(routeID, "image.") {
-			return "dola.image_credits"
-		}
-		return DolaDailyVideoBucket
 	case "custom":
 		return "custom." + logicalID
 	default:
@@ -277,8 +265,6 @@ func CanonicalRoutingCatalog() []CanonicalModelDefinition {
 	commonImageRatios := []string{"1:1", "16:9", "9:16", "4:3", "3:4"}
 	chatGPTImageRatios := []string{"1:1", "16:9", "9:16", "4:3", "3:4", "3:2"}
 	adobeWideRatios := []string{"1:1", "5:4", "9:16", "21:9", "16:9", "4:3", "3:2", "4:5", "3:4", "2:3"}
-	// Official Dola /samantha/skill/pack video_generation.ratio options.
-	dolaRatios := []string{"1:1", "3:4", "4:3", "9:16", "16:9", "21:9"}
 	return []CanonicalModelDefinition{
 		{Model: LogicalModel{ID: "gpt-5-5-mini", Kind: "text", Name: "GPT-5.5 Mini", Enabled: true}, Routes: []ModelRoute{
 			route("text.gpt-5-5-mini.chatgpt", "gpt-5-5-mini", "chatgpt", "gpt-5-5-mini", "gpt-5-5-mini", 100, textProfile()),
@@ -335,9 +321,6 @@ func CanonicalRoutingCatalog() []CanonicalModelDefinition {
 		{Model: LogicalModel{ID: "adobe-seedance-2.0-fast", Kind: "video", Name: "Adobe Seedance 2.0 Fast", Enabled: true}, Routes: []ModelRoute{
 			route("video.seedance-2.0-fast.adobe", "adobe-seedance-2.0-fast", "adobe", "firefly-seedance-2-fast", "", 100, videoProfile([]string{"16:9", "9:16"}, []string{"480p", "720p", "1080p"}, secondsRange(4, 15), 9, 3, 3, 9, true, "asset")),
 		}},
-		{Model: LogicalModel{ID: DolaPublicVideoModel, Kind: "video", Name: "Dola Seedance 2.5", Enabled: true}, Routes: []ModelRoute{
-			route("video.dola-seedance-2.5.dola", DolaPublicVideoModel, "dola", "dola-seedance-2.5", "seedance_v2.5", 100, videoProfile(dolaRatios, []string{"720p"}, []string{"30s"}, 10, 0, 0, 10, true, "asset")),
-		}},
 		{Model: LogicalModel{ID: "grok-imagine-video", Kind: "video", Name: "Grok Imagine Video", Enabled: true}, Routes: []ModelRoute{
 			route("video.grok-imagine-video.grok", "grok-imagine-video", "grok", "grok-video", "grok-imagine-video", 100, videoProfile([]string{"2:3", "3:2", "1:1", "9:16", "16:9"}, []string{"720p"}, []string{"6s", "10s"}, 6, 0, 0, 0, false, "asset")),
 		}},
@@ -358,11 +341,8 @@ func IsCanonicalModelID(id string) bool {
 }
 
 func IsCanonicalRoute(route ModelRoute) bool {
-	if route.LogicalModelID == DolaPublicVideoModel && route.Provider != "dola" {
-		return false
-	}
 	switch route.Provider {
-	case "oreate", "runway", "custom":
+	case "oreate", "runway", "custom", "dola":
 		return false
 	}
 	for _, definition := range CanonicalRoutingCatalog() {

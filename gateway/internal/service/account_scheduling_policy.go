@@ -6,7 +6,6 @@ import (
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/adobe"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/byteplus"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/chatgpt"
-	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/dola"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/grok"
 )
 
@@ -36,9 +35,6 @@ func tempFailureSignature(err error) string {
 
 	case errors.Is(err, grok.ErrTemporaryUpstream):
 		return "grok.temporary"
-
-	case errors.Is(err, dola.ErrTemporaryUpstream):
-		return "dola.temporary"
 
 	default:
 		return "temporary"

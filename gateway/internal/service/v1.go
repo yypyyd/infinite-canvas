@@ -29,7 +29,6 @@ import (
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/adobe"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/byteplus"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/chatgpt"
-	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/dola"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/grok"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/repo"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/storage"
@@ -110,8 +109,6 @@ type V1Service struct {
 	chatgpt  *chatgpt.Client
 
 	grok *grok.Client
-
-	dola *dola.Client
 
 	store   *storage.Client
 	proxyMu sync.RWMutex
@@ -383,7 +380,7 @@ type MediaReference struct {
 	Filename    string
 }
 
-func NewV1Service(cfg *config.Config, models *repo.ModelRepository, apiKeys *APICredentialService, events *repo.EventRepository, tokens *repo.TokenRepository, settings *repo.SiteSettingRepository, conc *ConcurrencyService, adobeClient *adobe.Client, bytePlusClient *byteplus.Client, chatGPTClient *chatgpt.Client, grokClient *grok.Client, dolaClient *dola.Client, store *storage.Client) *V1Service {
+func NewV1Service(cfg *config.Config, models *repo.ModelRepository, apiKeys *APICredentialService, events *repo.EventRepository, tokens *repo.TokenRepository, settings *repo.SiteSettingRepository, conc *ConcurrencyService, adobeClient *adobe.Client, bytePlusClient *byteplus.Client, chatGPTClient *chatgpt.Client, grokClient *grok.Client, store *storage.Client) *V1Service {
 	service := &V1Service{
 		cfg:      cfg,
 		models:   models,
@@ -397,8 +394,6 @@ func NewV1Service(cfg *config.Config, models *repo.ModelRepository, apiKeys *API
 		chatgpt:  chatGPTClient,
 
 		grok: grokClient,
-
-		dola: dolaClient,
 
 		store:    store,
 		inflight: &InflightRegistry{},
@@ -426,7 +421,7 @@ func (s *V1Service) SetBannedWords(r *repo.BannedWordRepository) { s.banned = r 
 
 // applyGlobalProxy snapshots each channel's residential route onto its client.
 // Extract APIs, when set, batch-lease dedicated exits per account. ChatGPT /
-// Grok / Dola / Oreate still fall back to proxy.url when extract fails or is
+// Grok / Oreate still fall back to proxy.url when extract fails or is
 // empty. Adobe and BytePlus stay direct unless their own extract API or URL is set.
 func (s *V1Service) applyGlobalProxy(ctx context.Context) string {
 	snap, err := loadProviderProxies(ctx, s.settings)
@@ -445,7 +440,7 @@ func (s *V1Service) applyGlobalProxy(ctx context.Context) string {
 }
 
 func (s *V1Service) applyProviderProxySnapshot(snap providerProxySnapshot) {
-	assignProviderProxies(snap, s.chatgpt, s.grok, s.dola, s.adobe, s.byteplus)
+	assignProviderProxies(snap, s.chatgpt, s.grok, s.adobe, s.byteplus)
 }
 
 func globalProxyHTTPClient(proxyRaw string, timeout time.Duration) (*http.Client, error) {
@@ -2065,31 +2060,12 @@ func (s *V1Service) OpenVideoContentRange(ctx context.Context, principal *APIPri
 	}
 	// Other providers return publicly-fetchable URLs. Validate the initial URL and
 	// every redirect before direct local egress so an upstream-provided URL cannot
-	// turn this API into an internal-network proxy. Dola VOD is normally public;
-	// if local egress is rejected, retry the idempotent GET through the generating
-	// account's sticky proxy instead of failing playback or spending proxy traffic
-	// on every successful direct request.
+	// turn this API into an internal-network proxy.
 	allowedHosts, err := s.assetAllowedHosts(ctx, ev)
 	if err != nil {
 		return nil, err
 	}
-	content, directErr := openPublicVideoContent(ctx, file, allowedHosts, rangeHeader, "")
-	if directErr == nil || !strings.EqualFold(strings.TrimSpace(ev.Provider), "dola") || s.dola == nil {
-		return content, directErr
-	}
-	acct, accountErr := s.tokens.Get(ctx, "dola", ev.AccountID)
-	if accountErr != nil || acct == nil || strings.TrimSpace(acct.Value) == "" {
-		return nil, directErr
-	}
-	proxyURL, proxyErr := s.dola.AccountProxy(ctx, dolaAccountFromToken(*acct))
-	if proxyErr != nil || strings.TrimSpace(proxyURL) == "" {
-		return nil, directErr
-	}
-	content, proxyFetchErr := openPublicVideoContent(ctx, file, allowedHosts, rangeHeader, proxyURL)
-	if proxyFetchErr != nil {
-		return nil, fmt.Errorf("%w: fetch upstream video failed", ErrProviderTemporary)
-	}
-	return content, nil
+	return openPublicVideoContent(ctx, file, allowedHosts, rangeHeader, "")
 }
 
 func normalizeVideoRange(raw string) (string, error) {
@@ -2376,11 +2352,6 @@ func (s *V1Service) assetAllowedHosts(ctx context.Context, ev *model.EventLog) (
 	switch strings.ToLower(strings.TrimSpace(ev.Provider)) {
 	case "adobe":
 		return staticAssetHosts("adobe"), nil
-
-	case "dola":
-		// Dola video artifacts rotate across ByteDance VOD hosts; an empty list
-		// keeps netguard's scheme/IP hardening as the only gate.
-		return nil, nil
 
 	default:
 		return nil, fmt.Errorf("%w: provider has no artifact host policy", ErrProviderTemporary)
@@ -3008,119 +2979,6 @@ func upstreamQualityForModel(modelID, quality, resolution string) string {
 		return ""
 	}
 	return upstreamImageQuality(quality, resolution)
-}
-
-// generateDolaVideo runs Dola's chat-transport Seedance video flow. Dola
-// exposes daily free video allowance per account with no balance endpoint, so
-// quota is observed through refusal copy and failover moves to the next
-// cookie immediately.
-func (s *V1Service) generateDolaVideo(ctx context.Context, eventID string, modelItem *model.ModelConfig, in V1VideoRequest, aspectRatio string, durationSeconds int, downloadResult bool) ([]byte, string, error) {
-	if s.dola == nil {
-		return nil, "", errors.New("dola client not configured")
-	}
-	if len(in.ReferenceVideos) > 0 || len(in.ReferenceAudios) > 0 {
-		return nil, "", fmt.Errorf("%w: Dola video does not accept reference videos or audio", ErrUnsupportedParams)
-	}
-	decodedImages, err := decodeReferenceImages(in.ReferenceImages, max(1, modelItem.MaxReferenceImages))
-	if err != nil {
-		return nil, "", err
-	}
-	imageRefs := make([]dola.MediaReference, 0, len(decodedImages))
-	for i, data := range decodedImages {
-		contentType := strings.ToLower(strings.TrimSpace(strings.Split(http.DetectContentType(data), ";")[0]))
-		switch contentType {
-		case "image/jpeg", "image/png", "image/webp":
-		default:
-			return nil, "", fmt.Errorf("%w: Dola reference images must be JPEG, PNG, or WebP", ErrUnsupportedParams)
-		}
-		imageRefs = append(imageRefs, dola.MediaReference{Data: data, ContentType: contentType, Filename: fmt.Sprintf("reference-image-%d", i+1)})
-	}
-	upstreamModel := strings.TrimSpace(modelItem.UpstreamModel)
-	if upstreamModel == "" {
-		upstreamModel = dola.DefaultVideoModel
-	}
-	requiredCredits, err := dola.RequiredCredits(durationSeconds)
-	if err != nil {
-		return nil, "", fmt.Errorf("%w: %v", ErrUnsupportedParams, err)
-	}
-	ctx = withDispatchCost(ctx, float64(requiredCredits))
-	if plan, ok := dispatchPlanFromContext(ctx); !ok || !plan.QuotaTracked {
-		return nil, "", errors.New("dola: metered dispatch route required")
-	}
-	s.applyGlobalProxy(ctx)
-	active, err := s.loadActivePool(ctx, "dola", "video", modelItem.ID, in.AccountID)
-	if err != nil {
-		return nil, "", err
-	}
-	if len(active) == 0 {
-		return nil, "", ErrNoProviderAccount
-	}
-	var videoURL string
-	data, err := s.runPoolWithFailoverPolicy(ctx, eventID, "dola", active, "video", func(token model.TokenAccount) ([]byte, error) {
-		dolaAccount := dolaAccountFromToken(token)
-		proxyURL, proxyErr := s.dola.AccountProxy(ctx, dolaAccount)
-		if proxyErr != nil {
-			return nil, fmt.Errorf("%w: %v", dola.ErrTemporaryUpstream, proxyErr)
-		}
-		blob, meta, genErr := s.dola.GenerateVideo(ctx, dolaAccount, dola.VideoOptions{
-			ModelID:         upstreamModel,
-			Prompt:          in.Prompt,
-			Ratio:           aspectRatio,
-			Duration:        durationSeconds,
-			ReferenceImages: imageRefs,
-			OnAccepted: func(id string) error {
-				bookCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-				defer cancel()
-				if err := s.models.Dispatch().AcceptLatest(bookCtx, eventID, token.ID, dispatchRouteFromContext(ctx), id); err != nil {
-					return err
-				}
-				recordBookkeepingError("mark Dola video rendering phase", s.events.SetPhase(bookCtx, eventID, "rendering"))
-				return nil
-			},
-		})
-		if genErr != nil {
-			if !errors.Is(genErr, dola.ErrTaskAccepted) && !errors.Is(genErr, dola.ErrTaskSubmissionUnknown) &&
-				(errors.Is(genErr, dola.ErrAuth) || errors.Is(genErr, dola.ErrChallenge) || errors.Is(genErr, dola.ErrVideoNotReady)) {
-				state, detail := dolaReadinessVerdict(genErr)
-				bookkeeping, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-				recordBookkeepingError("invalidate Dola readiness", s.tokens.InvalidateDolaReadiness(bookkeeping, token, state, detail))
-				cancel()
-			}
-			return nil, genErr
-		}
-		videoURL = strings.TrimSpace(stringValue(meta["video_url"]))
-		if downloadResult {
-			// Dola artifacts land on rotating ByteDance VOD hosts, so the host
-			// policy stays open to any public HTTPS endpoint and netguard's
-			// IP/scheme hardening carries the SSRF defence.
-			blob, _, genErr = downloadPublicArtifactWithProxy(ctx, videoURL, nil, "", netguard.MediaVideo, netguard.MaxVideoBytes, proxyURL)
-			if genErr != nil {
-				return nil, dola.AcceptedFailure(stringValue(meta["conversation_id"]), errGeneratedArtifactUnavailable)
-			}
-		}
-		return blob, nil
-	}, dolaErrClass, nil, false, false)
-	return data, videoURL, err
-}
-
-func dolaAccountFromToken(token model.TokenAccount) dola.Account {
-	account := dola.Account{ID: token.ID, Cookie: strings.TrimSpace(token.Value)}
-	if token.Meta != nil {
-		account.UserAgent = strings.TrimSpace(stringValue(token.Meta["user_agent"]))
-	}
-	return account
-}
-
-func dolaErrClass(err error) (isAuth, isQuota, isTemporary, isDead bool) {
-	if errors.Is(err, dola.ErrChallenge) || errors.Is(err, dola.ErrTaskAccepted) || errors.Is(err, dola.ErrTaskSubmissionUnknown) {
-		// A slide challenge needs interactive verification on this exact session.
-		// Do not rotate through other accounts or resubmit the generation.
-		return false, false, false, false
-	}
-	return errors.Is(err, dola.ErrAuth),
-		errors.Is(err, dola.ErrQuotaExhausted),
-		errors.Is(err, dola.ErrTemporaryUpstream),
-		false
 }
 
 // generateGrokVideo runs grok's imagine video pipeline across the grok pool.

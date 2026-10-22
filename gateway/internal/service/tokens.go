@@ -10,14 +10,12 @@ import (
 	"log"
 	"sort"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/yypyyd/infinite-canvas/gateway/internal/model"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/adobe"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/byteplus"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/chatgpt"
-	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/dola"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/grok"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/repo"
 
@@ -32,8 +30,6 @@ var validTokenPools = map[string]string{
 	"byteplus": "byteplus",
 
 	"grok": "grok",
-
-	"dola": "dola",
 }
 
 // ErrNotFound is retained as the control-plane service sentinel after the
@@ -41,7 +37,6 @@ var validTokenPools = map[string]string{
 var ErrNotFound = gorm.ErrRecordNotFound
 
 const (
-	dolaCredentialGenerationMetaKey      = "dola_credential_generation"
 	bytePlusCredentialFingerprintMetaKey = "byteplus_credential_fingerprint"
 	bytePlusIdentityFingerprintMetaKey   = "byteplus_identity_fingerprint"
 	bytePlusProbeVersionMetaKey          = "byteplus_probe_version"
@@ -176,17 +171,13 @@ type TokenService struct {
 
 	grok *grok.Client
 
-	dola *dola.Client
-
 	// sem caps concurrent background pending-probe goroutines (mirrors Python's
 	// 10-worker _quota_check_pool) so a big paste doesn't fire hundreds of
 	// simultaneous upstream requests.
 	sem chan struct{}
-
-	dolaVerifying atomic.Bool
 }
 
-func NewTokenService(tokens *repo.TokenRepository, refresh *repo.RefreshProfileRepository, events *repo.EventRepository, settings *repo.SiteSettingRepository, adobeClient *adobe.Client, bytePlusClient *byteplus.Client, chatGPTClient *chatgpt.Client, grokClient *grok.Client, dolaClient *dola.Client, quotas *repo.QuotaRepository) *TokenService {
+func NewTokenService(tokens *repo.TokenRepository, refresh *repo.RefreshProfileRepository, events *repo.EventRepository, settings *repo.SiteSettingRepository, adobeClient *adobe.Client, bytePlusClient *byteplus.Client, chatGPTClient *chatgpt.Client, grokClient *grok.Client, quotas *repo.QuotaRepository) *TokenService {
 	service := &TokenService{
 		tokens:   tokens,
 		refresh:  refresh,
@@ -199,8 +190,6 @@ func NewTokenService(tokens *repo.TokenRepository, refresh *repo.RefreshProfileR
 		chatgpt: chatGPTClient,
 
 		grok: grokClient,
-
-		dola: dolaClient,
 
 		sem: make(chan struct{}, 10),
 	}
@@ -227,7 +216,7 @@ func (s *TokenService) applyProxy(ctx context.Context) {
 	if client, ok := s.byteplus.(*byteplus.Client); ok {
 		byteplusClient = client
 	}
-	assignProviderProxies(snap, s.chatgpt, s.grok, s.dola, s.adobe, byteplusClient)
+	assignProviderProxies(snap, s.chatgpt, s.grok, s.adobe, byteplusClient)
 }
 
 func (s *TokenService) List(ctx context.Context) (map[string][]ginToken, error) {
@@ -1230,45 +1219,6 @@ func (s *TokenService) RefreshGrokLiveness(ctx context.Context) {
 		recordBookkeepingError("refresh grok quota bucket", s.storeQuotaSnapshot(ctx, "grok", it.ID, data))
 	}
 	log.Printf("grok liveness: checked %d due account(s)", len(items))
-}
-
-// ImportDolaAccount stores a cookie and verifies the protocol session
-// before admitting it to scheduling. Verification never submits video;
-// importing an existing session preserves its two-use daily quota.
-func (s *TokenService) ImportDolaAccount(ctx context.Context, cookie, userAgent string) (*model.TokenAccount, error) {
-	s.applyProxy(ctx)
-	cookie = strings.TrimSpace(cookie)
-	if !dola.IsDolaCookie(cookie) {
-		return nil, errors.New("not a Dola cookie (need sessionid with a browser fingerprint or Passport session bundle)")
-	}
-	sessionID := dola.CookieValue(cookie, "sessionid")
-	credentialGeneration := newTokenID("dola-generation")
-	meta := datatypes.JSONMap{
-		"pending_check":  true,
-		"dola_readiness": "pending", "dola_readiness_version": "", "dola_verified_generation": "", "dola_probe_id": "", "dola_probe_until": "", "dola_retry_at": "", "dola_probe_attempts": 0, "dola_readiness_detail": "",
-		dolaCredentialGenerationMetaKey: credentialGeneration,
-	}
-	metaPatch := map[string]any{
-		"pending_check":  true,
-		"dola_readiness": "pending", "dola_readiness_version": "", "dola_verified_generation": "", "dola_probe_id": "", "dola_probe_until": "", "dola_retry_at": "", "dola_probe_attempts": 0, "dola_readiness_detail": "",
-		dolaCredentialGenerationMetaKey: credentialGeneration,
-	}
-	if userAgent = strings.TrimSpace(userAgent); userAgent != "" {
-		meta["user_agent"] = userAgent
-		metaPatch["user_agent"] = userAgent
-	}
-	identityHash := dola.IdentityHash(sessionID)
-	now := time.Now()
-	candidate := &model.TokenAccount{
-		ID: newTokenID("dola"), Pool: "dola", Value: cookie, IdentityHash: identityHash,
-		Status: "pending", Meta: meta, AddedAt: &now, CreatedAt: now, UpdatedAt: now,
-	}
-	item, _, err := s.tokens.UpsertDolaByIdentity(ctx, candidate, metaPatch)
-	if err != nil {
-		return nil, err
-	}
-	go s.verifyDolaReadiness(item.ID, false)
-	return item, nil
 }
 
 func (s *TokenService) finishPending(ctx context.Context, pool, id, status string, dead bool, quotaMeta map[string]any) {

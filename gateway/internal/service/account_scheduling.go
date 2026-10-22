@@ -140,9 +140,6 @@ func sortDemoteCooling(items []model.TokenAccount, cooling map[string]bool) {
 }
 
 func accountDispatchable(account model.TokenAccount, pool, kind, logicalID, pinnedID string, now time.Time) bool {
-	if pool == "dola" && !model.DolaAccountReady(account) {
-		return false
-	}
 	if !account.SchedulingStub && strings.TrimSpace(account.Value) == "" {
 		return false
 	}

@@ -26,7 +26,6 @@ import (
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/adobe"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/byteplus"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/chatgpt"
-	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/dola"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/grok"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/repo"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/service"
@@ -181,20 +180,19 @@ func NewApp(ctx context.Context) (*App, error) {
 	bytePlusClient := byteplus.NewClient("")
 	chatGPTClient := chatgpt.NewClient("")
 	grokClient := grok.NewClient("")
-	dolaClient := dola.NewClient("")
 
 	objectStore := storage.New(cfg.RustFSEndpoint, cfg.RustFSBucket, cfg.RustFSAccessKey, cfg.RustFSSecretKey)
 
 	tokenSvc := service.NewTokenService(
 		tokenRepo, refreshRepo, eventRepo, settingsRepo,
 		adobeClient, bytePlusClient, chatGPTClient,
-		grokClient, dolaClient, modelRepo.Quotas(),
+		grokClient, modelRepo.Quotas(),
 	)
 	refreshSvc := service.NewRefreshProfileService(refreshRepo, tokenRepo, adobeClient, bytePlusClient, tokenSvc)
 	v1Svc := service.NewV1Service(
 		cfg, modelRepo, credentialSvc, eventRepo, tokenRepo, settingsRepo, concurrencySvc,
 		adobeClient, bytePlusClient, chatGPTClient,
-		grokClient, dolaClient, objectStore,
+		grokClient, objectStore,
 	)
 	v1Svc.SetRefresh(refreshSvc)
 	v1Svc.SetBannedWords(bannedRepo)

@@ -124,9 +124,6 @@ func (m *MaintenanceService) refreshDueQuota(ctx context.Context) {
 }
 
 func (m *MaintenanceService) tick(ctx context.Context) {
-	if m.tokenSvc != nil {
-		m.tokenSvc.ReprobeDolaReadiness(ctx)
-	}
 	m.reconcileInterruptedDispatches(ctx)
 	m.resumeAcceptedImages(ctx)
 	m.resumeAcceptedVideos(ctx)
@@ -252,7 +249,7 @@ func (m *MaintenanceService) resumeAcceptedImages(ctx context.Context) {
 	}
 }
 
-// resumeAcceptedVideos repairs Dola/Grok renders that outlive the request's
+// resumeAcceptedVideos repairs Grok renders that outlive the request's
 // initial polling window. It also heals historical rows produced by older
 // builds that marked the event failed while retaining a durable task handle.
 func (m *MaintenanceService) resumeAcceptedVideos(ctx context.Context) {

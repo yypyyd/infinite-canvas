@@ -14,10 +14,10 @@ export const IMAGE_MODELS = Object.freeze([
     "grok-imagine-image",
 ]);
 
-export const VIDEO_MODELS = Object.freeze(["kling-3", "kling-o3", "adobe-seedance-2.0", "adobe-seedance-2.0-fast", "dola-seedance-2.5", "grok-imagine-video", "firefly-video"]);
+export const VIDEO_MODELS = Object.freeze(["kling-3", "kling-o3", "adobe-seedance-2.0", "adobe-seedance-2.0-fast", "grok-imagine-video", "firefly-video"]);
 
 export const MODEL_KIND = Object.freeze(Object.fromEntries([...TEXT_MODELS.map((id) => [id, "text"]), ...IMAGE_MODELS.map((id) => [id, "image"]), ...VIDEO_MODELS.map((id) => [id, "video"])]));
 
 export const ALL_MODELS = Object.freeze(Object.keys(MODEL_KIND));
 
-export const ACCOUNT_PROVIDERS = Object.freeze(["chatgpt", "byteplus", "adobe", "grok", "dola"]);
+export const ACCOUNT_PROVIDERS = Object.freeze(["chatgpt", "byteplus", "adobe", "grok"]);

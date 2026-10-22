@@ -448,10 +448,6 @@ func assembleAccountRow(account model.TokenAccount, bindings []model.AccountMode
 	} else if account.Status == "quota" || account.Status == "pending" || account.Fails > 0 || quotaState == "empty" {
 		health = "degraded"
 	}
-	readiness, readinessDetail := dolaReadinessView(account)
-	if account.Pool == "dola" && readiness != "ready" {
-		health = "degraded"
-	}
 	sessionExpiresAt, sessionState := bytePlusSessionStatus(account, time.Now())
 	if sessionState == "expired" {
 		health = "unhealthy"
@@ -475,7 +471,6 @@ func assembleAccountRow(account model.TokenAccount, bindings []model.AccountMode
 		"image_limited": account.ImageLimited, "video_limited": account.VideoLimited,
 		"last_used_at": account.LastUsedAt, "created_at": account.CreatedAt,
 		"session_expires_at": sessionExpiresAt, "session_state": sessionState,
-		"readiness": readiness, "readiness_detail": readinessDetail,
 	}
 }
 
@@ -526,9 +521,6 @@ func (s *AdminConsoleService) ImportAccount(ctx context.Context, input AccountIm
 	case "grok":
 		account, err = s.tokenSvc.ImportGrokToken(ctx, secret, "")
 
-	case "dola":
-		account, err = s.tokenSvc.ImportDolaAccount(ctx, secret, stringFromMap(credential, "user_agent"))
-
 	}
 	if err != nil {
 		return nil, err
@@ -570,10 +562,6 @@ func (s *AdminConsoleService) ImportAccount(ctx context.Context, input AccountIm
 
 func (s *AdminConsoleService) bindAccountRoutes(ctx context.Context, account model.TokenAccount) error {
 	for _, definition := range model.CanonicalRoutingCatalog() {
-		if definition.Model.ID == model.DolaPublicVideoModel && account.Pool != "dola" {
-			continue
-		}
-
 		for _, route := range definition.Routes {
 			if route.Provider != account.Pool {
 				continue
@@ -627,22 +615,6 @@ func (s *AdminConsoleService) UpdateAccount(ctx context.Context, accountID strin
 		}
 		updates["concurrency"] = limit
 	}
-	if account.Pool == "dola" {
-		if status, ok := updates["status"]; ok {
-			if err := s.tokens.SetDolaEnabled(ctx, account.ID, status == "active"); err != nil {
-				return nil, err
-			}
-			delete(updates, "status")
-			delete(updates, "dead")
-			if status == "active" {
-				go s.tokenSvc.verifyDolaReadiness(account.ID, true)
-			}
-			account, err = s.tokens.Get(ctx, "dola", account.ID)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
 	if len(updates) > 0 {
 		account, err = s.tokens.Update(ctx, account.Pool, account.ID, updates)
 		if err != nil {
@@ -695,13 +667,6 @@ func (s *AdminConsoleService) RefreshAccountQuota(ctx context.Context, accountID
 	account, err := s.accountByID(ctx, accountID)
 	if err != nil {
 		return nil, err
-	}
-	if account.Pool == "dola" {
-		if account.Status == "disabled" {
-			return nil, errors.New("请先启用账号，再验证 Dola 会话")
-		}
-		go s.tokenSvc.verifyDolaReadiness(account.ID, true)
-		return map[string]any{"queued": true, "message": "已安排 Dola 协议会话验证，不消耗生成次数"}, nil
 	}
 	return s.tokenSvc.Quota(ctx, account.Pool, account.ID)
 }
@@ -863,19 +828,7 @@ func (s *AdminConsoleService) GetSettings(ctx context.Context) (map[string]any, 
 		extracts[pool] = strings.TrimSpace(extract)
 	}
 	values["provider_proxies"] = proxies
-	sessionAPI, err := s.settings.GetValue(ctx, settingDolaSessionAPI)
-	if err != nil {
-		return nil, err
-	}
-	sessionAPI = strings.TrimSpace(sessionAPI)
-	if extracts["dola"] == "" {
-		extracts["dola"] = sessionAPI
-	}
-	if sessionAPI == "" {
-		sessionAPI = extracts["dola"]
-	}
 	values["provider_extract_apis"] = extracts
-	values["dola_session_api"] = sessionAPI
 	extractAPI, err := s.settings.GetValue(ctx, settingExtractAPI)
 	if err != nil {
 		return nil, err
@@ -916,16 +869,6 @@ func (s *AdminConsoleService) UpdateSettings(ctx context.Context, input map[stri
 		}
 		updates[settingExtractAPI] = extractAPI
 	}
-	if value, ok := input["dola_session_api"]; ok {
-		sessionAPI, err := normalizeExtractAPI(fmt.Sprint(value), "dola_session_api")
-		if err != nil {
-			return nil, err
-		}
-		updates[settingDolaSessionAPI] = sessionAPI
-		if _, hasExtracts := input["provider_extract_apis"]; !hasExtracts {
-			updates[providerExtractSettingKey("dola")] = sessionAPI
-		}
-	}
 	if raw, ok := input["provider_extract_apis"]; ok {
 		obj, ok := raw.(map[string]any)
 		if !ok {
@@ -945,9 +888,6 @@ func (s *AdminConsoleService) UpdateSettings(ctx context.Context, input map[stri
 				return nil, err
 			}
 			updates[providerExtractSettingKey(normalized)] = extractAPI
-			if normalized == "dola" {
-				updates[settingDolaSessionAPI] = extractAPI
-			}
 		}
 	}
 	if raw, ok := input["provider_proxies"]; ok {
@@ -1101,7 +1041,7 @@ func normalizeAdminProvider(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "openai", "chatgpt":
 		return "chatgpt"
-	case "adobe", "byteplus", "grok", "dola":
+	case "adobe", "byteplus", "grok":
 		return strings.ToLower(strings.TrimSpace(value))
 	default:
 		return ""

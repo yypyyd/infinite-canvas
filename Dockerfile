@@ -54,9 +54,6 @@ COPY --from=api-build /ops-backup /app/ops-backup
 COPY --from=api-build /gateway-import /app/gateway-import
 COPY --from=api-build /gateway-init-bucket /app/gateway-init-bucket
 COPY gateway/LICENSE /app/gateway/LICENSE
-# 网关 Dola 渠道的请求签名脚本（Node 运行）
-COPY gateway/scripts/dola-protocol /app/scripts/dola-protocol
-RUN cd /app/scripts/dola-protocol && npm ci --omit=dev --ignore-scripts && npm cache clean --force
 COPY --from=web-build /app/web/public /app/web/public
 COPY --from=web-build /app/web/.next/standalone /app/web
 COPY --from=web-build /app/web/.next/static /app/web/.next/static
@@ -65,7 +62,7 @@ ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
 ENV PROMPT_DATA_DIR=/app/data/prompts
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates default-mysql-client postgresql-client && rm -rf /var/lib/apt/lists/*
-RUN mkdir -p /app/data/prompts /app/data/generated /app/data/dola-profiles
+RUN mkdir -p /app/data/prompts /app/data/generated
 
 EXPOSE 3000
 # 先启动内部 Go API，再由 Next.js 提供页面并代理 /api/*。

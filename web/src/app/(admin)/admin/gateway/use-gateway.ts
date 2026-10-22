@@ -39,7 +39,7 @@ export function useGatewayAction() {
     };
 }
 
-export const providerLabels: Record<string, string> = { chatgpt: "ChatGPT", grok: "Grok", dola: "Dola", adobe: "Adobe Firefly", byteplus: "BytePlus" };
+export const providerLabels: Record<string, string> = { chatgpt: "ChatGPT", grok: "Grok", adobe: "Adobe Firefly", byteplus: "BytePlus" };
 export const kindLabels: Record<string, string> = { text: "对话", image: "图片", video: "视频" };
 
 export function formatTime(value?: string) {

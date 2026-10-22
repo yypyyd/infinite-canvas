@@ -233,36 +233,6 @@ func (r *TokenRepository) UpsertOreateByIdentity(ctx context.Context, item *mode
 	return updated, false, err
 }
 
-// UpsertDolaByIdentity inserts one Dola credential or rotates the existing row
-// with the same sessionid identity, converging concurrent imports the same way
-// the Oreate upsert does.
-func (r *TokenRepository) UpsertDolaByIdentity(ctx context.Context, item *model.TokenAccount, metaPatch map[string]any) (*model.TokenAccount, bool, error) {
-	if item == nil || item.Pool != "dola" || strings.TrimSpace(item.IdentityHash) == "" {
-		return nil, false, errors.New("dola identity is required")
-	}
-	if err := r.Create(ctx, item); err == nil {
-		return item, true, nil
-	} else if !errors.Is(err, gorm.ErrDuplicatedKey) {
-		return nil, false, err
-	}
-	existing, err := r.GetByIdentityHash(ctx, "dola", item.IdentityHash)
-	if err != nil || existing == nil {
-		return nil, false, err
-	}
-	patch := map[string]any{
-		"value":         item.Value,
-		"status":        item.Status,
-		"dead":          false,
-		"fails":         0,
-		"identity_hash": item.IdentityHash,
-	}
-	if err := r.UpdateMergingMeta(ctx, "dola", existing.ID, metaPatch, patch); err != nil {
-		return nil, false, err
-	}
-	updated, err := r.Get(ctx, "dola", existing.ID)
-	return updated, false, err
-}
-
 // RotateOreateSession atomically persists a browser-observed Cookie only while
 // the account still contains the credential used to open that browser. A stale
 // page therefore cannot overwrite a newer manual import.

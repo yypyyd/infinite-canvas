@@ -23,9 +23,6 @@ func TestQuotaRefreshDispatchPolicy(t *testing.T) {
 	if !shouldRefreshDispatchQuota(known, "chatgpt", &model.QuotaReservation{Amount: 1}, nil) {
 		t.Fatal("unknown initial balance never reconciled")
 	}
-	if shouldRefreshDispatchQuota(known, "dola", held, nil) {
-		t.Fatal("Dola daily allowance made a quota request")
-	}
 	proof := verifiedBytePlusRetry(byteplus.ErrRetryableTaskFailed, 100)
 	if !shouldRefreshDispatchQuota(known, "byteplus", held, proof) {
 		t.Fatal("billing proof was skipped")

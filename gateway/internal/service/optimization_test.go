@@ -8,7 +8,6 @@ import (
 
 	"github.com/yypyyd/infinite-canvas/gateway/internal/model"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/chatgpt"
-	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/dola"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/grok"
 )
 
@@ -50,9 +49,6 @@ func TestAcceptedVideoNeverAuthorizesFailover(t *testing.T) {
 		{"grok auth after submit", grok.AcceptedFailure(taskURL, grok.ErrAuth), "accepted", "temporary", true},
 		{"grok quota rejection", grok.AcceptedFailure(taskURL, grok.ErrQuotaExhausted), "failed", "quota", false},
 		{"grok fatal rejection", grok.AcceptedFailure(taskURL, grok.ErrVideoRejected), "failed", "request", false},
-		{"dola temporary", dola.AcceptedFailure("conversation", dola.ErrTemporaryUpstream), "accepted", "temporary", true},
-		{"dola content rejection", dola.AcceptedFailure("conversation", dola.ErrContentRejected), "failed", "request", false},
-		{"dola final generation failure", dola.AcceptedFailure("conversation", dola.ErrVideoFailed), "failed", "request", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if !noRouteFailover(tc.err) || routeFailoverSafe(tc.err) {

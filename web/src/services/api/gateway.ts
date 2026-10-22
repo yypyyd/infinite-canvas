@@ -98,7 +98,6 @@ export type GatewaySettings = {
     providers_enabled: Record<string, boolean>;
     provider_proxies: Record<string, string>;
     provider_extract_apis: Record<string, string>;
-    dola_session_api?: string;
 };
 
 export type GatewayOverview = {

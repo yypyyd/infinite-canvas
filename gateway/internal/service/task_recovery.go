@@ -11,7 +11,6 @@ import (
 	"github.com/yypyyd/infinite-canvas/gateway/internal/netguard"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/byteplus"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/chatgpt"
-	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/dola"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/grok"
 
 	"gorm.io/gorm"
@@ -119,15 +118,14 @@ func (s *V1Service) startAcceptedImageRecovery(parent context.Context, event *mo
 const acceptedVideoRecoveryWindow = 20 * time.Minute
 
 // startAcceptedVideoRecovery continues an already accepted video task without
-// replaying its prompt. Dola conversations and Grok deterministic artifact URLs
-// are durable across request timeouts and restarts, so slow renders remain
+// replaying its prompt. Grok deterministic artifact URLs are durable across request timeouts and restarts, so slow renders remain
 // pending until this path obtains a final URL or an explicit terminal verdict.
 func (s *V1Service) startAcceptedVideoRecovery(parent context.Context, event *model.EventLog) {
 	if event == nil || event.Kind != "video" || (event.Status != "pending" && event.Status != "failed") {
 		return
 	}
 	provider := strings.ToLower(strings.TrimSpace(event.Provider))
-	if (provider != "dola" && provider != "grok") || (provider == "dola" && s.dola == nil) || (provider == "grok" && s.grok == nil) {
+	if provider != "grok" || s.grok == nil {
 		return
 	}
 	// The original generation poll may still be alive. Running a second poll is
@@ -165,8 +163,6 @@ func (s *V1Service) startAcceptedVideoRecovery(parent context.Context, event *mo
 		var meta map[string]any
 		var resumeErr error
 		switch provider {
-		case "dola":
-			meta, resumeErr = s.dola.ResumeVideoTask(ctx, dolaAccountFromToken(*account), attempt.UpstreamTaskID)
 		case "grok":
 			meta, resumeErr = s.grok.ResumeVideoTask(ctx, account.Value, attempt.UpstreamTaskID)
 		}
@@ -202,8 +198,6 @@ func terminalVideoRecoveryError(provider string, err error) bool {
 		return false
 	}
 	switch provider {
-	case "dola":
-		return !errors.Is(err, dola.ErrTemporaryUpstream) && !errors.Is(err, dola.ErrAuth) && !errors.Is(err, dola.ErrChallenge)
 	case "grok":
 		return errors.Is(err, grok.ErrInvalidTaskHandle) || errors.Is(err, grok.ErrVideoRejected)
 	default:
@@ -212,13 +206,6 @@ func terminalVideoRecoveryError(provider string, err error) bool {
 }
 
 func acceptedVideoRecoveryPending(err error) bool {
-	var dolaSubmission *dola.VideoSubmissionError
-	if errors.As(err, &dolaSubmission) {
-		return !errors.Is(dolaSubmission.Cause, dola.ErrContentRejected) &&
-			!errors.Is(dolaSubmission.Cause, dola.ErrVideoFailed) &&
-			!errors.Is(dolaSubmission.Cause, dola.ErrVideoNotStarted) &&
-			!errors.Is(dolaSubmission.Cause, dola.ErrQuotaExhausted)
-	}
 	var grokSubmission *grok.VideoSubmissionError
 	if errors.As(err, &grokSubmission) {
 		return !errors.Is(grokSubmission.Cause, grok.ErrVideoRejected) &&

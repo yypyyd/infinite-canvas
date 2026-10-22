@@ -117,8 +117,8 @@ func (r *DispatchRepository) ListAcceptedVideos(ctx context.Context, limit int) 
 	var items []model.DispatchAttempt
 	err := r.db.WithContext(ctx).
 		Where("state IN ? AND upstream_task_id <> ''", []string{"accepted", "succeeded"}).
-		Where("model_route_id LIKE 'video.%' AND (model_route_id LIKE '%.dola' OR model_route_id LIKE '%.grok')").
-		Where("EXISTS (SELECT 1 FROM event_logs e WHERE e.id = dispatch_attempts.event_id AND e.kind = 'video' AND e.provider IN ('dola','grok') AND e.status IN ('pending','failed') AND COALESCE(e.file, '') = '')").
+		Where("model_route_id LIKE 'video.%' AND model_route_id LIKE '%.grok'").
+		Where("EXISTS (SELECT 1 FROM event_logs e WHERE e.id = dispatch_attempts.event_id AND e.kind = 'video' AND e.provider = 'grok' AND e.status IN ('pending','failed') AND COALESCE(e.file, '') = '')").
 		Order("started_at ASC").Limit(limit).Find(&items).Error
 	return items, err
 }

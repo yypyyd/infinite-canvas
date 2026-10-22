@@ -2,8 +2,7 @@
 //
 // Most residential pools accept a session label in the username
 // (`user-session-<id>`). Without that label every CONNECT can land on a new
-// exit IP, which website providers treat as a stolen session. Dola already
-// assigns a sticky exit per account through its session API; ChatGPT, Grok, and
+// exit IP, which website providers treat as a stolen session. ChatGPT, Grok, and
 // Oreate reuse this helper so generation, quota probes, and keep-alive TLS for
 // one credential stay on the same labelled session.
 package proxysession

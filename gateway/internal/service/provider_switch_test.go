@@ -13,10 +13,10 @@ func TestRetiredRoutesExcludedWithoutSettings(t *testing.T) {
 		{ID: "live-byteplus", Provider: "byteplus"},
 		{ID: "retired-runway", Provider: "runway"},
 		{ID: "retired-custom", Provider: "custom"},
-		{ID: "live-dola", Provider: "dola"},
+		{ID: "retired-dola", Provider: "dola"},
 	}
 	got, err := filterEnabledProviderRoutes(context.Background(), nil, routes)
-	if err != nil || len(got) != 2 || got[0].ID != "live-byteplus" || got[1].ID != "live-dola" {
+	if err != nil || len(got) != 1 || got[0].ID != "live-byteplus" {
 		t.Fatalf("retired routes survived or live route order changed: %+v, %v", got, err)
 	}
 }

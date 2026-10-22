@@ -7,7 +7,6 @@ import {
     ClusterOutlined,
     ProfileOutlined,
     StopOutlined,
-    TeamOutlined,
     CloudServerOutlined,
     FileTextOutlined,
     HomeOutlined,
@@ -47,9 +46,10 @@ const adminMenus: AdminMenuItem[] = [
     { key: "/admin/assets", icon: <PictureOutlined />, label: "素材库" },
     { key: "/admin/models", icon: <ApiOutlined />, label: "模型管理" },
     { key: "/admin/settings", icon: <SettingOutlined />, label: "系统设置" },
-    // Built-in account pool (formerly the standalone Nexa console).
-    { key: "/admin/account-pool", icon: <ClusterOutlined />, label: "账号池概览", exact: true },
-    { key: "/admin/account-pool/accounts", icon: <TeamOutlined />, label: "账号池账号" },
+];
+
+/** Ops deep-links (logs / banned words / pool settings). Hidden from default nav; collapsed submenu only. */
+const opsMenus: AdminMenuItem[] = [
     { key: "/admin/account-pool/logs", icon: <ProfileOutlined />, label: "账号池日志" },
     { key: "/admin/account-pool/banned-words", icon: <StopOutlined />, label: "违禁词" },
     { key: "/admin/account-pool/settings", icon: <AuditOutlined />, label: "账号池设置" },
@@ -65,19 +65,18 @@ const pageTitles: Record<string, string> = {
     "/admin/assets": "素材库管理",
     "/admin/models": "模型管理",
     "/admin/settings": "系统设置",
-    "/admin/account-pool": "账号池概览",
-    "/admin/account-pool/accounts": "账号池账号",
     "/admin/account-pool/logs": "账号池日志与素材",
     "/admin/account-pool/banned-words": "违禁词",
     "/admin/account-pool/settings": "账号池设置",
 };
 
 function currentAdminKey(pathname: string) {
-    const exact = adminMenus.find((item) => item.exact && item.key === pathname);
+    const all = [...adminMenus, ...opsMenus];
+    const exact = all.find((item) => item.exact && item.key === pathname);
     if (exact) return exact.key;
     // Longest prefix wins so /admin/account-pool/* never matches a shorter key.
     return (
-        adminMenus
+        all
             .filter((item) => !item.exact)
             .sort((left, right) => right.key.length - left.key.length)
             .find((item) => pathname === item.key || pathname.startsWith(`${item.key}/`))?.key || "/admin"
@@ -151,14 +150,32 @@ export function AdminLayoutClient({ children }: { children: ReactNode }) {
                     <Menu
                         mode="inline"
                         selectedKeys={[activeKey]}
+                        defaultOpenKeys={opsMenus.some((item) => item.key === activeKey) ? ["ops-account-pool"] : []}
                         style={adminLayoutStyle.menu}
-                        onClick={({ key }) => router.push(String(key))}
-                        items={adminMenus.map((menu) => ({
-                            key: menu.key,
-                            icon: menu.icon,
-                            label: menu.label,
-                            style: adminLayoutStyle.menuItem,
-                        }))}
+                        onClick={({ key }) => {
+                            if (key === "ops-account-pool") return;
+                            router.push(String(key));
+                        }}
+                        items={[
+                            ...adminMenus.map((menu) => ({
+                                key: menu.key,
+                                icon: menu.icon,
+                                label: menu.label,
+                                style: adminLayoutStyle.menuItem,
+                            })),
+                            {
+                                key: "ops-account-pool",
+                                icon: <ClusterOutlined />,
+                                label: "运维工具",
+                                style: adminLayoutStyle.menuItem,
+                                children: opsMenus.map((menu) => ({
+                                    key: menu.key,
+                                    icon: menu.icon,
+                                    label: menu.label,
+                                    style: adminLayoutStyle.menuItem,
+                                })),
+                            },
+                        ]}
                     />
                     <Flex vertical gap={8} style={{ position: "absolute", bottom: 0, insetInline: 0, padding: 12, borderTop: `1px solid ${antToken.colorBorder}`, background: antToken.colorBgContainer }}>
                         <Button block icon={<HomeOutlined />} href="/canvas" target="_blank" rel="noreferrer">

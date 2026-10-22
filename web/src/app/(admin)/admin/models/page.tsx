@@ -15,6 +15,8 @@ import {
     type AdminManagedModel,
     type AdminModelOverview,
     type AdminModelChannel,
+    type AdminBuiltinProviderSource,
+    type AdminPoolModelAlias,
     type AdminPricingRule,
     type AdminSettings,
 } from "@/services/api/admin";
@@ -42,8 +44,13 @@ export default function AdminModelsPage() {
     const [channelEditorTab, setChannelEditorTab] = useState("connection");
     const [detailKeyword, setDetailKeyword] = useState("");
     useEffect(() => {
-        const tab = new URLSearchParams(window.location.search).get("tab");
-        if (tab && ["channels", "models", "pricing", "protocols"].includes(tab)) setActiveTab(tab);
+        const params = new URLSearchParams(window.location.search);
+        const tab = params.get("tab");
+        if (tab && ["channels", "models", "pricing"].includes(tab)) setActiveTab(tab);
+        if (tab === "protocols") {
+            setActiveTab("channels");
+            setProtocolDrawerOpen(true);
+        }
     }, []);
     const changeTab = (tab: string) => {
         setActiveTab(tab);
@@ -55,7 +62,25 @@ export default function AdminModelsPage() {
     const [overview, setOverview] = useState<AdminModelOverview | null>(null);
     const [overviewLoading, setOverviewLoading] = useState(false);
     const [poolRow, setPoolRow] = useState<PoolChannelRow | null>(null);
+    const [poolDrawerTab, setPoolDrawerTab] = useState("base");
+    const [protocolDrawerOpen, setProtocolDrawerOpen] = useState(false);
     const poolChannels = usePoolChannels();
+
+    // Deep-link from /admin/account-pool/accounts?provider=… → open builtin Accounts tab.
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const provider = (params.get("provider") || "").trim();
+        const subtab = (params.get("subtab") || "").trim() || "accounts";
+        if (!provider || poolChannels.loading || !poolChannels.rows.length) return;
+        const match = poolChannels.rows.find((row) => row.provider === provider);
+        if (!match) return;
+        setPoolDrawerTab(subtab === "accounts" || subtab === "mappings" || subtab === "test" || subtab === "base" ? subtab : "accounts");
+        setPoolRow(match);
+        const url = new URL(window.location.href);
+        url.searchParams.delete("provider");
+        url.searchParams.delete("subtab");
+        window.history.replaceState(null, "", url);
+    }, [poolChannels.loading, poolChannels.rows]);
     const loadOverview = async () => {
         if (!token) return;
         setOverviewLoading(true);
@@ -186,6 +211,39 @@ export default function AdminModelsPage() {
         }
     };
     const persistChannels = (nextChannels: AdminModelChannel[]) => persistSettings((latest) => ({ ...latest, private: { ...latest.private, channels: nextChannels } }));
+
+    const upsertBuiltinProvider = (providers: AdminBuiltinProviderSource[] | undefined, provider: string, patch: Partial<AdminBuiltinProviderSource>): AdminBuiltinProviderSource[] => {
+        const list = [...(providers || [])];
+        const idx = list.findIndex((item) => item.provider === provider);
+        if (idx >= 0) list[idx] = { ...list[idx], ...patch, provider };
+        else list.push({ provider, enabled: true, ...patch });
+        return list;
+    };
+    const saveProviderMappings = async (provider: string, mappings: AdminPoolModelAlias[]) =>
+        persistSettings((latest) => ({
+            ...latest,
+            private: {
+                ...latest.private,
+                builtinProviders: upsertBuiltinProvider(latest.private.builtinProviders, provider, { modelMappings: mappings }),
+            },
+        }));
+    const migrateLegacyAliases = async (provider: string) => {
+        const aliases = settings?.private.poolModelAliases || [];
+        if (!aliases.length) return false;
+        return persistSettings((latest) => ({
+            ...latest,
+            private: {
+                ...latest.private,
+                builtinProviders: upsertBuiltinProvider(latest.private.builtinProviders, provider, { modelMappings: aliases }),
+                // Stop writing global aliases from this UI; leave stored list untouched (omit = keep).
+            },
+        }));
+    };
+    const openPoolChannel = (row: PoolChannelRow, tab = "base") => {
+        setPoolDrawerTab(tab);
+        setPoolRow(row);
+    };
+
     const persistModels = (models: AdminManagedModel[], pricingRules: AdminPricingRule[]) =>
         persistSettings((latest) => ({
             ...latest,
@@ -444,7 +502,7 @@ export default function AdminModelsPage() {
                     <Typography.Title level={3} className="!mb-1 !mt-0">
                         模型管理
                     </Typography.Title>
-                    <Typography.Text type="secondary">渠道负责接入上游（第三方接口与内置号池），模型页决定对外开放哪些模型，定价页为每个规格设置价格。</Typography.Text>
+                    <Typography.Text type="secondary">统一管理内置平台与兼容 API 渠道；模型页决定对外开放哪些模型，定价页为每个规格设置价格。账号在内置渠道「账号」页签维护。</Typography.Text>
                 </div>
                 <Button icon={<ReloadOutlined />} loading={isLoading} disabled={isSaving} onClick={reloadAll}>
                     刷新
@@ -457,7 +515,6 @@ export default function AdminModelsPage() {
                     { key: "channels", label: "渠道", disabled: isSaving },
                     { key: "models", label: "模型", disabled: isSaving },
                     { key: "pricing", label: "定价", disabled: isSaving },
-                    { key: "protocols", label: "协议模板", disabled: isSaving },
                 ]}
             />
             <Spin spinning={isLoading}>
@@ -479,21 +536,21 @@ export default function AdminModelsPage() {
                 ) : null}
                 {activeTab === "models" ? <ModelListTable models={overview?.models || []} loading={overviewLoading} isSaving={isSaving} onEdit={showModel} onCreate={() => showModel(NEW_MODEL_REQUEST)} onUpdate={updateModel} /> : null}
                 {activeTab === "pricing" ? <PricingTable models={overview?.models || []} loading={overviewLoading} isSaving={isSaving} onEdit={showModel} onSetPrice={setPrice} /> : null}
-                {settings && activeTab === "protocols" ? (
-                    <ProtocolTemplatesEditor templates={protocolTemplates} channels={channels} isSaving={isSaving} onSave={(templates) => persistSettings((latest) => ({ ...latest, private: { ...latest.private, protocolTemplates: templates } }))} />
-                ) : null}
                 <div hidden={activeTab !== "channels"}>
                     <Flex justify="space-between" align="center" gap={16} wrap style={{ marginBottom: 16 }}>
                         <Typography.Text type="secondary">
-                            {channels.length} 个第三方渠道 · {poolChannels.rows.length} 个号池渠道 · 同优先级按权重分流，号池整体站点优先级 {overview?.pool.priority ?? 100}
+                            {poolChannels.rows.length} 个内置平台 · {channels.length} 个兼容 API · 同优先级按权重分流
                         </Typography.Text>
                         <Space>
+                            <Button disabled={!settings || isSaving} onClick={() => setProtocolDrawerOpen(true)}>
+                                协议模板
+                            </Button>
                             <Button type="primary" icon={<PlusOutlined />} disabled={!settings || isSaving} onClick={() => openChannelDrawer(null)}>
-                                新增渠道
+                                添加兼容渠道
                             </Button>
                         </Space>
                     </Flex>
-                    {poolChannels.error ? <Alert type="warning" showIcon className="!mb-3" message="无法读取内置账号池，号池渠道暂不显示" /> : null}
+                    {poolChannels.error ? <Alert type="warning" showIcon className="!mb-3" message="无法读取内置账号池，内置平台渠道暂不显示" /> : null}
                     <Table<ChannelRow>
                         rowKey="key"
                         loading={isSaving || poolChannels.loading}
@@ -513,8 +570,8 @@ export default function AdminModelsPage() {
                                 title: "名称",
                                 render: (_, row) =>
                                     row.kind === "pool" ? (
-                                        <Typography.Link strong onClick={() => setPoolRow(row.pool)}>
-                                            号池·{row.pool.label}
+                                        <Typography.Link strong onClick={() => openPoolChannel(row.pool)}>
+                                            {row.pool.label}
                                         </Typography.Link>
                                     ) : (
                                         <Flex vertical gap={2}>
@@ -534,14 +591,17 @@ export default function AdminModelsPage() {
                                 width: 130,
                                 render: (_, row) =>
                                     row.kind === "pool" ? (
-                                        <Tag color="purple">号池·{row.pool.provider}</Tag>
+                                        <Tag color="purple">内置平台</Tag>
                                     ) : (
-                                        <Tag>
-                                            {row.channel.protocol === "custom_http"
-                                                ? protocolTemplates.find((template) => template.id === row.channel.templateId)?.name || "自定义 HTTP"
-                                                : row.channel.protocol === "autodl_comfyui"
-                                                  ? "AutoDL"
-                                                  : "OpenAI 兼容"}
+                                        <Tag color="blue">
+                                            兼容 API
+                                            <Typography.Text type="secondary" className="text-xs" style={{ marginLeft: 6 }}>
+                                                {row.channel.protocol === "custom_http"
+                                                    ? protocolTemplates.find((template) => template.id === row.channel.templateId)?.name || "自定义 HTTP"
+                                                    : row.channel.protocol === "autodl_comfyui"
+                                                      ? "AutoDL"
+                                                      : "OpenAI"}
+                                            </Typography.Text>
                                         </Tag>
                                     ),
                             },
@@ -572,7 +632,7 @@ export default function AdminModelsPage() {
                                 width: 110,
                                 render: (_, row) =>
                                     row.kind === "pool" ? (
-                                        <Typography.Link href={`/admin/account-pool/accounts?provider=${row.pool.provider}`}>
+                                        <Typography.Link onClick={() => openPoolChannel(row.pool, "accounts")}>
                                             {row.pool.activeAccounts}/{row.pool.accounts} 可用
                                         </Typography.Link>
                                     ) : (
@@ -585,7 +645,11 @@ export default function AdminModelsPage() {
                                 render: (_, row) =>
                                     row.kind === "pool" ? (
                                         <Flex vertical>
-                                            <span>{overview?.pool.priority ?? 100}</span>
+                                            <span>
+                                                {settings?.private.builtinProviders?.find((item) => item.provider === row.pool.provider)?.priority ??
+                                                    ({ chatgpt: 200, grok: 200, byteplus: 190, adobe: 180 } as Record<string, number>)[row.pool.provider] ??
+                                                    200}
+                                            </span>
                                             <Typography.Text type="secondary" className="text-xs">
                                                 池内 {row.pool.poolPriority}
                                             </Typography.Text>
@@ -600,7 +664,7 @@ export default function AdminModelsPage() {
                                 render: (_, row) =>
                                     row.kind === "pool" ? (
                                         <Flex vertical>
-                                            <span>{overview?.pool.weight ?? 1}</span>
+                                            <span>{settings?.private.builtinProviders?.find((item) => item.provider === row.pool.provider)?.weight ?? 1}</span>
                                             <Typography.Text type="secondary" className="text-xs">
                                                 池内 {row.pool.poolWeight}
                                             </Typography.Text>
@@ -622,11 +686,14 @@ export default function AdminModelsPage() {
                                 render: (_, row) =>
                                     row.kind === "pool" ? (
                                         <Space size={4}>
-                                            <Button type="text" size="small" disabled={isSaving} onClick={() => setPoolRow(row.pool)}>
+                                            <Button type="text" size="small" disabled={isSaving} onClick={() => openPoolChannel(row.pool)}>
                                                 编辑
                                             </Button>
-                                            <Button type="text" size="small" href={`/admin/account-pool/accounts?provider=${row.pool.provider}`}>
+                                            <Button type="text" size="small" disabled={isSaving} onClick={() => openPoolChannel(row.pool, "accounts")}>
                                                 账号
+                                            </Button>
+                                            <Button type="text" size="small" disabled={isSaving} onClick={() => openPoolChannel(row.pool, "test")}>
+                                                测试
                                             </Button>
                                         </Space>
                                     ) : (
@@ -678,13 +745,21 @@ export default function AdminModelsPage() {
                     token={token}
                     row={poolRow}
                     pool={overview?.pool || null}
-                    aliases={settings?.private.poolModelAliases || []}
+                    builtinProvider={poolRow ? settings?.private.builtinProviders?.find((item) => item.provider === poolRow.provider) || null : null}
+                    legacyAliases={settings?.private.poolModelAliases || []}
                     isSaving={isSaving}
+                    initialTab={poolDrawerTab}
                     onClose={() => setPoolRow(null)}
-                    onSaveAliases={(aliases) => persistSettings((latest) => ({ ...latest, private: { ...latest.private, poolModelAliases: aliases } }))}
-                    onChanged={() => void Promise.all([poolChannels.reload(), loadOverview()])}
+                    onSaveProviderMappings={saveProviderMappings}
+                    onMigrateLegacyAliases={migrateLegacyAliases}
+                    onChanged={() => void Promise.all([poolChannels.reload(), loadOverview(), loadChannels()])}
                 />
             ) : null}
+            <Drawer title="协议模板" width="min(1120px, calc(100vw - 32px))" open={protocolDrawerOpen} onClose={() => setProtocolDrawerOpen(false)} destroyOnHidden>
+                {settings ? (
+                    <ProtocolTemplatesEditor templates={protocolTemplates} channels={channels} isSaving={isSaving} onSave={(templates) => persistSettings((latest) => ({ ...latest, private: { ...latest.private, protocolTemplates: templates } }))} />
+                ) : null}
+            </Drawer>
             <Drawer title={`${viewChannelIndex === null ? "渠道" : channels[viewChannelIndex]?.name} · 接入模型`} width="min(800px, 100vw)" open={viewChannelIndex !== null} onClose={() => setViewChannelIndex(null)}>
                 <Input.Search allowClear placeholder="搜索模型名称或 ID" value={detailKeyword} onChange={(event) => setDetailKeyword(event.target.value)} className="mb-4" />
                 <Table
@@ -726,7 +801,7 @@ export default function AdminModelsPage() {
             </Drawer>
 
             <Drawer
-                title={editingChannelIndex === null ? "新增渠道" : "编辑渠道"}
+                title={editingChannelIndex === null ? "添加兼容渠道" : "编辑兼容渠道"}
                 open={isChannelDrawerOpen}
                 width="min(1120px, calc(100vw - 32px))"
                 onClose={closeChannelDrawer}
@@ -750,11 +825,29 @@ export default function AdminModelsPage() {
                         activeKey={channelEditorTab}
                         onChange={setChannelEditorTab}
                         items={[
-                            { key: "connection", label: "连接配置" },
-                            { key: "models", label: "模型映射与能力" },
+                            { key: "connection", label: "基础配置" },
+                            { key: "models", label: "模型映射" },
+                            { key: "test", label: "测试", disabled: editingChannelIndex === null },
                         ]}
                     />
                     <div hidden={channelEditorTab !== "connection"}>
+                        {editingChannelIndex === null ? (
+                            <Alert
+                                type="info"
+                                showIcon
+                                className="!mb-4"
+                                message="添加兼容 API 渠道"
+                                description={
+                                    <span>
+                                        协议模板已从主 Tab 移入此处高级能力。需要自定义 HTTP 模板时，可先
+                                        <Typography.Link className="!mx-1" onClick={() => setProtocolDrawerOpen(true)}>
+                                            管理协议模板
+                                        </Typography.Link>
+                                        再选择协议。
+                                    </span>
+                                }
+                            />
+                        ) : null}
                         <Row gutter={16}>
                             <Col xs={24} md={9}>
                                 <Form.Item name="name" label="渠道名称" rules={[{ required: true, message: "请输入渠道名称" }]}>
@@ -803,7 +896,7 @@ export default function AdminModelsPage() {
                                 </Form.Item>
                             </Col>
                             <Col xs={12} md={5}>
-                                <Form.Item name="priority" label="默认优先级" tooltip="数值越大越先使用。第三方渠道默认 0，内置账号池默认 100（先走账号池）">
+                                <Form.Item name="priority" label="默认优先级" tooltip="数值越大越先使用。兼容 API 默认 0；内置平台默认 ChatGPT/Grok 200、BytePlus 190、Adobe 180">
                                     <InputNumber min={0} max={1000} step={1} className="!w-full" />
                                 </Form.Item>
                             </Col>
@@ -853,6 +946,24 @@ export default function AdminModelsPage() {
                                 <ChannelModelCapabilitiesEditor managedModels={managedModels} />
                             </Col>
                         </Row>
+                    </div>
+                    <div hidden={channelEditorTab !== "test"}>
+                        {editingChannelIndex === null ? (
+                            <Alert type="info" showIcon message="请先保存渠道后再测试模型连通性。" />
+                        ) : (
+                            <Space direction="vertical" style={{ width: "100%" }} size={12}>
+                                <Typography.Text type="secondary">在渠道详情内测试已映射模型（与列表「测试」相同）。</Typography.Text>
+                                <Button
+                                    type="primary"
+                                    onClick={() => {
+                                        closeChannelDrawer();
+                                        openTestDialog(editingChannelIndex);
+                                    }}
+                                >
+                                    打开模型测试
+                                </Button>
+                            </Space>
+                        )}
                     </div>
                 </Form>
             </Drawer>

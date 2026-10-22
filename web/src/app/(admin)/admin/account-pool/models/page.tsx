@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-// Pool model routes are managed as sources in the unified model admin.
+// Pool providers are listed as channels (号池·<provider>) in model admin.
 export default function AccountPoolModelsPage() {
-    redirect("/admin/models?source=pool");
+    redirect("/admin/models?tab=channels");
 }

@@ -31,7 +31,7 @@ export default function GatewayOverviewPage() {
                         </Button>
                     </Space>
                     <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0 }}>
-                        账号池中已启用且有可用路由的模型，会自动以「内置账号池」渠道出现在幻图的模型列表中，无需在「模型管理」中配置渠道；同名模型优先使用账号池，失败时再回退到其他渠道。请在「计费管理」中为这些模型设置价格。账号池仅在进程内调用，不对外开放接口。
+                        账号池中已启用且有可用路由的模型，会以「号池·平台」渠道出现在「模型管理 → 渠道」中；同名模型优先使用账号池，失败时再回退到其他渠道。请在「模型管理 → 定价」中为这些模型设置价格。账号池仅在进程内调用，不对外开放接口。
                     </Typography.Paragraph>
                 </Card>
                 {overview.isError ? <Alert type="warning" showIcon message="无法读取账号池概览" description={overview.error instanceof Error ? overview.error.message : ""} /> : null}

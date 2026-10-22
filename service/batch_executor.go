@@ -277,13 +277,16 @@ func selectStandardBatchModelChannel(request PricingRequest, task *model.Generat
 		return ModelChannelSelection{}, err
 	}
 	request = normalizePricingRequest(request)
-	selections := modelChannelSelectionsForRequest(normalizePrivateSetting(settings.Private).Channels, request)
+	selections := modelChannelSelectionsForRequest(runtimeChannels(normalizePrivateSetting(settings.Private).Channels), request)
 	if task != nil {
 		for _, selection := range selections {
 			if selection.Channel.Name == task.ChannelName && selection.Model.UpstreamModel == task.UpstreamModel {
 				return selection, nil
 			}
 		}
+	}
+	if pool, ok := preferBuiltinPool(selections); ok {
+		return pool, nil
 	}
 	if len(selections) == 0 {
 		return ModelChannelSelection{}, errors.New("batch image model has no compatible channel")

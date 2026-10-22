@@ -227,7 +227,7 @@ func generationTaskChannel(name string) (model.ModelChannel, error) {
 	if err != nil {
 		return model.ModelChannel{}, err
 	}
-	for _, channel := range normalizePrivateSetting(settings.Private).Channels {
+	for _, channel := range runtimeChannels(normalizePrivateSetting(settings.Private).Channels) {
 		if channel.Name == name && channel.BaseURL != "" && channel.APIKey != "" {
 			return channel, nil
 		}

@@ -168,7 +168,7 @@ func AdminTestChannelModel(index *int, channel model.ModelChannel, modelName str
 
 func normalizeSettings(settings model.Settings) model.Settings {
 	settings.Private = normalizePrivateSetting(settings.Private)
-	settings.Public = normalizePublicSettingWithChannels(settings.Public, settings.Private.Channels)
+	settings.Public = normalizePublicSettingWithChannels(settings.Public, runtimeChannels(settings.Private.Channels))
 	return settings
 }
 
@@ -181,7 +181,7 @@ func normalizePublicSettingWithChannels(setting model.PublicSetting, channels []
 		setting.ModelChannel.AvailableModels = []string{}
 	}
 	enabledModels := enabledChannelModels(channels)
-	setting.ModelChannel.Models = normalizeModelDefinitions(setting.ModelChannel.Models, setting.ModelChannel.AvailableModels, setting.ModelChannel.ModelAspectRatios, enabledModels)
+	setting.ModelChannel.Models = normalizeModelDefinitions(appendBuiltinPoolDefinitions(setting.ModelChannel.Models, channels), setting.ModelChannel.AvailableModels, setting.ModelChannel.ModelAspectRatios, enabledModels)
 	setting.ModelChannel.Models = mergeEnabledChannelCapabilities(setting.ModelChannel.Models, channels)
 	setting.ModelChannel.PricingRules = normalizePricingRules(setting.ModelChannel.PricingRules)
 	setting.ModelChannel.GroupRatios = normalizeGroupRatios(setting.ModelChannel.GroupRatios)
@@ -1142,7 +1142,7 @@ func SelectModelChannelByName(request PricingRequest, channelName string) (Model
 		return ModelChannelSelection{}, err
 	}
 	request = normalizePricingRequest(request)
-	for _, selection := range modelChannelSelectionsForRequest(normalizePrivateSetting(settings.Private).Channels, request) {
+	for _, selection := range modelChannelSelectionsForRequest(runtimeChannels(normalizePrivateSetting(settings.Private).Channels), request) {
 		if selection.Channel.Name == channelName {
 			return selection, nil
 		}
@@ -1157,8 +1157,11 @@ func SelectModelChannelExcluding(request PricingRequest, excludedChannels []stri
 		return ModelChannelSelection{}, err
 	}
 	request = normalizePricingRequest(request)
-	selections := modelChannelSelectionsForRequest(normalizePrivateSetting(settings.Private).Channels, request)
+	selections := modelChannelSelectionsForRequest(runtimeChannels(normalizePrivateSetting(settings.Private).Channels), request)
 	selections = modelChannelSelectionsExcluding(selections, excludedChannels)
+	if pool, ok := preferBuiltinPool(selections); ok {
+		return pool, nil
+	}
 	if len(selections) == 0 {
 		reason := "当前操作或规格"
 		if request.ReferenceImages > 0 {

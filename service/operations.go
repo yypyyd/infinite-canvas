@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"math"
 	"sort"
 	"time"
@@ -15,18 +14,15 @@ import (
 type RuntimeHealth struct {
 	Status   string          `json:"status"`
 	Database string          `json:"database"`
-	Gateway  *gateway.Health `json:"gateway,omitempty"`
+	Pool     *gateway.Health `json:"pool,omitempty"`
 }
 
 // gatewayHealthCheck is replaceable in tests. It returns nil health when the
-// gateway is disabled.
+// account pool is not running (no PostgreSQL, or POOL_ENABLED=false).
 var gatewayHealthCheck = func(ctx context.Context, timeout time.Duration) (*gateway.Health, error) {
-	if !gateway.Enabled() {
-		return nil, nil
-	}
 	m := gateway.Current()
 	if m == nil {
-		return &gateway.Health{Status: "unavailable", Database: "unavailable", Redis: "unavailable"}, errors.New("gateway enabled but not running")
+		return nil, nil
 	}
 	h, err := m.CheckHealth(ctx, timeout)
 	return &h, err
@@ -54,7 +50,7 @@ func CheckReadiness(ctx context.Context) (RuntimeHealth, error) {
 	}()
 	dbErr = repository.CheckDatabase(ctx)
 	<-done
-	result := RuntimeHealth{Status: "ok", Database: "ok", Gateway: gw}
+	result := RuntimeHealth{Status: "ok", Database: "ok", Pool: gw}
 	if dbErr != nil {
 		result.Database = "unavailable"
 	}

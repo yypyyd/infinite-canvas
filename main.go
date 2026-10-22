@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 
 	"github.com/yypyyd/infinite-canvas/config"
@@ -19,15 +20,27 @@ func main() {
 		log.Fatal(err)
 	}
 	engine := router.New()
-	if gateway.Enabled() {
+	// The built-in account pool starts whenever PostgreSQL is available
+	// (幻图's own database by default). Without it 幻图 runs as before and
+	// the pool admin pages explain what is missing.
+	switch {
+	case gateway.Disabled():
+		gateway.MountUnavailable(engine, middleware.AdminAuth, "内置账号池已通过 POOL_ENABLED=false 关闭")
+		log.Printf("account pool disabled by POOL_ENABLED=false")
+	default:
 		module, err := gateway.Start(context.Background())
-		if err != nil {
-			log.Fatalf("start gateway: %v", err)
+		switch {
+		case errors.Is(err, gateway.ErrNotConfigured):
+			gateway.MountUnavailable(engine, middleware.AdminAuth, "内置账号池需要 PostgreSQL：请使用 STORAGE_DRIVER=postgres，或设置 POOL_POSTGRES_DSN")
+			log.Printf("account pool not started: %v", err)
+		case err != nil:
+			log.Fatalf("start account pool: %v", err)
+		default:
+			defer module.Close()
+			gateway.InstallDefaultTransport()
+			module.Mount(engine, middleware.AdminAuth)
+			log.Printf("account pool enabled: admin %s, in-process channel %s", gateway.AdminPrefix, gateway.InternalBaseURL)
 		}
-		defer module.Close()
-		gateway.InstallDefaultTransport()
-		module.Mount(engine, middleware.AdminAuth)
-		log.Printf("gateway enabled: public %s, admin %s, built-in channel %s", gateway.PublicV1Prefix, gateway.AdminPrefix, gateway.InternalBaseURL)
 	}
 	service.StartPromptSyncScheduler()
 	service.StartOrganizationEmailOutboxWorker()

@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Alert, App, Button, Flex, Table, Tag, Typography } from "antd";
 import { useState } from "react";
 
+import { providerLabels } from "@/app/(admin)/admin/account-pool/use-gateway";
 import { createAdminPoolPricingDrafts, fetchAdminPoolPricingGaps, type AdminPoolPricingGap } from "@/services/api/admin";
 
 const operationLabels: Record<string, string> = { generation: "生成", edit: "编辑", completion: "对话" };
@@ -50,6 +51,12 @@ export function PoolPricingGaps({ token, refreshKey, onDraftsCreated, onOpenMode
                             { title: "操作", dataIndex: "operation", width: 90, render: (value: string) => operationLabels[value] || value },
                             { title: "分辨率", dataIndex: "resolutionTier", width: 90, render: (value: string) => value || "-" },
                             { title: "单位", dataIndex: "unit", width: 70, render: (value: string) => unitLabels[value] || value },
+                            {
+                                title: "可服务平台",
+                                dataIndex: "providers",
+                                width: 200,
+                                render: (providers?: string[]) => (providers?.length ? providers.map((provider) => <Tag key={provider}>{providerLabels[provider] || provider}</Tag>) : <Typography.Text type="secondary">-</Typography.Text>),
+                            },
                             { title: "状态", dataIndex: "draft", width: 110, render: (draft: boolean) => (draft ? <Tag color="gold">草稿待定价</Tag> : <Tag>无规则</Tag>) },
                         ]}
                     />

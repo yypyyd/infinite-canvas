@@ -33,8 +33,31 @@ export function PoolUsageCard() {
     const [days, setDays] = useState(7);
     const usage = useQuery({ queryKey: ["admin-pool-usage", token, days], queryFn: () => fetchAdminPoolUsage(token, days), enabled: Boolean(token) });
     const data = usage.data;
-    const table = (rows: AdminPoolUsageRow[] | undefined, keyTitle: string, showProvider: boolean) => (
-        <Table size="small" rowKey="key" loading={usage.isLoading} pagination={{ pageSize: 10, hideOnSinglePage: true }} dataSource={rows || []} columns={usageColumns(keyTitle, showProvider)} />
+    const table = (rows: AdminPoolUsageRow[] | undefined, keyTitle: string, showProvider: boolean, breakdown = false) => (
+        <Table
+            size="small"
+            rowKey="key"
+            loading={usage.isLoading}
+            pagination={{ pageSize: 10, hideOnSinglePage: true }}
+            dataSource={(rows || []).map(({ providers, ...row }) => ({ ...row, breakdown: providers }))}
+            columns={usageColumns(keyTitle, showProvider)}
+            expandable={
+                breakdown
+                    ? {
+                          rowExpandable: (row) => Boolean(row.breakdown?.length),
+                          expandedRowRender: (row) => (
+                              <Table
+                                  size="small"
+                                  rowKey="key"
+                                  pagination={false}
+                                  dataSource={row.breakdown || []}
+                                  columns={usageColumns("平台", false).map((column) => (column.dataIndex === "label" ? { ...column, render: (value: string) => providerLabels[value] || value } : column))}
+                              />
+                          ),
+                      }
+                    : undefined
+            }
+        />
     );
     return (
         <Card variant="borderless" title="用量与算力" extra={<Segmented options={rangeOptions} value={days} onChange={(value) => setDays(Number(value))} />}>
@@ -44,7 +67,7 @@ export function PoolUsageCard() {
                 <Tabs
                     items={[
                         { key: "accounts", label: "按账号", children: table(data?.accounts, "账号", true) },
-                        { key: "models", label: "按模型", children: table(data?.models, "模型", false) },
+                        { key: "models", label: "按模型", children: table(data?.models, "模型", false, true) },
                     ]}
                 />
                 {data && (data.unlinked > 0 || data.unattributed.requests > 0) ? (

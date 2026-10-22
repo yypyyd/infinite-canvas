@@ -131,6 +131,8 @@ export type AdminPoolUsageRow = {
     chargedCredits: number;
     refundedCredits: number;
     heldCredits: number;
+    /** Per-provider route breakdown; present on model rows only. */
+    providers?: AdminPoolUsageRow[];
 };
 
 export type AdminPoolUsageReport = {
@@ -501,6 +503,8 @@ export type AdminPoolPricingGap = {
     unit: string;
     resolutionTier: string;
     draft: boolean;
+    /** Providers serving this spec; the price itself is per model + spec. */
+    providers?: string[];
 };
 
 export type AdminPublicSettings = {

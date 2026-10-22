@@ -27,6 +27,16 @@ type PoolModel struct {
 	SupportsAudioOutput bool
 	// MaxImagesPerRequest is the union cap across the model's routes; 0 = none.
 	MaxImagesPerRequest int
+	// Routes lists the providers serving the model and what each supports.
+	Routes []PoolRoute
+}
+
+// PoolRoute is one provider route of a pool model.
+type PoolRoute struct {
+	ID              string
+	Provider        string
+	Operations      []string
+	ResolutionTiers []string
 }
 
 const modelCacheTTL = 30 * time.Second
@@ -76,6 +86,14 @@ func (m *Module) Models(ctx context.Context) ([]PoolModel, error) {
 			item.Name = item.ID
 		}
 		items = append(items, item)
+	}
+	if summaries, routeErr := m.app.V1.ModelRouteSummaries(ctx); routeErr == nil {
+		for i := range items {
+			for _, route := range summaries[items[i].ID] {
+				items[i].Routes = append(items[i].Routes, PoolRoute{ID: route.ID, Provider: route.Provider,
+					Operations: route.Operations, ResolutionTiers: route.Resolutions})
+			}
+		}
 	}
 	sort.SliceStable(items, func(i, j int) bool { return items[i].ID < items[j].ID })
 	m.models.items, m.models.fetched = items, time.Now()

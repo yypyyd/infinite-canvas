@@ -295,7 +295,14 @@ func calculateRuleCredits(rule model.PricingRule, quantity int, ratio float64) i
 	return int(math.Ceil(float64(rule.Credits*quantity) * ratio))
 }
 
+// normalizePricingRules cleans rules and moves rules keyed by legacy
+// provider-prefixed pool IDs onto unified IDs.
 func normalizePricingRules(items []model.PricingRule) []model.PricingRule {
+	rules, _ := mergeLegacyPoolPricingRules(normalizePricingRulesOnly(items))
+	return rules
+}
+
+func normalizePricingRulesOnly(items []model.PricingRule) []model.PricingRule {
 	if items == nil {
 		return []model.PricingRule{}
 	}

@@ -40,6 +40,8 @@ type PoolUsageRow struct {
 	ChargedCredits  int    `json:"chargedCredits"`
 	RefundedCredits int    `json:"refundedCredits"`
 	HeldCredits     int    `json:"heldCredits"`
+	// Providers breaks a model row down per provider route (model rows only).
+	Providers []PoolUsageRow `json:"providers,omitempty"`
 }
 
 type PoolUsageReport struct {
@@ -104,6 +106,7 @@ func BuildPoolUsage(ctx context.Context, days int) (PoolUsageReport, error) {
 	}
 	accounts := map[string]*PoolUsageRow{}
 	models := map[string]*PoolUsageRow{}
+	providerRows := map[string]map[string]*PoolUsageRow{}
 	linked := map[string]bool{}
 	for _, event := range events {
 		task, ok := byRequest[event.RequestID]
@@ -134,16 +137,32 @@ func BuildPoolUsage(ctx context.Context, days int) (PoolUsageReport, error) {
 			account = &PoolUsageRow{Key: accountKey, Label: label, Provider: event.Provider}
 			accounts[accountKey] = account
 		}
-		modelRow := models[event.Model]
+		modelID := event.Model
+		if unified, legacy := unifiedPoolModelID(modelID); legacy {
+			modelID = unified
+		}
+		modelRow := models[modelID]
 		if modelRow == nil {
-			modelRow = &PoolUsageRow{Key: event.Model, Label: event.Model}
-			models[event.Model] = modelRow
+			modelRow = &PoolUsageRow{Key: modelID, Label: modelID}
+			models[modelID] = modelRow
+			providerRows[modelID] = map[string]*PoolUsageRow{}
+		}
+		providerKey := event.Provider
+		if providerKey == "" {
+			providerKey = "-"
+		}
+		providerRow := providerRows[modelID][providerKey]
+		if providerRow == nil {
+			providerRow = &PoolUsageRow{Key: poolRouteKey(event.Kind, modelID, providerKey), Label: providerKey, Provider: event.Provider}
+			providerRows[modelID][providerKey] = providerRow
 		}
 		poolEventCount(account, event.Status)
 		poolEventCount(modelRow, event.Status)
+		poolEventCount(providerRow, event.Status)
 		if creditable {
 			poolTaskCredits(account, task)
 			poolTaskCredits(modelRow, task)
+			poolTaskCredits(providerRow, task)
 		}
 	}
 	report.Unattributed = PoolUsageRow{Key: "unattributed", Label: "池内无记录"}
@@ -154,8 +173,19 @@ func BuildPoolUsage(ctx context.Context, days int) (PoolUsageReport, error) {
 		}
 	}
 	report.Accounts = sortedUsageRows(accounts)
+	for id, row := range models {
+		row.Providers = sortedUsageRows(providerRows[id])
+	}
 	report.Models = sortedUsageRows(models)
 	return report, nil
+}
+
+// poolRouteKey mirrors the gateway route ID convention (<kind>.<model>.<provider>).
+func poolRouteKey(kind, modelID, provider string) string {
+	if kind == "" {
+		return modelID + "." + provider
+	}
+	return kind + "." + modelID + "." + provider
 }
 
 func sortedUsageRows(rows map[string]*PoolUsageRow) []PoolUsageRow {

@@ -42,6 +42,9 @@ func main() {
 			log.Printf("account pool enabled: admin %s, in-process channel %s", gateway.AdminPrefix, gateway.InternalBaseURL)
 		}
 	}
+	if _, err := service.MigrateLegacyPoolPricingRules(); err != nil {
+		log.Printf("pricing: legacy pool model migration skipped: %v", err)
+	}
 	service.StartPromptSyncScheduler()
 	service.StartOrganizationEmailOutboxWorker()
 	service.StartUserFileMaintenanceWorker()

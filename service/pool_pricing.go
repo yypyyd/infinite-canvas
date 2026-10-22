@@ -3,6 +3,7 @@ package service
 import (
 	"sort"
 
+	"github.com/yypyyd/infinite-canvas/gateway"
 	"github.com/yypyyd/infinite-canvas/model"
 	"github.com/yypyyd/infinite-canvas/repository"
 )
@@ -15,6 +16,9 @@ type PoolPricingGap struct {
 	Unit           string `json:"unit"`
 	ResolutionTier string `json:"resolutionTier"`
 	Draft          bool   `json:"draft"` // a draft rule exists and awaits a price
+	// Providers serving this spec. Informational only: the price is per
+	// logical model + spec and the same for every provider.
+	Providers []string `json:"providers"`
 }
 
 const poolDraftRemark = "账号池草稿：请填写价格后启用"
@@ -26,7 +30,16 @@ func poolPricingSpecs() []PoolPricingGap {
 	if !ok {
 		return nil
 	}
+	routes := map[string][]gateway.PoolRoute{}
+	for _, item := range builtinPoolModels() {
+		routes[item.ID] = item.Routes
+	}
 	var specs []PoolPricingGap
+	defer func() {
+		for i := range specs {
+			specs[i].Providers = specProviders(routes[specs[i].Model], specs[i])
+		}
+	}()
 	for _, item := range channel.Models {
 		switch item.Modality {
 		case "image":
@@ -47,6 +60,30 @@ func poolPricingSpecs() []PoolPricingGap {
 		}
 	}
 	return specs
+}
+
+// specProviders lists the providers whose route supports the spec.
+func specProviders(routes []gateway.PoolRoute, spec PoolPricingGap) []string {
+	providers := []string{}
+	for _, route := range routes {
+		if len(route.Operations) > 0 && !containsString(route.Operations, spec.Operation) {
+			continue
+		}
+		if spec.ResolutionTier != "" {
+			supported := false
+			for _, tier := range route.ResolutionTiers {
+				supported = supported || normalizeResolutionTier(tier) == spec.ResolutionTier
+			}
+			if !supported {
+				continue
+			}
+		}
+		if !containsString(providers, route.Provider) {
+			providers = append(providers, route.Provider)
+		}
+	}
+	sort.Strings(providers)
+	return providers
 }
 
 func containsString(items []string, value string) bool {
@@ -100,7 +137,7 @@ func CreatePoolPricingDrafts() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	rules := settings.Public.ModelChannel.PricingRules
+	rules := normalizePricingRules(settings.Public.ModelChannel.PricingRules)
 	existing := map[string]bool{}
 	for _, rule := range normalizePricingRules(rules) {
 		existing[pricingSpecKey(rule.Model, rule.Modality, rule.Operation, rule.Unit, rule.ResolutionTier)] = true

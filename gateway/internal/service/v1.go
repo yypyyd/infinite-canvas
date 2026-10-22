@@ -567,6 +567,44 @@ func (s *V1Service) ListModels(ctx context.Context, extended bool) ([]map[string
 	return out, nil
 }
 
+// RouteSummary is one usable provider route of a logical model, for internal
+// (main-site) views only. It is deliberately not part of the public /v1/models
+// output so API clients never see which providers serve a model.
+type RouteSummary struct {
+	ID          string
+	Provider    string
+	Operations  []string
+	Resolutions []string
+}
+
+// ModelRouteSummaries returns the usable routes of every enabled model.
+func (s *V1Service) ModelRouteSummaries(ctx context.Context) (map[string][]RouteSummary, error) {
+	items, err := s.models.Routes().ListLogical(ctx, true)
+	if err != nil {
+		return nil, err
+	}
+	routesByModel, err := s.models.Routes().ListRoutesByLogical(ctx, logicalModelIDs(items), true)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string][]RouteSummary, len(items))
+	for _, item := range items {
+		routes, usableErr := s.usableCatalogRoutes(ctx, item, routesByModel[item.ID])
+		if usableErr != nil {
+			return nil, usableErr
+		}
+		for _, route := range routes {
+			summary := RouteSummary{ID: route.ID, Provider: route.Provider}
+			for _, profile := range model.DecodeCapabilityProfiles(route.Capabilities) {
+				summary.Operations = unionStrings(summary.Operations, profile.Operations)
+				summary.Resolutions = unionStrings(summary.Resolutions, profile.Resolutions)
+			}
+			out[item.ID] = append(out[item.ID], summary)
+		}
+	}
+	return out, nil
+}
+
 func v1LogicalModelEntry(item model.LogicalModel, routes []model.ModelRoute, created int64, extended bool) map[string]any {
 	entry := map[string]any{"id": item.ID, "object": "model", "created": created, "owned_by": "nexa", "shutdown_date": nil}
 	if !extended {

@@ -36,7 +36,7 @@ const (
 	agentWaitingToolTimeout       = 15 * time.Minute
 	agentWaitingToolTimeoutError  = "工具结果等待超时"
 	agentToolExecutionLease       = 90 * time.Second
-	agentRunningTimeout           = 3 * time.Minute
+	agentRunningTimeout           = 6 * time.Minute
 	agentRunningTimeoutError      = "助手运行恢复超时"
 )
 
@@ -1041,7 +1041,7 @@ func startAgentRun(run model.AgentRun, userGroup string) {
 	if err := repository.ClaimAgentRunExecution(run.OrganizationID, run.UserID, run.ID, newID("agent-execution"), timestamp.Format(timestampLayout), timestamp.Add(-agentRunningTimeout).Format(timestampLayout)); err != nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), agentCompletionDeadline)
 	agentRuns.Lock()
 	agentRuns.cancels[run.ID] = agentRunExecution{requestID: requestID, cancel: cancel}
 	agentRuns.Unlock()
@@ -1276,8 +1276,20 @@ func requestAgentCompletion(ctx context.Context, run model.AgentRun, userGroup, 
 		}
 		conversationStart = i - 1
 	}
+	intentText := ""
+	// 只保留最近几轮对话，较早消息截断，缩短请求体以降低上游延迟。
+	if currentIndex-conversationStart > agentHistoryMaxMessages {
+		conversationStart = currentIndex - agentHistoryMaxMessages
+	}
 	for _, message := range messages[conversationStart : currentIndex+1] {
-		requestMessages = append(requestMessages, agentChatMessage{Role: string(message.Role), Content: message.Content})
+		content := message.Content
+		if message.ID != run.MessageID {
+			content = truncateAgentRunes(content, agentHistoryMaxRunes)
+		}
+		requestMessages = append(requestMessages, agentChatMessage{Role: string(message.Role), Content: content})
+		if message.Role == model.AgentMessageRoleUser {
+			intentText += "\n" + content
+		}
 	}
 	if len(toolSteps) > 0 {
 		completed := make([]map[string]any, 0, len(toolSteps))
@@ -1296,7 +1308,7 @@ func requestAgentCompletion(ctx context.Context, run model.AgentRun, userGroup, 
 		requestMessages = append(requestMessages, agentChatMessage{Role: "system", Content: "本次运行已达到工具调用上限，请根据已有真实结果直接总结，不要再请求工具。"})
 	}
 	hasPreviewImages := agentChatMessagesHaveImageURLs(requestMessages)
-	bodyValue := map[string]any{"model": selection.Model.UpstreamModel, "messages": requestMessages, "tools": agentToolSchemas(), "tool_choice": "auto", "parallel_tool_calls": true, "stream": true, "max_tokens": 2048}
+	bodyValue := map[string]any{"model": selection.Model.UpstreamModel, "messages": requestMessages, "tools": selectAgentToolSchemas(intentText, toolSteps), "tool_choice": "auto", "parallel_tool_calls": true, "stream": true, "max_tokens": 2048}
 	publisher := newAgentRunStreamPublisher(run.ID)
 	message, err := requestAgentUpstreamMessage(ctx, selection.Channel, requestID, bodyValue, &requestMessages, hasPreviewImages, publisher)
 	if err != nil {
@@ -3130,13 +3142,15 @@ func agentParallelToolCall(run model.AgentRun, toolSteps []model.AgentStep, acce
 	return &agentToolCall{ID: newID("agent-tool-call"), Name: name, Arguments: arguments, Raw: raw}, true
 }
 
-// requestAgentUpstreamMessage 优先流式请求；上游不支持流式（4xx 或返回普通 JSON）时自动回退。
+// requestAgentUpstreamMessage 优先流式请求（标记为不真正流式的渠道直接用普通请求）；上游不支持流式（4xx 或返回普通 JSON）时自动回退。
+// 每次尝试有独立超时；连接类错误最多重试 agentUpstreamMaxRetries 次，但尝试已持续 agentUpstreamSlowDropThreshold 以上才断开的不重试（多为代理空闲超时，重试只会再耗一轮）。
 func requestAgentUpstreamMessage(ctx context.Context, channel model.ModelChannel, requestID string, bodyValue map[string]any, requestMessages *[]agentChatMessage, hasPreviewImages bool, publisher *agentRunStreamPublisher) (agentUpstreamMessage, error) {
-	streaming := true
+	streaming := agentChannelStreams(channel)
 	plainRetried := false
-	streamRetries := 0
-	client := &http.Client{Timeout: 2 * time.Minute}
-	for attempt := 0; attempt < 6; attempt++ {
+	retries := 0
+	client := &http.Client{}
+	modelName, _ := bodyValue["model"].(string)
+	for attempt := 1; attempt <= 6; attempt++ {
 		bodyValue["stream"] = streaming
 		if !streaming {
 			delete(bodyValue, "stream_options")
@@ -3145,59 +3159,31 @@ func requestAgentUpstreamMessage(ctx context.Context, channel model.ModelChannel
 		if err != nil {
 			return agentUpstreamMessage{}, err
 		}
-		var response *http.Response
-		for retry := 0; retry < agentUpstreamConnectAttempts; retry++ {
-			request, requestErr := http.NewRequestWithContext(ctx, http.MethodPost, BuildModelChannelURL(channel, "/chat/completions"), bytes.NewReader(body))
-			if requestErr != nil {
-				return agentUpstreamMessage{}, requestErr
+		message, statusCode, responseBody, elapsed, err := doAgentUpstreamAttempt(ctx, client, channel, requestID, body, streaming, publisher)
+		logAgentUpstreamAttempt(requestID, channel.Name, modelName, attempt, streaming, len(body), statusCode, elapsed, err)
+		if err != nil {
+			if ctx.Err() != nil {
+				return agentUpstreamMessage{}, ctx.Err()
 			}
-			request.Header.Set("Authorization", "Bearer "+channel.APIKey)
-			request.Header.Set("Content-Type", "application/json")
-			if streaming {
-				request.Header.Set("Accept", "text/event-stream")
-			}
-			request.Header.Set("X-Request-ID", requestID)
-			request.Header.Set("Idempotency-Key", requestID)
-			response, err = client.Do(request)
-			if err == nil {
-				break
-			}
-			// 上游（经 Cloudflare 的代理）偶尔在出响应头前直接断开，连接类错误多重试几次；其他错误只重试一次。
-			if ctx.Err() != nil || retry == agentUpstreamConnectAttempts-1 || (retry > 0 && !isAgentTransportError(err)) {
+			if !agentUpstreamShouldRetry(err, elapsed, retries) {
 				return agentUpstreamMessage{}, err
 			}
+			retries++
 			select {
 			case <-ctx.Done():
 				return agentUpstreamMessage{}, ctx.Err()
-			case <-time.After(agentUpstreamRetryDelay(retry)):
+			case <-time.After(agentUpstreamRetryDelay(retries - 1)):
 			}
+			continue
 		}
-		statusCode := response.StatusCode
 		if statusCode >= 200 && statusCode < 300 {
-			message, parseErr := readAgentUpstreamSuccess(response, streaming, publisher)
-			_ = response.Body.Close()
-			if parseErr != nil && streamRetries < 2 && ctx.Err() == nil && isAgentTransportError(parseErr) {
-				// 响应体读到一半连接被掐断：整轮重新请求。
-				streamRetries++
-				select {
-				case <-ctx.Done():
-					return agentUpstreamMessage{}, ctx.Err()
-				case <-time.After(agentUpstreamRetryDelay(streamRetries)):
-				}
-				continue
-			}
-			if parseErr == nil && streaming && !plainRetried && agentStreamNeedsPlainRetry(bodyValue, message) {
+			if streaming && !plainRetried && agentStreamNeedsPlainRetry(bodyValue, message) {
 				// 部分代理在流式模式下把工具调用写成文本或界面标记，改用非流式重试一次。
 				plainRetried = true
 				streaming = false
 				continue
 			}
-			return message, parseErr
-		}
-		responseBody, readErr := io.ReadAll(io.LimitReader(response.Body, 4<<20))
-		_ = response.Body.Close()
-		if readErr != nil {
-			return agentUpstreamMessage{}, readErr
+			return message, nil
 		}
 		if statusCode == http.StatusBadRequest && hasPreviewImages {
 			*requestMessages = stripAgentPlanningPreviews(*requestMessages)
@@ -3212,6 +3198,35 @@ func requestAgentUpstreamMessage(ctx context.Context, channel model.ModelChannel
 		return agentUpstreamMessage{}, fmt.Errorf("agent upstream returned status %d: %s", statusCode, truncateAgentUpstreamError(responseBody))
 	}
 	return agentUpstreamMessage{}, errors.New("agent upstream request failed")
+}
+
+// doAgentUpstreamAttempt 发起一次带独立超时的请求并读完响应；2xx 时解析消息，其余状态返回响应体。
+func doAgentUpstreamAttempt(ctx context.Context, client *http.Client, channel model.ModelChannel, requestID string, body []byte, streaming bool, publisher *agentRunStreamPublisher) (agentUpstreamMessage, int, []byte, time.Duration, error) {
+	started := time.Now()
+	attemptCtx, cancel := context.WithTimeout(ctx, agentUpstreamAttemptTimeout)
+	defer cancel()
+	request, err := http.NewRequestWithContext(attemptCtx, http.MethodPost, BuildModelChannelURL(channel, "/chat/completions"), bytes.NewReader(body))
+	if err != nil {
+		return agentUpstreamMessage{}, 0, nil, 0, err
+	}
+	request.Header.Set("Authorization", "Bearer "+channel.APIKey)
+	request.Header.Set("Content-Type", "application/json")
+	if streaming {
+		request.Header.Set("Accept", "text/event-stream")
+	}
+	request.Header.Set("X-Request-ID", requestID)
+	request.Header.Set("Idempotency-Key", requestID)
+	response, err := client.Do(request)
+	if err != nil {
+		return agentUpstreamMessage{}, 0, nil, time.Since(started), err
+	}
+	defer response.Body.Close()
+	if response.StatusCode >= 200 && response.StatusCode < 300 {
+		message, parseErr := readAgentUpstreamSuccess(response, streaming, publisher)
+		return message, response.StatusCode, nil, time.Since(started), parseErr
+	}
+	responseBody, readErr := io.ReadAll(io.LimitReader(response.Body, 4<<20))
+	return agentUpstreamMessage{}, response.StatusCode, responseBody, time.Since(started), readErr
 }
 
 // readAgentUpstreamSuccess 解析 2xx 响应：SSE 流、缺少 Content-Type 的流或普通 JSON。

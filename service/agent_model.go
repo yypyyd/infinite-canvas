@@ -93,7 +93,7 @@ func keepModelToolSupport(next *model.Settings, saved model.Settings) {
 	}
 }
 
-var agentFakeToolCallPattern = regexp.MustCompile(`(?i)<\s*function[\s_]*call|<\s*tool_call|<\s*invoke\b|<\s*(box|icon|row|title|entity)\b|_parameters\b|"tool_calls"\s*:`)
+var agentFakeToolCallPattern = regexp.MustCompile(`(?i)<\s*function[\s_-]*call|<\s*tool_call|<\s*tool_name\b|<\s*invoke\b|<\s*(box|icon|row|title|entity)\b|_parameters\b|"tool_calls"\s*:|\bcall\s+(canvas|image|video|agent)[._][a-z_]+\s+with\b`)
 
 // agentStreamNeedsPlainRetry 判断流式回复是否把工具调用伪装成了文本或界面标记。
 func agentStreamNeedsPlainRetry(bodyValue map[string]any, message agentUpstreamMessage) bool {
@@ -103,8 +103,19 @@ func agentStreamNeedsPlainRetry(bodyValue map[string]any, message agentUpstreamM
 	return agentFakeToolCallPattern.MatchString(message.Content)
 }
 
-// agentUpstreamConnectAttempts 是单次模型请求在连接层失败时的最多尝试次数。
-const agentUpstreamConnectAttempts = 4
+const (
+	// agentCompletionDeadline 是一次模型规划（含全部重试）的总时限。
+	agentCompletionDeadline = 300 * time.Second
+	// agentUpstreamAttemptTimeout 是单次上游请求的时限。
+	agentUpstreamAttemptTimeout = 150 * time.Second
+	// agentUpstreamMaxRetries 是连接类错误的最多重试次数。
+	agentUpstreamMaxRetries = 2
+	// agentUpstreamSlowDropThreshold：尝试持续这么久后才断开的视为代理空闲超时，不再重试。
+	agentUpstreamSlowDropThreshold = 25 * time.Second
+	// agentHistoryMaxMessages / agentHistoryMaxRunes 控制随请求发送的历史对话条数与每条长度。
+	agentHistoryMaxMessages = 6
+	agentHistoryMaxRunes    = 1500
+)
 
 // agentUpstreamRetryDelay 返回第 retry 次重试前的等待：0.5s、1s、2s……
 func agentUpstreamRetryDelay(retry int) time.Duration {
@@ -115,6 +126,34 @@ func agentUpstreamRetryDelay(retry int) time.Duration {
 		retry = 4
 	}
 	return time.Duration(500<<retry) * time.Millisecond
+}
+
+// agentUpstreamShouldRetry：只重试很快出现的连接类错误（含单次超时之外的断连），且总次数有限。
+func agentUpstreamShouldRetry(err error, elapsed time.Duration, retries int) bool {
+	return retries < agentUpstreamMaxRetries && isAgentTransportError(err) && elapsed < agentUpstreamSlowDropThreshold
+}
+
+// agentNonStreamingHosts 是会把流式响应整段缓冲后才返回的代理：流式没有收益，且长时间无字节时易被掐断。
+var agentNonStreamingHosts = []string{"cliproxy."}
+
+// agentChannelStreams 判断渠道是否使用流式请求。
+func agentChannelStreams(channel model.ModelChannel) bool {
+	base := strings.ToLower(channel.BaseURL)
+	for _, host := range agentNonStreamingHosts {
+		if strings.Contains(base, host) {
+			return false
+		}
+	}
+	return true
+}
+
+func logAgentUpstreamAttempt(requestID, channel, modelName string, attempt int, streaming bool, bodyBytes, status int, elapsed time.Duration, err error) {
+	fields := []any{"request_id", requestID, "channel", channel, "model", modelName, "attempt", attempt, "stream", streaming, "body_bytes", bodyBytes, "status", status, "duration_ms", elapsed.Milliseconds()}
+	if err != nil {
+		workerLogger.Warn("agent_upstream_attempt", append(fields, "error", truncateAgentRunes(err.Error(), 300))...)
+		return
+	}
+	workerLogger.Info("agent_upstream_attempt", fields...)
 }
 
 // isAgentTransportError 判断是否为连接被对端关闭、重置等可安全重试的传输层错误。

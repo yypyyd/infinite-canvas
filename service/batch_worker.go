@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/yypyyd/infinite-canvas/gateway"
 	"io"
 	"net"
 	"net/http"
@@ -594,7 +595,7 @@ func archiveBatchProductionResult(ctx context.Context, item model.BatchProductio
 
 func batchResultTransport() *http.Transport {
 	dialer := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
-	return &http.Transport{TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: 30 * time.Second, IdleConnTimeout: 30 * time.Second, DisableCompression: true, DialContext: func(ctx context.Context, network string, address string) (net.Conn, error) {
+	return &http.Transport{TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: 30 * time.Second, IdleConnTimeout: 30 * time.Second, DisableCompression: true, DialContext: gateway.WrapDialContext(func(ctx context.Context, network string, address string) (net.Conn, error) {
 		host, port, err := net.SplitHostPort(address)
 		if err != nil {
 			return nil, err
@@ -618,7 +619,7 @@ func batchResultTransport() *http.Transport {
 			return nil, lastErr
 		}
 		return nil, errors.New("batch result host resolves to a private address")
-	}}
+	})}
 }
 
 func publicBatchResultIP(ip net.IP) bool {

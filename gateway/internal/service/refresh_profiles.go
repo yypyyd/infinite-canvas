@@ -1,0 +1,251 @@
+package service
+
+import (
+	"context"
+	"errors"
+	"strings"
+	"sync/atomic"
+	"time"
+
+	"github.com/yypyyd/infinite-canvas/gateway/internal/model"
+	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/adobe"
+	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/byteplus"
+	"github.com/yypyyd/infinite-canvas/gateway/internal/repo"
+	"gorm.io/datatypes"
+)
+
+type RefreshProfileService struct {
+	profiles           *repo.RefreshProfileRepository
+	tokens             *repo.TokenRepository
+	adobe              *adobe.Client
+	byteplus           *byteplus.Client
+	tokenSvc           *TokenService
+	bytePlusRefreshing atomic.Bool
+}
+
+func NewRefreshProfileService(profiles *repo.RefreshProfileRepository, tokens *repo.TokenRepository, adobeClient *adobe.Client, bytePlusClient *byteplus.Client, tokenSvc *TokenService) *RefreshProfileService {
+	return &RefreshProfileService{
+		profiles: profiles,
+		tokens:   tokens,
+		adobe:    adobeClient,
+		byteplus: bytePlusClient,
+		tokenSvc: tokenSvc,
+	}
+}
+
+func (s *RefreshProfileService) List(ctx context.Context) ([]model.RefreshProfile, error) {
+	return s.profiles.List(ctx)
+}
+
+func (s *RefreshProfileService) RefreshNow(ctx context.Context, id string) error {
+	if s.tokens == nil {
+		return errors.New("refresh client not configured")
+	}
+	profile, err := s.profiles.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	if profile.Pool == "byteplus" && profile.Kind == "byteplus_password" {
+		return s.refreshBytePlus(ctx, *profile)
+	}
+	if profile.Pool != "adobe" || profile.Kind != "adobe_cookie" || s.adobe == nil {
+		return errors.New("unsupported refresh profile")
+	}
+
+	now := time.Now()
+	_, _ = s.profiles.Update(ctx, id, map[string]any{
+		"last_attempt_at": now,
+	})
+
+	result, err := s.adobe.ExchangeCookie(ctx, profile.Cookie)
+	if err != nil {
+		failures := profile.ConsecutiveFailures + 1
+		// Exponential backoff: 60s per consecutive failure, capped at 1h.
+		secs := 60 * failures
+		if secs > 3600 {
+			secs = 3600
+		}
+		msg := safeGenerationErrorText(err)
+		_, _ = s.profiles.Update(ctx, id, map[string]any{
+			"last_error":           msg,
+			"consecutive_failures": failures,
+			"next_retry_at":        now.Add(time.Duration(secs) * time.Second),
+		})
+		// After repeated failures the cookie can no longer mint a token — it's
+		// genuinely dead (expired/revoked). Lock the pool token (disabled+dead)
+		// so the UI flags it red. A single failure may be a transient blip, so
+		// only escalate after a few in a row (mirrors Python RefreshManager).
+		if failures >= 3 {
+			_, _ = s.tokens.Update(ctx, profile.Pool, id, map[string]any{
+				"status": "disabled",
+				"dead":   true,
+			})
+		}
+		return err
+	}
+	arpSessionToken := adobe.ResolveARPSessionToken(profile.ARPSessionToken, profile.Cookie)
+
+	tokenPatch := map[string]any{
+		"value":             result.AccessToken,
+		"arp_session_token": arpSessionToken,
+		"status":            "active",
+		"dead":              false,
+		"fails":             0,
+		"updated_at":        now,
+	}
+	email, exp := parseJWTEmailExpiry(result.AccessToken)
+	if email != "" {
+		tokenPatch["account_email"] = email
+	}
+	if exp != nil {
+		tokenPatch["cached_quota_reset_after"] = exp.Format(time.RFC3339)
+	}
+	if profileData, profileErr := s.adobe.FetchAccountProfile(ctx, result.AccessToken); profileErr == nil {
+		if email := strings.TrimSpace(stringValue(profileData["email"])); email != "" {
+			tokenPatch["account_email"] = email
+		}
+		if displayName := strings.TrimSpace(stringValue(profileData["display_name"])); displayName != "" {
+			tokenPatch["account_display_name"] = displayName
+		}
+	}
+	if quotaData, quotaErr := s.adobe.FetchCreditsBalance(ctx, result.AccessToken); quotaErr == nil {
+		meta := datatypes.JSONMap{
+			"cached_quota_at": int(time.Now().Unix()),
+		}
+		if remaining, ok := quotaData["remaining"].(int); ok {
+			meta["cached_quota_remaining"] = remaining
+		}
+		if used, ok := quotaData["used"].(int); ok {
+			meta["cached_quota_used"] = used
+		}
+		if total, ok := quotaData["total"].(int); ok {
+			meta["cached_quota_total"] = total
+		}
+		tokenPatch["meta"] = meta
+		if s.tokenSvc != nil {
+			recordBookkeepingError("refresh adobe quota bucket", s.tokenSvc.storeQuotaSnapshot(ctx, "adobe", id, quotaData))
+		}
+		if resetAfter := strings.TrimSpace(stringValue(quotaData["available_until"])); resetAfter != "" {
+			tokenPatch["cached_quota_reset_after"] = resetAfter
+		}
+	}
+	if _, err := s.tokens.Update(ctx, "adobe", id, tokenPatch); err != nil {
+		return err
+	}
+
+	interval := profile.IntervalSeconds
+	if interval <= 0 {
+		interval = 54000
+	}
+	_, err = s.profiles.Update(ctx, id, map[string]any{
+		"last_success_at":      now,
+		"next_retry_at":        now.Add(time.Duration(interval) * time.Second),
+		"last_error":           "",
+		"consecutive_failures": 0,
+		"arp_session_token":    arpSessionToken,
+	})
+	return err
+}
+
+func (s *RefreshProfileService) refreshBytePlus(ctx context.Context, profile model.RefreshProfile) error {
+	if s.byteplus == nil || s.tokenSvc == nil {
+		return errors.New("byteplus refresh client not configured")
+	}
+	s.tokenSvc.applyProxy(ctx)
+	now := time.Now()
+	_, _ = s.profiles.Update(ctx, profile.ID, map[string]any{"last_attempt_at": now})
+	cookie, err := s.byteplus.Login(ctx, profile.LoginIdentity, profile.LoginSecret)
+	if err == nil {
+		_, err = s.tokenSvc.RotateBytePlusCookie(ctx, profile.ID, cookie)
+	}
+	if err != nil {
+		failures := profile.ConsecutiveFailures + 1
+		minutes := 5 * failures
+		if minutes > 60 {
+			minutes = 60
+		}
+		_, _ = s.profiles.Update(ctx, profile.ID, map[string]any{
+			"last_error": safeGenerationErrorText(err), "consecutive_failures": failures,
+			"next_retry_at": now.Add(time.Duration(minutes) * time.Minute),
+		})
+		return err
+	}
+	next := now.Add(42 * time.Hour)
+	if expiry := bytePlusSessionExpiry(cookie); !expiry.IsZero() {
+		next = expiry.Add(-6 * time.Hour)
+	}
+	_, err = s.profiles.Update(ctx, profile.ID, map[string]any{
+		"last_success_at": now, "next_retry_at": next, "last_error": "", "consecutive_failures": 0,
+	})
+	return err
+}
+
+// RefreshDue refreshes every enabled profile whose next_retry_at has passed.
+// Driven by the background maintenance loop so Adobe cookies auto-renew without
+// an admin clicking "refresh". Individual failures are recorded on the profile
+// (backoff + dead escalation) and don't abort the sweep.
+func (s *RefreshProfileService) RefreshDue(ctx context.Context) (int, error) {
+	if s.tokens == nil {
+		return 0, nil
+	}
+	due, err := s.profiles.ListDue(ctx, time.Now())
+	if err != nil {
+		return 0, err
+	}
+	refreshed := 0
+	bytePlusDue := make([]model.RefreshProfile, 0)
+	for _, p := range due {
+		if p.Pool == "byteplus" && p.Kind == "byteplus_password" {
+			bytePlusDue = append(bytePlusDue, p)
+			continue
+		}
+		if p.Pool != "adobe" || p.Kind != "adobe_cookie" || s.adobe == nil {
+			continue
+		}
+		if err := s.RefreshNow(ctx, p.ID); err != nil {
+			continue
+		}
+		refreshed++
+	}
+	if len(bytePlusDue) > 0 && s.byteplus != nil && s.tokenSvc != nil && s.bytePlusRefreshing.CompareAndSwap(false, true) {
+		profiles := append([]model.RefreshProfile(nil), bytePlusDue...)
+		go func() {
+			defer s.bytePlusRefreshing.Store(false)
+			for i, profile := range profiles {
+				if i > 0 {
+					time.Sleep(8 * time.Second)
+				}
+				refreshCtx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+				_ = s.RefreshNow(refreshCtx, profile.ID)
+				cancel()
+			}
+		}()
+		refreshed += len(profiles)
+	}
+	return refreshed, nil
+}
+
+func (s *RefreshProfileService) Update(ctx context.Context, id string, body map[string]any) (*model.RefreshProfile, error) {
+	patch := map[string]any{}
+	if raw, ok := body["enabled"]; ok {
+		patch["enabled"] = boolValueWithDefault(raw, false)
+	}
+	if raw, ok := body["name"]; ok {
+		patch["name"] = stringValue(raw)
+	}
+	if raw, ok := body["interval_seconds"]; ok {
+		n := intValue(raw)
+		if n <= 0 {
+			return nil, errors.New("interval_seconds must be positive")
+		}
+		patch["interval_seconds"] = n
+	}
+	if len(patch) == 0 {
+		return s.profiles.Get(ctx, id)
+	}
+	return s.profiles.Update(ctx, id, patch)
+}
+
+func (s *RefreshProfileService) Delete(ctx context.Context, id string) error {
+	return s.profiles.Delete(ctx, id)
+}

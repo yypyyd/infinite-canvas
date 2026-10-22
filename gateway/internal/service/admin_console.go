@@ -1,0 +1,1329 @@
+package service
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"math"
+	"net"
+	"net/url"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/yypyyd/infinite-canvas/gateway/internal/config"
+	"github.com/yypyyd/infinite-canvas/gateway/internal/model"
+	"github.com/yypyyd/infinite-canvas/gateway/internal/repo"
+
+	"gorm.io/gorm"
+)
+
+// AdminConsoleService exposes the deliberately small 2API control plane. It
+// owns no customer, billing, invite, recharge, or playground concepts.
+type AdminConsoleService struct {
+	cfg      *config.Config
+	db       *gorm.DB
+	models   *repo.ModelRepository
+	tokens   *repo.TokenRepository
+	tokenSvc *TokenService
+	settings *repo.SiteSettingRepository
+}
+
+type AccountListFilter struct {
+	Query    string
+	Provider string
+	Status   string
+	ModelID  string
+	Limit    int
+	Offset   int
+}
+
+type LogListFilter struct {
+	CredentialID string
+	Model        string
+	Kind         string
+	Status       string
+	Source       string
+	Query        string
+	Artifacts    bool
+	Limit        int
+	Offset       int
+}
+
+type AccountImportInput struct {
+	ID         string
+	Provider   string
+	Label      string
+	Credential any
+}
+
+var adminAccountProviders = SchedulableProviders()
+
+func NewAdminConsoleService(cfg *config.Config, db *gorm.DB, models *repo.ModelRepository, tokens *repo.TokenRepository, tokenSvc *TokenService, settings *repo.SiteSettingRepository) *AdminConsoleService {
+	return &AdminConsoleService{cfg: cfg, db: db, models: models, tokens: tokens, tokenSvc: tokenSvc, settings: settings}
+}
+
+// Overview restores the retained operational dashboard without bringing back
+// the retired customer, billing, invite, or payment analytics. Aggregation is
+// performed in SQL so log retention volume does not silently truncate charts.
+func (s *AdminConsoleService) Overview(ctx context.Context) (map[string]any, error) {
+	cutoff := time.Now().Add(-24 * time.Hour)
+	type groupedCount struct {
+		Name  string `gorm:"column:name"`
+		Count int64  `gorm:"column:count"`
+	}
+	var statuses, kinds []groupedCount
+	if err := s.db.WithContext(ctx).Model(&model.EventLog{}).
+		Select("status AS name, COUNT(*) AS count").Where("ts >= ?", cutoff).Group("status").Scan(&statuses).Error; err != nil {
+		return nil, err
+	}
+	if err := s.db.WithContext(ctx).Model(&model.EventLog{}).
+		Select("kind AS name, COUNT(*) AS count").Where("ts >= ?", cutoff).Group("kind").Scan(&kinds).Error; err != nil {
+		return nil, err
+	}
+	window := map[string]any{"total": int64(0), "success": int64(0), "failed": int64(0), "pending": int64(0), "text": int64(0), "image": int64(0), "video": int64(0), "avg_elapsed_ms": float64(0)}
+	for _, row := range statuses {
+		window["total"] = window["total"].(int64) + row.Count
+		switch row.Name {
+		case "success", "succeeded":
+			window["success"] = window["success"].(int64) + row.Count
+		case "failed":
+			window["failed"] = window["failed"].(int64) + row.Count
+		default:
+			window["pending"] = window["pending"].(int64) + row.Count
+		}
+	}
+	for _, row := range kinds {
+		if _, ok := window[row.Name]; ok {
+			window[row.Name] = row.Count
+		}
+	}
+	var average struct {
+		Value float64 `gorm:"column:value"`
+	}
+	if err := s.db.WithContext(ctx).Model(&model.EventLog{}).
+		Select("COALESCE(AVG(elapsed_ms), 0) AS value").
+		Where("ts >= ? AND status IN ? AND elapsed_ms > 0", cutoff, []string{"success", "succeeded"}).Scan(&average).Error; err != nil {
+		return nil, err
+	}
+	window["avg_elapsed_ms"] = average.Value
+
+	type modelUsage struct {
+		Model string  `json:"model" gorm:"column:model"`
+		Count int64   `json:"count" gorm:"column:count"`
+		AvgMS float64 `json:"avg_ms" gorm:"column:avg_ms"`
+	}
+	var topModels []modelUsage
+	if err := s.db.WithContext(ctx).Model(&model.EventLog{}).
+		Select("model, COUNT(*) AS count, COALESCE(AVG(NULLIF(elapsed_ms, 0)), 0) AS avg_ms").
+		Where("ts >= ? AND model <> ''", cutoff).Group("model").Order("count DESC").Limit(8).Scan(&topModels).Error; err != nil {
+		return nil, err
+	}
+	type failureUsage struct {
+		Reason string `json:"reason" gorm:"column:reason"`
+		Count  int64  `json:"count" gorm:"column:count"`
+	}
+	var failures []failureUsage
+	if err := s.db.WithContext(ctx).Model(&model.EventLog{}).
+		Select("error AS reason, COUNT(*) AS count").
+		Where("ts >= ? AND status = ? AND error <> ''", cutoff, "failed").Group("error").Order("count DESC").Limit(8).Scan(&failures).Error; err != nil {
+		return nil, err
+	}
+
+	type hourlyCount struct {
+		Hour  time.Time `gorm:"column:hour"`
+		Kind  string    `gorm:"column:kind"`
+		Count int64     `gorm:"column:count"`
+	}
+	var hourlyRows []hourlyCount
+	if err := s.db.WithContext(ctx).Model(&model.EventLog{}).
+		Select("date_trunc('hour', ts) AS hour, kind, COUNT(*) AS count").
+		Where("ts >= ?", cutoff).Group("hour, kind").Order("hour ASC").Scan(&hourlyRows).Error; err != nil {
+		return nil, err
+	}
+	nowHour := time.Now().UTC().Truncate(time.Hour)
+	hourly := make([]map[string]any, 24)
+	byHour := make(map[string]map[string]any, 24)
+	for index := 0; index < 24; index++ {
+		hour := nowHour.Add(time.Duration(index-23) * time.Hour)
+		key := hour.Format(time.RFC3339)
+		bucket := map[string]any{"hour": key, "text": int64(0), "image": int64(0), "video": int64(0)}
+		hourly[index] = bucket
+		byHour[key] = bucket
+	}
+	for _, row := range hourlyRows {
+		key := row.Hour.UTC().Truncate(time.Hour).Format(time.RFC3339)
+		if bucket := byHour[key]; bucket != nil {
+			if _, ok := bucket[row.Kind]; ok {
+				bucket[row.Kind] = row.Count
+			}
+		}
+	}
+	providerHealth, err := s.CountAccountHealthByProvider(ctx)
+	if err != nil {
+		return nil, err
+	}
+	totals, err := s.overviewTotals(ctx, providerHealth)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"totals":   totals,
+		"last_24h": window, "hourly": hourly, "top_models": topModels,
+		"failures": failures, "provider_health": providerHealth,
+	}, nil
+}
+
+func (s *AdminConsoleService) ListLogicalModels(ctx context.Context) ([]map[string]any, error) {
+	items, err := s.models.Routes().ListLogical(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+	routesByModel, err := s.models.Routes().ListRoutesByLogical(ctx, logicalModelIDs(items), false)
+	if err != nil {
+		return nil, err
+	}
+	counts := s.routeAccountCounts(ctx)
+	out := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		routes := routesByModel[item.ID]
+		routeRows := make([]map[string]any, 0, len(routes))
+		for _, route := range routes {
+			accountCount, healthyCount := counts.lookup(route.ID, route.Provider)
+			routeRows = append(routeRows, map[string]any{
+				"id": route.ID, "provider": route.Provider, "upstream_model": route.UpstreamModel,
+				"enabled": route.Enabled, "priority": route.Priority, "weight": route.Weight,
+				"capabilities": json.RawMessage(route.Capabilities), "account_count": accountCount,
+				"healthy_accounts": healthyCount,
+			})
+		}
+		out = append(out, map[string]any{
+			"id": item.ID, "kind": item.Kind, "name": item.Name, "enabled": item.Enabled,
+			"created_at": item.CreatedAt, "routes": routeRows,
+		})
+	}
+	return out, nil
+}
+
+func (s *AdminConsoleService) UpdateLogicalModel(ctx context.Context, id string, enabled bool) (map[string]any, error) {
+	item, err := s.models.Update(ctx, strings.TrimSpace(id), map[string]any{"enabled": enabled})
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"id": item.ID, "enabled": item.Enabled}, nil
+}
+
+func (s *AdminConsoleService) UpdateLogicalRoute(ctx context.Context, logicalID, routeID string, enabled bool) (map[string]any, error) {
+	routes, err := s.models.Routes().ListRoutes(ctx, logicalID, false)
+	if err != nil {
+		return nil, err
+	}
+	found := false
+	for _, route := range routes {
+		if route.ID == routeID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, gorm.ErrRecordNotFound
+	}
+	item, err := s.models.Routes().UpdateRoute(ctx, routeID, map[string]any{"enabled": enabled})
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"id": item.ID, "enabled": item.Enabled}, nil
+}
+
+func (s *AdminConsoleService) ListAccounts(ctx context.Context, filter AccountListFilter) ([]map[string]any, int64, error) {
+	query := s.db.WithContext(ctx).Model(&model.TokenAccount{}).Where("pool IN ?", adminAccountProviders)
+	if modelID := strings.TrimSpace(filter.ModelID); modelID != "" {
+		query = query.Where(`EXISTS (
+			SELECT 1 FROM account_model_routes filter_amr
+			JOIN model_routes filter_mr ON filter_mr.id = filter_amr.model_route_id
+			WHERE filter_amr.account_id = provider_accounts.id
+			  AND filter_mr.logical_model_id = ? AND filter_mr.enabled = ?
+			  AND filter_amr.enabled = ? AND filter_amr.entitled = ?
+		)`, modelID, true, true, true)
+	}
+	if requested := strings.TrimSpace(filter.Provider); requested != "" {
+		provider := normalizeAdminProvider(requested)
+		if provider == "" {
+			return []map[string]any{}, 0, nil
+		}
+		query = query.Where("pool = ?", provider)
+	}
+	if status := strings.TrimSpace(filter.Status); status != "" {
+		query = query.Where("status = ?", status)
+	}
+	if term := strings.TrimSpace(filter.Query); term != "" {
+		like := "%" + term + "%"
+		query = query.Where("id ILIKE ? OR pool ILIKE ? OR account_email ILIKE ? OR account_display_name ILIKE ?", like, like, like, like)
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	limit, offset := normalizePage(filter.Limit, filter.Offset)
+	var accounts []model.TokenAccount
+	if err := query.Select(repo.SchedulingAccountColumns()).
+		Order("pool asc, weight desc, created_at desc").
+		Limit(limit).Offset(offset).
+		Find(&accounts).Error; err != nil {
+		return nil, 0, err
+	}
+	rows, err := s.accountRows(ctx, accounts)
+	if err != nil {
+		return nil, 0, err
+	}
+	return rows, total, nil
+}
+
+func (s *AdminConsoleService) CountAccountsByProvider(ctx context.Context) (map[string]int64, error) {
+	type providerCount struct {
+		Provider string `gorm:"column:provider"`
+		Count    int64  `gorm:"column:count"`
+	}
+	var rows []providerCount
+	if err := s.db.WithContext(ctx).Model(&model.TokenAccount{}).
+		Select("pool AS provider, COUNT(*) AS count").
+		Where("pool IN ?", adminAccountProviders).
+		Group("pool").Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	counts := make(map[string]int64, len(adminAccountProviders))
+	for _, provider := range adminAccountProviders {
+		counts[provider] = 0
+	}
+	for _, row := range rows {
+		counts[row.Provider] = row.Count
+	}
+	return counts, nil
+}
+
+func (s *AdminConsoleService) CountAccountHealthByProvider(ctx context.Context) (map[string]map[string]int64, error) {
+	type healthCount struct {
+		Provider string `gorm:"column:provider"`
+		Status   string `gorm:"column:status"`
+		Dead     bool   `gorm:"column:dead"`
+		Count    int64  `gorm:"column:count"`
+	}
+	var rows []healthCount
+	if err := s.db.WithContext(ctx).Model(&model.TokenAccount{}).
+		Select("pool AS provider, status, dead, COUNT(*) AS count").
+		Where("pool IN ?", adminAccountProviders).
+		Group("pool, status, dead").Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	counts := make(map[string]map[string]int64, len(adminAccountProviders))
+	for _, provider := range adminAccountProviders {
+		counts[provider] = map[string]int64{"active": 0, "quota": 0, "disabled": 0, "dead": 0, "pending": 0}
+	}
+	for _, row := range rows {
+		bucket := row.Status
+		if row.Dead || row.Status == "auth_error" {
+			bucket = "dead"
+		}
+		if _, ok := counts[row.Provider][bucket]; !ok {
+			bucket = "pending"
+		}
+		counts[row.Provider][bucket] += row.Count
+	}
+	if err := s.countQuotaHealth(ctx, counts); err != nil {
+		return nil, err
+	}
+	return counts, nil
+}
+
+func (s *AdminConsoleService) accountRow(ctx context.Context, account model.TokenAccount) (map[string]any, error) {
+	rows, err := s.accountRows(ctx, []model.TokenAccount{account})
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, errors.New("account row missing")
+	}
+	return rows[0], nil
+}
+
+func (s *AdminConsoleService) accountRows(ctx context.Context, accounts []model.TokenAccount) ([]map[string]any, error) {
+	rows := make([]map[string]any, 0, len(accounts))
+	if len(accounts) == 0 {
+		return rows, nil
+	}
+	ids := make([]string, 0, len(accounts))
+	for _, account := range accounts {
+		if id := strings.TrimSpace(account.ID); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	bindingsByAccount := map[string][]model.AccountModelRoute{}
+	routesByID := map[string]model.ModelRoute{}
+	if s.db.Migrator().HasTable(&model.AccountModelRoute{}) {
+		var bindings []model.AccountModelRoute
+		if err := s.db.WithContext(ctx).Where("account_id IN ?", ids).Order("model_route_id asc").Find(&bindings).Error; err != nil {
+			return nil, err
+		}
+		routeIDs := make([]string, 0, len(bindings))
+		seenRoute := map[string]struct{}{}
+		for _, binding := range bindings {
+			bindingsByAccount[binding.AccountID] = append(bindingsByAccount[binding.AccountID], binding)
+			if _, exists := seenRoute[binding.ModelRouteID]; exists {
+				continue
+			}
+			seenRoute[binding.ModelRouteID] = struct{}{}
+			routeIDs = append(routeIDs, binding.ModelRouteID)
+		}
+		if len(routeIDs) > 0 && s.db.Migrator().HasTable(&model.ModelRoute{}) {
+			var routes []model.ModelRoute
+			if err := s.db.WithContext(ctx).Where("id IN ?", routeIDs).Find(&routes).Error; err != nil {
+				return nil, err
+			}
+			for _, route := range routes {
+				routesByID[route.ID] = route
+			}
+		}
+	}
+	quotaByAccount := map[string][]model.AccountQuotaBucket{}
+	if s.models != nil && s.models.Quotas() != nil {
+		buckets, err := s.models.Quotas().ListByAccounts(ctx, ids)
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+		for _, bucket := range buckets {
+			quotaByAccount[bucket.AccountID] = append(quotaByAccount[bucket.AccountID], bucket)
+		}
+	}
+	activeJobs := map[string]int64{}
+	if s.db.Migrator().HasTable(&model.DispatchAttempt{}) {
+		type inflightRow struct {
+			AccountID string `gorm:"column:account_id"`
+			Count     int64  `gorm:"column:count"`
+		}
+		var inflight []inflightRow
+		_ = s.db.WithContext(ctx).Model(&model.DispatchAttempt{}).
+			Select("account_id, COUNT(*) AS count").
+			Where("account_id IN ? AND state IN ?", ids, []string{"created", "submitting", "accepted", "unknown"}).
+			Group("account_id").
+			Scan(&inflight).Error
+		for _, row := range inflight {
+			activeJobs[row.AccountID] = row.Count
+		}
+	}
+	for _, account := range accounts {
+		rows = append(rows, assembleAccountRow(account, bindingsByAccount[account.ID], routesByID, quotaByAccount[account.ID], activeJobs[account.ID]))
+	}
+	return rows, nil
+}
+
+func assembleAccountRow(account model.TokenAccount, bindings []model.AccountModelRoute, routesByID map[string]model.ModelRoute, buckets []model.AccountQuotaBucket, activeJobs int64) map[string]any {
+	now := time.Now()
+	buckets = accountQuotaViewBuckets(account.Pool, buckets, now)
+	routeRows := make([]map[string]any, 0, len(bindings))
+	for _, binding := range bindings {
+		route, exists := routesByID[binding.ModelRouteID]
+		if !exists || !model.IsCanonicalRoute(route) {
+			continue
+		}
+		routeRows = append(routeRows, map[string]any{
+			"id": binding.ID, "route_id": route.ID, "model_id": route.LogicalModelID,
+			"enabled": binding.Enabled && binding.Entitled,
+		})
+	}
+	quotaRows := make([]map[string]any, 0, len(buckets))
+	for _, bucket := range buckets {
+		quotaRows = append(quotaRows, map[string]any{
+			"name": bucket.BucketKey, "remaining": bucket.Remaining, "total": bucket.Total,
+			"reserved": bucket.Reserved, "reset_at": bucket.ResetAt, "unit": bucket.Unit,
+			"refreshed_at":    bucket.RefreshedAt,
+			"next_refresh_at": bucket.RefreshAfter,
+		})
+	}
+	quotaState := accountQuotaState(account.Pool, buckets, now)
+	health := "healthy"
+	if account.Dead || account.Status == "disabled" {
+		health = "unhealthy"
+	} else if account.Status == "quota" || account.Status == "pending" || account.Fails > 0 || quotaState == "empty" {
+		health = "degraded"
+	}
+	readiness, readinessDetail := dolaReadinessView(account)
+	if account.Pool == "dola" && readiness != "ready" {
+		health = "degraded"
+	}
+	sessionExpiresAt, sessionState := bytePlusSessionStatus(account, time.Now())
+	if sessionState == "expired" {
+		health = "unhealthy"
+	} else if sessionState == "expiring" && health == "healthy" {
+		health = "degraded"
+	}
+	label := strings.TrimSpace(account.AccountDisplayName)
+	if label == "" {
+		label = strings.TrimSpace(account.AccountEmail)
+	}
+	if label == "" {
+		label = account.ID
+	}
+	return map[string]any{
+		"id": account.ID, "provider": account.Pool, "label": label, "email": account.AccountEmail,
+		"status": account.Status, "weight": account.Weight, "max_concurrency": account.Concurrency,
+		"active_jobs": activeJobs, "health": health, "routes": routeRows, "quota_buckets": quotaRows,
+		"quota_state": quotaState, "primary_quota_bucket": primaryQuotaBucket(account.Pool, now),
+		"success_total": account.SuccessTotal, "fail_total": account.FailTotal,
+		"consecutive_failures": account.Fails, "upstream_failures": account.UpstreamFails,
+		"image_limited": account.ImageLimited, "video_limited": account.VideoLimited,
+		"last_used_at": account.LastUsedAt, "created_at": account.CreatedAt,
+		"session_expires_at": sessionExpiresAt, "session_state": sessionState,
+		"readiness": readiness, "readiness_detail": readinessDetail,
+	}
+}
+
+func bytePlusSessionStatus(account model.TokenAccount, now time.Time) (string, string) {
+	if account.Pool != "byteplus" {
+		return "", ""
+	}
+	expiry := bytePlusAccountSessionExpiry(account)
+	if expiry.IsZero() {
+		return "", "unknown"
+	}
+	state := "valid"
+	if !expiry.After(now) {
+		state = "expired"
+	} else if !expiry.After(now.Add(6 * time.Hour)) {
+		state = "expiring"
+	}
+	return expiry.UTC().Format(time.RFC3339), state
+}
+
+func (s *AdminConsoleService) ImportAccount(ctx context.Context, input AccountImportInput) (map[string]any, error) {
+	provider := normalizeAdminProvider(input.Provider)
+	if provider == "" || isDeferredAccountProvider(provider) {
+		return nil, errors.New("unsupported provider")
+	}
+	credential := credentialMap(input.Credential)
+	secret := credentialSecret(input.Credential, credential)
+	var account *model.TokenAccount
+	var err error
+	switch provider {
+	case "chatgpt":
+		account, err = s.tokenSvc.ImportChatGPTToken(ctx, secret, "")
+	case "adobe":
+		account, _, err = s.tokenSvc.ImportAdobeCookie(ctx, secret, adobeARPSessionToken(credential), "")
+	case "byteplus":
+		// BytePlus browser exports contain a large amount of untrusted profile,
+		// tenant, storage and balance metadata. Only the actual Cookie header is
+		// credential material; identity and quota are queried from BytePlus after
+		// the import succeeds.
+		secret = bytePlusCredentialSecret(input.Credential, credential)
+		account, err = s.tokenSvc.ImportBytePlusCookie(ctx, secret)
+		if err == nil && account != nil {
+			err = s.tokenSvc.ConfigureBytePlusLogin(ctx, account.ID,
+				firstMapString(credential, "email", "login_identity"),
+				firstMapString(credential, "password", "login_secret"), secret)
+		}
+
+	case "grok":
+		account, err = s.tokenSvc.ImportGrokToken(ctx, secret, "")
+
+	case "dola":
+		account, err = s.tokenSvc.ImportDolaAccount(ctx, secret, stringFromMap(credential, "user_agent"))
+
+	}
+	if err != nil {
+		return nil, err
+	}
+	if account == nil {
+		return nil, errors.New("provider did not return an account")
+	}
+	if label := strings.TrimSpace(input.Label); label != "" {
+		if updated, updateErr := s.tokens.Update(ctx, account.Pool, account.ID, map[string]any{"account_display_name": label}); updateErr == nil {
+			account = updated
+		}
+	}
+	if err := s.bindAccountRoutes(ctx, *account); err != nil {
+		return nil, err
+	}
+	// Import is not accepted on faith. Resolve identity (where supported) and
+	// refresh the provider balance before returning the account to the UI.
+	_, _ = s.tokenSvc.Email(ctx, account.Pool, account.ID)
+	if current, getErr := s.tokens.Get(ctx, account.Pool, account.ID); getErr == nil {
+		account = current
+	}
+	if account.Status != "pending" {
+		reused, quotaErr := s.tokenSvc.storeImportQuota(ctx, *account)
+		if quotaErr != nil {
+			return nil, quotaErr
+		}
+		if !reused {
+			if _, quotaErr = s.RefreshAccountQuota(ctx, account.ID); quotaErr != nil {
+				return nil, quotaErr
+			}
+		}
+	}
+	account, err = s.tokens.Get(ctx, account.Pool, account.ID)
+	if err != nil {
+		return nil, err
+	}
+	return s.accountRow(ctx, *account)
+}
+
+func (s *AdminConsoleService) bindAccountRoutes(ctx context.Context, account model.TokenAccount) error {
+	for _, definition := range model.CanonicalRoutingCatalog() {
+		if definition.Model.ID == model.DolaPublicVideoModel && account.Pool != "dola" {
+			continue
+		}
+
+		for _, route := range definition.Routes {
+			if route.Provider != account.Pool {
+				continue
+			}
+			binding := &model.AccountModelRoute{
+				AccountID: account.ID, ModelRouteID: route.ID, Enabled: true, Entitled: true,
+				QuotaBucketKey: route.QuotaBucketKey,
+			}
+			if err := s.models.Routes().SetAccountRoute(ctx, binding); err != nil {
+				return err
+			}
+		}
+
+	}
+	return nil
+}
+
+func (s *AdminConsoleService) UpdateAccount(ctx context.Context, accountID string, patch map[string]any) (map[string]any, error) {
+	account, err := s.accountByID(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	updates := map[string]any{}
+	if value, ok := patch["status"]; ok {
+		status := strings.ToLower(strings.TrimSpace(fmt.Sprint(value)))
+		if status != "active" && status != "disabled" {
+			return nil, errors.New("status must be active or disabled")
+		}
+		if status == "active" && account.Pool == "chatgpt" && chatGPTTokenExpired(account.Value, time.Now()) {
+			return nil, errors.New("chatgpt access token has expired")
+		}
+		updates["status"] = status
+		// Manual disablement is an operator scheduling choice, not proof that the
+		// credential is dead. Preserve the probe-derived dead flag when disabling;
+		// an explicit re-enable is allowed to clear it.
+		if status == "active" {
+			updates["dead"] = false
+		}
+	}
+	if value, ok := patch["weight"]; ok {
+		weight := intValueSafe(value)
+		if weight < -1000 || weight > 1000 {
+			return nil, errors.New("weight must be between -1000 and 1000")
+		}
+		updates["weight"] = weight
+	}
+	if value, ok := patch["max_concurrency"]; ok {
+		limit := intValueSafe(value)
+		if limit < 0 || limit > 1000 {
+			return nil, errors.New("max_concurrency must be between 0 and 1000")
+		}
+		updates["concurrency"] = limit
+	}
+	if account.Pool == "dola" {
+		if status, ok := updates["status"]; ok {
+			if err := s.tokens.SetDolaEnabled(ctx, account.ID, status == "active"); err != nil {
+				return nil, err
+			}
+			delete(updates, "status")
+			delete(updates, "dead")
+			if status == "active" {
+				go s.tokenSvc.verifyDolaReadiness(account.ID, true)
+			}
+			account, err = s.tokens.Get(ctx, "dola", account.ID)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	if len(updates) > 0 {
+		account, err = s.tokens.Update(ctx, account.Pool, account.ID, updates)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return s.accountRow(ctx, *account)
+}
+
+func (s *AdminConsoleService) DeleteAccount(ctx context.Context, accountID string) error {
+	account, err := s.accountByID(ctx, accountID)
+	if err != nil {
+		return err
+	}
+	// TokenService also removes a matching Adobe cookie refresh profile. Foreign
+	// key cascades remove route bindings and quota buckets/reservations.
+	return s.tokenSvc.Delete(ctx, account.Pool, account.ID)
+}
+
+func (s *AdminConsoleService) DeleteDeadAccounts(ctx context.Context) (int, error) {
+	var accounts []model.TokenAccount
+	if err := s.db.WithContext(ctx).
+		Where("pool IN ? AND (dead = ? OR status = ?)", adminAccountProviders, true, "auth_error").
+		Find(&accounts).Error; err != nil {
+		return 0, err
+	}
+	ids := make([]string, 0, len(accounts))
+	for _, account := range accounts {
+		ids = append(ids, account.ID)
+	}
+	// Delete in one statement so a database error cannot leave a half-deleted
+	// batch. The schema cascades route bindings, quota buckets and reservations.
+	return s.tokenSvc.DeleteBulk(ctx, ids)
+}
+
+func (s *AdminConsoleService) SetAccountRoute(ctx context.Context, accountID, bindingID string, enabled bool) error {
+	account, err := s.accountByID(ctx, accountID)
+	if err != nil {
+		return err
+	}
+	var binding model.AccountModelRoute
+	if err := s.db.WithContext(ctx).First(&binding, "id = ? AND account_id = ?", bindingID, account.ID).Error; err != nil {
+		return err
+	}
+	binding.Enabled = enabled
+	return s.models.Routes().SetAccountRoute(ctx, &binding)
+}
+
+func (s *AdminConsoleService) RefreshAccountQuota(ctx context.Context, accountID string) (map[string]any, error) {
+	account, err := s.accountByID(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	if account.Pool == "dola" {
+		if account.Status == "disabled" {
+			return nil, errors.New("请先启用账号，再验证 Dola 会话")
+		}
+		go s.tokenSvc.verifyDolaReadiness(account.ID, true)
+		return map[string]any{"queued": true, "message": "已安排 Dola 协议会话验证，不消耗生成次数"}, nil
+	}
+	return s.tokenSvc.Quota(ctx, account.Pool, account.ID)
+}
+
+func trustedQuotaSnapshot(snapshot map[string]any) (remaining, total *float64, resetAt *time.Time, trusted bool) {
+	if snapshot == nil || boolValueWithDefault(snapshot["unknown"], false) || boolValueWithDefault(snapshot["auth_failed"], false) {
+		return nil, nil, nil, false
+	}
+	remainingValue, hasRemaining := numeric(snapshot["remaining"])
+	if !hasRemaining || math.IsNaN(remainingValue) || math.IsInf(remainingValue, 0) || remainingValue < 0 {
+		return nil, nil, nil, false
+	}
+	remaining = &remainingValue
+	if totalValue, hasTotal := numeric(snapshot["total"]); hasTotal && !math.IsNaN(totalValue) && !math.IsInf(totalValue, 0) && totalValue >= 0 {
+		total = &totalValue
+	}
+	resetAt = parseResetTime(snapshot["reset_after"])
+	if resetAt == nil {
+		resetAt = parseResetTime(snapshot["available_until"])
+	}
+	return remaining, total, resetAt, true
+}
+
+func (s *AdminConsoleService) accountByID(ctx context.Context, id string) (*model.TokenAccount, error) {
+	var account model.TokenAccount
+	if err := s.db.WithContext(ctx).First(&account, "id = ?", strings.TrimSpace(id)).Error; err != nil {
+		return nil, err
+	}
+	return &account, nil
+}
+
+func (s *AdminConsoleService) ListLogs(ctx context.Context, filter LogListFilter) ([]map[string]any, int64, error) {
+	query := s.db.WithContext(ctx).Model(&model.EventLog{})
+	if filter.Artifacts {
+		// Image rows reserve an object key before provider execution. A non-empty
+		// file column is therefore not proof that an artifact exists; only terminal
+		// successful events belong in the artifact gallery.
+		query = query.Where("status = ? AND file <> ''", "success")
+	}
+	if value := strings.TrimSpace(filter.CredentialID); value != "" && s.db.Migrator().HasColumn(&model.EventLog{}, "api_credential_id") {
+		query = query.Where("api_credential_id = ?", value)
+	}
+	if value := strings.TrimSpace(filter.Model); value != "" {
+		query = query.Where("model = ?", value)
+	}
+	if value := strings.TrimSpace(filter.Kind); value != "" {
+		query = query.Where("kind = ?", value)
+	}
+	if value := strings.TrimSpace(filter.Status); value != "" {
+		query = query.Where("status = ?", value)
+	}
+	if value := strings.TrimSpace(filter.Source); value != "" {
+		query = query.Where("source = ?", value)
+	}
+	if value := strings.TrimSpace(filter.Query); value != "" {
+		like := "%" + value + "%"
+		query = query.Where("request_id ILIKE ? OR prompt ILIKE ? OR model ILIKE ? OR error ILIKE ?", like, like, like, like)
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	limit, offset := normalizePage(filter.Limit, filter.Offset)
+	var events []model.EventLog
+	if err := query.Order("ts desc").Limit(limit).Offset(offset).Find(&events).Error; err != nil {
+		return nil, 0, err
+	}
+	credentialIDs := make([]string, 0)
+	seenCredential := make(map[string]bool)
+	for _, event := range events {
+		if event.APICredentialID != "" && !seenCredential[event.APICredentialID] {
+			seenCredential[event.APICredentialID] = true
+			credentialIDs = append(credentialIDs, event.APICredentialID)
+		}
+	}
+	credentials := make(map[string]model.APICredential, len(credentialIDs))
+	if len(credentialIDs) > 0 {
+		var items []model.APICredential
+		if err := s.db.WithContext(ctx).Where("id IN ?", credentialIDs).Find(&items).Error; err != nil {
+			return nil, 0, err
+		}
+		for _, item := range items {
+			credentials[item.ID] = item
+		}
+	}
+	rows := make([]map[string]any, 0, len(events))
+	for _, event := range events {
+		credential := map[string]any(nil)
+		if item, ok := credentials[event.APICredentialID]; ok {
+			credential = map[string]any{"id": item.ID, "name": item.Name, "key_preview": item.KeyPreview}
+		}
+		row := map[string]any{
+			"id": event.ID, "request_id": event.RequestID, "model": event.Model, "kind": event.Kind,
+			"status": event.Status, "provider": event.Provider, "account_id": event.AccountID, "account_label": event.AccountEmail,
+			"duration_ms": event.ElapsedMS, "phase": event.Phase, "error_param": event.ErrorParam, "error": safeStoredGenerationError(event.Error), "created_at": event.TS,
+			"api_credential_id": event.APICredentialID, "credential": credential,
+			"prompt": event.Prompt, "ratio": event.Ratio, "resolution": event.Resolution,
+			"duration": event.Duration, "refs": event.Refs, "deai": event.DeAI, "source": event.Source,
+			"cost": event.Cost, "mime_type": eventMimeType(event),
+		}
+		if event.Status == "success" && strings.TrimSpace(event.File) != "" && (event.Kind == "image" || event.Kind == "video") {
+			contentURL := config.AdminPathPrefix + "/artifacts/" + event.ID + "/content"
+			row["content_url"] = contentURL
+			row["thumbnail_url"] = contentURL
+		}
+		if filter.Artifacts {
+			row["size_bytes"] = nil
+		}
+		rows = append(rows, row)
+	}
+	return rows, total, nil
+}
+
+func (s *AdminConsoleService) GetSettings(ctx context.Context) (map[string]any, error) {
+	values := map[string]any{
+		"logs_retention_days": 30, "artifacts_retention_days": 30,
+		"outbound_proxy": "", "public_base_url": s.cfg.PublicBaseURL,
+	}
+	for settingKey, responseKey := range map[string]string{
+		"logs.retention_days": "logs_retention_days", "artifacts.retention_days": "artifacts_retention_days",
+		"proxy.url": "outbound_proxy", "public.base_url": "public_base_url",
+	} {
+		value, err := s.settings.GetValue(ctx, settingKey)
+		if err != nil {
+			return nil, err
+		}
+		if value == "" {
+			continue
+		}
+		if strings.HasSuffix(responseKey, "_days") {
+			if parsed, parseErr := strconv.Atoi(value); parseErr == nil {
+				values[responseKey] = parsed
+			}
+		} else {
+			values[responseKey] = value
+		}
+	}
+	providers := map[string]bool{}
+	for _, pool := range SchedulableProviders() {
+		enabled, err := providerEnabled(ctx, s.settings, pool)
+		if err != nil {
+			return nil, err
+		}
+		providers[pool] = enabled
+	}
+	values["providers_enabled"] = providers
+	proxies := map[string]string{}
+	extracts := map[string]string{}
+	for _, pool := range SchedulableProviders() {
+		value, err := s.settings.GetValue(ctx, providerProxySettingKey(pool))
+		if err != nil {
+			return nil, err
+		}
+		proxies[pool] = strings.TrimSpace(value)
+		extract, err := s.settings.GetValue(ctx, providerExtractSettingKey(pool))
+		if err != nil {
+			return nil, err
+		}
+		extracts[pool] = strings.TrimSpace(extract)
+	}
+	values["provider_proxies"] = proxies
+	sessionAPI, err := s.settings.GetValue(ctx, settingDolaSessionAPI)
+	if err != nil {
+		return nil, err
+	}
+	sessionAPI = strings.TrimSpace(sessionAPI)
+	if extracts["dola"] == "" {
+		extracts["dola"] = sessionAPI
+	}
+	if sessionAPI == "" {
+		sessionAPI = extracts["dola"]
+	}
+	values["provider_extract_apis"] = extracts
+	values["dola_session_api"] = sessionAPI
+	extractAPI, err := s.settings.GetValue(ctx, settingExtractAPI)
+	if err != nil {
+		return nil, err
+	}
+	values["outbound_extract_api"] = strings.TrimSpace(extractAPI)
+	deai, err := s.settings.GetValue(ctx, "deai.enabled")
+	if err != nil {
+		return nil, err
+	}
+	values["deai_enabled"] = parseBoolSetting(deai, false)
+	return values, nil
+}
+
+func (s *AdminConsoleService) UpdateSettings(ctx context.Context, input map[string]any) (map[string]any, error) {
+	updates := map[string]string{}
+	for responseKey, settingKey := range map[string]string{
+		"logs_retention_days": "logs.retention_days", "artifacts_retention_days": "artifacts.retention_days",
+	} {
+		if value, ok := input[responseKey]; ok {
+			days := intValueSafe(value)
+			if days < 1 || days > 3650 {
+				return nil, fmt.Errorf("%s must be between 1 and 3650", responseKey)
+			}
+			updates[settingKey] = strconv.Itoa(days)
+		}
+	}
+	if value, ok := input["outbound_proxy"]; ok {
+		proxy, err := normalizeOutboundProxy(fmt.Sprint(value))
+		if err != nil {
+			return nil, err
+		}
+		updates["proxy.url"] = proxy
+	}
+	if value, ok := input["outbound_extract_api"]; ok {
+		extractAPI, err := normalizeExtractAPI(fmt.Sprint(value), "outbound_extract_api")
+		if err != nil {
+			return nil, err
+		}
+		updates[settingExtractAPI] = extractAPI
+	}
+	if value, ok := input["dola_session_api"]; ok {
+		sessionAPI, err := normalizeExtractAPI(fmt.Sprint(value), "dola_session_api")
+		if err != nil {
+			return nil, err
+		}
+		updates[settingDolaSessionAPI] = sessionAPI
+		if _, hasExtracts := input["provider_extract_apis"]; !hasExtracts {
+			updates[providerExtractSettingKey("dola")] = sessionAPI
+		}
+	}
+	if raw, ok := input["provider_extract_apis"]; ok {
+		obj, ok := raw.(map[string]any)
+		if !ok {
+			return nil, errors.New("provider_extract_apis must be an object of pool => URL")
+		}
+		allowed := map[string]bool{}
+		for _, pool := range SchedulableProviders() {
+			allowed[pool] = true
+		}
+		for pool, value := range obj {
+			normalized := strings.ToLower(strings.TrimSpace(pool))
+			if !allowed[normalized] {
+				return nil, fmt.Errorf("provider_extract_apis contains unknown provider %q", pool)
+			}
+			extractAPI, err := normalizeExtractAPI(fmt.Sprint(value), "provider_extract_apis."+normalized)
+			if err != nil {
+				return nil, err
+			}
+			updates[providerExtractSettingKey(normalized)] = extractAPI
+			if normalized == "dola" {
+				updates[settingDolaSessionAPI] = extractAPI
+			}
+		}
+	}
+	if raw, ok := input["provider_proxies"]; ok {
+		obj, ok := raw.(map[string]any)
+		if !ok {
+			return nil, errors.New("provider_proxies must be an object of pool => URL")
+		}
+		allowed := map[string]bool{}
+		for _, pool := range SchedulableProviders() {
+			allowed[pool] = true
+		}
+		for pool, value := range obj {
+			normalized := strings.ToLower(strings.TrimSpace(pool))
+			if !allowed[normalized] {
+				return nil, fmt.Errorf("provider_proxies contains unknown provider %q", pool)
+			}
+			proxy, err := normalizeProxyURL(fmt.Sprint(value), "provider_proxies."+normalized)
+			if err != nil {
+				return nil, err
+			}
+			updates[providerProxySettingKey(normalized)] = proxy
+		}
+	}
+	if value, ok := input["public_base_url"]; ok {
+		production := s.cfg != nil && strings.EqualFold(strings.TrimSpace(s.cfg.AppEnv), "production")
+		baseURL, err := normalizeAdminPublicOrigin(fmt.Sprint(value), production)
+		if err != nil {
+			return nil, err
+		}
+		updates["public.base_url"] = baseURL
+	}
+	if value, ok := input["deai_enabled"]; ok {
+		enabled, valid := value.(bool)
+		if !valid {
+			return nil, errors.New("deai_enabled must be a boolean")
+		}
+		updates["deai.enabled"] = strconv.FormatBool(enabled)
+	}
+	if raw, ok := input["providers_enabled"]; ok {
+		switches, ok := raw.(map[string]any)
+		if !ok {
+			return nil, errors.New("providers_enabled must be an object of pool => boolean")
+		}
+		for pool, flag := range switches {
+			normalized := normalizePool(pool)
+			if normalized == "" {
+				return nil, fmt.Errorf("providers_enabled contains unknown provider %q", pool)
+			}
+			enabled, ok := flag.(bool)
+			if !ok {
+				return nil, fmt.Errorf("providers_enabled.%s must be a boolean", pool)
+			}
+			updates[providerSettingKey(normalized)] = strconv.FormatBool(enabled)
+		}
+	}
+	if err := s.settings.UpsertValues(ctx, updates); err != nil {
+		return nil, err
+	}
+	return s.GetSettings(ctx)
+}
+
+func normalizeOutboundProxy(raw string) (string, error) {
+	return normalizeProxyURL(raw, "outbound_proxy")
+}
+
+func normalizeProxyURL(raw, field string) (string, error) {
+	if field == "" {
+		field = "outbound_proxy"
+	}
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return "", nil
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Host == "" {
+		return "", fmt.Errorf("%s must be an absolute http(s) or socks5 URL", field)
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "http", "https", "socks5", "socks5h":
+	default:
+		return "", fmt.Errorf("%s must be an absolute http(s) or socks5 URL", field)
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", fmt.Errorf("%s must not contain a query or fragment", field)
+	}
+	parsed.Scheme = strings.ToLower(parsed.Scheme)
+	return parsed.String(), nil
+}
+
+func normalizeExtractAPI(raw, field string) (string, error) {
+	if field == "" {
+		field = "outbound_extract_api"
+	}
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return "", nil
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Host == "" || parsed.User != nil {
+		return "", fmt.Errorf("%s must be an absolute http(s) URL", field)
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "http", "https":
+	default:
+		return "", fmt.Errorf("%s must be an absolute http(s) URL", field)
+	}
+	// Keep the operator's raw query. Re-encoding would turn split=\r\n into
+	// percent-escapes that some residential extract APIs reject.
+	out := strings.ToLower(parsed.Scheme) + "://" + parsed.Host + parsed.EscapedPath()
+	if parsed.RawQuery != "" {
+		out += "?" + parsed.RawQuery
+	}
+	return out, nil
+}
+
+func normalizeAdminPublicOrigin(raw string, production bool) (string, error) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return "", nil
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Host == "" || parsed.User != nil {
+		return "", errors.New("public_base_url must be an absolute HTTP(S) origin")
+	}
+	parsed.Scheme = strings.ToLower(parsed.Scheme)
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", errors.New("public_base_url must be an absolute HTTP(S) origin")
+	}
+	if parsed.Path != "" && parsed.Path != "/" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", errors.New("public_base_url must not contain a path, query, user info, or fragment")
+	}
+	if production && (parsed.Scheme != "https" || localOriginHost(parsed.Hostname())) {
+		return "", errors.New("public_base_url must be a non-local HTTPS origin in production")
+	}
+	parsed.Path, parsed.RawPath = "", ""
+	return strings.TrimRight(parsed.String(), "/"), nil
+}
+
+func localOriginHost(host string) bool {
+	host = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(host), "."))
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback() || ip.IsUnspecified()
+	}
+	return false
+}
+
+func normalizeAdminProvider(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "openai", "chatgpt":
+		return "chatgpt"
+	case "adobe", "byteplus", "grok", "dola":
+		return strings.ToLower(strings.TrimSpace(value))
+	default:
+		return ""
+	}
+}
+
+func normalizePage(limit, offset int) (int, int) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return limit, offset
+}
+
+func credentialMap(value any) map[string]any {
+	if typed, ok := value.(map[string]any); ok {
+		return typed
+	}
+	if raw, ok := value.(json.RawMessage); ok {
+		var out map[string]any
+		_ = json.Unmarshal(raw, &out)
+		return out
+	}
+	if text, ok := value.(string); ok && strings.HasPrefix(strings.TrimSpace(text), "{") {
+		var out map[string]any
+		_ = json.Unmarshal([]byte(text), &out)
+		return out
+	}
+	return map[string]any{}
+}
+
+func credentialSecret(value any, values map[string]any) string {
+	if text, ok := value.(string); ok {
+		text = strings.TrimSpace(text)
+		// The admin UI deliberately accepts both a raw token/Cookie header and a
+		// complete browser-export JSON document.  When the latter arrives as a
+		// JSON string, credentialMap has already decoded it into values; never
+		// persist or send the whole JSON blob as if it were a Cookie header.
+		if len(values) > 0 && (strings.HasPrefix(text, "{") || strings.HasPrefix(text, "[")) {
+			if cookie := cookieFromCredential(values); cookie != "" {
+				return cookie
+			}
+			if secret := firstMapString(values, "access_token", "sso_token", "token", "api_key", "key"); secret != "" {
+				return secret
+			}
+		}
+		return text
+	}
+	if cookie := cookieFromCredential(values); cookie != "" {
+		return cookie
+	}
+	return firstMapString(values, "access_token", "sso_token", "token", "api_key", "key")
+}
+
+func bytePlusCredentialSecret(value any, values map[string]any) string {
+	if text, ok := value.(string); ok {
+		text = strings.TrimSpace(text)
+		if len(values) == 0 {
+			return strings.TrimSpace(strings.TrimPrefix(text, "Cookie:"))
+		}
+	}
+	if text := firstMapString(values, "cookie_string", "cookie_header"); text != "" {
+		return strings.TrimSpace(strings.TrimPrefix(text, "Cookie:"))
+	}
+	raw, ok := values["cookies"].([]any)
+	if !ok {
+		return ""
+	}
+	parts := make([]string, 0, len(raw))
+	for _, entry := range raw {
+		cookie, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		name, cookieValue := stringFromMap(cookie, "name"), stringFromMap(cookie, "value")
+		if name != "" && cookieValue != "" {
+			parts = append(parts, name+"="+cookieValue)
+		}
+	}
+	return strings.Join(parts, "; ")
+}
+
+func adobeARPSessionToken(values map[string]any) string {
+	aliases := map[string]struct{}{
+		"x-arp-session-id":  {},
+		"x_arp_session_id":  {},
+		"arp_session_id":    {},
+		"arp_session_token": {},
+		"arpsessiontoken":   {},
+	}
+	find := func(source map[string]any) string {
+		for key, raw := range source {
+			if _, ok := aliases[strings.ToLower(strings.TrimSpace(key))]; !ok || raw == nil {
+				continue
+			}
+			if token := strings.TrimSpace(fmt.Sprint(raw)); token != "" && token != "<nil>" {
+				return token
+			}
+		}
+		return ""
+	}
+	if token := find(values); token != "" {
+		return token
+	}
+	if headers, ok := values["headers"].(map[string]any); ok {
+		return find(headers)
+	}
+	return ""
+}
+
+func cookieFromCredential(values map[string]any) string {
+	if text := firstMapString(values, "cookie", "cookie_string", "cookie_header"); text != "" {
+		return strings.TrimSpace(strings.TrimPrefix(text, "Cookie:"))
+	}
+	raw, ok := values["cookies"].([]any)
+	if !ok {
+		// Some browser exporters provide a name/value object instead of the
+		// conventional cookies[] array. Sort the keys so the normalized Cookie
+		// header and its account fingerprint stay stable across imports.
+		if cookieMap, mapOK := values["cookies_map"].(map[string]any); mapOK {
+			keys := make([]string, 0, len(cookieMap))
+			for name, value := range cookieMap {
+				if strings.TrimSpace(name) != "" && strings.TrimSpace(fmt.Sprint(value)) != "" {
+					keys = append(keys, name)
+				}
+			}
+			sort.Strings(keys)
+			parts := make([]string, 0, len(keys))
+			for _, name := range keys {
+				parts = append(parts, name+"="+strings.TrimSpace(fmt.Sprint(cookieMap[name])))
+			}
+			return strings.Join(parts, "; ")
+		}
+		return ""
+	}
+	parts := make([]string, 0, len(raw))
+	for _, entry := range raw {
+		cookie, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		name, value := stringFromMap(cookie, "name"), stringFromMap(cookie, "value")
+		if name != "" && value != "" {
+			parts = append(parts, name+"="+value)
+		}
+	}
+	return strings.Join(parts, "; ")
+}
+
+func firstMapString(values map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if value := stringFromMap(values, key); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func stringFromMap(values map[string]any, key string) string {
+	if values == nil || values[key] == nil {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprint(values[key]))
+}
+
+func intValueSafe(value any) int {
+	number, ok := numeric(value)
+	if !ok || math.IsNaN(number) || math.IsInf(number, 0) {
+		return 0
+	}
+	return int(number)
+}
+
+func numeric(value any) (float64, bool) {
+	switch typed := value.(type) {
+	case float64:
+		return typed, true
+	case float32:
+		return float64(typed), true
+	case int:
+		return float64(typed), true
+	case int64:
+		return float64(typed), true
+	case json.Number:
+		n, err := typed.Float64()
+		return n, err == nil
+	case string:
+		n, err := strconv.ParseFloat(strings.TrimSpace(typed), 64)
+		return n, err == nil
+	default:
+		return 0, false
+	}
+}
+
+func parseResetTime(value any) *time.Time {
+	text := strings.TrimSpace(fmt.Sprint(value))
+	if text == "" || text == "<nil>" {
+		return nil
+	}
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02 15:04:05"} {
+		if parsed, err := time.Parse(layout, text); err == nil {
+			return &parsed
+		}
+	}
+	return nil
+}
+
+func mimeForKind(kind string) string {
+	if kind == "video" {
+		return "video/mp4"
+	}
+	return "image/png"
+}
+
+func eventMimeType(event model.EventLog) string {
+	if value := strings.ToLower(strings.TrimSpace(event.MimeType)); value != "" {
+		return value
+	}
+	return mimeForKind(event.Kind)
+}

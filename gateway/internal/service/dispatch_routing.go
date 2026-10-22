@@ -1,0 +1,583 @@
+package service
+
+import (
+	"context"
+	"errors"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/yypyyd/infinite-canvas/gateway/internal/model"
+	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/adobe"
+	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/byteplus"
+	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/chatgpt"
+	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/dola"
+	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/grok"
+	"github.com/yypyyd/infinite-canvas/gateway/internal/repo"
+	"gorm.io/gorm"
+)
+
+type dispatchContextKey string
+
+const dispatchRouteKey dispatchContextKey = "model-route"
+
+type dispatchPlan struct {
+	Route        model.ModelRoute
+	Cost         float64
+	QuotaTracked bool
+	QuotaDay     time.Time
+}
+
+func withDispatchRoute(ctx context.Context, route model.ModelRoute, cost float64) context.Context {
+	policy, ok := model.DecodeQuotaCostPolicy(route.QuotaCosts)
+	tracked := ok && policy.Mode != "unmetered" && strings.TrimSpace(route.QuotaBucketKey) != ""
+	return context.WithValue(ctx, dispatchRouteKey, dispatchPlan{Route: route, Cost: maxFloat(0, cost), QuotaTracked: tracked, QuotaDay: time.Now()})
+}
+
+func withDispatchCost(ctx context.Context, cost float64) context.Context {
+	plan, ok := dispatchPlanFromContext(ctx)
+	if !ok {
+		return ctx
+	}
+	plan.Cost = maxFloat(0, cost)
+	return context.WithValue(ctx, dispatchRouteKey, plan)
+}
+
+func dispatchPlanFromContext(ctx context.Context) (dispatchPlan, bool) {
+	plan, ok := ctx.Value(dispatchRouteKey).(dispatchPlan)
+	return plan, ok && strings.TrimSpace(plan.Route.ID) != ""
+}
+
+func dispatchRouteFromContext(ctx context.Context) string {
+	plan, _ := dispatchPlanFromContext(ctx)
+	return strings.TrimSpace(plan.Route.ID)
+}
+
+// matchingRoutes returns the capability-matched routes for a canonical model,
+// minus any whose provider pool an administrator has switched off. Every
+// dispatch path (text, image, video and the preflight availability probe) goes
+// through here, so a disabled provider is never scheduled anywhere.
+func (s *V1Service) matchingRoutes(ctx context.Context, logicalID string, req model.RouteRequirements) ([]model.ModelRoute, error) {
+	routes, err := s.models.Routes().MatchRoutes(ctx, logicalID, req)
+	if err != nil {
+		return nil, err
+	}
+	enabled, err := filterEnabledProviderRoutes(ctx, s.settings, routes)
+	if err != nil {
+		return nil, err
+	}
+	// Capability matching found routes, but the administrator closed every pool
+	// behind them. Report that precisely instead of blaming the request.
+	if len(routes) > 0 && len(enabled) == 0 {
+		return nil, ErrProviderDisabled
+	}
+	return enabled, nil
+}
+
+func (s *V1Service) routeHasAccount(ctx context.Context, route model.ModelRoute, kind string) (bool, error) {
+	items, err := s.listSchedulingCached(ctx, route.Provider)
+	if err != nil {
+		return false, err
+	}
+	policy := poolPolicy(ctx)
+	now := time.Now()
+	active := make([]model.TokenAccount, 0, len(items))
+	for _, item := range items {
+		if accountDispatchable(item, route.Provider, kind, routeDispatchModelID(route), policy.pinnedID, now) {
+			active = append(active, item)
+		}
+	}
+	// Existence does not need ranking. Cross-route failover still observes
+	// slots so a saturated route is skipped before entering generate*.
+	active, err = s.collectRouteAccounts(ctx, route, active, policy.fastFailover, false)
+	return len(active) > 0, err
+}
+
+func (s *V1Service) firstAvailableRoute(ctx context.Context, logicalID, kind string, req model.RouteRequirements) (*model.ModelRoute, error) {
+	routes, err := s.matchingRoutes(ctx, logicalID, req)
+	if err != nil {
+		return nil, err
+	}
+	if len(routes) == 0 {
+		return nil, s.unsupportedRouteParameters(ctx, logicalID, req)
+	}
+	for _, route := range routes {
+		routeCtx := withDispatchRoute(ctx, route, defaultRouteCost(route, req))
+		ok, accountErr := s.routeHasAccount(routeCtx, route, kind)
+		if accountErr != nil {
+			return nil, accountErr
+		}
+		if ok {
+			copy := route
+			return &copy, nil
+		}
+	}
+	return nil, ErrNoProviderAccount
+}
+
+func (s *V1Service) routeAccounts(ctx context.Context, route model.ModelRoute, accounts []model.TokenAccount) ([]model.TokenAccount, error) {
+	return s.collectRouteAccounts(ctx, route, accounts, true, true)
+}
+
+type routeAccountCandidate struct {
+	account   model.TokenAccount
+	binding   model.AccountModelRoute
+	bucketKey string
+	remaining float64
+	known     bool
+	available int64
+	slotsSeen bool
+}
+
+const routeExistenceSlotChunk = 32
+
+func (s *V1Service) collectRouteAccounts(ctx context.Context, route model.ModelRoute, accounts []model.TokenAccount, observeSlots, rank bool) ([]model.TokenAccount, error) {
+	plan, _ := dispatchPlanFromContext(ctx)
+	accountIDs := make([]string, 0, len(accounts))
+	for _, account := range accounts {
+		if strings.TrimSpace(account.ID) != "" {
+			accountIDs = append(accountIDs, account.ID)
+		}
+	}
+	bindings, err := s.models.Routes().AccountRoutesForRoute(ctx, accountIDs, route.ID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	candidates := make([]routeAccountCandidate, 0, len(accounts))
+	bucketKeys := make([]string, 0, len(accounts))
+	lookupIDs := make([]string, 0, len(accounts))
+	for _, account := range accounts {
+		binding, exists := bindings[account.ID]
+		if !exists {
+			continue
+		}
+		if !binding.Enabled || !binding.Entitled || binding.CooldownUntil != nil && binding.CooldownUntil.After(now) {
+			continue
+		}
+		item := routeAccountCandidate{account: account, binding: binding}
+		bucketKey := strings.TrimSpace(binding.QuotaBucketKey)
+		if bucketKey == "" {
+			bucketKey = strings.TrimSpace(route.QuotaBucketKey)
+		}
+		bucketKey = dispatchQuotaBucket(plan, bucketKey)
+		if authoritativeBucket, _, scoped := providerSnapshotScope(route.Provider); scoped && authoritativeBucket != bucketKey {
+			// The provider's available probe covers a different product surface
+			// (for example ChatGPT image_gen versus text chat). Ignore stale or
+			// accidentally created snapshots rather than blocking an unrelated route.
+			bucketKey = ""
+		}
+		if bucketKey != "" {
+			item.bucketKey = bucketKey
+			bucketKeys = append(bucketKeys, bucketKey)
+		}
+		lookupIDs = append(lookupIDs, account.ID)
+		candidates = append(candidates, item)
+	}
+
+	// Quota snapshots are read in one query even when account-specific bindings
+	// point at different buckets (Adobe image/video intentionally share one).
+	// Only entitled candidates are included; unbound dispatchable rows are not.
+	snapshots, err := s.models.Quotas().GetMany(ctx, lookupIDs, bucketKeys)
+	if err != nil {
+		return nil, err
+	}
+	quotaEligible := candidates[:0]
+	for _, item := range candidates {
+		if item.bucketKey != "" {
+			if bucket, exists := snapshots[repo.QuotaSnapshotKey(item.account.ID, item.bucketKey)]; exists && bucket.Remaining != nil {
+				item.remaining, item.known = *bucket.Remaining, true
+				if !quotaCanServe(item.remaining, item.known, plan) {
+					continue
+				}
+			}
+		}
+		quotaEligible = append(quotaEligible, item)
+	}
+	candidates = quotaEligible
+
+	if !rank {
+		return s.pickRouteExistence(ctx, route, candidates, observeSlots)
+	}
+
+	if observeSlots {
+		// Observe all account gates in one Redis pipeline. A failed observation is
+		// unknown (not zero): final admission remains the atomic Acquire in the pool.
+		concurrencyKeys := make([]string, 0, len(candidates))
+		for _, item := range candidates {
+			concurrencyKeys = append(concurrencyKeys, "conc:a:"+item.account.ID)
+		}
+		activeCounts, slotsSeen := s.conc.ActiveCounts(ctx, concurrencyKeys)
+		if slotsSeen {
+			for index := range candidates {
+				item := &candidates[index]
+				maximum := int64(poolAccountConcurrency(route.Provider, item.account))
+				active := activeCounts["conc:a:"+item.account.ID]
+				item.available, item.slotsSeen = maximum-active, true
+			}
+		}
+		if slotsSeen && len(candidates) > 0 && poolPolicy(ctx).fastFailover {
+			available := false
+			for _, item := range candidates {
+				available = available || item.available > 0
+			}
+			if !available {
+				return nil, ErrConcurrencyFull
+			}
+		}
+	}
+	cooling := make(map[string]bool, len(candidates))
+	for _, item := range candidates {
+		cooling[item.account.ID] = s.accountCooling(route.Provider, item.account.ID)
+	}
+	sort.SliceStable(candidates, func(i, j int) bool {
+		left, right := candidates[i], candidates[j]
+		// Accounts that just failed upstream are tried last even when they have
+		// higher weight, otherwise rotateRoundRobin's demotion is overwritten here.
+		if cooling[left.account.ID] != cooling[right.account.ID] {
+			return !cooling[left.account.ID]
+		}
+		// Administrator weight is the primary healthy-account preference. Within the
+		// same weight, prefer accounts that can absorb more concurrent work, while
+		// retaining busy accounts at the tail. Final admission is atomic in
+		// runPoolWithFailoverPolicy; keeping the full eligible set lets a queued or
+		// beta-retrying request use an account that becomes free moments later.
+		// Then prefer authoritative quota snapshots and best-fit allowance.
+		if left.account.Weight != right.account.Weight {
+			return left.account.Weight > right.account.Weight
+		}
+		if left.slotsSeen && right.slotsSeen && left.available != right.available {
+			return left.available > right.available
+		}
+		if left.known != right.known {
+			return left.known
+		}
+		if left.binding.ConsecutiveFails != right.binding.ConsecutiveFails {
+			return left.binding.ConsecutiveFails < right.binding.ConsecutiveFails
+		}
+		if left.known && left.remaining != right.remaining {
+			return left.remaining < right.remaining
+		}
+		// Incoming order has already been rotated. Stable ties preserve that
+		// distributed cursor instead of concentrating equivalent requests on ID.
+		return false
+	})
+	out := make([]model.TokenAccount, 0, len(candidates))
+	for _, item := range candidates {
+		out = append(out, item.account)
+	}
+	return out, nil
+}
+
+// pickRouteExistence answers "does this route have at least one usable
+// account?" without ranking or returning the full eligible set. Slot
+// observation stays required for fast failover so a saturated route is still
+// skipped before generate*.
+func (s *V1Service) pickRouteExistence(ctx context.Context, route model.ModelRoute, candidates []routeAccountCandidate, observeSlots bool) ([]model.TokenAccount, error) {
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+	if !observeSlots {
+		return []model.TokenAccount{candidates[0].account}, nil
+	}
+	fastFailover := poolPolicy(ctx).fastFailover
+	slotsSeen := false
+	for start := 0; start < len(candidates); start += routeExistenceSlotChunk {
+		end := start + routeExistenceSlotChunk
+		if end > len(candidates) {
+			end = len(candidates)
+		}
+		batch := candidates[start:end]
+		concurrencyKeys := make([]string, 0, len(batch))
+		for _, item := range batch {
+			concurrencyKeys = append(concurrencyKeys, "conc:a:"+item.account.ID)
+		}
+		activeCounts, seen := s.conc.ActiveCounts(ctx, concurrencyKeys)
+		if !seen {
+			return []model.TokenAccount{batch[0].account}, nil
+		}
+		slotsSeen = true
+		for _, item := range batch {
+			maximum := int64(poolAccountConcurrency(route.Provider, item.account))
+			if maximum-activeCounts["conc:a:"+item.account.ID] > 0 {
+				return []model.TokenAccount{item.account}, nil
+			}
+		}
+	}
+	if slotsSeen && fastFailover {
+		return nil, ErrConcurrencyFull
+	}
+	return []model.TokenAccount{candidates[0].account}, nil
+}
+
+func quotaCanServe(remaining float64, known bool, plan dispatchPlan) bool {
+	if !known || !plan.QuotaTracked {
+		return true
+	}
+	if remaining <= 1e-9 {
+		return false
+	}
+	return plan.Cost <= 0 || remaining+1e-9 >= plan.Cost
+}
+
+func maxFloat(left, right float64) float64 {
+	if left > right {
+		return left
+	}
+	return right
+}
+
+func (s *V1Service) dispatchImageRoutes(ctx context.Context, eventID string, logical *model.ModelConfig, in V1ImageRequest, ratio, resolution string, noStore bool) ([]byte, string, error) {
+	operation := "generation"
+	if len(in.ReferenceImages) > 0 {
+		operation = "edit"
+	}
+	requirements := model.RouteRequirements{Operation: operation, Ratio: ratio, Resolution: resolution, Quality: in.Quality, ReferenceImages: len(in.ReferenceImages)}
+	routes, err := s.matchingRoutes(ctx, logical.ID, requirements)
+	if err != nil {
+		return nil, "", err
+	}
+	if len(routes) == 0 {
+		return nil, "", ErrUnsupportedParams
+	}
+	return runMediaRouteFailover(ctx, routes, strings.TrimSpace(in.AccountID), func(ctx context.Context, route model.ModelRoute) ([]byte, string, error) {
+		routeCtx := withDispatchRoute(ctx, route, defaultRouteCost(route, requirements))
+		available, accountErr := s.routeHasAccount(routeCtx, route, "image")
+		if accountErr != nil {
+			return nil, "", accountErr
+		}
+		if !available {
+			return nil, "", ErrNoProviderAccount
+		}
+		item, configErr := s.models.Routes().RouteConfig(ctx, route)
+		if configErr != nil {
+			return nil, "", configErr
+		}
+		_ = s.events.SetProvider(context.WithoutCancel(ctx), eventID, route.Provider)
+		var lastErr error
+		var data []byte
+		var url string
+		switch route.Provider {
+		case "adobe":
+			data, url, lastErr = s.generateAdobeImage(routeCtx, eventID, item, in, ratio, resolution, noStore)
+		case "byteplus":
+			data, url, lastErr = s.generateBytePlusImage(routeCtx, eventID, item, in, ratio, resolution, noStore)
+		case "chatgpt":
+			data, url, lastErr = s.generateChatGPTImage(routeCtx, eventID, item, in, ratio, resolution, noStore)
+
+		case "grok":
+			data, url, lastErr = s.generateGrokImage(routeCtx, eventID, item, in, ratio, noStore)
+
+		default:
+			lastErr = ErrProviderUnsupported
+		}
+		return data, url, lastErr
+	})
+}
+
+func (s *V1Service) dispatchVideoRoutes(ctx context.Context, eventID string, logical *model.ModelConfig, in V1VideoRequest, ratio, resolution, duration string, download bool) ([]byte, string, error) {
+	requirements := model.RouteRequirements{Operation: "generation", Ratio: ratio, Resolution: resolution, Duration: duration,
+		ReferenceImages: len(in.ReferenceImages), ReferenceVideos: len(in.ReferenceVideos), ReferenceAudios: len(in.ReferenceAudios), GenerateAudio: in.GenerateAudio}
+	routes, err := s.matchingRoutes(ctx, logical.ID, requirements)
+	if err != nil {
+		return nil, "", err
+	}
+	if len(routes) == 0 {
+		return nil, "", ErrUnsupportedParams
+	}
+	return runMediaRouteFailover(ctx, routes, strings.TrimSpace(in.AccountID), func(ctx context.Context, route model.ModelRoute) ([]byte, string, error) {
+		routeCtx := withDispatchRoute(ctx, route, defaultRouteCost(route, requirements))
+		available, accountErr := s.routeHasAccount(routeCtx, route, "video")
+		if accountErr != nil {
+			return nil, "", accountErr
+		}
+		if !available {
+			return nil, "", ErrNoProviderAccount
+		}
+		item, configErr := s.models.Routes().RouteConfig(ctx, route)
+		if configErr != nil {
+			return nil, "", configErr
+		}
+		_ = s.events.SetProvider(context.WithoutCancel(ctx), eventID, route.Provider)
+		seconds := parseDurationSeconds(duration)
+		var lastErr error
+		var data []byte
+		var url string
+		switch route.Provider {
+		case "adobe":
+			data, url, lastErr = s.generateAdobeVideo(routeCtx, eventID, item, in, ratio, resolution, seconds, download)
+
+		case "grok":
+			data, url, lastErr = s.generateGrokVideo(routeCtx, eventID, item, in, ratio, resolution, seconds, download)
+
+		case "dola":
+			data, url, lastErr = s.generateDolaVideo(routeCtx, eventID, item, in, ratio, seconds, download)
+
+		default:
+			lastErr = ErrProviderUnsupported
+		}
+		return data, url, lastErr
+	})
+}
+
+func defaultRouteCost(route model.ModelRoute, req model.RouteRequirements) float64 {
+	cost, _ := evaluateRouteCost(route, req)
+	return cost
+}
+
+// evaluateRouteCost is the single route-level allowance evaluator. Policies
+// are data on ModelRoute rather than provider-name fallbacks, so an unknown
+// upstream price is explicit and never silently turned into a fake one-credit
+// reservation. Providers with request-specific public price tables evaluate
+// the normalized model, resolution, duration, references, and audio here.
+func evaluateRouteCost(route model.ModelRoute, req model.RouteRequirements) (float64, bool) {
+	policy, ok := model.DecodeQuotaCostPolicy(route.QuotaCosts)
+	if !ok || policy.Mode == "unknown" || policy.Mode == "unmetered" {
+		return 0, false
+	}
+	if policy.Mode != "metered" {
+		return 0, false
+	}
+	switch policy.Calculator {
+	case "fixed":
+		if policy.Value < 0 {
+			return 0, false
+		}
+		return policy.Value, true
+	case "per_second":
+		seconds := parseDurationSeconds(req.Duration)
+		if seconds <= 0 || policy.PerSecond <= 0 {
+			return 0, false
+		}
+		return float64(seconds) * policy.PerSecond, true
+	case "byteplus_image":
+		providerModel := strings.TrimSpace(route.UpstreamModel)
+		if providerModel == "" {
+			providerModel = strings.TrimSpace(route.RuntimeModel)
+		}
+		credits, err := byteplus.RequiredCredits(byteplus.ImageRequest{
+			Model: providerModel, Resolution: req.Resolution, Size: req.Resolution,
+			AspectRatio: req.Ratio, Quality: upstreamImageQuality(req.Quality, req.Resolution),
+			References: make([][]byte, max(0, req.ReferenceImages)),
+		})
+		if err != nil || credits < 0 {
+			return 0, false
+		}
+		return credits, true
+
+	case "dola_video":
+		credits, err := dola.RequiredCredits(parseDurationSeconds(req.Duration))
+		if err != nil || credits < 0 {
+			return 0, false
+		}
+		return float64(credits), true
+	default:
+		return 0, false
+	}
+}
+
+func noRouteFailover(err error) bool {
+	return errors.Is(err, chatgpt.ErrTaskAccepted) || errors.Is(err, chatgpt.ErrTaskSubmissionUnknown) ||
+		errors.Is(err, dola.ErrTaskAccepted) || errors.Is(err, dola.ErrTaskSubmissionUnknown) ||
+		errors.Is(err, grok.ErrTaskAccepted) ||
+		errors.Is(err, byteplus.ErrTaskAccepted) || errors.Is(err, byteplus.ErrTaskSubmissionUnknown) ||
+		errors.Is(err, byteplus.ErrRetryableTaskFailed) || errors.Is(err, errBytePlusRetryBudgetExhausted)
+}
+
+func routeFailoverSafe(err error) bool {
+	if errors.Is(err, errGeneratedArtifactUnavailable) {
+		return false
+	}
+	return errors.Is(err, ErrNoProviderAccount) || errors.Is(err, ErrConcurrencyFull) ||
+		errors.Is(err, adobe.ErrEntitlement) || errors.Is(err, adobe.ErrAuth) || errors.Is(err, adobe.ErrQuotaExhausted) || errors.Is(err, adobe.ErrTemporaryUpstream) ||
+		errors.Is(err, byteplus.ErrAuth) || errors.Is(err, byteplus.ErrQuotaExhausted) || errors.Is(err, byteplus.ErrTemporaryUpstream) ||
+		errors.Is(err, chatgpt.ErrAuth) || errors.Is(err, chatgpt.ErrQuotaExhausted) || errors.Is(err, chatgpt.ErrTemporaryUpstream) ||
+		errors.Is(err, grok.ErrAuth) || errors.Is(err, grok.ErrQuotaExhausted) || errors.Is(err, grok.ErrTemporaryUpstream) ||
+		errors.Is(err, dola.ErrAuth) || errors.Is(err, dola.ErrQuotaExhausted) || errors.Is(err, dola.ErrTemporaryUpstream)
+
+}
+
+// runTextRouteFailover keeps route selection separate from account failover.
+// Each callback invocation owns one route-specific account pool and dispatch
+// context. Once a route returns a response body (including SSE), it is final:
+// any later stream failure is accounted by that body's finish callback and is
+// never resubmitted to another provider.
+func runTextRouteFailover(routes []model.ModelRoute, attempt func(model.ModelRoute) (*V1ChatResponse, error)) (*V1ChatResponse, error) {
+	var lastErr error
+	for _, route := range routes {
+		response, err := attempt(route)
+		if err == nil {
+			return response, nil
+		}
+		lastErr = err
+		if noRouteFailover(err) || !routeFailoverSafe(err) {
+			return nil, err
+		}
+	}
+	if lastErr == nil {
+		lastErr = ErrNoProviderAccount
+	}
+	return nil, lastErr
+}
+
+func dispatchFailureClass(err error) (state, class string) {
+	if errors.Is(err, chatgpt.ErrContentPolicy) {
+		return "failed", "content"
+	}
+	var dolaSubmission *dola.VideoSubmissionError
+	if errors.As(err, &dolaSubmission) && (errors.Is(dolaSubmission.Cause, dola.ErrContentRejected) || errors.Is(dolaSubmission.Cause, dola.ErrVideoFailed)) {
+		// A final rejection is no longer in flight. Keep the accepted wrapper
+		// for no-retry and quota settlement, separately from dispatch lifecycle.
+		return "failed", "request"
+	}
+	var grokSubmission *grok.VideoSubmissionError
+	if errors.As(err, &grokSubmission) {
+		switch {
+		case errors.Is(grokSubmission.Cause, grok.ErrQuotaExhausted):
+			return "failed", "quota"
+		case errors.Is(grokSubmission.Cause, grok.ErrVideoRejected), errors.Is(grokSubmission.Cause, grok.ErrInvalidTaskHandle):
+			return "failed", "request"
+		}
+	}
+	switch {
+	case err == nil:
+		return "succeeded", ""
+	case errors.Is(err, byteplus.ErrRetryableTaskFailed):
+		// The parent task is known and terminal. Reservation handling separately
+		// decides whether a verified uncharged attempt is released or conservatively
+		// settled, while this failed dispatch always retains its upstream task ID.
+		return "failed", "temporary"
+	case errors.Is(err, byteplus.ErrTaskAccepted), errors.Is(err, dola.ErrTaskAccepted), errors.Is(err, chatgpt.ErrTaskAccepted), errors.Is(err, grok.ErrTaskAccepted):
+		return "accepted", "temporary"
+	case errors.Is(err, byteplus.ErrTaskSubmissionUnknown), errors.Is(err, dola.ErrTaskSubmissionUnknown), errors.Is(err, chatgpt.ErrTaskSubmissionUnknown):
+		return "unknown", "temporary"
+	case errors.Is(err, adobe.ErrTrialExhausted):
+		// A daily model allowance can recover without reimporting credentials.
+		// Record the verdict without disabling the route or zeroing Firefly credits.
+		return "failed", "model_quota"
+	case errors.Is(err, adobe.ErrEntitlement):
+		return "failed", "entitlement"
+	case errors.Is(err, adobe.ErrAuth), errors.Is(err, byteplus.ErrAuth), errors.Is(err, chatgpt.ErrAuth), errors.Is(err, grok.ErrAuth), errors.Is(err, dola.ErrAuth):
+		return "failed", "auth"
+	case errors.Is(err, adobe.ErrQuotaExhausted), errors.Is(err, byteplus.ErrQuotaExhausted), errors.Is(err, chatgpt.ErrQuotaExhausted), errors.Is(err, grok.ErrQuotaExhausted), errors.Is(err, dola.ErrQuotaExhausted):
+		return "failed", "quota"
+	case routeFailoverSafe(err):
+		return "failed", "temporary"
+	default:
+		return "failed", "request"
+	}
+}
+
+func dispatchQuotaBucket(plan dispatchPlan, fallback string) string {
+	if plan.Route.Provider == "dola" && strings.HasPrefix(plan.Route.ID, "video.") {
+		day := plan.QuotaDay
+		if day.IsZero() {
+			day = time.Now()
+		}
+		return model.DolaVideoBucketAt(day)
+	}
+	return fallback
+}

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/yypyyd/infinite-canvas/gateway"
 	"io"
 	"log"
 	"math"
@@ -1739,7 +1740,7 @@ func isVividAI(baseURL string) bool {
 		return false
 	}
 	host := strings.ToLower(parsed.Hostname())
-	return host == "vividai.run" || strings.HasSuffix(host, ".vividai.run") || host == "api.huantu.xyz"
+	return host == "vividai.run" || strings.HasSuffix(host, ".vividai.run") || host == "api.huantu.xyz" || gateway.IsInternalURL(host)
 }
 
 func adaptVividAIImageRequestBody(body []byte, contentType string) ([]byte, string) {

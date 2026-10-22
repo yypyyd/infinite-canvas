@@ -16,7 +16,7 @@ export function useGatewayQuery<T>(key: QueryKey, fn: (token: string) => Promise
     const token = useGatewayToken();
     const query = useQuery({ queryKey: ["admin", "gateway", ...key, token], queryFn: () => fn(token), enabled: Boolean(token), retry: false, refetchInterval: options?.refetchInterval });
     useEffect(() => {
-        if (query.isError) message.error(query.error instanceof Error ? query.error.message : "读取网关数据失败");
+        if (query.isError) message.error(query.error instanceof Error ? query.error.message : "读取账号池数据失败");
     }, [message, query.error, query.isError]);
     return query;
 }

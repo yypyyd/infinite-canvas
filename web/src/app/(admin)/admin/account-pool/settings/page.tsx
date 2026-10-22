@@ -24,7 +24,6 @@ export default function GatewaySettingsPage() {
         await run(
             (token) =>
                 gatewayApi.saveSettings(token, {
-                    public_base_url: (values.public_base_url || "").trim(),
                     outbound_proxy: (values.outbound_proxy || "").trim(),
                     outbound_extract_api: (values.outbound_extract_api || "").trim(),
                     deai_enabled: Boolean(values.deai_enabled),
@@ -34,7 +33,7 @@ export default function GatewaySettingsPage() {
                     provider_proxies: trimMap(values.provider_proxies),
                     provider_extract_apis: trimMap(values.provider_extract_apis),
                 }),
-            "网关设置已保存",
+            "账号池设置已保存",
         );
     };
 
@@ -44,11 +43,6 @@ export default function GatewaySettingsPage() {
                 <Space direction="vertical" size={16} style={{ width: "100%" }}>
                     <Card variant="borderless" title="基础设置">
                         <Row gutter={16}>
-                            <Col xs={24} md={12}>
-                                <Form.Item name="public_base_url" label="网关对外访问地址" extra="用于生成图片/视频结果的绝对地址；留空时使用请求地址。">
-                                    <Input placeholder="https://your-domain.example.com" />
-                                </Form.Item>
-                            </Col>
                             <Col xs={24} md={12}>
                                 <Form.Item name="deai_enabled" label="去 AI 特征" valuePropName="checked">
                                     <Switch />
@@ -107,7 +101,7 @@ export default function GatewaySettingsPage() {
                         <Button type="primary" icon={<SaveOutlined />} onClick={() => void save()}>
                             保存设置
                         </Button>
-                        <Typography.Text type="secondary">网关账号、密钥与日志存放在独立的 gateway 数据库 schema 中。</Typography.Text>
+                        <Typography.Text type="secondary">账号池的账号、凭据与日志存放在独立的数据库 schema 中，不对外提供接口。</Typography.Text>
                     </Space>
                 </Space>
             </Form>

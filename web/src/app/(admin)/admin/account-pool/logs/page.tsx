@@ -21,7 +21,6 @@ export default function GatewayLogsPage() {
     const [page, setPage] = useState(1);
     const [limit, setLimit] = useState(20);
     const [filters, setFilters] = useState({ credential_id: "", model: "", kind: "", status: "", source: "", q: "" });
-    const credentials = useGatewayQuery(["credentials"], gatewayApi.credentials);
     const logs = useGatewayQuery(["events", tab, page, limit, filters], (token) => gatewayApi.logs(token, tab, { page, limit, ...filters, status: tab === "logs" ? filters.status : "" }));
     const update = (patch: Partial<typeof filters>) => {
         setFilters((previous) => ({ ...previous, ...patch }));
@@ -40,12 +39,6 @@ export default function GatewayLogsPage() {
                     ]}
                 />
                 <Space wrap style={{ marginBottom: 16 }}>
-                    <Select
-                        value={filters.credential_id}
-                        onChange={(value) => update({ credential_id: value })}
-                        style={{ width: 180 }}
-                        options={[{ value: "", label: "全部 Key" }, ...(credentials.data?.data || []).map((item) => ({ value: item.id, label: item.name }))]}
-                    />
                     <Select showSearch value={filters.model} onChange={(value) => update({ model: value })} style={{ width: 200 }} options={[{ value: "", label: "全部模型" }, ...ALL_MODELS.map((value: string) => ({ value, label: value }))]} />
                     <Select value={filters.kind} onChange={(value) => update({ kind: value })} style={{ width: 120 }} options={[{ value: "", label: "全部类型" }, ...Object.entries(kindLabels).map(([value, label]) => ({ value, label }))]} />
                     {tab === "logs" ? (
@@ -113,7 +106,7 @@ export default function GatewayLogsPage() {
                         { title: "类型", dataIndex: "kind", width: 80, render: (value: string) => kindLabels[value] || value },
                         { title: "状态", dataIndex: "status", width: 90, render: (value: string) => <Tag color={statusColors[value] || "default"}>{value}</Tag> },
                         { title: "平台 / 账号", width: 220, render: (_, row) => `${providerLabels[row.provider] || row.provider || "—"} · ${row.account_label || row.account_id || "—"}` },
-                        { title: "Key", width: 140, render: (_, row) => row.credential?.name || (row.source === "admin" ? "后台测试" : "—") },
+                        { title: "来源", width: 140, render: (_, row) => (row.source === "admin" ? "后台测试" : row.credential?.name || "幻图") },
                         { title: "参数", width: 180, render: (_, row) => requestParams(row) },
                         { title: "耗时", width: 90, render: (_, row) => formatMs(row.duration_ms) },
                         {

@@ -2,12 +2,10 @@ import axios from "axios";
 
 import { authorizationHeaders } from "@/services/api/request";
 
-// Admin control plane of the embedded gateway (formerly Nexa /admin/api).
-// Routes are gated by 幻图's super-admin session; responses keep the gateway's
+// Admin control plane of the built-in account pool (formerly Nexa /admin/api).
+// Routes are gated by 幻图's super-admin session; responses keep the pool's
 // own JSON shape ({ data, total } / { detail } on error).
-export const GATEWAY_ADMIN_BASE = "/api/admin/gateway";
-export const GATEWAY_PUBLIC_V1 = "/api/gateway/v1";
-export const GATEWAY_INTERNAL_BASE_URL = "http://nexa.internal/v1";
+export const GATEWAY_ADMIN_BASE = "/api/admin/account-pool";
 
 export type GatewayList<T> = { data: T[]; total: number; page?: number; limit?: number };
 
@@ -54,10 +52,6 @@ export type GatewayAccount = {
 
 export type GatewayAccountList = GatewayList<GatewayAccount> & { provider_counts?: Record<string, number>; provider_health?: Record<string, Record<string, number>> };
 
-export type GatewayCredential = { id: string; name: string; key_preview: string; status: string; concurrency_limit: number; active_requests?: number; last_used_at?: string; revoked_at?: string; created_at: string };
-
-export type GatewayCreatedCredential = { credential: GatewayCredential; key: string };
-
 export type GatewayLog = {
     id: string;
     request_id: string;
@@ -89,7 +83,6 @@ export type GatewayBannedWord = { id: string; word: string; hits: number; create
 export type GatewayBannedHit = { id: string; word: string; user_id: string; user_name: string; prompt: string; created_at: string };
 
 export type GatewaySettings = {
-    public_base_url: string;
     outbound_proxy: string;
     outbound_extract_api: string;
     deai_enabled: boolean;
@@ -101,7 +94,7 @@ export type GatewaySettings = {
 };
 
 export type GatewayOverview = {
-    totals?: { models?: number; routes?: number; accounts?: number; keys?: number };
+    totals?: { models?: number; routes?: number; accounts?: number };
     last_24h?: Record<string, number>;
     provider_health?: Record<string, Record<string, number>>;
     top_models?: { model: string; count: number }[];
@@ -124,11 +117,11 @@ export async function gatewayRequest<T>(token: string, method: Method, path: str
             validateStatus: () => true,
         });
     } catch {
-        throw new Error("网关接口连接失败，请确认后端服务已启动");
+        throw new Error("账号池接口连接失败，请确认后端服务已启动");
     }
     const data = response.data as Record<string, unknown> | undefined;
-    if (response.status === 404 && data && typeof data === "object" && "code" in data) {
-        throw new Error("内置网关未启用（GATEWAY_ENABLED=false）");
+    if (response.status === 503 && data && typeof data.error === "object" && data.error && (data.error as Record<string, unknown>).code === "pool_unavailable") {
+        throw new Error(String((data.error as Record<string, unknown>).message || "内置账号池未运行"));
     }
     if (response.status < 200 || response.status >= 300) {
         const message = (data && (typeof data.detail === "string" ? data.detail : typeof data.msg === "string" ? data.msg : "")) || `请求失败（${response.status}）`;
@@ -156,11 +149,6 @@ export const gatewayApi = {
     refreshQuota: (token: string, id: string) => gatewayRequest(token, "POST", `/accounts/${encodeURIComponent(id)}/refresh-quota`, {}),
     test: (token: string, payload: { model: string; prompt: string; account_id?: string; ratio?: string; resolution?: string; duration?: string }) => gatewayRequest<GatewayTestResult>(token, "POST", "/test", payload),
     testStatus: (token: string, eventId: string) => gatewayRequest<GatewayTestResult>(token, "GET", `/test/events/${encodeURIComponent(eventId)}`),
-    credentials: (token: string) => gatewayRequest<GatewayList<GatewayCredential>>(token, "GET", "/api-credentials", undefined, { limit: 500 }),
-    createCredential: (token: string, payload: { name: string; concurrency_limit: number }) => gatewayRequest<GatewayCreatedCredential>(token, "POST", "/api-credentials", payload),
-    updateCredential: (token: string, id: string, patch: Partial<{ name: string; status: string; concurrency_limit: number }>) => gatewayRequest(token, "PATCH", `/api-credentials/${encodeURIComponent(id)}`, patch),
-    rotateCredential: (token: string, id: string) => gatewayRequest<GatewayCreatedCredential>(token, "POST", `/api-credentials/${encodeURIComponent(id)}/rotate`, {}),
-    revokeCredential: (token: string, id: string) => gatewayRequest(token, "DELETE", `/api-credentials/${encodeURIComponent(id)}`),
     logs: (token: string, kind: "logs" | "artifacts", params: Record<string, string | number | undefined>) => gatewayRequest<GatewayList<GatewayLog>>(token, "GET", `/${kind}`, undefined, params),
     bannedWords: (token: string, params: { q?: string; limit: number; offset: number }) => gatewayRequest<GatewayList<GatewayBannedWord>>(token, "GET", "/banned-words", undefined, params),
     addBannedWord: (token: string, word: string) => gatewayRequest(token, "POST", "/banned-words", { word }),

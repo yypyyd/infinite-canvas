@@ -61,7 +61,7 @@ export function AccountTestModal({ account, models, onClose }: { account: Gatewa
             }
         }
         if (mounted.current) {
-            setStatus("任务仍在后台生成，请稍后在网关日志中查看结果");
+            setStatus("任务仍在后台生成，请稍后在账号池日志中查看结果");
             setBusy(false);
         }
     };

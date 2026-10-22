@@ -7,7 +7,6 @@ import {
     ClusterOutlined,
     DeploymentUnitOutlined,
     ProfileOutlined,
-    SafetyOutlined,
     StopOutlined,
     TeamOutlined,
     CloudServerOutlined,
@@ -49,14 +48,13 @@ const adminMenus: AdminMenuItem[] = [
     { key: "/admin/assets", icon: <PictureOutlined />, label: "素材库" },
     { key: "/admin/models", icon: <ApiOutlined />, label: "模型管理" },
     { key: "/admin/settings", icon: <SettingOutlined />, label: "系统设置" },
-    // Embedded API gateway (formerly the standalone Nexa console).
-    { key: "/admin/gateway", icon: <ClusterOutlined />, label: "网关概览", exact: true },
-    { key: "/admin/gateway/models", icon: <DeploymentUnitOutlined />, label: "网关模型路由" },
-    { key: "/admin/gateway/accounts", icon: <TeamOutlined />, label: "上游账号" },
-    { key: "/admin/gateway/api-keys", icon: <SafetyOutlined />, label: "网关 API Key" },
-    { key: "/admin/gateway/logs", icon: <ProfileOutlined />, label: "网关日志" },
-    { key: "/admin/gateway/banned-words", icon: <StopOutlined />, label: "违禁词" },
-    { key: "/admin/gateway/settings", icon: <AuditOutlined />, label: "网关设置" },
+    // Built-in account pool (formerly the standalone Nexa console).
+    { key: "/admin/account-pool", icon: <ClusterOutlined />, label: "账号池概览", exact: true },
+    { key: "/admin/account-pool/accounts", icon: <TeamOutlined />, label: "账号池账号" },
+    { key: "/admin/account-pool/models", icon: <DeploymentUnitOutlined />, label: "账号池模型路由" },
+    { key: "/admin/account-pool/logs", icon: <ProfileOutlined />, label: "账号池日志" },
+    { key: "/admin/account-pool/banned-words", icon: <StopOutlined />, label: "违禁词" },
+    { key: "/admin/account-pool/settings", icon: <AuditOutlined />, label: "账号池设置" },
 ];
 
 const pageTitles: Record<string, string> = {
@@ -69,19 +67,18 @@ const pageTitles: Record<string, string> = {
     "/admin/assets": "素材库管理",
     "/admin/models": "模型管理",
     "/admin/settings": "系统设置",
-    "/admin/gateway": "网关概览",
-    "/admin/gateway/models": "网关模型路由",
-    "/admin/gateway/accounts": "上游账号",
-    "/admin/gateway/api-keys": "网关 API Key",
-    "/admin/gateway/logs": "网关日志与素材",
-    "/admin/gateway/banned-words": "违禁词",
-    "/admin/gateway/settings": "网关设置",
+    "/admin/account-pool": "账号池概览",
+    "/admin/account-pool/accounts": "账号池账号",
+    "/admin/account-pool/models": "账号池模型路由",
+    "/admin/account-pool/logs": "账号池日志与素材",
+    "/admin/account-pool/banned-words": "违禁词",
+    "/admin/account-pool/settings": "账号池设置",
 };
 
 function currentAdminKey(pathname: string) {
     const exact = adminMenus.find((item) => item.exact && item.key === pathname);
     if (exact) return exact.key;
-    // Longest prefix wins so /admin/gateway/* never matches a shorter key.
+    // Longest prefix wins so /admin/account-pool/* never matches a shorter key.
     return (
         adminMenus
             .filter((item) => !item.exact)

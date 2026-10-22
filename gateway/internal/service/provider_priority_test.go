@@ -48,7 +48,7 @@ func TestOrderRoutesUsesBuiltinProviderDefaults(t *testing.T) {
 }
 
 func TestOrderRoutesProviderSettingOverridesDefault(t *testing.T) {
-	settings := mapSettings{providerPrioritySettingKey("adobe"): "200"}
+	settings := mapSettings{providerPrioritySettingKey("adobe"): "250"}
 	got, err := orderRoutes(context.Background(), settings, gptImageRoutes(t))
 	if err != nil {
 		t.Fatal(err)
@@ -65,7 +65,7 @@ func TestOrderRoutesProviderSettingOverridesDefault(t *testing.T) {
 
 func TestOrderRoutesPerRouteOverrideBeatsProvider(t *testing.T) {
 	routes := gptImageRoutes(t)
-	high := 110
+	high := 250
 	for i := range routes {
 		if routes[i].Provider == "byteplus" {
 			routes[i].Priority = &high
@@ -79,7 +79,7 @@ func TestOrderRoutesPerRouteOverrideBeatsProvider(t *testing.T) {
 		t.Fatalf("order=%v, want byteplus override first", order)
 	}
 	schedules, _ := routeSchedules(context.Background(), nil, got[:1])
-	if schedules[0].Priority != 110 || schedules[0].PriorityInherited || !schedules[0].WeightInherited {
+	if schedules[0].Priority != 250 || schedules[0].PriorityInherited || !schedules[0].WeightInherited {
 		t.Fatalf("schedule=%+v", schedules[0])
 	}
 }

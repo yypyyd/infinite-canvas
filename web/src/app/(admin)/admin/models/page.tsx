@@ -242,7 +242,7 @@ export default function AdminModelsPage() {
             },
         }));
     };
-        const probePoolChannel = async (provider: string) => {
+    const probePoolChannel = async (provider: string) => {
         if (!token || probingProvider) return;
         setProbingProvider(provider);
         try {
@@ -260,7 +260,7 @@ export default function AdminModelsPage() {
         }
     };
 
-const openPoolChannel = (row: PoolChannelRow, tab = "base") => {
+    const openPoolChannel = (row: PoolChannelRow, tab = "base") => {
         setPoolDrawerTab(tab);
         setPoolRow(row);
     };
@@ -657,14 +657,7 @@ const openPoolChannel = (row: PoolChannelRow, tab = "base") => {
                                 render: (_, row) =>
                                     row.kind === "pool" ? (
                                         <Flex vertical gap={2}>
-                                            <Button
-                                                type="link"
-                                                size="small"
-                                                className="!px-0"
-                                                loading={probingProvider === row.pool.provider}
-                                                disabled={isSaving || Boolean(probingProvider)}
-                                                onClick={() => void probePoolChannel(row.pool.provider)}
-                                            >
+                                            <Button type="link" size="small" className="!px-0" loading={probingProvider === row.pool.provider} disabled={isSaving || Boolean(probingProvider)} onClick={() => void probePoolChannel(row.pool.provider)}>
                                                 测一下
                                             </Button>
                                             {probeResults[row.pool.provider] ? (
@@ -807,7 +800,7 @@ const openPoolChannel = (row: PoolChannelRow, tab = "base") => {
                     onChanged={() => void Promise.all([poolChannels.reload(), loadOverview(), loadChannels()])}
                 />
             ) : null}
-            
+
             <Drawer title="调度路由说明" width="min(720px, calc(100vw - 32px))" open={routingDrawerOpen} onClose={() => setRoutingDrawerOpen(false)} destroyOnHidden>
                 <Typography.Title level={5}>总览</Typography.Title>
                 <Typography.Paragraph>
@@ -821,14 +814,11 @@ const openPoolChannel = (row: PoolChannelRow, tab = "base") => {
                 </Typography.Paragraph>
                 <Typography.Title level={5}>2. matchingRoutes → orderRoutes（筛选与排序）</Typography.Title>
                 <Typography.Paragraph>
-                    <Typography.Text code>matchingRoutes</Typography.Text>：能力匹配 → 过滤关闭平台 → 应用 preferred_provider →{" "}
-                    <Typography.Text code>orderRoutes</Typography.Text>。
+                    <Typography.Text code>matchingRoutes</Typography.Text>：能力匹配 → 过滤关闭平台 → 应用 preferred_provider → <Typography.Text code>orderRoutes</Typography.Text>。
                     排序规则：有效优先级高者优先（路由覆盖优先于平台默认）；同优先级按权重加权随机；同组内可 fast-failover 换账号 / 换路由。
                 </Typography.Paragraph>
                 <Typography.Title level={5}>3. 站点优先级 vs 池内优先级</Typography.Title>
-                <Typography.Paragraph>
-                    渠道列表里的「站点优先级 / 权重」与兼容 API 渠道比较；「池内优先级 / 权重」只影响同平台账号之间的调度。路由上的优先级 / 权重覆盖为空时继承平台值（见 effective_priority / effective_weight）。
-                </Typography.Paragraph>
+                <Typography.Paragraph>渠道列表里的「站点优先级 / 权重」与兼容 API 渠道比较；「池内优先级 / 权重」只影响同平台账号之间的调度。路由上的优先级 / 权重覆盖为空时继承平台值（见 effective_priority / effective_weight）。</Typography.Paragraph>
                 <Typography.Title level={5}>4. route_details（运营可见）</Typography.Title>
                 <Typography.Paragraph>
                     管理端概览用 <Typography.Text code>RouteDetails</Typography.Text> 列出每条逻辑模型路由的有效优先级 / 权重、平台是否启用，以及绑定 / 可用 / 冷却账号数，与真实调度字段一致，便于对照本页渠道健康徽章。

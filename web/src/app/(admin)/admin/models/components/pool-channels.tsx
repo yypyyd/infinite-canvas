@@ -453,7 +453,6 @@ export function ModelTags({ names, max = 4 }: { names: { name: string; off?: boo
     );
 }
 
-
 export function channelHealthTone(health: Record<string, number> | undefined, enabled: boolean): { color: string; label: string; tip: string } {
     if (!enabled) return { color: "default", label: "已关闭", tip: "平台调度已关闭" };
     const active = Number(health?.active || 0);

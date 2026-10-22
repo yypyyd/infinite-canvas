@@ -363,16 +363,7 @@ export function PricingTable({ models, loading, isSaving, onEdit, onSetPrice }: 
                     },
                 ]}
             />
-            <Modal
-                open={batchOpen}
-                title="批量改价"
-                okText="应用"
-                cancelText="取消"
-                confirmLoading={applying}
-                onOk={() => void applyBatch()}
-                onCancel={() => setBatchOpen(false)}
-                destroyOnHidden
-            >
+            <Modal open={batchOpen} title="批量改价" okText="应用" cancelText="取消" confirmLoading={applying} onOk={() => void applyBatch()} onCancel={() => setBatchOpen(false)} destroyOnHidden>
                 <Space direction="vertical" style={{ width: "100%" }} size={12}>
                     <Typography.Text type="secondary">将对已勾选的 {selectedGroupKeys.length} 个模型生效；倍率计费规格会自动跳过。</Typography.Text>
                     <Segmented

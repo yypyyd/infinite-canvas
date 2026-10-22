@@ -127,7 +127,6 @@ export type GatewayProviderProbe = {
 
 export type GatewayBatchAccountStatus = { updated: number; failed: number; status: string; error?: string };
 
-
 type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 export async function gatewayRequest<T>(token: string, method: Method, path: string, body?: unknown, params?: Record<string, string | number | undefined>): Promise<T> {
@@ -183,8 +182,7 @@ export const gatewayApi = {
     settings: (token: string) => gatewayRequest<{ data: GatewaySettings }>(token, "GET", "/settings"),
     saveSettings: (token: string, payload: Partial<GatewaySettings>) => gatewayRequest<{ data: GatewaySettings }>(token, "PUT", "/settings", payload),
     probeProvider: (token: string, provider: string) => gatewayRequest<{ data: GatewayProviderProbe }>(token, "POST", `/providers/${encodeURIComponent(provider)}/probe`, {}),
-    batchUpdateAccounts: (token: string, ids: string[], status: "active" | "disabled") =>
-        gatewayRequest<GatewayBatchAccountStatus>(token, "POST", "/accounts/batch-status", { ids, status }),
+    batchUpdateAccounts: (token: string, ids: string[], status: "active" | "disabled") => gatewayRequest<GatewayBatchAccountStatus>(token, "POST", "/accounts/batch-status", { ids, status }),
 };
 
 export function gatewayArtifactURL(id: string) {

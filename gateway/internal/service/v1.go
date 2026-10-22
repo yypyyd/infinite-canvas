@@ -1308,6 +1308,7 @@ func asyncImageJobResponse(job *asyncImageJob, requestID, pollURL string) (map[s
 			return map[string]any{
 				"id":         requestID,
 				"object":     "image.generation.task",
+				"reroutable": imageRerouteSafe(job.err),
 				"status":     "failed",
 				"request_id": requestID,
 				"poll_url":   pollURL,

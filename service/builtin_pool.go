@@ -90,6 +90,9 @@ func builtinPoolChannel() (model.ModelChannel, bool) {
 	return normalizeModelChannel(channel), true
 }
 
+// IsBuiltinPoolChannel reports whether a channel is the built-in pool.
+func IsBuiltinPoolChannel(channel model.ModelChannel) bool { return isBuiltinPoolChannel(channel) }
+
 func isBuiltinPoolChannel(channel model.ModelChannel) bool {
 	return channel.ID == BuiltinPoolChannelID || IsBuiltinPoolBaseURL(channel.BaseURL)
 }
@@ -166,6 +169,33 @@ func appendBuiltinPoolDefinitions(items []model.ModelDefinition, channels []mode
 			ReferenceMode: channelModel.ReferenceMode, Remark: BuiltinPoolChannelName,
 		})
 		sortBase++
+	}
+	return items
+}
+
+// applyImageCountLimits sets MaxImageCount to 1 for image models that only the
+// built-in pool serves, so clients do not offer several images per request.
+// Models also served by another enabled channel keep no extra limit: 幻图
+// routes multi-image requests there.
+func applyImageCountLimits(items []model.ModelDefinition, channels []model.ModelChannel) []model.ModelDefinition {
+	pool, other := map[string]bool{}, map[string]bool{}
+	for _, channel := range channels {
+		if !channel.Enabled {
+			continue
+		}
+		for _, item := range channel.Models {
+			if isBuiltinPoolChannel(channel) {
+				pool[item.Model] = true
+			} else {
+				other[item.Model] = true
+			}
+		}
+	}
+	for i := range items {
+		items[i].MaxImageCount = 0
+		if items[i].Modality == "image" && pool[items[i].ID] && !other[items[i].ID] {
+			items[i].MaxImageCount = 1
+		}
 	}
 	return items
 }

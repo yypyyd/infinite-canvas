@@ -1,6 +1,6 @@
 import axios from "axios";
 
-import type { AiConfig } from "@/stores/use-config-store";
+import { type AiConfig, modelImageCountLimit, useConfigStore } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { authorizationHeaders, organizationHeaders } from "@/services/api/request";
 import { workspaceFileUrl } from "@/services/api/workspace";
@@ -236,7 +236,7 @@ function withSystemMessage(config: AiConfig, messages: ChatCompletionMessage[]) 
 }
 
 export async function requestGeneration(config: AiConfig, prompt: string, options?: RequestOptions) {
-    const n = normalizeImageCount(config.count);
+    const n = normalizeImageCount(config.count, modelImageCountLimit(useConfigStore.getState().publicSettings?.modelChannel.models, config.model));
     const quality = normalizeQuality(config.quality);
     const requestSize = resolveRequestSize(config.size);
     const requestId = options?.idempotencyKey || crypto.randomUUID();
@@ -273,7 +273,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
 }
 
 export async function requestEdit(config: AiConfig, prompt: string, references: ReferenceImage[], mask?: ReferenceImage, options?: RequestOptions) {
-    const n = normalizeImageCount(config.count);
+    const n = normalizeImageCount(config.count, modelImageCountLimit(useConfigStore.getState().publicSettings?.modelChannel.models, config.model));
     const quality = normalizeQuality(config.quality);
     const requestSize = resolveRequestSize(config.size);
     const requestId = options?.idempotencyKey || crypto.randomUUID();

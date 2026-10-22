@@ -103,6 +103,9 @@ func (s *V1Service) startAcceptedImageRecovery(parent context.Context, event *mo
 			recordBookkeepingError("store accepted image", putErr)
 			return
 		}
+		if !s.eventStillPending(ctx, event.ID) {
+			return // abandoned by the caller meanwhile; it has been settled
+		}
 		elapsed := int(time.Since(event.TS).Milliseconds())
 		if updateErr := s.events.UpdateStatus(ctx, event.ID, "success", "", elapsed); updateErr != nil {
 			recordBookkeepingError("complete accepted image event", updateErr)
@@ -125,7 +128,8 @@ const acceptedVideoRecoveryWindow = 20 * time.Minute
 // replaying its prompt. Grok deterministic artifact URLs are durable across request timeouts and restarts, so slow renders remain
 // pending until this path obtains a final URL or an explicit terminal verdict.
 func (s *V1Service) startAcceptedVideoRecovery(parent context.Context, event *model.EventLog) {
-	if event == nil || event.Kind != "video" || (event.Status != "pending" && event.Status != "failed") {
+	if event == nil || event.Kind != "video" || (event.Status != "pending" && event.Status != "failed") ||
+		event.Error == ErrGenerationAbandoned.Error() {
 		return
 	}
 	provider := strings.ToLower(strings.TrimSpace(event.Provider))
@@ -180,6 +184,9 @@ func (s *V1Service) startAcceptedVideoRecovery(parent context.Context, event *mo
 		}
 		videoURL := strings.TrimSpace(stringValue(meta["video_url"]))
 		if videoURL == "" {
+			return
+		}
+		if s.eventAbandoned(ctx, event.ID) {
 			return
 		}
 		elapsed := int(time.Since(event.TS).Milliseconds())

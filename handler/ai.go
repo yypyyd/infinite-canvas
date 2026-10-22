@@ -250,6 +250,16 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		FailError(w, err)
 		return
 	}
+	if (path == "/images/generations" || path == "/images/edits") && requestMeta.Count > 1 && service.IsBuiltinPoolChannel(selection.Channel) {
+		// The pool renders one image per request. Use another channel for the
+		// same model when there is one; otherwise refuse before charging.
+		alternative, altErr := service.SelectModelChannelExcluding(pricingRequest, []string{selection.Channel.Name})
+		if altErr != nil {
+			Fail(w, poolSingleImageMessage)
+			return
+		}
+		selection = alternative
+	}
 	if err := service.ValidateManagedMediaRequest(selection, pricingRequest); err != nil {
 		Fail(w, err.Error())
 		return
@@ -312,6 +322,9 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		return
 	}
 	request.Header.Set("Idempotency-Key", task.RequestID)
+	if path == "/images/generations" || path == "/images/edits" {
+		defer service.TrackPoolImageWaiter(task.RequestID)()
+	}
 	excludedChannels := []string{}
 	for {
 		response, responseBody, requestErr := doAIRequestWithRetry(request, nil)
@@ -321,6 +334,34 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		if shouldRecover {
 			recoveredBody, message, recovery := recoverImageTask(w, request, asyncAccepted)
 			timeoutRecovery = recovery
+			if recovery == imageTaskRecoveryDeferred {
+				_ = response.Body.Close()
+				Fail(w, message)
+				return
+			}
+			if recovery == imageTaskRecoveryReroute {
+				_ = response.Body.Close()
+				excludedChannels = append(excludedChannels, selection.Channel.Name)
+				nextSelection, selectErr := service.SelectModelChannelExcluding(pricingRequest, excludedChannels)
+				if selectErr == nil && !service.IsManagedMediaChannel(nextSelection.Channel) {
+					if nextRequest, buildErr := buildAIUpstreamRequest(r, path, body, contentType, nextSelection, task.RequestID); buildErr == nil {
+						if updateErr := service.UpdateGenerationTaskChannel(&task, nextSelection.Channel.Name, nextSelection.Model.UpstreamModel); updateErr == nil {
+							log.Printf("AI proxy reroute after pool failure: model=%s path=%s from=%s to=%s", requestMeta.ModelName, path, selection.Channel.Name, nextSelection.Channel.Name)
+							selection = nextSelection
+							request = nextRequest
+							continue
+						}
+					}
+				} else if selectErr == nil {
+					if updateErr := service.UpdateGenerationTaskChannel(&task, nextSelection.Channel.Name, nextSelection.Model.UpstreamModel); updateErr == nil {
+						proxyManagedMediaGeneration(w, r, body, contentType, requestMeta, user, nextSelection, &task, finishTask)
+						return
+					}
+				}
+				finishTask(model.GenerationTaskStatusFailed, message)
+				Fail(w, message)
+				return
+			}
 			if recovery == imageTaskRecoveryHandled {
 				_ = response.Body.Close()
 				if message != "" {
@@ -760,10 +801,11 @@ type chatGPT2APIImageTask struct {
 }
 
 type recoverableImageTask struct {
-	Status  string           `json:"status"`
-	Created int64            `json:"created"`
-	Data    []map[string]any `json:"data"`
-	Error   string           `json:"error"`
+	Status     string           `json:"status"`
+	Reroutable bool             `json:"reroutable"`
+	Created    int64            `json:"created"`
+	Data       []map[string]any `json:"data"`
+	Error      string           `json:"error"`
 }
 
 type imageTaskRecoveryState uint8
@@ -772,6 +814,12 @@ const (
 	imageTaskRecoveryUnavailable imageTaskRecoveryState = iota
 	imageTaskRecoveryUnsupported
 	imageTaskRecoveryHandled
+	// imageTaskRecoveryReroute: the task failed before any upstream accepted
+	// it, so another channel may run it without generating twice.
+	imageTaskRecoveryReroute
+	// imageTaskRecoveryDeferred: the built-in pool is still working; the task
+	// stays running and the maintenance worker settles it later.
+	imageTaskRecoveryDeferred
 )
 
 func isChatGPT2APIImageTaskChannel(baseURL string, path string) bool {
@@ -928,6 +976,10 @@ func normalizeChatGPT2APIImageTaskData(baseURL string, apiKey string, data []map
 // The built-in pool keeps recovering an accepted provider task for up to 12
 // minutes after the initial attempt (itself up to 8), so wait long enough to
 // pick up a late result instead of failing a task that still lands.
+const poolSingleImageMessage = "该模型每次只能生成 1 张图片，请将数量设为 1"
+
+const poolImageDeferredMessage = "生成耗时较长，仍在继续处理；完成后结果会出现在生成记录中，未完成将自动返还算力"
+
 func imageTaskRecoveryWindow(requestURL string) time.Duration {
 	if service.IsBuiltinPoolBaseURL(requestURL) {
 		return 20 * time.Minute
@@ -1002,6 +1054,9 @@ func recoverImageTask(w http.ResponseWriter, request *http.Request, knownSupport
 						if message == "" {
 							message = "上游生图任务失败"
 						}
+						if task.Reroutable {
+							return nil, "AI 接口请求失败：" + message, imageTaskRecoveryReroute
+						}
 						return nil, "AI 接口请求失败：" + message, imageTaskRecoveryHandled
 					case "queued", "pending", "running", "processing", "in_progress":
 						// Keep polling below.
@@ -1017,6 +1072,9 @@ func recoverImageTask(w http.ResponseWriter, request *http.Request, knownSupport
 			return nil, "", imageTaskRecoveryUnavailable
 		}
 		if time.Now().After(deadline) {
+			if service.IsBuiltinPoolBaseURL(request.URL.String()) {
+				return nil, poolImageDeferredMessage, imageTaskRecoveryDeferred
+			}
 			return nil, "AI 接口请求失败：上游生图任务等待超时", imageTaskRecoveryHandled
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -1730,6 +1788,9 @@ func isVideoGenerationsAPI(baseURL string, modelName string) bool {
 }
 
 func adaptAIRequestBody(baseURL string, modelName string, path string, body []byte, contentType string) ([]byte, string) {
+	if service.IsBuiltinPoolBaseURL(baseURL) && (path == "/images/generations" || path == "/images/edits") {
+		return stripPoolDefaultImageFields(body, contentType)
+	}
 	if isVividAI(baseURL) {
 		switch path {
 		case "/images/generations", "/images/edits":
@@ -2681,4 +2742,84 @@ type aiError struct {
 
 func (err *aiError) Error() string {
 	return err.message
+}
+
+// poolDefaultImageFields are sent by the 幻图 client with values the built-in
+// pool already produces (PNG, automatic background). The pool rejects these
+// parameters outright, so drop them when they carry only the default.
+var poolDefaultImageFields = map[string][]string{"output_format": {"png"}, "background": {"auto", ""}}
+
+func poolDefaultImageField(name, value string) bool {
+	defaults, ok := poolDefaultImageFields[name]
+	if !ok {
+		return false
+	}
+	value = strings.ToLower(strings.TrimSpace(value))
+	for _, item := range defaults {
+		if value == item {
+			return true
+		}
+	}
+	return false
+}
+
+func stripPoolDefaultImageFields(body []byte, contentType string) ([]byte, string) {
+	if strings.HasPrefix(contentType, "multipart/form-data") {
+		_, params, err := mime.ParseMediaType(contentType)
+		if err != nil || params["boundary"] == "" {
+			return body, contentType
+		}
+		reader := multipart.NewReader(bytes.NewReader(body), params["boundary"])
+		var buffer bytes.Buffer
+		writer := multipart.NewWriter(&buffer)
+		for {
+			part, nextErr := reader.NextPart()
+			if nextErr == io.EOF {
+				break
+			}
+			if nextErr != nil {
+				return body, contentType
+			}
+			data, readErr := io.ReadAll(part)
+			_ = part.Close()
+			if readErr != nil {
+				return body, contentType
+			}
+			if part.FileName() == "" && poolDefaultImageField(part.FormName(), string(data)) {
+				continue
+			}
+			target, createErr := writer.CreatePart(part.Header)
+			if createErr != nil {
+				return body, contentType
+			}
+			if _, err := target.Write(data); err != nil {
+				return body, contentType
+			}
+		}
+		if writer.Close() != nil {
+			return body, contentType
+		}
+		return buffer.Bytes(), writer.FormDataContentType()
+	}
+	var payload map[string]any
+	if json.Unmarshal(body, &payload) != nil {
+		return body, contentType
+	}
+	changed := false
+	for name := range poolDefaultImageFields {
+		if raw, ok := payload[name]; ok {
+			if value, isString := raw.(string); isString && poolDefaultImageField(name, value) {
+				delete(payload, name)
+				changed = true
+			}
+		}
+	}
+	if !changed {
+		return body, contentType
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return body, contentType
+	}
+	return encoded, contentType
 }

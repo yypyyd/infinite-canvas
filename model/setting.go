@@ -70,7 +70,10 @@ type DiscoveredModel struct {
 
 // ModelDefinition stores public model management metadata.
 type ModelDefinition struct {
-	ID                  string   `json:"id"`
+	ID string `json:"id"`
+	// MaxImageCount caps images per request; 0 means no extra limit. It is
+	// derived from the serving channels (the built-in pool renders one).
+	MaxImageCount       int      `json:"maxImageCount,omitempty"`
 	Name                string   `json:"name"`
 	Modality            string   `json:"modality"`
 	Operations          []string `json:"operations"`

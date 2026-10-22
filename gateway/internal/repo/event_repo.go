@@ -251,3 +251,12 @@ func (r *EventRepository) InFlightByAccount(ctx context.Context) (map[string]int
 	}
 	return out, nil
 }
+
+// FailPending closes a still-pending event. It reports false when the event
+// already finished, so a caller giving up never overwrites a stored result.
+func (r *EventRepository) FailPending(ctx context.Context, eventID, errMsg string) (bool, error) {
+	result := r.db.WithContext(ctx).Model(&model.EventLog{}).
+		Where("id = ? AND status = ?", eventID, "pending").
+		Updates(map[string]any{"status": "failed", "error": errMsg, "updated_at": time.Now()})
+	return result.RowsAffected == 1, result.Error
+}

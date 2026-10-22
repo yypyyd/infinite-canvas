@@ -117,6 +117,9 @@ func reconcileStaleGenerationTask(ctx context.Context, task model.GenerationTask
 			return
 		}
 	}
+	if reconcilePoolImageTask(ctx, task) || finalizePoolVideoTask(ctx, task) {
+		return
+	}
 	createdAt, parseErr := time.Parse(time.RFC3339, task.CreatedAt)
 	if parseErr == nil && time.Since(createdAt) < generationTaskTimeout {
 		return

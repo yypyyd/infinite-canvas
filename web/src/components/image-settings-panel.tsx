@@ -6,7 +6,7 @@ import { ConfigProvider, Switch } from "antd";
 import type { PricingRule } from "@/constant/credits";
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import { normalizeImageCount } from "@/lib/image-utils";
-import type { AiConfig } from "@/stores/use-config-store";
+import { type AiConfig, modelImageCountLimit, useConfigStore } from "@/stores/use-config-store";
 
 const qualityOptions = [
     { value: "auto", label: "自动" },
@@ -81,8 +81,8 @@ export function ImageSettingsPanel({
     theme,
     showTitle = true,
     className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5",
-    maxCount = 15,
-    quickCount = 10,
+    maxCount: maxCountProp = 15,
+    quickCount: quickCountProp = 10,
     pricingRules,
     model,
     operation = "generation",
@@ -91,6 +91,9 @@ export function ImageSettingsPanel({
     showQuality = true,
 }: ImageSettingsPanelProps) {
     const [snapDimensionToStep, setSnapDimensionToStep] = useState(true);
+    const managedModels = useConfigStore((state) => state.publicSettings?.modelChannel.models);
+    const maxCount = modelImageCountLimit(managedModels, model || config.model, maxCountProp);
+    const quickCount = Math.min(quickCountProp, maxCount);
     const quality = config.quality || "auto";
     const count = normalizeImageCount(config.count, maxCount);
     const activeSize = config.size || "auto";

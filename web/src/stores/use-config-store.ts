@@ -249,3 +249,9 @@ function normalizeAiPreferences(value: unknown): Partial<AiPreferences> {
     });
     return preferences as Partial<AiPreferences>;
 }
+
+/** Images per request allowed for a model (the built-in pool renders one). */
+export function modelImageCountLimit(models: AdminPublicSettings["modelChannel"]["models"] | undefined, model?: string, fallback = 15) {
+    const limit = models?.find((item) => item.id === model)?.maxImageCount;
+    return limit && limit > 0 ? Math.min(limit, fallback) : fallback;
+}

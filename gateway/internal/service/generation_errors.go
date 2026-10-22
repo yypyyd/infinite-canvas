@@ -107,7 +107,7 @@ func safeStoredGenerationError(raw string) string {
 		return ""
 	}
 	for _, safe := range []error{
-		ErrGenerationOutcomeUnknown,
+		ErrGenerationOutcomeUnknown, ErrGenerationAbandoned,
 		ErrUnknownModel, ErrIdempotencyConflict, ErrInsufficientFunds, ErrUnsupportedParams,
 		ErrBannedPrompt, ErrContentRejected, ErrNoProviderAccount,
 		ErrProviderAuth, ErrProviderQuota, ErrProviderTemporary, ErrProviderExecution,

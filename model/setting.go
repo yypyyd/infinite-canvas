@@ -203,6 +203,20 @@ type PrivateSetting struct {
 	Payment           PaymentSetting         `json:"payment"`
 	Referral          ReferralSetting        `json:"referral"`
 	OperationsAlerts  OperationsAlertSetting `json:"operationsAlerts"`
+	// PoolModelAliases publishes built-in account pool models under custom
+	// public names. nil means "not sent" and keeps the saved list.
+	PoolModelAliases []PoolModelAlias `json:"poolModelAliases"`
+}
+
+// PoolModelAlias serves the public model Name from the built-in account pool
+// model Target (a gateway logical model ID). The alias inherits the target's
+// capabilities; requests are forwarded with the target ID. Third-party
+// channels may serve the same Name too.
+type PoolModelAlias struct {
+	Name    string `json:"name"`
+	Target  string `json:"target"`
+	Enabled bool   `json:"enabled"`
+	Remark  string `json:"remark"`
 }
 
 type StorageSetting struct {

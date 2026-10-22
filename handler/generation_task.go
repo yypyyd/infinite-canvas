@@ -114,6 +114,11 @@ func AdminPoolPricingGaps(w http.ResponseWriter, r *http.Request) {
 	OK(w, map[string]any{"items": result})
 }
 
+// AdminPoolModels lists the running pool's models (alias targets).
+func AdminPoolModels(w http.ResponseWriter, r *http.Request) {
+	OK(w, map[string]any{"items": service.PoolModelOptions()})
+}
+
 func AdminCreatePoolPricingDrafts(w http.ResponseWriter, r *http.Request) {
 	created, err := service.CreatePoolPricingDrafts()
 	if err != nil {

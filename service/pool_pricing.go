@@ -25,14 +25,20 @@ const poolDraftRemark = "账号池草稿：请填写价格后启用"
 
 // poolPricingSpecs lists the specs 幻图 bills for each pool model, matching
 // the PricingRequest built for each request path.
-func poolPricingSpecs() []PoolPricingGap {
-	channel, ok := builtinPoolChannel()
+func poolPricingSpecs(aliases []model.PoolModelAlias) []PoolPricingGap {
+	channel, ok := builtinPoolChannel(aliases)
 	if !ok {
 		return nil
 	}
 	routes := map[string][]gateway.PoolRoute{}
 	for _, item := range builtinPoolModels() {
 		routes[item.ID] = item.Routes
+	}
+	// Aliases are priced under their public name and served by the target.
+	for _, item := range channel.Models {
+		if item.UpstreamModel != "" && item.UpstreamModel != item.Model {
+			routes[item.Model] = routes[item.UpstreamModel]
+		}
 	}
 	var specs []PoolPricingGap
 	defer func() {
@@ -95,7 +101,7 @@ func containsString(items []string, value string) bool {
 	return false
 }
 
-func poolPricingGaps(rules []model.PricingRule) []PoolPricingGap {
+func poolPricingGaps(rules []model.PricingRule, aliases []model.PoolModelAlias) []PoolPricingGap {
 	priced := map[string]bool{}
 	drafted := map[string]bool{}
 	for _, rule := range rules {
@@ -108,7 +114,7 @@ func poolPricingGaps(rules []model.PricingRule) []PoolPricingGap {
 	}
 	gaps := []PoolPricingGap{}
 	seen := map[string]bool{}
-	for _, spec := range poolPricingSpecs() {
+	for _, spec := range poolPricingSpecs(aliases) {
 		key := pricingSpecKey(spec.Model, spec.Modality, spec.Operation, spec.Unit, spec.ResolutionTier)
 		if priced[key] || seen[key] {
 			continue
@@ -127,7 +133,7 @@ func PoolPricingGaps() ([]PoolPricingGap, error) {
 	if err != nil {
 		return nil, err
 	}
-	return poolPricingGaps(normalizePricingRules(settings.Public.ModelChannel.PricingRules)), nil
+	return poolPricingGaps(normalizePricingRules(settings.Public.ModelChannel.PricingRules), settings.Private.PoolModelAliases), nil
 }
 
 // CreatePoolPricingDrafts adds a disabled draft rule (no price) for every
@@ -143,7 +149,7 @@ func CreatePoolPricingDrafts() (int, error) {
 		existing[pricingSpecKey(rule.Model, rule.Modality, rule.Operation, rule.Unit, rule.ResolutionTier)] = true
 	}
 	created := 0
-	for _, gap := range poolPricingGaps(normalizePricingRules(rules)) {
+	for _, gap := range poolPricingGaps(normalizePricingRules(rules), settings.Private.PoolModelAliases) {
 		key := pricingSpecKey(gap.Model, gap.Modality, gap.Operation, gap.Unit, gap.ResolutionTier)
 		if gap.Draft || existing[key] {
 			continue

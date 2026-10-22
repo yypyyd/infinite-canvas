@@ -18,7 +18,8 @@ func loadRuntimeChannels() ([]model.ModelChannel, error) {
 	if err != nil {
 		return nil, err
 	}
-	return runtimeChannels(normalizePrivateSetting(settings.Private).Channels), nil
+	private := normalizePrivateSetting(settings.Private)
+	return runtimeChannels(private.Channels, private.PoolModelAliases), nil
 }
 
 // channelSelectionsFor lists every compatible channel/model pair for request.

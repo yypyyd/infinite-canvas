@@ -201,6 +201,7 @@ func New() *gin.Engine {
 	admin.GET("/operations/health", gin.WrapF(handler.AdminOperationsHealth))
 	admin.GET("/generation-tasks", gin.WrapF(handler.AdminGenerationTasks))
 	admin.GET("/pool-usage", gin.WrapF(handler.AdminPoolUsage))
+	admin.GET("/pool-models", gin.WrapF(handler.AdminPoolModels))
 	admin.GET("/pool-pricing-gaps", gin.WrapF(handler.AdminPoolPricingGaps))
 	admin.POST("/pool-pricing-gaps/drafts", gin.WrapF(handler.AdminCreatePoolPricingDrafts))
 	admin.POST("/users", gin.WrapF(handler.AdminSaveUser))

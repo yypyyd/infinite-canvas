@@ -111,6 +111,9 @@ func SaveSettings(settings model.Settings) (model.Settings, error) {
 		return model.Settings{}, err
 	}
 	emailDomainRestriction := settings.Public.Auth.EmailDomainRestriction
+	if settings.Private.PoolModelAliases == nil {
+		settings.Private.PoolModelAliases = saved.Private.PoolModelAliases
+	}
 	settings = normalizeSettings(settings)
 	if emailDomainRestriction && len(settings.Public.Auth.EmailDomains) == 0 {
 		return model.Settings{}, safeMessageError{message: "启用邮箱域名限制前请至少填写一个有效域名"}
@@ -126,6 +129,9 @@ func SaveSettings(settings model.Settings) (model.Settings, error) {
 		return model.Settings{}, safeMessageError{message: err.Error()}
 	}
 	if err := validateModelChannels(settings.Private.Channels); err != nil {
+		return model.Settings{}, err
+	}
+	if err := validatePoolModelAliases(settings.Private.PoolModelAliases, saved.Private.PoolModelAliases, builtinPoolModels()); err != nil {
 		return model.Settings{}, err
 	}
 	if err := validateEmailSetting(settings.Private.Email); err != nil {
@@ -167,7 +173,7 @@ func AdminTestChannelModel(index *int, channel model.ModelChannel, modelName str
 
 func normalizeSettings(settings model.Settings) model.Settings {
 	settings.Private = normalizePrivateSetting(settings.Private)
-	settings.Public = normalizePublicSettingWithChannels(settings.Public, runtimeChannels(settings.Private.Channels))
+	settings.Public = normalizePublicSettingWithChannels(settings.Public, runtimeChannels(settings.Private.Channels, settings.Private.PoolModelAliases))
 	return settings
 }
 
@@ -885,6 +891,10 @@ func normalizePrivateSetting(setting model.PrivateSetting) model.PrivateSetting 
 	setting.Payment = normalizePaymentSetting(setting.Payment)
 	setting.Referral = normalizeReferralSetting(setting.Referral)
 	setting.OperationsAlerts = normalizeOperationsAlertSetting(setting.OperationsAlerts)
+	setting.PoolModelAliases = normalizePoolModelAliases(setting.PoolModelAliases)
+	if setting.PoolModelAliases == nil {
+		setting.PoolModelAliases = []model.PoolModelAlias{}
+	}
 	for i := range setting.Channels {
 		setting.Channels[i] = normalizeModelChannel(setting.Channels[i])
 	}

@@ -141,6 +141,10 @@ func BuildPoolUsage(ctx context.Context, days int) (PoolUsageReport, error) {
 		if unified, legacy := unifiedPoolModelID(modelID); legacy {
 			modelID = unified
 		}
+		// A request made under a public alias is reported under that name.
+		if ok && task.Model != "" && task.UpstreamModel != "" && task.Model != task.UpstreamModel {
+			modelID = task.Model
+		}
 		modelRow := models[modelID]
 		if modelRow == nil {
 			modelRow = &PoolUsageRow{Key: modelID, Label: modelID}

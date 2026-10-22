@@ -1789,4 +1789,22 @@ BEGIN
 END
 $ext$;
 `,
+	"000033_drop_pool_price_columns.sql": `-- The pool never bills: pricing lives only in 幻图's billing rules. Drop any
+-- leftover per-model price columns from older schemas. Guarded so it is a
+-- no-op on databases that never had them (including imported backups).
+DO $prices$
+DECLARE
+  target text;
+  col text;
+BEGIN
+  FOREACH target IN ARRAY ARRAY['model_configs', 'logical_models'] LOOP
+    IF to_regclass(target) IS NOT NULL THEN
+      FOREACH col IN ARRAY ARRAY['prices', 'duration_prices', 'prices_agent', 'duration_prices_agent'] LOOP
+        EXECUTE format('ALTER TABLE %I DROP COLUMN IF EXISTS %I', target, col);
+      END LOOP;
+    END IF;
+  END LOOP;
+END
+$prices$;
+`,
 }

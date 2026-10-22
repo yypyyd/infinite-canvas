@@ -630,8 +630,7 @@ func unionStrings(dst, src []string) []string {
 
 // PrepareChatCompletion validates and bills an OpenAI-compatible chat request,
 // chooses an eligible native provider account, and returns JSON/SSE.
-// Text pricing is fixed per request at prices.request (agent override:
-// prices_agent.request). A response is successful only after a valid non-stream
+// Billing is owned by the caller (幻图); the pool does not meter requests. A response is successful only after a valid non-stream
 // completion reaches EOF or an SSE stream reaches data: [DONE].
 func (s *V1Service) PrepareChatCompletion(ctx context.Context, principal *APIPrincipal, payload []byte) (*V1ChatResponse, error) {
 	return s.prepareChatCompletion(ctx, principal, payload, "", "v1")
@@ -714,7 +713,7 @@ func (s *V1Service) PrepareAdminTest(ctx context.Context, in AdminTestRequest) (
 		result, err := s.prepareImageExecution(ctx, nil, V1ImageRequest{
 			Model: in.Model, Prompt: in.Prompt, AspectRatio: in.AspectRatio,
 			Resolution: in.Resolution, AccountID: in.AccountID,
-		}, "admin", false)
+		}, "admin")
 		if err != nil {
 			return nil, err
 		}
@@ -795,13 +794,7 @@ func (s *V1Service) prepareChatCompletion(ctx context.Context, principal *APIPri
 		}
 	}
 
-	price, err := s.chargeForModel(bookCtx, principal, logicalItem, "text", "request", "", 0, true)
-	if err != nil {
-		releaseUser()
-		s.logRejectedEvent(bookCtx, "text", modelName, principal, prompt, source, err)
-		return nil, err
-	}
-	eventID, err := s.logPendingEvent(bookCtx, "text", logicalItem, principal, prompt, "", "", "", 0, price, "", source, nil, false, "", "")
+	eventID, err := s.logPendingEvent(bookCtx, "text", logicalItem, principal, prompt, "", "", "", 0, "", source, nil, false, "", "")
 	if err != nil {
 		releaseUser()
 		return nil, err
@@ -958,7 +951,6 @@ func (s *V1Service) prepareChatCompletion(ctx context.Context, principal *APIPri
 				recordBookkeepingError("fail chat event", s.events.UpdateStatus(bookCtx, eventID, "failed", safeStoredGenerationError(reason), elapsed))
 				recordBookkeepingError("fail chat dispatch", s.models.Dispatch().Finish(bookCtx, dispatch.ID, "failed", failureClass, "", errors.New(reason)))
 				recordBookkeepingError("record failed chat stream route", s.models.Routes().RecordAccountRouteResult(bookCtx, token.ID, route.ID, failureClass, false))
-				_ = s.refundIfNeeded(bookCtx, principal, eventID, price)
 			}
 			return &V1ChatResponse{Header: responseHeader, Body: body, Stream: responseStream}, nil
 		}
@@ -971,16 +963,15 @@ func (s *V1Service) prepareChatCompletion(ctx context.Context, principal *APIPri
 		return nil, ErrNoProviderAccount
 	})
 	if routeErr != nil {
-		return nil, s.failChatCompletion(bookCtx, principal, eventID, price, releaseUser, routeErr)
+		return nil, s.failChatCompletion(bookCtx, principal, eventID, releaseUser, routeErr)
 	}
 	return response, nil
 }
 
-func (s *V1Service) failChatCompletion(ctx context.Context, principal *APIPrincipal, eventID string, price float64, releaseUser func(), cause error) error {
+func (s *V1Service) failChatCompletion(ctx context.Context, principal *APIPrincipal, eventID string, releaseUser func(), cause error) error {
 	releaseUser()
 	publicErr := publicGenerationError(cause)
 	recordBookkeepingError("update failed chat event", s.events.UpdateStatus(ctx, eventID, "failed", safeGenerationErrorText(cause), 0))
-	_ = s.refundIfNeeded(ctx, principal, eventID, price)
 	return publicErr
 }
 
@@ -1053,7 +1044,7 @@ func chatPrompt(messages []any) string {
 func (s *V1Service) PrepareImageRequest(ctx context.Context, principal *APIPrincipal, in V1ImageRequest) (map[string]any, error) {
 	in.RequestID = strings.TrimSpace(in.RequestID)
 	if in.RequestID == "" {
-		return s.prepareImageExecution(ctx, principal, in, "v1", true)
+		return s.prepareImageExecution(ctx, principal, in, "v1")
 	}
 	if principal == nil || principal.Credential == nil {
 		return nil, ErrInvalidAPIKey
@@ -1104,7 +1095,7 @@ func (s *V1Service) PrepareImageRequest(ctx context.Context, principal *APIPrinc
 		s.imageJobs.CompareAndDelete(key, candidate)
 		return s.waitForImageResult(ctx, principal, in.RequestID, fingerprint, nil)
 	}
-	response, execErr := s.prepareImageExecution(ctx, principal, in, "v1", true, fingerprint)
+	response, execErr := s.prepareImageExecution(ctx, principal, in, "v1", fingerprint)
 	if execErr != nil {
 		if existing, lookupErr := s.imageTaskFromEvent(ctx, principal, in.RequestID, fingerprint); lookupErr == nil {
 			response, execErr = s.waitForImageResult(ctx, principal, in.RequestID, fingerprint, existing)
@@ -1174,7 +1165,7 @@ func (s *V1Service) StartImageRequest(ctx context.Context, principal *APIPrincip
 
 	executionCtx := context.WithoutCancel(ctx)
 	go func() {
-		response, err := s.prepareImageExecution(executionCtx, principal, in, "v1", true, fingerprint)
+		response, err := s.prepareImageExecution(executionCtx, principal, in, "v1", fingerprint)
 		candidate.complete(response, err)
 		s.conc.Release(context.Background(), lockKey, lockToken)
 		time.AfterFunc(asyncImageJobRetention, func() {
@@ -1331,7 +1322,7 @@ func asyncImageJobResponse(job *asyncImageJob, requestID, pollURL string) (map[s
 	}
 }
 
-func (s *V1Service) prepareImageExecution(ctx context.Context, principal *APIPrincipal, in V1ImageRequest, source string, charge bool, canonicalFingerprint ...string) (map[string]any, error) {
+func (s *V1Service) prepareImageExecution(ctx context.Context, principal *APIPrincipal, in V1ImageRequest, source string, canonicalFingerprint ...string) (map[string]any, error) {
 	s.applyGlobalProxy(ctx)
 	// Detach the whole execution from the request lifecycle. The frontend tracks
 	// progress by polling /jobs/mine, so a client disconnect — or an nginx/CDN
@@ -1411,7 +1402,7 @@ func (s *V1Service) prepareImageExecution(ctx context.Context, principal *APIPri
 		defer s.credentialRelease(ctx, principal.Credential.ID, slot)
 	}
 
-	modelItem, resolution, aspectRatio, price, err := s.prepareImage(ctx, principal, in, charge)
+	modelItem, resolution, aspectRatio, err := s.prepareImage(ctx, principal, in)
 	if err != nil {
 		s.logRejectedEvent(ctx, "image", in.Model, principal, in.Prompt, source, err)
 		return nil, err
@@ -1433,7 +1424,7 @@ func (s *V1Service) prepareImageExecution(ctx context.Context, principal *APIPri
 	// upstreamURL is the provider's original artifact URL. API clients always
 	// receive a gateway URL; the gateway hides provider CORS and auth differences.
 	var upstreamURL string
-	eventID, err := s.logPendingEvent(ctx, "image", modelItem, principal, in.Prompt, aspectRatio, resolution, "", refCount, price, relativePath, source, nil, in.DeAI, in.RequestID, in.ResponseFormat, eventFingerprint)
+	eventID, err := s.logPendingEvent(ctx, "image", modelItem, principal, in.Prompt, aspectRatio, resolution, "", refCount, relativePath, source, nil, in.DeAI, in.RequestID, in.ResponseFormat, eventFingerprint)
 	if err != nil {
 		return nil, err
 	}
@@ -1482,7 +1473,6 @@ func (s *V1Service) prepareImageExecution(ctx context.Context, principal *APIPri
 		return nil, publicGenerationError(execErr)
 	}
 	if apiRequest && in.ResponseFormat == "b64_json" && len(imageBytes) == 0 {
-		_ = s.refundIfNeeded(ctx, principal, eventID, price)
 		recordBookkeepingError("update empty image event", s.events.UpdateStatus(ctx, eventID, "failed", ErrProviderExecution.Error(), 0))
 		return nil, ErrProviderExecution
 	}
@@ -1498,7 +1488,6 @@ func (s *V1Service) prepareImageExecution(ctx context.Context, principal *APIPri
 	if len(imageBytes) > 0 {
 		imageMimeType, imageExtension, err = detectImageArtifact(imageBytes)
 		if err != nil {
-			_ = s.refundIfNeeded(ctx, principal, eventID, price)
 			recordBookkeepingError("update invalid image artifact", s.events.UpdateStatus(ctx, eventID, "failed", ErrProviderExecution.Error(), 0))
 			return nil, ErrProviderExecution
 		}
@@ -1513,7 +1502,6 @@ func (s *V1Service) prepareImageExecution(ctx context.Context, principal *APIPri
 			fileURL = replaceMediaExtension(fileURL, imageExtension)
 		}
 		if err := s.events.SetArtifact(ctx, eventID, relativePath, imageMimeType); err != nil {
-			_ = s.refundIfNeeded(ctx, principal, eventID, price)
 			recordBookkeepingError("update image artifact metadata", err)
 			recordBookkeepingError("update image metadata failure", s.events.UpdateStatus(ctx, eventID, "failed", ErrProviderExecution.Error(), 0))
 			return nil, ErrProviderExecution
@@ -1521,7 +1509,6 @@ func (s *V1Service) prepareImageExecution(ctx context.Context, principal *APIPri
 		// Upload to RustFS. On failure the generation fails and credits are
 		// refunded — we never fall back to local disk.
 		if err := s.store.Put(genCtx, relativePath, imageBytes, imageMimeType); err != nil {
-			_ = s.refundIfNeeded(ctx, principal, eventID, price)
 			recordBookkeepingError("update image storage failure", s.events.UpdateStatus(ctx, eventID, "failed", ErrProviderExecution.Error(), 0))
 			return nil, ErrProviderExecution
 		}
@@ -1732,12 +1719,12 @@ func (s *V1Service) prepareAdminVideoTest(ctx context.Context, in V1VideoRequest
 	s.applyGlobalProxy(ctx)
 	ctx = context.WithoutCancel(ctx)
 	ctx = withSchedulingCache(ctx)
-	modelItem, resolution, aspectRatio, duration, price, err := s.prepareVideo(ctx, nil, in, false)
+	modelItem, resolution, aspectRatio, duration, err := s.prepareVideo(ctx, nil, in)
 	if err != nil {
 		return nil, err
 	}
 	eventID, err := s.logPendingEvent(ctx, "video", modelItem, nil, in.Prompt, aspectRatio, resolution, duration,
-		0, price, "", "admin", nil, false, "", "")
+		0, "", "admin", nil, false, "", "")
 	if err != nil {
 		return nil, err
 	}
@@ -1831,14 +1818,14 @@ func (s *V1Service) StartVideoJob(ctx context.Context, principal *APIPrincipal, 
 		s.logRejectedEvent(ctx, "video", in.Model, principal, in.Prompt, "v1", err)
 		return nil, err
 	}
-	modelItem, resolution, aspectRatio, duration, price, err := s.prepareVideo(ctx, principal, in, true)
+	modelItem, resolution, aspectRatio, duration, err := s.prepareVideo(ctx, principal, in)
 	if err != nil {
 		s.logRejectedEvent(ctx, "video", in.Model, principal, in.Prompt, "v1", err)
 		return nil, err
 	}
 	// Source "v1": no output file is allocated — the result is the upstream URL,
 	// stored on the event when the render completes.
-	eventID, err := s.logPendingEvent(ctx, "video", modelItem, principal, in.Prompt, aspectRatio, resolution, duration, len(in.ReferenceImages)+len(in.ReferenceVideos)+len(in.ReferenceAudios), price, "", "v1", nil, false, in.RequestID, "", fingerprint)
+	eventID, err := s.logPendingEvent(ctx, "video", modelItem, principal, in.Prompt, aspectRatio, resolution, duration, len(in.ReferenceImages)+len(in.ReferenceVideos)+len(in.ReferenceAudios), "", "v1", nil, false, in.RequestID, "", fingerprint)
 	if err != nil {
 		// The database uniqueness boundary is authoritative across processes. A
 		// concurrent winner may have inserted after our initial read; re-read and
@@ -1851,7 +1838,7 @@ func (s *V1Service) StartVideoJob(ctx context.Context, principal *APIPrincipal, 
 		}
 		return nil, err
 	}
-	go s.runVideoJob(ctx, principal, in, modelItem, eventID, aspectRatio, resolution, duration, price)
+	go s.runVideoJob(ctx, principal, in, modelItem, eventID, aspectRatio, resolution, duration)
 	return videoJobObject(eventID, modelItem.EffectiveName(), "queued", 0, duration, sizeFromRatioRes(aspectRatio, resolution), time.Now().Unix(), 0, ""), nil
 }
 
@@ -1899,7 +1886,7 @@ func (s *V1Service) videoJobFromEvent(ev *model.EventLog) map[string]any {
 
 // runVideoJob renders the clip in the background, capturing the upstream URL
 // (downloadResult=false → no bytes, no RustFS) and storing it on the event.
-func (s *V1Service) runVideoJob(ctx context.Context, principal *APIPrincipal, in V1VideoRequest, modelItem *model.ModelConfig, eventID, aspectRatio, resolution, duration string, price float64) {
+func (s *V1Service) runVideoJob(ctx context.Context, principal *APIPrincipal, in V1VideoRequest, modelItem *model.ModelConfig, eventID, aspectRatio, resolution, duration string) {
 	s.applyGlobalProxy(ctx)
 	ctx = withSchedulingCache(ctx)
 	if principal != nil && principal.Credential != nil {
@@ -1926,7 +1913,6 @@ func (s *V1Service) runVideoJob(ctx context.Context, principal *APIPrincipal, in
 	if len(in.ReferenceImages) > 0 && s.shouldApplyReferenceGrid(ctx, in.Model, in.ReferenceGrid) {
 		gridded, gridErr := applyReferenceFaceSwap(in.ReferenceImages)
 		if gridErr != nil {
-			_ = s.refundIfNeeded(ctx, principal, eventID, price)
 			recordBookkeepingError("update video reference failure", s.events.UpdateStatus(ctx, eventID, "failed", ErrUnsupportedParams.Error(), 0))
 			return
 		}
@@ -1941,12 +1927,10 @@ func (s *V1Service) runVideoJob(ctx context.Context, principal *APIPrincipal, in
 			recordBookkeepingError("queue accepted async video recovery", s.events.SetPhase(ctx, eventID, "recovery"))
 			return
 		}
-		_ = s.refundIfNeeded(ctx, principal, eventID, price)
 		recordBookkeepingError("update async video failure", s.events.UpdateStatus(ctx, eventID, "failed", safeGenerationErrorText(execErr), 0))
 		return
 	}
 	if strings.TrimSpace(videoURL) == "" {
-		_ = s.refundIfNeeded(ctx, principal, eventID, price)
 		recordBookkeepingError("update empty video event", s.events.UpdateStatus(ctx, eventID, "failed", ErrProviderExecution.Error(), 0))
 		return
 	}
@@ -2590,38 +2574,38 @@ func sizeFromRatioRes(ratio, resolution string) string {
 	return fmt.Sprintf("%dx%d", w, h)
 }
 
-func (s *V1Service) prepareImage(ctx context.Context, principal *APIPrincipal, in V1ImageRequest, charge bool) (*model.ModelConfig, string, string, float64, error) {
+func (s *V1Service) prepareImage(ctx context.Context, principal *APIPrincipal, in V1ImageRequest) (*model.ModelConfig, string, string, error) {
 	modelID := strings.TrimSpace(in.Model)
 	prompt := strings.TrimSpace(in.Prompt)
 	if modelID == "" || prompt == "" {
-		return nil, "", "", 0, fmt.Errorf("%w: model and prompt are required", ErrUnsupportedParams)
+		return nil, "", "", fmt.Errorf("%w: model and prompt are required", ErrUnsupportedParams)
 	}
 	n := in.N
 	if n == 0 {
 		n = 1
 	}
 	if n != 1 {
-		return nil, "", "", 0, invalidParameter("n", "n must be 1.", "1")
+		return nil, "", "", invalidParameter("n", "n must be 1.", "1")
 	}
 	if strings.TrimSpace(in.Background) != "" {
-		return nil, "", "", 0, invalidParameter("background", "background is not supported; omit this parameter.")
+		return nil, "", "", invalidParameter("background", "background is not supported; omit this parameter.")
 	}
 	if strings.TrimSpace(in.OutputFormat) != "" {
-		return nil, "", "", 0, invalidParameter("output_format", "output_format is not supported; omit this parameter.")
+		return nil, "", "", invalidParameter("output_format", "output_format is not supported; omit this parameter.")
 	}
 	modelItem, err := s.models.Get(ctx, modelID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, "", "", 0, ErrUnknownModel
+			return nil, "", "", ErrUnknownModel
 		}
-		return nil, "", "", 0, err
+		return nil, "", "", err
 	}
 	if !modelItem.Enabled || modelItem.Type != "image" {
-		return nil, "", "", 0, ErrUnknownModel
+		return nil, "", "", ErrUnknownModel
 	}
 	// Reject oversized reference images before any provider/account is selected.
 	if err := ensureReferenceSizes(in.ReferenceImages); err != nil {
-		return nil, "", "", 0, err
+		return nil, "", "", err
 	}
 	aspectRatio, resolution := resolveImageSize(modelItem, in)
 	operation := "generation"
@@ -2636,44 +2620,44 @@ func (s *V1Service) prepareImage(ctx context.Context, principal *APIPrincipal, i
 			log.Printf("image preflight rejected: request_id=%.191q model=gpt-image-2 size=%.64q quality=%.16q aspect_ratio=%.32q resolution=%.16q resolved_ratio=%.32q resolved_resolution=%.16q n=%d references=%d",
 				in.RequestID, in.Size, in.Quality, in.AspectRatio, in.Resolution, aspectRatio, resolution, n, len(in.ReferenceImages))
 		}
-		return nil, "", "", 0, err
+		return nil, "", "", err
 	}
-	return modelItem, resolution, aspectRatio, 0, nil
+	return modelItem, resolution, aspectRatio, nil
 }
 
-func (s *V1Service) prepareVideo(ctx context.Context, principal *APIPrincipal, in V1VideoRequest, charge bool) (*model.ModelConfig, string, string, string, float64, error) {
+func (s *V1Service) prepareVideo(ctx context.Context, principal *APIPrincipal, in V1VideoRequest) (*model.ModelConfig, string, string, string, error) {
 	modelID := strings.TrimSpace(in.Model)
 	prompt := strings.TrimSpace(in.Prompt)
 	duration := strings.TrimSpace(in.Duration)
 	if modelID == "" || prompt == "" {
-		return nil, "", "", "", 0, fmt.Errorf("%w: model and prompt are required", ErrUnsupportedParams)
+		return nil, "", "", "", fmt.Errorf("%w: model and prompt are required", ErrUnsupportedParams)
 	}
 	if duration == "" {
-		return nil, "", "", "", 0, invalidParameter("duration", "duration is required.")
+		return nil, "", "", "", invalidParameter("duration", "duration is required.")
 	}
 	modelItem, err := s.models.Get(ctx, modelID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, "", "", "", 0, ErrUnknownModel
+			return nil, "", "", "", ErrUnknownModel
 		}
-		return nil, "", "", "", 0, err
+		return nil, "", "", "", err
 	}
 	if !modelItem.Enabled || modelItem.Type != "video" {
-		return nil, "", "", "", 0, ErrUnknownModel
+		return nil, "", "", "", ErrUnknownModel
 	}
 	// Validate bytes before account selection; route-specific count constraints
 	// are matched as one capability profile below.
 	if err := ensureReferenceSizes(in.ReferenceImages); err != nil {
-		return nil, "", "", "", 0, err
+		return nil, "", "", "", err
 	}
 	if err := validateMediaReferences(in.ReferenceVideos, "video"); err != nil {
-		return nil, "", "", "", 0, err
+		return nil, "", "", "", err
 	}
 	if err := validateMediaReferences(in.ReferenceAudios, "audio"); err != nil {
-		return nil, "", "", "", 0, err
+		return nil, "", "", "", err
 	}
 	if len(in.ReferenceVideos) > 0 && (modelItem.ID == "kling-3" || modelItem.ID == "kling-o3") && parseDurationSeconds(duration) > 10 {
-		return nil, "", "", "", 0, fmt.Errorf("%w: Kling video modification supports 3s to 10s", ErrUnsupportedParams)
+		return nil, "", "", "", fmt.Errorf("%w: Kling video modification supports 3s to 10s", ErrUnsupportedParams)
 	}
 	aspectRatio := strings.TrimSpace(strings.ReplaceAll(in.AspectRatio, "x", ":"))
 	if aspectRatio == "" {
@@ -2686,15 +2670,9 @@ func (s *V1Service) prepareVideo(ctx context.Context, principal *APIPrincipal, i
 	if _, err := s.firstAvailableRoute(ctx, modelItem.ID, "video", model.RouteRequirements{Operation: "generation",
 		Ratio: aspectRatio, Resolution: resolution, Duration: duration, ReferenceImages: len(in.ReferenceImages),
 		ReferenceVideos: len(in.ReferenceVideos), ReferenceAudios: len(in.ReferenceAudios), GenerateAudio: in.GenerateAudio}); err != nil {
-		return nil, "", "", "", 0, err
+		return nil, "", "", "", err
 	}
-	return modelItem, resolution, aspectRatio, duration, 0, nil
-}
-
-func (s *V1Service) chargeForModel(ctx context.Context, principal *APIPrincipal, modelItem *model.ModelConfig, kind, resolution, duration string, surcharge float64, charge bool) (float64, error) {
-	// 2API does not meter or debit downstream credits. Provider quota is reserved
-	// independently by the account dispatcher.
-	return 0, nil
+	return modelItem, resolution, aspectRatio, duration, nil
 }
 
 func (s *V1Service) userDir(principal *APIPrincipal) string {
@@ -2774,7 +2752,7 @@ func (s *V1Service) allocateOutput(principal *APIPrincipal, ext, baseURL string)
 	return "/images/" + relativePath, relativePath
 }
 
-func (s *V1Service) logPendingEvent(ctx context.Context, kind string, modelItem *model.ModelConfig, principal *APIPrincipal, prompt, ratio, resolution, duration string, refs int, cost float64, file, source string, refFiles []string, deai bool, requestID, responseFormat string, requestFingerprint ...string) (string, error) {
+func (s *V1Service) logPendingEvent(ctx context.Context, kind string, modelItem *model.ModelConfig, principal *APIPrincipal, prompt, ratio, resolution, duration string, refs int, file, source string, refFiles []string, deai bool, requestID, responseFormat string, requestFingerprint ...string) (string, error) {
 	event := &model.EventLog{
 		ID:             "evt-" + randomUpper(24),
 		RequestID:      requestID,
@@ -2791,7 +2769,6 @@ func (s *V1Service) logPendingEvent(ctx context.Context, kind string, modelItem 
 		Refs:           refs,
 		DeAI:           deai,
 		Source:         source,
-		Cost:           cost,
 		File:           file,
 		CreatedAt:      time.Now(),
 		UpdatedAt:      time.Now(),
@@ -3300,10 +3277,6 @@ func bytePlusBetaRetryVerified(err error) bool {
 
 func byteplusNoResubmit(err error) bool {
 	return errors.Is(err, byteplus.ErrTaskAccepted) || errors.Is(err, byteplus.ErrTaskSubmissionUnknown)
-}
-
-func (s *V1Service) refundIfNeeded(ctx context.Context, principal *APIPrincipal, eventID string, price float64) error {
-	return nil
 }
 
 // ensureReferenceSizes rejects any reference image over the byte cap BEFORE

@@ -74,29 +74,22 @@ type EventLog struct {
 }
 
 type ModelConfig struct {
-	ID             string            `gorm:"primaryKey;size:255"`
-	Type           string            `gorm:"size:32;index;not null"`
-	Name           string            `gorm:"size:255;not null"`
-	Alias          string            `gorm:"column:alias;size:255;not null;default:''"`
-	Provider       string            `gorm:"size:100;index;not null"`
-	Enabled        bool              `gorm:"not null;default:true"`
-	Ratios         datatypes.JSON    `gorm:"type:jsonb"`
-	Prices         datatypes.JSONMap `gorm:"type:jsonb"`
-	Resolutions    datatypes.JSON    `gorm:"type:jsonb"`
-	ImageToImage   bool              `gorm:"not null;default:false"`
-	DurationPrices datatypes.JSONMap `gorm:"type:jsonb"`
-	// Agent (代理) pricing — optional overlay over Prices/DurationPrices. A tier
-	// left unset here means agent users pay the normal price for that tier; the
-	// set of *supported* tiers is always driven by Prices, not these.
-	PricesAgent         datatypes.JSONMap `gorm:"type:jsonb;column:prices_agent"`
-	DurationPricesAgent datatypes.JSONMap `gorm:"type:jsonb;column:duration_prices_agent"`
-	Durations           datatypes.JSON    `gorm:"type:jsonb"`
-	MaxReferenceImages  int               `gorm:"not null;default:0"`
-	MaxReferenceVideos  int               `gorm:"not null;default:0"`
-	MaxReferenceAudios  int               `gorm:"not null;default:0"`
-	MaxReferenceMedia   int               `gorm:"not null;default:0"`
-	SupportsAudioOutput bool              `gorm:"not null;default:false"`
-	ReferenceMode       string            `gorm:"size:32;not null;default:'none'"`
+	ID                  string         `gorm:"primaryKey;size:255"`
+	Type                string         `gorm:"size:32;index;not null"`
+	Name                string         `gorm:"size:255;not null"`
+	Alias               string         `gorm:"column:alias;size:255;not null;default:''"`
+	Provider            string         `gorm:"size:100;index;not null"`
+	Enabled             bool           `gorm:"not null;default:true"`
+	Ratios              datatypes.JSON `gorm:"type:jsonb"`
+	Resolutions         datatypes.JSON `gorm:"type:jsonb"`
+	ImageToImage        bool           `gorm:"not null;default:false"`
+	Durations           datatypes.JSON `gorm:"type:jsonb"`
+	MaxReferenceImages  int            `gorm:"not null;default:0"`
+	MaxReferenceVideos  int            `gorm:"not null;default:0"`
+	MaxReferenceAudios  int            `gorm:"not null;default:0"`
+	MaxReferenceMedia   int            `gorm:"not null;default:0"`
+	SupportsAudioOutput bool           `gorm:"not null;default:false"`
+	ReferenceMode       string         `gorm:"size:32;not null;default:'none'"`
 	// Custom-upstream models (provider="custom"): UpstreamModel is the model name
 	// sent to the upstream OpenAI-compatible API; the base_url + key live on the
 	// matching custom account (pool="custom", meta.base_url). Empty for built-ins.

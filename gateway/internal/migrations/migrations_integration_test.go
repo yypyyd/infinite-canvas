@@ -124,3 +124,36 @@ func TestConcurrentFreshDatabaseMigrations(t *testing.T) {
 		}
 	}
 }
+
+func TestDropPoolPriceColumnsIsGuarded(t *testing.T) {
+	db := migrationTestDB(t)
+	if err := Run(context.Background(), db); err != nil {
+		t.Fatal(err)
+	}
+	definitions, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var drop string
+	for _, definition := range definitions {
+		if definition.Version == 33 {
+			drop = definition.SQL
+		}
+	}
+	if drop == "" {
+		t.Fatal("migration 000033 missing")
+	}
+	if err := db.Exec(`CREATE TABLE model_configs (id TEXT PRIMARY KEY, name TEXT, prices JSONB, duration_prices JSONB, prices_agent JSONB, duration_prices_agent JSONB)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	for range 2 { // re-running (or running without the columns) is a no-op
+		if err := db.Exec(drop).Error; err != nil {
+			t.Fatal("guarded drop failed:", err)
+		}
+	}
+	var left int64
+	db.Raw(`SELECT COUNT(*) FROM information_schema.columns WHERE table_name IN ('model_configs','logical_models') AND column_name LIKE '%prices%'`).Scan(&left)
+	if left != 0 || !db.Migrator().HasColumn("model_configs", "name") {
+		t.Fatalf("price columns left=%d or unrelated columns dropped", left)
+	}
+}

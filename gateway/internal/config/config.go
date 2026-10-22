@@ -117,6 +117,12 @@ func (c *Config) validate() error {
 	if err := validatePostgresDSN(c.PostgresDSN); err != nil {
 		return err
 	}
+	// Object storage is optional inside 幻图: without it image caching is
+	// skipped and stored videos cannot be replayed. Only validate it when an
+	// endpoint is configured.
+	if strings.TrimSpace(c.RustFSEndpoint) == "" {
+		return nil
+	}
 	if err := validateServiceEndpoint("RUSTFS_ENDPOINT", c.RustFSEndpoint); err != nil {
 		return err
 	}

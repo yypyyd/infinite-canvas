@@ -15,6 +15,7 @@ const creditLogTypeLabels: Record<string, string> = {
     admin_adjust: "后台调整",
     ai_consume: "模型消费",
     ai_refund: "失败返还",
+    ai_late_recharge: "延迟送达补扣",
     redeem_code: "兑换码充值",
     daily_check_in: "每日签到",
     new_user_reward: "新用户赠送",

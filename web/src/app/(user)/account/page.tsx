@@ -137,6 +137,7 @@ const creditTypeMeta: Record<string, { label: string; color?: string }> = {
     admin_adjust: { label: "后台调整" },
     ai_consume: { label: "模型消费", color: "blue" },
     ai_refund: { label: "失败返还", color: "primary" },
+    ai_late_recharge: { label: "延迟送达补扣", color: "warning" },
     redeem_code: { label: "兑换码充值", color: "green" },
     balance_exchange: { label: "余额兑换", color: "green" },
     daily_check_in: { label: "每日签到", color: "primary" },

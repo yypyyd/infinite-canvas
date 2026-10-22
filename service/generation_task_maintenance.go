@@ -34,6 +34,9 @@ func StartGenerationTaskMaintenanceWorker() {
 		slots := make(chan struct{}, generationTaskReconcileConcurrency)
 		for {
 			dispatchGenerationTaskReconciliations(time.Now().UTC(), slots)
+			lateCtx, cancelLate := context.WithTimeout(context.Background(), 2*time.Minute)
+			checkLateDeliveredPoolImages(lateCtx, time.Now().UTC())
+			cancelLate()
 			time.Sleep(5 * time.Second)
 		}
 	}()

@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -731,4 +732,128 @@ func ListGenerationTasksByChannelSince(channelName, since string, limit int) ([]
 	err = db.Select("id", "request_id", "model", "modality", "channel_name", "credits", "credit_source", "status", "upstream_task_id", "created_at").
 		Where("channel_name = ? AND created_at >= ?", channelName, since).Order("created_at desc").Limit(limit).Find(&items).Error
 	return items, err
+}
+
+// ListLateDeliveryCandidates lists failed tasks of one channel and modality
+// that failed at or after since and are due for a late-result check.
+func ListLateDeliveryCandidates(channelName, modality, since, timestamp string, limit int) ([]model.GenerationTask, error) {
+	db, err := DB()
+	if err != nil {
+		return nil, err
+	}
+	var tasks []model.GenerationTask
+	err = db.Where("status = ? AND channel_name = ? AND modality = ? AND updated_at >= ?", model.GenerationTaskStatusFailed, channelName, modality, since).
+		Where("reconcile_after <= ? AND reconcile_lease_expires_at <= ?", timestamp, timestamp).
+		Order("updated_at asc").Limit(limit).Find(&tasks).Error
+	return tasks, err
+}
+
+// ClaimFailedGenerationTaskCheck leases a failed task for one late-result check.
+func ClaimFailedGenerationTaskCheck(taskID, token, timestamp, expiresAt string) (model.GenerationTask, bool, error) {
+	db, err := DB()
+	if err != nil {
+		return model.GenerationTask{}, false, err
+	}
+	var task model.GenerationTask
+	claimed := false
+	err = transactionWithSQLiteRetry(db, func(tx *gorm.DB) error {
+		claimed = false
+		result := tx.Model(&model.GenerationTask{}).
+			Where("id = ? AND status = ? AND reconcile_after <= ? AND reconcile_lease_expires_at <= ?", taskID, model.GenerationTaskStatusFailed, timestamp, timestamp).
+			Updates(map[string]any{"reconcile_lease_token": token, "reconcile_lease_expires_at": expiresAt})
+		if result.Error != nil || result.RowsAffected != 1 {
+			return result.Error
+		}
+		claimed = true
+		return tx.First(&task, "id = ?", taskID).Error
+	})
+	return task, claimed && err == nil, err
+}
+
+// DeliverLateAndRecharge turns a failed (already refunded) task into a success
+// with its late result and charges the original credits again, in one
+// transaction. Only the failed->success transition charges, so the re-charge
+// happens at most once per task. The balance may go negative: delivery is
+// never blocked by insufficient credits, and later top-ups repay the debt.
+func DeliverLateAndRecharge(taskID, resultJSON string, storageKeys []string, updatedAt string, log *model.CreditLog) (bool, error) {
+	db, err := DB()
+	if err != nil {
+		return false, err
+	}
+	recharged := false
+	err = db.Transaction(func(tx *gorm.DB) error {
+		var saved model.GenerationTask
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&saved, "id = ?", taskID).Error; err != nil {
+			return err
+		}
+		if saved.Status != model.GenerationTaskStatusFailed {
+			return nil
+		}
+		encodedKeys, err := json.Marshal(storageKeys)
+		if err != nil {
+			return err
+		}
+		result := tx.Model(&model.GenerationTask{}).Where("id = ? AND status = ?", saved.ID, model.GenerationTaskStatusFailed).Updates(map[string]any{
+			"status": model.GenerationTaskStatusSuccess, "error_message": "", "result_json": resultJSON, "storage_keys": string(encodedKeys),
+			"updated_at": updatedAt, "reconcile_lease_token": "", "reconcile_lease_expires_at": "",
+		})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return nil
+		}
+		if err := replaceUserFileReferences(tx, saved.OrganizationID, "generation_task", saved.ID, saved.ID+"-file", storageKeys, false, updatedAt); err != nil {
+			return err
+		}
+		recharged = true
+		if saved.Credits <= 0 {
+			return nil
+		}
+		if saved.BatchJobID != "" {
+			if err := tx.Model(&model.BatchProductionJob{}).Where("organization_id = ? AND id = ?", saved.OrganizationID, saved.BatchJobID).Update("actual_credits", gorm.Expr("actual_credits + ?", saved.Credits)).Error; err != nil {
+				return err
+			}
+		}
+		balance := 0
+		if saved.CreditSource == model.CreditSourceOrganization {
+			var organization model.Organization
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&organization, "id = ?", saved.OrganizationID).Error; err != nil {
+				return err
+			}
+			monthlyUsed := organization.MonthlyCreditsUsed
+			budgetMonth := creditBudgetMonth(updatedAt)
+			if organization.CreditBudgetMonth != budgetMonth {
+				monthlyUsed = 0
+			}
+			if creditBudgetMonth(saved.CreatedAt) == budgetMonth {
+				monthlyUsed += saved.Credits
+			}
+			if err := tx.Model(&model.Organization{}).Where("id = ?", organization.ID).Updates(map[string]any{"credits": gorm.Expr("credits - ?", saved.Credits), "monthly_credits_used": monthlyUsed, "credit_budget_month": budgetMonth, "updated_at": updatedAt}).Error; err != nil {
+				return err
+			}
+			balance = organization.Credits - saved.Credits
+			log.CreditSource = model.CreditSourceOrganization
+		} else {
+			result := tx.Model(&model.User{}).Where("id = ?", saved.UserID).Updates(map[string]any{"credits": gorm.Expr("credits - ?", saved.Credits), "updated_at": updatedAt})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected != 1 {
+				return gorm.ErrRecordNotFound
+			}
+			var user model.User
+			if err := tx.First(&user, "id = ?", saved.UserID).Error; err != nil {
+				return err
+			}
+			balance = user.Credits
+			log.CreditSource = model.CreditSourcePersonal
+		}
+		log.UserID, log.RelatedID, log.OrganizationID, log.Amount, log.Balance = saved.UserID, saved.ID, saved.OrganizationID, -saved.Credits, balance
+		if balance < 0 {
+			log.Remark += fmt.Sprintf("（余额不足，欠费 %d，充值后自动抵扣）", -balance)
+		}
+		return tx.Create(log).Error
+	})
+	return recharged, err
 }

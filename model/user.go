@@ -95,9 +95,12 @@ func PublicUser(user User) AuthUser {
 type CreditLogType string
 
 const (
-	CreditLogTypeAdminAdjust             CreditLogType = "admin_adjust"
-	CreditLogTypeAIConsume               CreditLogType = "ai_consume"
-	CreditLogTypeAIRefund                CreditLogType = "ai_refund"
+	CreditLogTypeAdminAdjust CreditLogType = "admin_adjust"
+	CreditLogTypeAIConsume   CreditLogType = "ai_consume"
+	CreditLogTypeAIRefund    CreditLogType = "ai_refund"
+	// CreditLogTypeAILateRecharge re-charges a task that was refunded as failed
+	// but whose result was delivered later (补扣费).
+	CreditLogTypeAILateRecharge          CreditLogType = "ai_late_recharge"
 	CreditLogTypeRedeem                  CreditLogType = "redeem_code"
 	CreditLogTypeBalanceExchange         CreditLogType = "balance_exchange"
 	CreditLogTypeCheckIn                 CreditLogType = "daily_check_in"

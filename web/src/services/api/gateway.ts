@@ -14,12 +14,21 @@ export type GatewayRoute = {
     provider: string;
     upstream_model: string;
     enabled: boolean;
-    priority: number;
-    weight: number;
+    /** Per-route override; null inherits the provider priority. */
+    priority: number | null;
+    /** Per-route override; null inherits the provider weight. */
+    weight: number | null;
+    effective_priority?: number;
+    effective_weight?: number;
+    priority_inherited?: boolean;
+    weight_inherited?: boolean;
     capabilities: unknown;
     account_count: number;
     healthy_accounts: number;
 };
+
+/** Partial route update. null clears an override so the provider value applies. */
+export type GatewayRoutePatch = { enabled?: boolean; priority?: number | null; weight?: number | null };
 
 export type GatewayModel = { id: string; kind: "text" | "image" | "video" | string; name: string; enabled: boolean; created_at: string; routes: GatewayRoute[] };
 
@@ -89,6 +98,10 @@ export type GatewaySettings = {
     logs_retention_days: number;
     artifacts_retention_days: number;
     providers_enabled: Record<string, boolean>;
+    /** Dispatch priority per provider (higher first, -1000..1000). */
+    providers_priority: Record<string, number>;
+    /** Weighted share among equal-priority providers (1..1000). */
+    providers_weight: Record<string, number>;
     provider_proxies: Record<string, string>;
     provider_extract_apis: Record<string, string>;
 };
@@ -139,7 +152,7 @@ export const gatewayApi = {
         ),
     models: (token: string) => gatewayRequest<GatewayList<GatewayModel>>(token, "GET", "/logical-models"),
     setModelEnabled: (token: string, id: string, enabled: boolean) => gatewayRequest(token, "PATCH", `/logical-models/${encodeURIComponent(id)}`, { enabled }),
-    setRouteEnabled: (token: string, id: string, routeId: string, enabled: boolean) => gatewayRequest(token, "PATCH", `/logical-models/${encodeURIComponent(id)}/routes/${encodeURIComponent(routeId)}`, { enabled }),
+    updateRoute: (token: string, id: string, routeId: string, patch: GatewayRoutePatch) => gatewayRequest(token, "PATCH", `/logical-models/${encodeURIComponent(id)}/routes/${encodeURIComponent(routeId)}`, patch),
     accounts: (token: string, params: { page: number; limit: number; provider?: string; status?: string; q?: string }) => gatewayRequest<GatewayAccountList>(token, "GET", "/accounts", undefined, params),
     importAccount: (token: string, payload: { provider: string; credential: unknown; label?: string }) => gatewayRequest<{ data: GatewayAccount }>(token, "POST", "/accounts/import", payload),
     updateAccount: (token: string, id: string, patch: Partial<{ status: string; weight: number; max_concurrency: number }>) => gatewayRequest<{ data: GatewayAccount }>(token, "PATCH", `/accounts/${encodeURIComponent(id)}`, patch),

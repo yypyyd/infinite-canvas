@@ -3,18 +3,14 @@ export const TEXT_MODELS = Object.freeze(["gpt-5-5-mini", "gpt-5-5-thinking", "g
 
 export const IMAGE_MODELS = Object.freeze([
     "gpt-image-2",
-    "byteplus-gpt-image-2",
-    "adobe-gpt-image-2",
     "seedream-5.0-pro",
     "seedream-5.0-lite",
-    "byteplus-nano-banana-2",
-    "adobe-nano-banana-2",
-    "byteplus-nano-banana-pro",
-    "adobe-nano-banana-pro",
+    "nano-banana-2",
+    "nano-banana-pro",
     "grok-imagine-image",
 ]);
 
-export const VIDEO_MODELS = Object.freeze(["kling-3", "kling-o3", "adobe-seedance-2.0", "adobe-seedance-2.0-fast", "grok-imagine-video", "firefly-video"]);
+export const VIDEO_MODELS = Object.freeze(["kling-3", "kling-o3", "seedance-2.0", "seedance-2.0-fast", "grok-imagine-video", "firefly-video"]);
 
 export const MODEL_KIND = Object.freeze(Object.fromEntries([...TEXT_MODELS.map((id) => [id, "text"]), ...IMAGE_MODELS.map((id) => [id, "image"]), ...VIDEO_MODELS.map((id) => [id, "video"])]));
 

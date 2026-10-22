@@ -1,11 +1,11 @@
 "use client";
 
 import { ReloadOutlined } from "@ant-design/icons";
-import { Button, Card, Input, Segmented, Space, Switch, Table, Tag, Typography } from "antd";
+import { Button, Card, Input, InputNumber, Segmented, Space, Switch, Table, Tag, Tooltip, Typography } from "antd";
 import { useMemo, useState } from "react";
 
 import { MODEL_KIND } from "@/lib/gateway/models";
-import { gatewayApi, type GatewayModel, type GatewayRoute } from "@/services/api/gateway";
+import { gatewayApi, type GatewayModel, type GatewayRoute, type GatewayRoutePatch } from "@/services/api/gateway";
 import { kindLabels, providerLabels, useGatewayAction, useGatewayQuery } from "../use-gateway";
 
 function capabilityText(route: GatewayRoute) {
@@ -19,11 +19,38 @@ function capabilityText(route: GatewayRoute) {
     return parts.join(" · ") || "无额外限制";
 }
 
+// RouteOverrideInput edits a nullable per-route override. Clearing the input
+// sends null, so the route falls back to the provider value shown as placeholder.
+function RouteOverrideInput({ value, effective, inherited, min, max, onSave }: { value: number | null; effective?: number; inherited?: boolean; min: number; max: number; onSave: (next: number | null) => void }) {
+    const [draft, setDraft] = useState<number | null>(value);
+    const commit = () => {
+        const next = draft === null || draft === undefined ? null : Math.trunc(Number(draft));
+        if (next !== value) onSave(next);
+    };
+    return (
+        <Tooltip title={inherited ? `继承平台值 ${effective ?? "-"}，清空即恢复继承` : `当前覆盖值，平台默认将在清空后生效`}>
+            <InputNumber
+                size="small"
+                min={min}
+                max={max}
+                precision={0}
+                value={draft}
+                placeholder={effective === undefined ? "继承" : `继承 ${effective}`}
+                onChange={(next) => setDraft(next === null ? null : Number(next))}
+                onBlur={commit}
+                onPressEnter={commit}
+                style={{ width: 96 }}
+            />
+        </Tooltip>
+    );
+}
+
 export default function GatewayModelsPage() {
     const models = useGatewayQuery(["models"], gatewayApi.models);
     const run = useGatewayAction();
     const [kind, setKind] = useState("");
     const [keyword, setKeyword] = useState("");
+    const patchRoute = (modelId: string, routeId: string, patch: GatewayRoutePatch) => void run((token) => gatewayApi.updateRoute(token, modelId, routeId, patch), "路由已更新");
     const rows = useMemo(() => {
         const query = keyword.trim().toLowerCase();
         // The catalog is closed: only canonical models are shown.
@@ -63,9 +90,39 @@ export default function GatewayModelsPage() {
                                     { title: "能力", render: (_, route) => <Typography.Text type="secondary">{capabilityText(route)}</Typography.Text> },
                                     { title: "账号（可用/总数）", width: 150, render: (_, route) => `${route.healthy_accounts} / ${route.account_count}` },
                                     {
+                                        title: "优先级",
+                                        width: 120,
+                                        render: (_, route) => (
+                                            <RouteOverrideInput
+                                                key={`${route.id}-p-${route.priority}`}
+                                                value={route.priority ?? null}
+                                                effective={route.effective_priority}
+                                                inherited={route.priority_inherited ?? route.priority == null}
+                                                min={-1000}
+                                                max={1000}
+                                                onSave={(priority) => patchRoute(item.id, route.id, { priority })}
+                                            />
+                                        ),
+                                    },
+                                    {
+                                        title: "权重",
+                                        width: 120,
+                                        render: (_, route) => (
+                                            <RouteOverrideInput
+                                                key={`${route.id}-w-${route.weight}`}
+                                                value={route.weight ?? null}
+                                                effective={route.effective_weight}
+                                                inherited={route.weight_inherited ?? route.weight == null}
+                                                min={1}
+                                                max={1000}
+                                                onSave={(weight) => patchRoute(item.id, route.id, { weight })}
+                                            />
+                                        ),
+                                    },
+                                    {
                                         title: "启用",
                                         width: 90,
-                                        render: (_, route) => <Switch size="small" checked={route.enabled} onChange={(checked) => void run((token) => gatewayApi.setRouteEnabled(token, item.id, route.id, checked), "路由已更新")} />,
+                                        render: (_, route) => <Switch size="small" checked={route.enabled} onChange={(checked) => patchRoute(item.id, route.id, { enabled: checked })} />,
                                     },
                                 ]}
                             />

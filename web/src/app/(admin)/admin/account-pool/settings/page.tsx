@@ -20,6 +20,12 @@ export default function GatewaySettingsPage() {
 
     const save = async () => {
         const values = await form.validateFields();
+        const intMap = (value?: Record<string, number>) =>
+            Object.fromEntries(
+                Object.entries(value || {})
+                    .filter(([, item]) => item !== null && item !== undefined && String(item) !== "")
+                    .map(([key, item]) => [key, Math.trunc(Number(item))]),
+            );
         const trimMap = (value?: Record<string, string>) => Object.fromEntries(Object.entries(value || {}).map(([key, item]) => [key, String(item || "").trim()]));
         await run(
             (token) =>
@@ -30,6 +36,8 @@ export default function GatewaySettingsPage() {
                     logs_retention_days: Number(values.logs_retention_days),
                     artifacts_retention_days: Number(values.artifacts_retention_days),
                     providers_enabled: values.providers_enabled,
+                    providers_priority: intMap(values.providers_priority),
+                    providers_weight: intMap(values.providers_weight),
                     provider_proxies: trimMap(values.provider_proxies),
                     provider_extract_apis: trimMap(values.provider_extract_apis),
                 }),
@@ -70,12 +78,22 @@ export default function GatewaySettingsPage() {
                                         <Switch checkedChildren="启用" unCheckedChildren="停用" />
                                     </Form.Item>
                                 </Col>
-                                <Col xs={24} md={10}>
+                                <Col xs={12} md={3}>
+                                    <Form.Item name={["providers_priority", pool]} label="优先级" tooltip="数值越大越先调度；同优先级按权重随机分配，失败后依次回退。">
+                                        <InputNumber min={-1000} max={1000} precision={0} style={{ width: "100%" }} />
+                                    </Form.Item>
+                                </Col>
+                                <Col xs={12} md={3}>
+                                    <Form.Item name={["providers_weight", pool]} label="权重" tooltip="同优先级平台之间的流量比例。">
+                                        <InputNumber min={1} max={1000} precision={0} style={{ width: "100%" }} />
+                                    </Form.Item>
+                                </Col>
+                                <Col xs={24} md={7}>
                                     <Form.Item name={["provider_proxies", pool]} label="平台代理">
                                         <Input placeholder="留空使用默认代理" />
                                     </Form.Item>
                                 </Col>
-                                <Col xs={24} md={10}>
+                                <Col xs={24} md={7}>
                                     <Form.Item name={["provider_extract_apis", pool]} label="平台代理提取 API">
                                         <Input placeholder="留空使用默认提取 API" />
                                     </Form.Item>

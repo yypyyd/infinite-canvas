@@ -230,6 +230,10 @@ export async function fetchAdminPoolPricingGaps(token: string) {
     return apiGet<{ items: AdminPoolPricingGap[] }>("/api/admin/pool-pricing-gaps", undefined, token);
 }
 
+export async function fetchAdminPoolModels(token: string) {
+    return apiGet<{ items: AdminPoolModelOption[] }>("/api/admin/pool-models", undefined, token);
+}
+
 export async function createAdminPoolPricingDrafts(token: string) {
     return apiPost<{ created: number }>("/api/admin/pool-pricing-gaps/drafts", {}, token);
 }
@@ -540,8 +544,24 @@ export type AdminAnnouncement = {
     enabled: boolean;
 };
 
+/** Serves a custom public model name from a built-in account pool model. */
+export type AdminPoolModelAlias = {
+    name: string;
+    target: string;
+    enabled: boolean;
+    remark: string;
+};
+
+export type AdminPoolModelOption = {
+    id: string;
+    name: string;
+    modality: string;
+};
+
 export type AdminPrivateSettings = {
     channels: AdminModelChannel[];
+    /** Omitted on save keeps the stored list. */
+    poolModelAliases?: AdminPoolModelAlias[];
     protocolTemplates: ProtocolTemplate[];
     storage: AdminStorageSetting;
     promptSync: {

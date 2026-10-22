@@ -20,6 +20,7 @@ import { useUserStore } from "@/stores/use-user-store";
 import { inferModelModality, inferModelOperations } from "../model-capabilities";
 import { ModelCatalogEditor, capabilitySummary, hasPricing } from "./components/model-catalog-editor";
 import { PoolPricingGaps } from "./components/pool-pricing-gaps";
+import { PoolModelAliasesEditor } from "./components/pool-model-aliases-editor";
 import { ChannelModelCapabilitiesEditor } from "./components/channel-model-capabilities-editor";
 import { ProtocolTemplatesEditor } from "./components/protocol-templates-editor";
 
@@ -343,6 +344,12 @@ export default function AdminModelsPage() {
                 {settings ? (
                     <div hidden={activeTab !== "models"}>
                         <PoolPricingGaps token={token} refreshKey={settings.public.modelChannel.pricingRules} onDraftsCreated={() => void loadChannels()} onOpenModel={showModel} />
+                        <PoolModelAliasesEditor
+                            token={token}
+                            value={settings.private.poolModelAliases || []}
+                            isSaving={isSaving}
+                            onSave={(aliases) => persistSettings((latest) => ({ ...latest, private: { ...latest.private, poolModelAliases: aliases } }))}
+                        />
                         <ModelCatalogEditor
                             value={managedModels}
                             pricingRules={settings.public.modelChannel.pricingRules}
@@ -895,6 +902,7 @@ function collectKnownModels(settings: AdminSettings) {
         ...(settings.public.modelChannel.pricingRules || []).map((item) => item.model),
         ...Object.keys(settings.public.modelChannel.modelAspectRatios || {}),
         ...settings.private.channels.flatMap((channel) => channelModelNames(channel.models || [])),
+        ...(settings.private.poolModelAliases || []).map((item) => item.name),
     ]);
 }
 

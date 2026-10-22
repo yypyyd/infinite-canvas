@@ -215,6 +215,7 @@ export default function AdminSettingsPage() {
             const latest = await fetchAdminSettings(token);
             values.private.channels = latest.private.channels;
             values.private.protocolTemplates = latest.private.protocolTemplates;
+            values.private.poolModelAliases = latest.private.poolModelAliases;
             values.public.modelChannel = {
                 ...values.public.modelChannel,
                 models: latest.public.modelChannel.models,

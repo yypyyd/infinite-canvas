@@ -104,3 +104,21 @@ func AdminPoolUsage(w http.ResponseWriter, r *http.Request) {
 	}
 	OK(w, result)
 }
+
+func AdminPoolPricingGaps(w http.ResponseWriter, r *http.Request) {
+	result, err := service.PoolPricingGaps()
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, map[string]any{"items": result})
+}
+
+func AdminCreatePoolPricingDrafts(w http.ResponseWriter, r *http.Request) {
+	created, err := service.CreatePoolPricingDrafts()
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, map[string]any{"created": created})
+}

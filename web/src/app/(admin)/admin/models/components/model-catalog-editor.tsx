@@ -795,10 +795,13 @@ function normalizeRule(rule: AdminPricingRule): AdminPricingRule {
         operation: rule.operation.trim().toLowerCase(),
         unit: rule.unit.trim().toLowerCase(),
         resolutionTier: rule.resolutionTier.trim().toLowerCase(),
-        credits: rule.credits == null ? null : Math.max(0, Number(rule.credits) || 0),
+        // A draft has no price yet: show it empty so enabling it requires one.
+        credits: rule.credits == null || (rule.draft && !rule.enabled && rule.credits === 0) ? null : Math.max(0, Number(rule.credits) || 0),
         minCredits: Math.max(0, Number(rule.minCredits) || 0),
         modelRatio: Math.max(0, Number(rule.modelRatio) || 1),
         completionRatio: Math.max(0, Number(rule.completionRatio) || 1),
+        // Enabling a priced draft turns it into a normal rule.
+        draft: rule.draft && !(rule.enabled && (rule.billingMode === "ratio" || rule.credits != null)) ? true : undefined,
         remark: rule.remark || "",
     };
 }

@@ -131,7 +131,10 @@ type PricingRule struct {
 	ModelRatio      float64 `json:"modelRatio"`
 	CompletionRatio float64 `json:"completionRatio"`
 	Enabled         bool    `json:"enabled"`
-	Remark          string  `json:"remark"`
+	// Draft marks a placeholder rule created for an unpriced pool spec. It is
+	// never enabled or used for billing until an admin sets a price and clears it.
+	Draft  bool   `json:"draft,omitempty"`
+	Remark string `json:"remark"`
 }
 
 // PublicModelChannelSetting stores frontend-visible model channel settings.

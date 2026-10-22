@@ -19,6 +19,7 @@ import {
 import { useUserStore } from "@/stores/use-user-store";
 import { inferModelModality, inferModelOperations } from "../model-capabilities";
 import { ModelCatalogEditor, capabilitySummary, hasPricing } from "./components/model-catalog-editor";
+import { PoolPricingGaps } from "./components/pool-pricing-gaps";
 import { ChannelModelCapabilitiesEditor } from "./components/channel-model-capabilities-editor";
 import { ProtocolTemplatesEditor } from "./components/protocol-templates-editor";
 
@@ -341,6 +342,7 @@ export default function AdminModelsPage() {
             <Spin spinning={isLoading}>
                 {settings ? (
                     <div hidden={activeTab !== "models"}>
+                        <PoolPricingGaps token={token} refreshKey={settings.public.modelChannel.pricingRules} onDraftsCreated={() => void loadChannels()} onOpenModel={showModel} />
                         <ModelCatalogEditor
                             value={managedModels}
                             pricingRules={settings.public.modelChannel.pricingRules}

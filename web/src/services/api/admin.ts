@@ -224,6 +224,14 @@ export async function fetchAdminPoolUsage(token: string, days: number) {
     return apiGet<AdminPoolUsageReport>("/api/admin/pool-usage", { days }, token);
 }
 
+export async function fetchAdminPoolPricingGaps(token: string) {
+    return apiGet<{ items: AdminPoolPricingGap[] }>("/api/admin/pool-pricing-gaps", undefined, token);
+}
+
+export async function createAdminPoolPricingDrafts(token: string) {
+    return apiPost<{ created: number }>("/api/admin/pool-pricing-gaps/drafts", {}, token);
+}
+
 export async function fetchAdminRedemptionCodes(token: string, query: AdminUserQuery = {}) {
     return apiGet<AdminRedemptionCodeListResponse>("/api/admin/redeem-codes", compactApiParams(query), token);
 }
@@ -481,7 +489,18 @@ export type AdminPricingRule = {
     modelRatio: number;
     completionRatio: number;
     enabled: boolean;
+    /** Placeholder for an unpriced pool spec; never billed until priced and enabled. */
+    draft?: boolean;
     remark: string;
+};
+
+export type AdminPoolPricingGap = {
+    model: string;
+    modality: string;
+    operation: string;
+    unit: string;
+    resolutionTier: string;
+    draft: boolean;
 };
 
 export type AdminPublicSettings = {

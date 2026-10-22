@@ -312,6 +312,9 @@ func normalizePricingRules(items []model.PricingRule) []model.PricingRule {
 			item.BillingMode = "fixed"
 		}
 		item.Remark = strings.TrimSpace(item.Remark)
+		if item.Draft {
+			item.Enabled = false
+		}
 		if item.Credits < 0 {
 			item.Credits = 0
 		}
@@ -693,7 +696,7 @@ func selectPricingRule(rules []model.PricingRule, request PricingRequest) (model
 	var selected model.PricingRule
 	bestScore := -1
 	for _, rule := range rules {
-		if !rule.Enabled || rule.Model != request.Model {
+		if !rule.Enabled || rule.Draft || rule.Model != request.Model {
 			continue
 		}
 		score, ok := pricingRuleScore(rule, request)

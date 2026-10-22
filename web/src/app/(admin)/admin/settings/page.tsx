@@ -622,7 +622,8 @@ function normalizePricingRules(items: Partial<AdminSettings["public"]["modelChan
                 minCredits: Math.max(0, Number(item.minCredits) || 0),
                 modelRatio: Math.max(0, Number(item.modelRatio) || 1),
                 completionRatio: Math.max(0, Number(item.completionRatio) || 1),
-                enabled: hasConfiguredPrice && item.enabled !== false,
+                enabled: hasConfiguredPrice && item.enabled !== false && !item.draft,
+                draft: item.draft ? true : undefined,
                 remark: item.remark || "",
             };
         })

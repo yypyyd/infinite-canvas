@@ -15,6 +15,13 @@ services:
       - ./data:/app/data
     ports:
       - "3000:3000"
+    depends_on:
+      gateway-postgres:
+        condition: service_healthy
+        required: false
+      gateway-redis:
+        condition: service_healthy
+        required: false
     restart: unless-stopped
   batch-worker:
     image: ${INFINITE_CANVAS_IMAGE:-infinite-canvas:local}
@@ -25,3 +32,52 @@ services:
       - ./data:/app/data
     command: ["/app/batch-worker"]
     restart: unless-stopped
+  # 内置 API 网关（原 Nexa）依赖，使用 `--profile gateway` 启用，并在 .env 设置 GATEWAY_ENABLED=true
+  gateway-postgres:
+    image: postgres:16-alpine
+    profiles: ["gateway"]
+    environment:
+      POSTGRES_USER: ${GATEWAY_PG_USER:-gateway}
+      POSTGRES_PASSWORD: ${GATEWAY_PG_PASSWORD:?set GATEWAY_PG_PASSWORD}
+      POSTGRES_DB: ${GATEWAY_PG_DB:-huantu}
+    volumes:
+      - ./data/gateway-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+  gateway-redis:
+    image: redis:7-alpine
+    profiles: ["gateway"]
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${GATEWAY_REDIS_PASSWORD:?set GATEWAY_REDIS_PASSWORD}"]
+    volumes:
+      - ./data/gateway-redis:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$GATEWAY_REDIS_PASSWORD\" ping | grep PONG"]
+      interval: 5s
+      retries: 20
+    environment:
+      GATEWAY_REDIS_PASSWORD: ${GATEWAY_REDIS_PASSWORD}
+    restart: unless-stopped
+  # 可选：生成图片对象存储（RustFS / S3 兼容），使用 `--profile gateway-storage` 启用
+  gateway-rustfs:
+    image: rustfs/rustfs:latest
+    profiles: ["gateway-storage"]
+    environment:
+      RUSTFS_ACCESS_KEY: ${GATEWAY_RUSTFS_ACCESS_KEY:-}
+      RUSTFS_SECRET_KEY: ${GATEWAY_RUSTFS_SECRET_KEY:-}
+    volumes:
+      - ./data/gateway-rustfs:/data
+    restart: unless-stopped
+  gateway-createbucket:
+    image: ${INFINITE_CANVAS_IMAGE:-infinite-canvas:local}
+    profiles: ["gateway-storage"]
+    depends_on: [gateway-rustfs]
+    environment:
+      RUSTFS_ENDPOINT: ${GATEWAY_RUSTFS_ENDPOINT:-http://gateway-rustfs:9000}
+      RUSTFS_BUCKET: ${GATEWAY_RUSTFS_BUCKET:-generated}
+      RUSTFS_ACCESS_KEY: ${GATEWAY_RUSTFS_ACCESS_KEY:-}
+      RUSTFS_SECRET_KEY: ${GATEWAY_RUSTFS_SECRET_KEY:-}
+    command: ["/app/gateway-init-bucket"]
+    restart: "no"

@@ -18,3 +18,7 @@
 ## 商标与演示素材
 
 OpenAI、Claude、Gemini、DeepSeek、Grok、GLM、Linux.do 等名称和图标属于各自权利人，仅用于说明兼容渠道或功能，不表示官方合作或背书。仓库中的项目 Logo、界面截图和模板预览素材不授予第三方商标权。
+
+## 内置 API 网关（Nexa）
+
+`gateway/` 目录及 `web/src/lib/gateway/` 源自 Nexa（imageNexa），按 MIT 许可证并入本项目，原始许可证全文保留在 `gateway/LICENSE`。合并后的整体按本项目许可证发布，但 MIT 部分的版权声明与许可文本须随源码与发行物一并保留。

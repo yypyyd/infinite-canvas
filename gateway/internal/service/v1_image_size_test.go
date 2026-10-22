@@ -33,7 +33,7 @@ func TestResolveImageSizeGPTImage2DefaultsTo1K(t *testing.T) {
 }
 
 func TestResolveImageSizeKeepsGenericDefault(t *testing.T) {
-	for _, modelID := range []string{"seedream-5.0-lite", "byteplus-gpt-image-2", "adobe-gpt-image-2"} {
+	for _, modelID := range []string{"seedream-5.0-lite", "nano-banana-2"} {
 		t.Run(modelID, func(t *testing.T) {
 			item := &model.ModelConfig{ID: modelID}
 			for _, size := range []string{"", "auto"} {
@@ -64,11 +64,15 @@ func TestGPTImageSizeRouteMatching(t *testing.T) {
 		{"1024x768", "4:3", "1K", true}, {"768x1024", "3:4", "1K", true},
 		{"1200x800", "3:2", "1K", true}, {"1536x1024", "3:2", "1K", true},
 		// Explicit choices must not be silently downgraded or stretched.
-		{"1024x1536", "2:3", "1K", false},
-		{"1280x1024", "5:4", "1K", false}, {"1024x1280", "4:5", "1K", false},
-		{"1536x768", "2:1", "1K", false}, {"1680x720", "21:9", "1K", false},
+		// The unified model is served by ChatGPT (1K), BytePlus and Adobe (1K-4K,
+		// Adobe adds the wide ratios), so these resolve to some route now.
+		{"1024x1536", "2:3", "1K", true},
+		{"1280x1024", "5:4", "1K", true}, {"1024x1280", "4:5", "1K", true},
+		{"1680x720", "21:9", "1K", true},
+		{"2048x2048", "1:1", "2K", true}, {"4096x4096", "1:1", "4K", true},
+		// No route accepts these ratios.
+		{"1536x768", "2:1", "1K", false},
 		{"1728x576", "3:1", "1K", false}, {"576x1728", "1:3", "1K", false},
-		{"2048x2048", "1:1", "2K", false}, {"4096x4096", "1:1", "4K", false},
 	} {
 		t.Run(test.size, func(t *testing.T) {
 			ar, res := resolveImageSize(item, V1ImageRequest{Size: test.size})
@@ -113,17 +117,20 @@ func TestGPTImageSizePreservesExplicitOverrides(t *testing.T) {
 func TestChatGPTRatioDoesNotExpandOtherRoutes(t *testing.T) {
 	ctx := context.Background()
 	models := repo.NewModelRepository(nil)
-	for _, modelID := range []string{"byteplus-gpt-image-2", "adobe-gpt-image-2"} {
-		for _, ratio := range []string{"1:2", "9:21"} {
-			routes, err := models.Routes().MatchRoutes(ctx, modelID, model.RouteRequirements{
-				Operation: "generation", Ratio: ratio, Resolution: "1K",
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(routes) != 0 {
-				t.Fatalf("ChatGPT's %s capability must not change %s", ratio, modelID)
-			}
+	// 3:2 is a ChatGPT-only ratio at 1K among the non-Adobe routes; at 4K only
+	// routes that support both may match, never ChatGPT.
+	routes, err := models.Routes().MatchRoutes(ctx, "gpt-image-2", model.RouteRequirements{
+		Operation: "generation", Ratio: "3:2", Resolution: "4K",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, route := range routes {
+		if route.Provider != "adobe" {
+			t.Fatalf("3:2 at 4K matched %s; capabilities must be evaluated per route", route.ID)
 		}
+	}
+	if len(routes) != 1 {
+		t.Fatalf("routes=%d, want only the Adobe route", len(routes))
 	}
 }

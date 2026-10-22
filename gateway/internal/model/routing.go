@@ -279,14 +279,10 @@ func CanonicalRoutingCatalog() []CanonicalModelDefinition {
 			route("text.grok-chat-fast.grok", "grok-chat-fast", "grok", "grok-chat-fast", "grok-chat-fast", 100, textProfile()),
 		}},
 
-		{Model: LogicalModel{ID: "gpt-image-2", Kind: "image", Name: "ChatGPT GPT Image 2", Enabled: true}, Routes: []ModelRoute{
+		{Model: LogicalModel{ID: "gpt-image-2", Kind: "image", Name: "GPT Image 2", Enabled: true}, Routes: []ModelRoute{
 			route("image.gpt-image-2.chatgpt", "gpt-image-2", "chatgpt", "gpt-image-2", "gpt-image-2", 100, imageProfile(chatGPTImageRatios, []string{"1K"}, 6)),
-		}},
-		{Model: LogicalModel{ID: "byteplus-gpt-image-2", Kind: "image", Name: "BytePlus GPT Image 2", Enabled: true}, Routes: []ModelRoute{
-			route("image.gpt-image-2.byteplus", "byteplus-gpt-image-2", "byteplus", "lumina-gpt-image-2", "6824519374061285743", 100, imageProfile(commonImageRatios, []string{"1K", "2K", "4K"}, 14)),
-		}},
-		{Model: LogicalModel{ID: "adobe-gpt-image-2", Kind: "image", Name: "Adobe GPT Image 2", Enabled: true}, Routes: []ModelRoute{
-			route("image.gpt-image-2.adobe", "adobe-gpt-image-2", "adobe", "firefly-gpt-image-2", "", 100, imageProfile(adobeWideRatios, []string{"1K", "2K", "4K"}, 6)),
+			route("image.gpt-image-2.byteplus", "gpt-image-2", "byteplus", "lumina-gpt-image-2", "6824519374061285743", 90, imageProfile(commonImageRatios, []string{"1K", "2K", "4K"}, 14)),
+			route("image.gpt-image-2.adobe", "gpt-image-2", "adobe", "firefly-gpt-image-2", "", 80, imageProfile(adobeWideRatios, []string{"1K", "2K", "4K"}, 6)),
 		}},
 		{Model: LogicalModel{ID: "seedream-5.0-pro", Kind: "image", Name: "Seedream 5.0 Pro", Enabled: true}, Routes: []ModelRoute{
 			route("image.seedream-5.0-pro.byteplus", "seedream-5.0-pro", "byteplus", "lumina-seedream-5.0-pro", "7657401949175693322", 100, imageProfile(commonImageRatios, []string{"1K", "2K"}, 10)),
@@ -294,17 +290,13 @@ func CanonicalRoutingCatalog() []CanonicalModelDefinition {
 		{Model: LogicalModel{ID: "seedream-5.0-lite", Kind: "image", Name: "Seedream 5.0 Lite", Enabled: true}, Routes: []ModelRoute{
 			route("image.seedream-5.0-lite.byteplus", "seedream-5.0-lite", "byteplus", "lumina-seedream-5.0-lite", "7604761017696141358", 100, imageProfile(commonImageRatios, []string{"2K"}, 10)),
 		}},
-		{Model: LogicalModel{ID: "byteplus-nano-banana-2", Kind: "image", Name: "BytePlus Nano Banana 2", Enabled: true}, Routes: []ModelRoute{
-			route("image.nano-banana-2.byteplus", "byteplus-nano-banana-2", "byteplus", "lumina-nano-banana-2", "8162745039814627354", 100, imageProfile(commonImageRatios, []string{"1K", "2K", "4K"}, 14)),
+		{Model: LogicalModel{ID: "nano-banana-2", Kind: "image", Name: "Nano Banana 2", Enabled: true}, Routes: []ModelRoute{
+			route("image.nano-banana-2.byteplus", "nano-banana-2", "byteplus", "lumina-nano-banana-2", "8162745039814627354", 90, imageProfile(commonImageRatios, []string{"1K", "2K", "4K"}, 14)),
+			route("image.nano-banana-2.adobe", "nano-banana-2", "adobe", "firefly-nano-banana-2", "", 80, imageProfile(adobeWideRatios, []string{"1K", "2K", "4K"}, 6)),
 		}},
-		{Model: LogicalModel{ID: "adobe-nano-banana-2", Kind: "image", Name: "Adobe Nano Banana 2", Enabled: true}, Routes: []ModelRoute{
-			route("image.nano-banana-2.adobe", "adobe-nano-banana-2", "adobe", "firefly-nano-banana-2", "", 100, imageProfile(adobeWideRatios, []string{"1K", "2K", "4K"}, 6)),
-		}},
-		{Model: LogicalModel{ID: "byteplus-nano-banana-pro", Kind: "image", Name: "BytePlus Nano Banana Pro", Enabled: true}, Routes: []ModelRoute{
-			route("image.nano-banana-pro.byteplus", "byteplus-nano-banana-pro", "byteplus", "lumina-nano-banana-pro", "8162745039814627353", 100, imageProfile(commonImageRatios, []string{"1K", "2K", "4K"}, 14)),
-		}},
-		{Model: LogicalModel{ID: "adobe-nano-banana-pro", Kind: "image", Name: "Adobe Nano Banana Pro", Enabled: true}, Routes: []ModelRoute{
-			route("image.nano-banana-pro.adobe", "adobe-nano-banana-pro", "adobe", "firefly-nano-banana-pro", "", 100, imageProfile(adobeWideRatios, []string{"1K", "2K", "4K"}, 6)),
+		{Model: LogicalModel{ID: "nano-banana-pro", Kind: "image", Name: "Nano Banana Pro", Enabled: true}, Routes: []ModelRoute{
+			route("image.nano-banana-pro.byteplus", "nano-banana-pro", "byteplus", "lumina-nano-banana-pro", "8162745039814627353", 90, imageProfile(commonImageRatios, []string{"1K", "2K", "4K"}, 14)),
+			route("image.nano-banana-pro.adobe", "nano-banana-pro", "adobe", "firefly-nano-banana-pro", "", 80, imageProfile(adobeWideRatios, []string{"1K", "2K", "4K"}, 6)),
 		}},
 		{Model: LogicalModel{ID: "grok-imagine-image", Kind: "image", Name: "Grok Imagine Image", Enabled: true}, Routes: []ModelRoute{
 			route("image.grok-imagine-image.grok", "grok-imagine-image", "grok", "grok-imagine-image", "grok-imagine-image", 100, imageProfile([]string{"2:3", "3:2", "1:1", "9:16", "16:9"}, []string{"1K"}, 0)),
@@ -315,11 +307,11 @@ func CanonicalRoutingCatalog() []CanonicalModelDefinition {
 		{Model: LogicalModel{ID: "kling-o3", Kind: "video", Name: "Kling O3", Enabled: true}, Routes: []ModelRoute{
 			route("video.kling-o3.adobe", "kling-o3", "adobe", "firefly-kling-o3", "", 100, videoProfile([]string{"16:9", "9:16"}, []string{"720p", "1080p"}, secondsRange(3, 15), 1, 1, 0, 0, true, "frame")),
 		}},
-		{Model: LogicalModel{ID: "adobe-seedance-2.0", Kind: "video", Name: "Adobe Seedance 2.0", Enabled: true}, Routes: []ModelRoute{
-			route("video.seedance-2.0.adobe", "adobe-seedance-2.0", "adobe", "firefly-seedance-2", "", 100, videoProfile([]string{"16:9", "9:16"}, []string{"480p", "720p", "1080p"}, secondsRange(4, 15), 9, 3, 3, 9, true, "asset")),
+		{Model: LogicalModel{ID: "seedance-2.0", Kind: "video", Name: "Seedance 2.0", Enabled: true}, Routes: []ModelRoute{
+			route("video.seedance-2.0.adobe", "seedance-2.0", "adobe", "firefly-seedance-2", "", 100, videoProfile([]string{"16:9", "9:16"}, []string{"480p", "720p", "1080p"}, secondsRange(4, 15), 9, 3, 3, 9, true, "asset")),
 		}},
-		{Model: LogicalModel{ID: "adobe-seedance-2.0-fast", Kind: "video", Name: "Adobe Seedance 2.0 Fast", Enabled: true}, Routes: []ModelRoute{
-			route("video.seedance-2.0-fast.adobe", "adobe-seedance-2.0-fast", "adobe", "firefly-seedance-2-fast", "", 100, videoProfile([]string{"16:9", "9:16"}, []string{"480p", "720p", "1080p"}, secondsRange(4, 15), 9, 3, 3, 9, true, "asset")),
+		{Model: LogicalModel{ID: "seedance-2.0-fast", Kind: "video", Name: "Seedance 2.0 Fast", Enabled: true}, Routes: []ModelRoute{
+			route("video.seedance-2.0-fast.adobe", "seedance-2.0-fast", "adobe", "firefly-seedance-2-fast", "", 100, videoProfile([]string{"16:9", "9:16"}, []string{"480p", "720p", "1080p"}, secondsRange(4, 15), 9, 3, 3, 9, true, "asset")),
 		}},
 		{Model: LogicalModel{ID: "grok-imagine-video", Kind: "video", Name: "Grok Imagine Video", Enabled: true}, Routes: []ModelRoute{
 			route("video.grok-imagine-video.grok", "grok-imagine-video", "grok", "grok-video", "grok-imagine-video", 100, videoProfile([]string{"2:3", "3:2", "1:1", "9:16", "16:9"}, []string{"720p"}, []string{"6s", "10s"}, 6, 0, 0, 0, false, "asset")),

@@ -24,7 +24,7 @@ func unknownSubmissionFixture(t *testing.T, db *gorm.DB) (model.DispatchAttempt,
 	if _, err := models.Quotas().UpsertSnapshot(ctx, account.ID, "byteplus.computing_points", "points", nil, &balance, nil); err != nil {
 		t.Fatal(err)
 	}
-	event := model.EventLog{ID: "unknown-event", Kind: "image", Status: "pending", Provider: "byteplus", Model: "byteplus-gpt-image-2", TS: time.Now().Add(-2 * time.Hour)}
+	event := model.EventLog{ID: "unknown-event", Kind: "image", Status: "pending", Provider: "byteplus", Model: "gpt-image-2", TS: time.Now().Add(-2 * time.Hour)}
 	if err := db.Create(&event).Error; err != nil {
 		t.Fatal(err)
 	}

@@ -1807,4 +1807,77 @@ BEGIN
 END
 $prices$;
 `,
+	"000034_merge_provider_public_models.sql": `-- Undo 000020/000022: one public ID per model, every provider is a route under
+-- it. Route IDs never changed, so account bindings and dispatch history stay
+-- valid. Old provider-prefixed IDs are removed (no aliases).
+CREATE TEMP TABLE migration_000034_merge (
+    old_id VARCHAR(191) NOT NULL,
+    new_id VARCHAR(191) NOT NULL,
+    kind VARCHAR(32) NOT NULL,
+    name VARCHAR(255) NOT NULL
+);
+INSERT INTO migration_000034_merge (old_id,new_id,kind,name) VALUES
+ ('chatgpt-gpt-image-2','gpt-image-2','image','GPT Image 2'),
+ ('byteplus-gpt-image-2','gpt-image-2','image','GPT Image 2'),
+ ('adobe-gpt-image-2','gpt-image-2','image','GPT Image 2'),
+ ('byteplus-nano-banana-2','nano-banana-2','image','Nano Banana 2'),
+ ('adobe-nano-banana-2','nano-banana-2','image','Nano Banana 2'),
+ ('byteplus-nano-banana-pro','nano-banana-pro','image','Nano Banana Pro'),
+ ('adobe-nano-banana-pro','nano-banana-pro','image','Nano Banana Pro'),
+ ('adobe-seedance-2.0','seedance-2.0','video','Seedance 2.0'),
+ ('adobe-seedance-2.0-fast','seedance-2.0-fast','video','Seedance 2.0 Fast');
+
+INSERT INTO logical_models (id,kind,name,enabled,weight,generation_count,created_at,updated_at)
+SELECT DISTINCT new_id, kind, name, TRUE, 0, 0, NOW(), NOW() FROM migration_000034_merge
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, kind = EXCLUDED.kind, enabled = TRUE, updated_at = NOW();
+
+UPDATE logical_models AS target
+SET generation_count = target.generation_count + sums.total,
+    weight = GREATEST(target.weight, sums.weight),
+    updated_at = NOW()
+FROM (
+    SELECT m.new_id, SUM(old.generation_count) AS total, MAX(old.weight) AS weight
+    FROM migration_000034_merge m JOIN logical_models old ON old.id = m.old_id
+    GROUP BY m.new_id
+) AS sums
+WHERE target.id = sums.new_id;
+
+-- Routes of an old prefixed model move under the unified model. A route row
+-- that would collide on (logical, provider, runtime) with one already there is
+-- dropped below with its tombstone owner.
+UPDATE model_routes AS route
+SET logical_model_id = m.new_id, updated_at = NOW()
+FROM migration_000034_merge m
+WHERE route.logical_model_id = m.old_id
+  AND NOT EXISTS (
+      SELECT 1 FROM model_routes existing
+      WHERE existing.logical_model_id = m.new_id AND existing.provider = route.provider
+        AND existing.runtime_model = route.runtime_model
+  );
+
+-- Canonical native routes are enabled again: 000022 disabled the non-ChatGPT
+-- gpt-image-2 leftovers when that ID was ChatGPT-only.
+UPDATE model_routes SET enabled = TRUE, updated_at = NOW()
+WHERE id IN ('image.gpt-image-2.chatgpt','image.gpt-image-2.byteplus','image.gpt-image-2.adobe',
+             'image.nano-banana-2.byteplus','image.nano-banana-2.adobe',
+             'image.nano-banana-pro.byteplus','image.nano-banana-pro.adobe',
+             'video.seedance-2.0.adobe','video.seedance-2.0-fast.adobe')
+  AND logical_model_id IN (SELECT new_id FROM migration_000034_merge);
+
+UPDATE event_logs AS event SET model = m.new_id
+FROM migration_000034_merge m WHERE event.model = m.old_id;
+
+DELETE FROM account_model_routes
+WHERE model_route_id IN (SELECT id FROM model_routes WHERE logical_model_id IN (SELECT old_id FROM migration_000034_merge));
+DELETE FROM model_routes AS route
+WHERE route.logical_model_id IN (SELECT old_id FROM migration_000034_merge)
+  AND NOT EXISTS (SELECT 1 FROM dispatch_attempts attempt WHERE attempt.model_route_id = route.id);
+UPDATE logical_models SET enabled = FALSE, updated_at = NOW()
+WHERE id IN (SELECT old_id FROM migration_000034_merge);
+DELETE FROM logical_models AS logical
+WHERE logical.id IN (SELECT old_id FROM migration_000034_merge)
+  AND NOT EXISTS (SELECT 1 FROM model_routes route WHERE route.logical_model_id = logical.id);
+
+DROP TABLE migration_000034_merge;
+`,
 }

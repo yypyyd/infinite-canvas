@@ -14,8 +14,9 @@ Nexa 网关已并入幻图，作为 `gateway/` 模块随主进程启动，由幻
 
 - 数据库：PostgreSQL，表放在独立 schema（`GATEWAY_DB_SCHEMA`，默认 `gateway`），启动时自动建 schema 并迁移，不与幻图表冲突。
 - Redis：必需。建议单独的 `GATEWAY_REDIS_DB`（设置缓存键为 `setting:<key>`）。
-- RustFS/S3：可选，未配置时生成文件写入 `data/generated`。
+- RustFS/S3：可选。未配置时跳过图片缓存、无法回放已存储的视频；配置了 `GATEWAY_RUSTFS_ENDPOINT` 时生产环境会校验 bucket 与访问密钥（ACCESS_KEY ≥16 位、SECRET_KEY ≥32 位）。
 - `GATEWAY_ENABLED=true` 时启用，配置只读取 `GATEWAY_*` 环境变量（见 `.env.example`）。
+- `GATEWAY_APP_ENV=production` 时必须设置 `GATEWAY_PUBLIC_BASE_URL` 为站点 HTTPS 源地址（不带路径），否则后端启动失败、容器会退出重启。
 
 ## 路由
 

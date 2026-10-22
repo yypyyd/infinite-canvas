@@ -69,4 +69,7 @@ RUN mkdir -p /app/data/prompts /app/data/generated /app/data/dola-profiles
 
 EXPOSE 3000
 # 先启动内部 Go API，再由 Next.js 提供页面并代理 /api/*。
-CMD ["sh", "-c", "PORT=8080 /app/server & cd /app/web && PORT=3000 node server.js"]
+# 任一进程退出即让容器退出，交由 restart 策略重启，避免 Go 后端失败后只剩页面在跑。
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:8080/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+CMD ["bash", "-c", "PORT=8080 /app/server & (cd /app/web && PORT=3000 exec node server.js) & wait -n; status=$?; echo \"process exited with status $status\" >&2; exit $status"]

@@ -41,7 +41,7 @@ services:
       POSTGRES_PASSWORD: ${GATEWAY_PG_PASSWORD:?set GATEWAY_PG_PASSWORD}
       POSTGRES_DB: ${GATEWAY_PG_DB:-huantu}
     volumes:
-      - ./data/gateway-postgres:/var/lib/postgresql/data
+      - gateway-postgres-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
@@ -52,7 +52,7 @@ services:
     profiles: ["gateway"]
     command: ["redis-server", "--appendonly", "yes", "--requirepass", "${GATEWAY_REDIS_PASSWORD:?set GATEWAY_REDIS_PASSWORD}"]
     volumes:
-      - ./data/gateway-redis:/data
+      - gateway-redis-data:/data
     healthcheck:
       test: ["CMD-SHELL", "redis-cli -a \"$$GATEWAY_REDIS_PASSWORD\" ping | grep PONG"]
       interval: 5s
@@ -68,7 +68,7 @@ services:
       RUSTFS_ACCESS_KEY: ${GATEWAY_RUSTFS_ACCESS_KEY:-}
       RUSTFS_SECRET_KEY: ${GATEWAY_RUSTFS_SECRET_KEY:-}
     volumes:
-      - ./data/gateway-rustfs:/data
+      - gateway-rustfs-data:/data
     restart: unless-stopped
   gateway-createbucket:
     image: ${INFINITE_CANVAS_IMAGE:-infinite-canvas:local}
@@ -81,3 +81,7 @@ services:
       RUSTFS_SECRET_KEY: ${GATEWAY_RUSTFS_SECRET_KEY:-}
     command: ["/app/gateway-init-bucket"]
     restart: "no"
+volumes:
+  gateway-postgres-data:
+  gateway-redis-data:
+  gateway-rustfs-data:

@@ -113,10 +113,33 @@ export type AdminGenerationTask = {
     quantity: number;
     credits: number;
     status: "running" | "success" | "failed";
+    poolAccount?: string;
     errorMessage: string;
     durationMs: number;
     createdAt: string;
     updatedAt: string;
+};
+
+export type AdminPoolUsageRow = {
+    key: string;
+    label: string;
+    provider?: string;
+    requests: number;
+    succeeded: number;
+    failed: number;
+    pending: number;
+    chargedCredits: number;
+    refundedCredits: number;
+    heldCredits: number;
+};
+
+export type AdminPoolUsageReport = {
+    since: string;
+    days: number;
+    accounts: AdminPoolUsageRow[];
+    models: AdminPoolUsageRow[];
+    unlinked: number;
+    unattributed: AdminPoolUsageRow;
 };
 
 export type AdminGenerationTaskListResponse = {
@@ -195,6 +218,10 @@ export async function fetchAdminDashboard(token: string) {
 
 export async function fetchAdminGenerationTasks(token: string, query: AdminGenerationTaskQuery = {}) {
     return apiGet<AdminGenerationTaskListResponse>("/api/admin/generation-tasks", compactApiParams(query), token);
+}
+
+export async function fetchAdminPoolUsage(token: string, days: number) {
+    return apiGet<AdminPoolUsageReport>("/api/admin/pool-usage", { days }, token);
 }
 
 export async function fetchAdminRedemptionCodes(token: string, query: AdminUserQuery = {}) {

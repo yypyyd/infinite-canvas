@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/yypyyd/infinite-canvas/service"
@@ -87,6 +88,16 @@ func AdminGenerationTasks(w http.ResponseWriter, r *http.Request) {
 
 func AdminDashboard(w http.ResponseWriter, r *http.Request) {
 	result, err := service.AdminDashboard()
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, result)
+}
+
+func AdminPoolUsage(w http.ResponseWriter, r *http.Request) {
+	days, _ := strconv.Atoi(r.URL.Query().Get("days"))
+	result, err := service.BuildPoolUsage(r.Context(), days)
 	if err != nil {
 		FailError(w, err)
 		return

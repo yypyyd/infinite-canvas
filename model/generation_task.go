@@ -70,6 +70,10 @@ type GenerationTask struct {
 	ReconcileLeaseToken     string `json:"-"`
 	ReconcileLeaseExpiresAt string `json:"-" gorm:"not null;default:'';index"`
 	ReconcileAfter          string `json:"-" gorm:"not null;default:'';index"`
+
+	// PoolAccount names the built-in pool account that served the task. Filled
+	// only for admin views; not stored.
+	PoolAccount string `json:"poolAccount,omitempty" gorm:"-"`
 }
 
 type GenerationTaskRecovery struct {

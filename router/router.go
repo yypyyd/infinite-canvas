@@ -200,6 +200,7 @@ func New() *gin.Engine {
 	admin.GET("/dashboard", gin.WrapF(handler.AdminDashboard))
 	admin.GET("/operations/health", gin.WrapF(handler.AdminOperationsHealth))
 	admin.GET("/generation-tasks", gin.WrapF(handler.AdminGenerationTasks))
+	admin.GET("/pool-usage", gin.WrapF(handler.AdminPoolUsage))
 	admin.POST("/users", gin.WrapF(handler.AdminSaveUser))
 	admin.GET("/users/:id/pricing-discounts", func(c *gin.Context) {
 		handler.AdminUserPricingDiscounts(c.Writer, c.Request, c.Param("id"))

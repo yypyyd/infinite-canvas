@@ -64,7 +64,18 @@ export default function AdminGenerationTasksPage() {
         },
         { title: "模型", dataIndex: "model", width: 220, ellipsis: true },
         { title: "上游模型", dataIndex: "upstreamModel", width: 220, ellipsis: true },
-        { title: "渠道", dataIndex: "channelName", width: 160, ellipsis: true },
+        {
+            title: "渠道",
+            dataIndex: "channelName",
+            width: 200,
+            ellipsis: true,
+            render: (_, item) => (
+                <Space direction="vertical" size={0}>
+                    <span>{item.channelName}</span>
+                    {item.poolAccount ? <Typography.Text type="secondary">账号：{item.poolAccount}</Typography.Text> : null}
+                </Space>
+            ),
+        },
         { title: "类型", dataIndex: "modality", width: 96, render: (_, item) => <Tag>{modalityLabel(item.modality)}</Tag> },
         { title: "操作", dataIndex: "operation", width: 110 },
         { title: "分辨率", dataIndex: "resolutionTier", width: 100, render: (_, item) => item.resolutionTier || "-" },

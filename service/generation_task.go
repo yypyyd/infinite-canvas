@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -35,6 +36,7 @@ func ListGenerationTasks(q model.Query) (model.GenerationTaskList, error) {
 	if err != nil {
 		return model.GenerationTaskList{}, err
 	}
+	attachPoolAccounts(context.Background(), items)
 	return model.GenerationTaskList{Items: items, Total: int(total)}, nil
 }
 

@@ -4,6 +4,7 @@ import { ReloadOutlined } from "@ant-design/icons";
 import { Alert, Button, Card, Col, Descriptions, Row, Space, Statistic, Table, Tag, Typography } from "antd";
 
 import { gatewayApi } from "@/services/api/gateway";
+import { PoolUsageCard } from "./pool-usage-card";
 import { providerLabels, useGatewayQuery } from "./use-gateway";
 
 const healthStates = ["active", "quota", "pending", "disabled", "dead"] as const;
@@ -74,6 +75,7 @@ export default function GatewayOverviewPage() {
                         </Card>
                     </Col>
                 </Row>
+                <PoolUsageCard />
                 <Card variant="borderless" title="账号池健康度">
                     <Table
                         size="small"

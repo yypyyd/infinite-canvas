@@ -719,3 +719,16 @@ func ListDashboardTaskRowsSince(since string) ([]DashboardTaskRow, error) {
 	err = db.Model(&model.GenerationTask{}).Select("created_at, status, credits, modality, model, channel_name").Where("created_at >= ?", since).Scan(&items).Error
 	return items, err
 }
+
+// ListGenerationTasksByChannelSince returns tasks of one channel created at or
+// after since (RFC3339), newest first, capped by limit.
+func ListGenerationTasksByChannelSince(channelName, since string, limit int) ([]model.GenerationTask, error) {
+	db, err := DB()
+	if err != nil {
+		return nil, err
+	}
+	var items []model.GenerationTask
+	err = db.Select("id", "request_id", "model", "modality", "channel_name", "credits", "credit_source", "status", "upstream_task_id", "created_at").
+		Where("channel_name = ? AND created_at >= ?", channelName, since).Order("created_at desc").Limit(limit).Find(&items).Error
+	return items, err
+}

@@ -197,11 +197,9 @@ func PoolModelOptions() []PoolModelOption {
 	return out
 }
 
-// IsBuiltinPoolChannel reports whether a channel is the built-in pool.
-func IsBuiltinPoolChannel(channel model.ModelChannel) bool { return isBuiltinPoolChannel(channel) }
-
+// isBuiltinPoolChannel reports the legacy single virtual pool id/base URL.
 func isBuiltinPoolChannel(channel model.ModelChannel) bool {
-	return channel.ID == BuiltinPoolChannelID || IsBuiltinPoolBaseURL(channel.BaseURL)
+	return channel.ID == BuiltinPoolChannelID || (IsBuiltinPoolBaseURL(channel.BaseURL) && !strings.HasPrefix(channel.ID, BuiltinProviderChannelPrefix))
 }
 
 // IsBuiltinPoolBaseURL reports whether a channel base URL is the in-process
@@ -211,22 +209,63 @@ func IsBuiltinPoolBaseURL(baseURL string) bool {
 	return err == nil && gateway.IsInternalURL(parsed.Hostname())
 }
 
-// runtimeChannels returns the saved channels plus the built-in pool. A saved
-// channel that already points at the pool (the old manual
-// http://nexa.internal/v1 setup) suppresses the virtual one.
+// runtimeChannels returns saved third-party channels plus flat built-in
+// provider channels. A saved channel that already points at the internal pool
+// URL suppresses virtual providers (legacy manual nexa.internal setup).
 func runtimeChannels(saved []model.ModelChannel, aliases []model.PoolModelAlias) []model.ModelChannel {
 	for _, channel := range saved {
-		if isBuiltinPoolChannel(channel) {
+		if isBuiltinPoolChannel(channel) || IsBuiltinProviderChannel(channel) {
 			return saved
 		}
 	}
-	pool, ok := builtinPoolChannel(aliases)
-	if !ok {
+	private := model.PrivateSetting{PoolModelAliases: aliases}
+	providers := builtinProviderChannels(private)
+	if len(providers) == 0 {
+		// Fallback: legacy single pool when provider split yields nothing.
+		pool, ok := builtinPoolChannel(aliases)
+		if !ok {
+			return saved
+		}
+		out := make([]model.ModelChannel, 0, len(saved)+1)
+		out = append(out, saved...)
+		return append(out, pool)
+	}
+	out := make([]model.ModelChannel, 0, len(saved)+len(providers))
+	out = append(out, saved...)
+	return append(out, providers...)
+}
+
+// runtimeChannelsFromPrivate is the preferred entry that carries full settings.
+func runtimeChannelsFromPrivate(private model.PrivateSetting) []model.ModelChannel {
+	hasProvider := false
+	hasLegacy := false
+	saved := make([]model.ModelChannel, 0, len(private.Channels))
+	for _, channel := range private.Channels {
+		if IsBuiltinProviderChannel(channel) && !isLegacyBuiltinPoolChannel(channel) {
+			hasProvider = true
+			saved = append(saved, channel)
+			continue
+		}
+		if isLegacyBuiltinPoolChannel(channel) || isBuiltinPoolChannel(channel) {
+			hasLegacy = true
+			continue // drop legacy unified pool; flat providers replace it
+		}
+		saved = append(saved, channel)
+	}
+	if hasProvider {
 		return saved
 	}
-	out := make([]model.ModelChannel, 0, len(saved)+1)
-	out = append(out, saved...)
-	return append(out, pool)
+	providers := builtinProviderChannels(private)
+	if len(providers) == 0 {
+		if hasLegacy {
+			pool, ok := builtinPoolChannel(private.PoolModelAliases)
+			if ok {
+				return append(saved, pool)
+			}
+		}
+		return runtimeChannels(saved, private.PoolModelAliases)
+	}
+	return append(saved, providers...)
 }
 
 // appendBuiltinPoolDefinitions adds pool models that the admin has not yet
@@ -235,7 +274,7 @@ func runtimeChannels(saved []model.ModelChannel, aliases []model.PoolModelAlias)
 func appendBuiltinPoolDefinitions(items []model.ModelDefinition, channels []model.ModelChannel) []model.ModelDefinition {
 	var pool *model.ModelChannel
 	for i := range channels {
-		if channels[i].ID == BuiltinPoolChannelID {
+		if IsBuiltinProviderChannel(channels[i]) || isBuiltinPoolChannel(channels[i]) {
 			pool = &channels[i]
 			break
 		}
@@ -287,7 +326,7 @@ func applyImageCountLimits(items []model.ModelDefinition, channels []model.Model
 			continue
 		}
 		for _, item := range channel.Models {
-			if isBuiltinPoolChannel(channel) {
+			if IsBuiltinProviderChannel(channel) || isBuiltinPoolChannel(channel) {
 				pool[item.Model] = true
 				// An alias takes its target's cap.
 				if item.UpstreamModel != "" && item.UpstreamModel != item.Model {

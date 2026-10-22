@@ -7,10 +7,10 @@ import (
 
 // Channel selection is shared by interactive generation, batch execution and
 // task maintenance. Every path sees the same channel set (saved channels plus
-// the built-in account pool) and the same pick order: the highest-priority
+// flat built-in providers) and the same pick order: the highest-priority
 // compatible sources first, weighted inside that group (see source_priority.go).
 
-// loadRuntimeChannels returns the saved channels plus the built-in pool.
+// loadRuntimeChannels returns saved channels plus flat built-in providers.
 func loadRuntimeChannels() ([]model.ModelChannel, error) {
 	settings, err := repository.GetSettings()
 	if err != nil {

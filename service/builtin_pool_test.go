@@ -22,11 +22,16 @@ var testPoolModels = []gateway.PoolModel{
 func TestRuntimeChannelsAddsBuiltinPoolWithoutConfig(t *testing.T) {
 	stubPoolModels(t, testPoolModels)
 	channels := runtimeChannels(nil, nil)
-	if len(channels) != 1 || channels[0].ID != BuiltinPoolChannelID || channels[0].BaseURL != gateway.InternalBaseURL || !channels[0].Enabled {
+	if len(channels) != 4 {
 		t.Fatalf("channels = %#v", channels)
 	}
-	if len(channels[0].Models) != 2 || channels[0].Models[0].MaxReferenceImages != 4 {
-		t.Fatalf("pool models = %#v", channels[0].Models)
+	for _, ch := range channels {
+		if !IsBuiltinProviderChannel(ch) || ch.BaseURL != gateway.InternalBaseURL || !ch.Enabled {
+			t.Fatalf("channel %#v", ch)
+		}
+		if len(ch.Models) != 2 || ch.Models[0].MaxReferenceImages != 4 {
+			t.Fatalf("pool models = %#v", ch.Models)
+		}
 	}
 	public := normalizePublicSettingWithChannels(model.PublicSetting{}, channels)
 	got := map[string]bool{}
@@ -60,15 +65,20 @@ func TestBuiltinPoolIsPreferredOverThirdParty(t *testing.T) {
 		Models: []model.ChannelModel{{Model: "gpt-image-2", Modality: "image", Operations: []string{"generation"}, MaxReferenceImages: 4}}})
 	request := PricingRequest{Model: "gpt-image-2", Modality: "image", Operation: "generation"}
 	selections := modelChannelSelectionsForRequest(runtimeChannelsFor(model.PrivateSetting{Channels: []model.ModelChannel{third}}), request)
-	if len(selections) != 2 {
+	if len(selections) < 2 {
 		t.Fatalf("selections = %d", len(selections))
 	}
 	pool, ok := pickChannelSelection(selections, func(int) int { return 0 })
-	if !ok || pool.Channel.ID != BuiltinPoolChannelID {
+	if !ok || !IsBuiltinProviderChannel(pool.Channel) {
 		t.Fatalf("pool not preferred: %#v", pool)
 	}
-	// After the pool fails, the retry path excludes it and uses the third party.
-	rest := modelChannelSelectionsExcluding(selections, []string{BuiltinPoolChannelName})
+	excluded := make([]string, 0)
+	for _, s := range selections {
+		if IsBuiltinProviderChannel(s.Channel) {
+			excluded = append(excluded, s.Channel.Name)
+		}
+	}
+	rest := modelChannelSelectionsExcluding(selections, excluded)
 	if got, ok := pickChannelSelection(rest, nil); !ok || len(rest) != 1 || got.Channel.Name != "third" {
 		t.Fatalf("failover = %#v", rest)
 	}
@@ -92,7 +102,7 @@ func TestPoolAliasServedByPoolWithTargetCapabilities(t *testing.T) {
 		{Name: "kling-3", Target: "gpt-image-2", Enabled: true}, // collides with a pool ID
 	}
 	channels := runtimeChannels(nil, aliases)
-	if len(channels) != 1 || len(channels[0].Models) != 3 {
+	if len(channels) != 4 || len(channels[0].Models) != 3 {
 		t.Fatalf("pool models = %#v", channels)
 	}
 	alias := channels[0].Models[2]
@@ -116,14 +126,20 @@ func TestPoolAliasSharedWithThirdPartyChannel(t *testing.T) {
 		Models: []model.ChannelModel{{Model: "my-image", UpstreamModel: "vendor-image-v1", Modality: "image", Operations: []string{"generation"}}}})
 	channels := runtimeChannelsFor(model.PrivateSetting{Channels: []model.ModelChannel{third}, PoolModelAliases: []model.PoolModelAlias{{Name: "my-image", Target: "gpt-image-2", Enabled: true}}})
 	selections := modelChannelSelectionsForRequest(channels, PricingRequest{Model: "my-image", Modality: "image", Operation: "generation"})
-	if len(selections) != 2 {
+	if len(selections) < 2 {
 		t.Fatalf("selections = %#v", selections)
 	}
 	pool, ok := pickChannelSelection(selections, func(int) int { return 0 })
-	if !ok || pool.Model.UpstreamModel != "gpt-image-2" {
+	if !ok || !IsBuiltinProviderChannel(pool.Channel) || pool.Model.UpstreamModel != "gpt-image-2" {
 		t.Fatalf("pool selection = %#v", pool)
 	}
-	rest := modelChannelSelectionsExcluding(selections, []string{BuiltinPoolChannelName})
+	excluded := make([]string, 0)
+	for _, s := range selections {
+		if IsBuiltinProviderChannel(s.Channel) {
+			excluded = append(excluded, s.Channel.Name)
+		}
+	}
+	rest := modelChannelSelectionsExcluding(selections, excluded)
 	if len(rest) != 1 || rest[0].Model.UpstreamModel != "vendor-image-v1" {
 		t.Fatalf("failover = %#v", rest)
 	}

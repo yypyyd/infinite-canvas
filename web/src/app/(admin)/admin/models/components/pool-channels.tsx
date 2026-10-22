@@ -107,7 +107,7 @@ export function PoolChannelDrawer({ token, row, pool, aliases, isSaving, onClose
                 if (!ok) return;
             }
             if (pool && (pool.priority !== values.sitePriority || pool.weight !== values.siteWeight || pool.enabled !== values.siteEnabled)) {
-                await patchAdminModelSource(token, { kind: "pool", enabled: values.siteEnabled, priority: values.sitePriority, weight: values.siteWeight });
+                await patchAdminModelSource(token, { kind: "provider", provider: row.provider, enabled: values.siteEnabled, priority: values.sitePriority, weight: values.siteWeight });
             }
             if (JSON.stringify(nextAliases) !== JSON.stringify(aliases) && !(await onSaveAliases(nextAliases))) return;
             message.success("已保存并生效");

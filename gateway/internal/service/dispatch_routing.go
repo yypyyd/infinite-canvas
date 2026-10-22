@@ -70,6 +70,7 @@ func (s *V1Service) matchingRoutes(ctx context.Context, logicalID string, req mo
 	if len(routes) > 0 && len(enabled) == 0 {
 		return nil, ErrProviderDisabled
 	}
+	enabled = filterPreferredProviderRoutes(enabled, PreferredProviderFromContext(ctx))
 	return orderRoutes(ctx, s.settingsReader(), enabled)
 }
 

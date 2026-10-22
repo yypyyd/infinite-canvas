@@ -211,12 +211,27 @@ type PrivateSetting struct {
 	Payment           PaymentSetting         `json:"payment"`
 	Referral          ReferralSetting        `json:"referral"`
 	OperationsAlerts  OperationsAlertSetting `json:"operationsAlerts"`
-	// PoolModelAliases publishes built-in account pool models under custom
-	// public names. nil means "not sent" and keeps the saved list.
+	// PoolModelAliases is legacy global alias list. Prefer BuiltinProviders[].ModelMappings.
+	// nil means "not sent" and keeps the saved list; migration copies into providers.
 	PoolModelAliases []PoolModelAlias `json:"poolModelAliases"`
-	// BuiltinPool configures the built-in account pool as one model source.
+	// BuiltinPool is the legacy single virtual pool source. Prefer BuiltinProviders.
 	// nil means "not sent" and keeps the saved value.
 	BuiltinPool *BuiltinPoolSource `json:"builtinPool,omitempty"`
+	// BuiltinProviders configures ChatGPT/Grok/BytePlus/Adobe as first-class
+	// channels (NewAPI-style). Empty means use defaults + migrate from BuiltinPool.
+	BuiltinProviders []BuiltinProviderSource `json:"builtinProviders,omitempty"`
+}
+
+// BuiltinProviderSource is one built-in provider channel's site-side settings.
+type BuiltinProviderSource struct {
+	Provider string `json:"provider"`
+	Enabled  *bool  `json:"enabled,omitempty"`
+	Priority *int   `json:"priority,omitempty"`
+	Weight   *int   `json:"weight,omitempty"`
+	// Models overrides priority/weight/disabled for one public model on this provider.
+	Models []BuiltinPoolModelSource `json:"models,omitempty"`
+	// ModelMappings is per-channel model mapping (replaces global PoolModelAliases).
+	ModelMappings []PoolModelAlias `json:"modelMappings,omitempty"`
 }
 
 // BuiltinPoolSource sets the pool's enable switch, priority and weight, with

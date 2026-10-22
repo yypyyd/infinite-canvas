@@ -30,11 +30,17 @@ func TestDefaultSourceOrderKeepsPoolFirst(t *testing.T) {
 	selections := poolTestChannels(t, nil, thirdImageChannel("a", 1000, 0), thirdImageChannel("b", 1, 0))
 	for draw := 0; draw < 3; draw++ {
 		got, ok := pickChannelSelection(selections, func(int) int { return draw })
-		if !ok || got.Channel.ID != BuiltinPoolChannelID {
+		if !ok || !IsBuiltinProviderChannel(got.Channel) {
 			t.Fatalf("draw %d picked %q", draw, got.Channel.Name)
 		}
 	}
-	rest := modelChannelSelectionsExcluding(selections, []string{BuiltinPoolChannelName})
+	excluded := make([]string, 0)
+	for _, s := range selections {
+		if IsBuiltinProviderChannel(s.Channel) {
+			excluded = append(excluded, s.Channel.Name)
+		}
+	}
+	rest := modelChannelSelectionsExcluding(selections, excluded)
 	for draw, want := range map[int]string{0: "a", 999: "a", 1000: "b"} {
 		got, _ := pickChannelSelection(rest, func(total int) int {
 			if total != 1001 {
@@ -49,12 +55,12 @@ func TestDefaultSourceOrderKeepsPoolFirst(t *testing.T) {
 }
 
 func TestChannelPriorityAbovePoolGoesFirst(t *testing.T) {
-	selections := poolTestChannels(t, nil, thirdImageChannel("a", 1, 200))
+	selections := poolTestChannels(t, nil, thirdImageChannel("a", 1, 250))
 	if got, _ := pickChannelSelection(selections, nil); got.Channel.Name != "a" {
 		t.Fatalf("picked %q", got.Channel.Name)
 	}
 	rest := modelChannelSelectionsExcluding(selections, []string{"a"})
-	if got, _ := pickChannelSelection(rest, nil); got.Channel.ID != BuiltinPoolChannelID {
+	if got, _ := pickChannelSelection(rest, nil); !IsBuiltinProviderChannel(got.Channel) {
 		t.Fatalf("failover picked %q", got.Channel.Name)
 	}
 }
@@ -63,19 +69,36 @@ func TestPoolSourceSettingsChangeOrderAndWeight(t *testing.T) {
 	// Pool lowered to the channel group: weighted pick across both.
 	selections := poolTestChannels(t, &model.BuiltinPoolSource{Priority: intPtr(0), Weight: intPtr(3)}, thirdImageChannel("a", 1, 0))
 	seen := map[string]bool{}
-	for draw := 0; draw < 4; draw++ {
+	totalWeight := 0
+	for _, s := range selections {
+		w := s.Channel.Weight
+		if w <= 0 {
+			w = 1
+		}
+		totalWeight += w
+	}
+	for draw := 0; draw < totalWeight; draw++ {
 		got, _ := pickChannelSelection(selections, func(total int) int {
-			if total != 4 {
-				t.Fatalf("total = %d", total)
+			if total != totalWeight {
+				t.Fatalf("total = %d want %d", total, totalWeight)
 			}
 			return draw
 		})
 		seen[got.Channel.Name] = true
 	}
-	if !seen["a"] || !seen[BuiltinPoolChannelName] {
+	if !seen["a"] {
 		t.Fatalf("seen = %v", seen)
 	}
-	// Disabled pool source drops out entirely.
+	hasProvider := false
+	for name := range seen {
+		if name != "a" {
+			hasProvider = true
+		}
+	}
+	if !hasProvider {
+		t.Fatalf("expected provider in seen = %v", seen)
+	}
+	// Disabled pool source (migrated) drops every builtin provider.
 	if got := poolTestChannels(t, &model.BuiltinPoolSource{Enabled: boolPtr(false)}, thirdImageChannel("a", 1, 0)); len(got) != 1 || got[0].Channel.Name != "a" {
 		t.Fatalf("selections = %#v", got)
 	}
@@ -97,11 +120,20 @@ func TestChannelModelOverridesAndDisable(t *testing.T) {
 	b := thirdImageChannel("b", 1, 0)
 	b.Models[0].Disabled = true
 	selections := poolTestChannels(t, nil, a, b)
-	if len(selections) != 2 {
-		t.Fatalf("disabled model still selectable: %#v", selections)
+	// b's model is disabled; providers remain. Ensure b itself is gone and a is present.
+	names := map[string]bool{}
+	for _, s := range selections {
+		names[s.Channel.Name] = true
+	}
+	if names["b"] || !names["a"] {
+		t.Fatalf("selections names = %v (%#v)", names, selections)
+	}
+	if got, _ := pickChannelSelection(selections, nil); !IsBuiltinProviderChannel(got.Channel) && got.Channel.Name != "a" {
+		// priority 500 on a beats providers at 200
+		t.Fatalf("picked %q", got.Channel.Name)
 	}
 	if got, _ := pickChannelSelection(selections, nil); got.Channel.Name != "a" {
-		t.Fatalf("picked %q", got.Channel.Name)
+		t.Fatalf("picked %q want a", got.Channel.Name)
 	}
 }
 

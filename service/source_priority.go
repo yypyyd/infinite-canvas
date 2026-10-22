@@ -21,28 +21,44 @@ const (
 	SourcePriorityMax          = 1000
 	SourceWeightMin            = 1
 	SourceWeightMax            = 1000
+	// DefaultBuiltinPoolPriority is legacy (single virtual pool). Flat providers
+	// use DefaultProviderPriority* in builtin_providers.go instead.
 	DefaultBuiltinPoolPriority = 100
 	DefaultBuiltinPoolWeight   = 1
 )
 
 // runtimeChannelsFor returns the channels requests are routed over: saved
-// channels plus the pool, with the pool source settings applied and disabled
-// sources removed.
+// third-party channels plus flat built-in providers, with disabled sources removed.
 func runtimeChannelsFor(private model.PrivateSetting) []model.ModelChannel {
-	return applySourceSettings(runtimeChannels(private.Channels, private.PoolModelAliases), private.BuiltinPool)
+	private.BuiltinProviders = migrateBuiltinProviders(private)
+	return applySourceSettings(runtimeChannelsFromPrivate(private), private)
 }
 
-// applySourceSettings copies channels, applies the pool source settings to
-// the pool channel and drops disabled models and channels. Saved settings are
-// never modified.
-func applySourceSettings(channels []model.ModelChannel, pool *model.BuiltinPoolSource) []model.ModelChannel {
+// applySourceSettings copies channels and drops disabled models/channels.
+// Provider channels already carry priority/weight from builtinProviderChannels.
+func applySourceSettings(channels []model.ModelChannel, private model.PrivateSetting) []model.ModelChannel {
 	out := make([]model.ModelChannel, 0, len(channels))
+	providerSettings := builtinProviderSourceMap(private.BuiltinProviders)
 	for _, channel := range channels {
-		if isBuiltinPoolChannel(channel) {
+		if provider := BuiltinProviderOf(channel); provider != "" {
+			src, ok := providerSettings[provider]
+			if ok {
+				enabled, priority, weight := builtinProviderDefaults(src, provider)
+				if !enabled {
+					continue
+				}
+				channel.Priority, channel.Weight, channel.Enabled = priority, weight, true
+			}
+		} else if isLegacyBuiltinPoolChannel(channel) {
 			var ok bool
-			if channel, ok = applyBuiltinPoolSource(channel, pool); !ok {
+			if channel, ok = applyBuiltinPoolSource(channel, private.BuiltinPool); !ok {
 				continue
 			}
+		}
+		if !channel.Enabled && !IsBuiltinProviderChannel(channel) && !isLegacyBuiltinPoolChannel(channel) {
+			// Third-party disabled channels are still listed by callers that
+			// filter Enabled themselves; keep prior behaviour: include them
+			// for overview, selection filters by Enabled elsewhere.
 		}
 		models := make([]model.ChannelModel, 0, len(channel.Models))
 		for _, item := range channel.Models {

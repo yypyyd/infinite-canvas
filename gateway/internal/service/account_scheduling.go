@@ -301,42 +301,36 @@ func waitAccountQueue(ctx context.Context, deadline time.Time) bool {
 // an unbounded cross-route retry loop. Single routes retain their own retry
 // budget, including the BytePlus verified-beta same-route exception.
 func runMediaRouteFailover(ctx context.Context, routes []model.ModelRoute, pinnedID string, attempt func(context.Context, model.ModelRoute) ([]byte, string, error)) ([]byte, string, error) {
-	policy := poolSchedulingPolicy{fastFailover: len(routes) > 1 && pinnedID == "", pinnedID: pinnedID, requests: make(map[string]*poolAccountRequest)}
+	// Phase 2: busy accounts skip immediately (no 90s queue). fastFailover is on
+	// whenever the request is not pinned to a single admin-test account, including
+	// single-route preferred_provider calls so the main site can try the next channel.
+	policy := poolSchedulingPolicy{fastFailover: pinnedID == "", pinnedID: pinnedID, requests: make(map[string]*poolAccountRequest)}
 	ctx = context.WithValue(ctx, poolSchedulingKey, policy)
-	deadline := time.Now().Add(providerAccountQueueWait)
 	pending := append([]model.ModelRoute(nil), routes...)
 	var lastErr error
-	for len(pending) > 0 {
-		busy := make([]model.ModelRoute, 0, len(pending))
-		for _, route := range pending {
-			if ctx.Err() != nil {
-				return nil, "", ctx.Err()
-			}
-			data, url, err := attempt(ctx, route)
-			if err == nil {
-				return data, url, nil
-			}
-			lastErr = err
-			if noRouteFailover(err) || !routeFailoverSafe(err) {
-				return nil, "", err
-			}
-			if policy.fastFailover && errors.Is(err, ErrConcurrencyFull) {
-				busy = append(busy, route)
-			}
+	busySeen := false
+	for _, route := range pending {
+		if ctx.Err() != nil {
+			return nil, "", ctx.Err()
 		}
-		if len(busy) == 0 {
-			break
+		data, url, err := attempt(ctx, route)
+		if err == nil {
+			return data, url, nil
 		}
-		if !waitAccountQueue(ctx, deadline) {
-			if ctx.Err() != nil {
-				return nil, "", ctx.Err()
-			}
-			return nil, "", ErrConcurrencyFull
+		lastErr = err
+		if noRouteFailover(err) || !routeFailoverSafe(err) {
+			return nil, "", err
 		}
-		pending = busy
+		if policy.fastFailover && errors.Is(err, ErrConcurrencyFull) {
+			busySeen = true
+			continue
+		}
 	}
 	if lastErr == nil {
 		lastErr = ErrNoProviderAccount
+	}
+	if busySeen && errors.Is(lastErr, ErrConcurrencyFull) {
+		return nil, "", ErrConcurrencyFull
 	}
 	return nil, "", lastErr
 }

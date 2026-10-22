@@ -127,16 +127,34 @@ func buildModelOverview(settings model.Settings, routes []gateway.RouteDetail, r
 	private := settings.Private
 	poolEnabled, poolPriority, poolWeight := builtinPoolSourceDefaults(private.BuiltinPool)
 	poolOverrides := builtinPoolModelOverrides(private.BuiltinPool)
-	rawChannels := runtimeChannels(private.Channels, private.PoolModelAliases)
+	rawChannels := runtimeChannelsFor(private)
 	var poolChannel *model.ModelChannel
+	providerChannels := make([]model.ModelChannel, 0)
 	for i := range rawChannels {
-		if rawChannels[i].ID == BuiltinPoolChannelID {
+		if IsBuiltinProviderChannel(rawChannels[i]) {
+			providerChannels = append(providerChannels, rawChannels[i])
+			if poolChannel == nil {
+				poolChannel = &rawChannels[i]
+			}
+		} else if isBuiltinPoolChannel(rawChannels[i]) {
 			poolChannel = &rawChannels[i]
 		}
 	}
+	if len(providerChannels) > 0 {
+		poolEnabled, poolPriority, poolWeight = false, providerChannels[0].Priority, providerChannels[0].Weight
+		for _, ch := range providerChannels {
+			if !ch.Enabled {
+				continue
+			}
+			poolEnabled = true
+			if ch.Priority > poolPriority {
+				poolPriority, poolWeight = ch.Priority, ch.Weight
+			}
+		}
+	}
 	overview := ModelOverview{
-		Pool: PoolSourceOverview{Running: gateway.Current() != nil || poolChannel != nil, Enabled: poolEnabled,
-			Priority: poolPriority, Weight: poolWeight, DefaultPriority: DefaultBuiltinPoolPriority, RoutesKnown: routesKnown},
+		Pool: PoolSourceOverview{Running: gateway.Current() != nil || poolChannel != nil || len(providerChannels) > 0, Enabled: poolEnabled,
+			Priority: poolPriority, Weight: poolWeight, DefaultPriority: DefaultProviderPriorityChatGPT, RoutesKnown: routesKnown},
 		Channels: []ChannelSourceOverview{},
 		Models:   []ModelOverviewItem{},
 	}
@@ -201,7 +219,15 @@ func buildModelOverview(settings model.Settings, routes []gateway.RouteDetail, r
 		routesByLogical[route.LogicalModelID] = append(routesByLogical[route.LogicalModelID], route)
 	}
 	usable := map[string]model.ChannelModel{}
-	if poolChannel != nil {
+	if len(providerChannels) > 0 {
+		for _, pch := range providerChannels {
+			for _, cm := range pch.Models {
+				if _, ok := usable[cm.Model]; !ok {
+					usable[cm.Model] = cm
+				}
+			}
+		}
+	} else if poolChannel != nil {
 		for _, cm := range poolChannel.Models {
 			usable[cm.Model] = cm
 		}
@@ -228,58 +254,86 @@ func buildModelOverview(settings model.Settings, routes []gateway.RouteDetail, r
 	}
 	hasLegacyPool := false
 	for _, channel := range private.Channels {
-		hasLegacyPool = hasLegacyPool || isBuiltinPoolChannel(channel)
+		hasLegacyPool = hasLegacyPool || (isBuiltinPoolChannel(channel) && !IsBuiltinProviderChannel(channel))
 	}
+	emitProviders := len(providerChannels) > 0
 	for _, name := range poolNames {
-		if hasLegacyPool {
+		if hasLegacyPool && !emitProviders {
 			break
 		}
 		target := targets[name]
 		override, hasOverride := poolOverrides[name]
-		source := ModelSourceOverview{Kind: "pool", ChannelID: BuiltinPoolChannelID, ChannelName: BuiltinPoolChannelName, UpstreamModel: target,
-			Enabled: poolEnabled && !(hasOverride && override.Disabled), ChannelPriority: poolPriority, ChannelWeight: poolWeight, Reasons: []string{}}
-		if name != target {
-			source.AliasTarget = target
-		}
-		if hasOverride {
-			source.PriorityOverride, source.WeightOverride = cloneIntPtr(override.Priority), cloneIntPtr(override.Weight)
-		}
-		source.Priority, source.Weight = effectiveSource(source)
-		if cm, ok := usable[name]; ok {
-			capabilities := cm
-			source.Capabilities = &capabilities
-		}
-		anyRoute := false
-		for _, route := range routesByLogical[target] {
-			row := poolRouteOverview(route)
-			anyRoute = anyRoute || row.Available
-			source.Routes = append(source.Routes, row)
-		}
-		if !poolEnabled {
-			source.Reasons = append(source.Reasons, "账号池来源已停用")
-		}
-		if hasOverride && override.Disabled {
-			source.Reasons = append(source.Reasons, "该来源已停用")
-		}
-		if _, ok := usable[name]; !ok {
-			switch {
-			case poolChannel == nil && !routesKnown:
-				source.Reasons = append(source.Reasons, "账号池未运行")
-			case len(routesByLogical[target]) == 0:
-				source.Reasons = append(source.Reasons, "账号池中不存在目标模型 "+target)
-			case !anyRoute:
-				source.Reasons = append(source.Reasons, "没有可用的平台路由")
-			default:
-				source.Reasons = append(source.Reasons, "账号池暂未提供该模型")
+		emitOne := func(channelID, channelName string, channelPriority, channelWeight int, channelEnabled bool, filterProvider string) {
+			source := ModelSourceOverview{Kind: "pool", ChannelID: channelID, ChannelName: channelName, UpstreamModel: target,
+				Enabled: channelEnabled && poolEnabled && !(hasOverride && override.Disabled), ChannelPriority: channelPriority, ChannelWeight: channelWeight, Reasons: []string{}}
+			if name != target {
+				source.AliasTarget = target
 			}
+			if hasOverride {
+				source.PriorityOverride, source.WeightOverride = cloneIntPtr(override.Priority), cloneIntPtr(override.Weight)
+			}
+			source.Priority, source.Weight = effectiveSource(source)
+			if cm, ok := usable[name]; ok {
+				capabilities := cm
+				source.Capabilities = &capabilities
+			}
+			anyRoute := false
+			for _, route := range routesByLogical[target] {
+				if filterProvider != "" && normalizeBuiltinProvider(route.Provider) != filterProvider {
+					continue
+				}
+				row := poolRouteOverview(route)
+				anyRoute = anyRoute || row.Available
+				source.Routes = append(source.Routes, row)
+			}
+			if !poolEnabled || !channelEnabled {
+				source.Reasons = append(source.Reasons, "\u8d26\u53f7\u6c60\u6765\u6e90\u5df2\u505c\u7528")
+			}
+			if hasOverride && override.Disabled {
+				source.Reasons = append(source.Reasons, "\u8be5\u6765\u6e90\u5df2\u505c\u7528")
+			}
+			if _, ok := usable[name]; !ok {
+				switch {
+				case poolChannel == nil && !routesKnown:
+					source.Reasons = append(source.Reasons, "\u8d26\u53f7\u6c60\u672a\u8fd0\u884c")
+				case len(routesByLogical[target]) == 0:
+					source.Reasons = append(source.Reasons, "\u8d26\u53f7\u6c60\u4e2d\u4e0d\u5b58\u5728\u76ee\u6807\u6a21\u578b "+target)
+				case !anyRoute:
+					source.Reasons = append(source.Reasons, "\u6ca1\u6709\u53ef\u7528\u7684\u5e73\u53f0\u8def\u7531")
+				default:
+					source.Reasons = append(source.Reasons, "\u8d26\u53f7\u6c60\u6682\u672a\u63d0\u4f9b\u8be5\u6a21\u578b")
+				}
+			}
+			source.Active = len(source.Reasons) == 0
+			item := get(name)
+			if item.Modality == "" && source.Capabilities != nil {
+				item.Modality = source.Capabilities.Modality
+			}
+			item.Sources = append(item.Sources, source)
 		}
-		source.Active = len(source.Reasons) == 0
-		item := get(name)
-		if item.Modality == "" && source.Capabilities != nil {
-			item.Modality = source.Capabilities.Modality
+		if emitProviders {
+			for _, pch := range providerChannels {
+				// Only list the model when this provider channel carries it (or aliases).
+				hasModel := false
+				for _, cm := range pch.Models {
+					if cm.Model == name {
+						hasModel = true
+						usable[name] = cm
+						break
+					}
+				}
+				if !hasModel {
+					if _, ok := usable[name]; !ok && len(routesByLogical[target]) == 0 {
+						continue
+					}
+				}
+				emitOne(pch.ID, pch.Name, pch.Priority, pch.Weight, pch.Enabled, BuiltinProviderOf(pch))
+			}
+			continue
 		}
-		item.Sources = append(item.Sources, source)
+		emitOne(BuiltinPoolChannelID, BuiltinPoolChannelName, poolPriority, poolWeight, true, "")
 	}
+
 
 	// Pricing rules, gaps and availability.
 	rules := normalizePricingRules(settings.Public.ModelChannel.PricingRules)

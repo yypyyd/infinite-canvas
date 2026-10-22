@@ -43,6 +43,7 @@ func (o *OptionalInt) UnmarshalJSON(data []byte) error {
 type ModelSourcePatch struct {
 	Kind           string      `json:"kind"`
 	ChannelID      string      `json:"channelId"`
+	Provider       string      `json:"provider"`
 	Model          string      `json:"model"`
 	LogicalModelID string      `json:"logicalModelId"`
 	RouteID        string      `json:"routeId"`
@@ -102,6 +103,9 @@ func PatchModelSource(patch ModelSourcePatch) error {
 		}
 	case "pool":
 		settings.Private.BuiltinPool = patchPoolSource(settings.Private.BuiltinPool, patch)
+		settings.Private.BuiltinProviders = patchBuiltinProvidersFromPool(settings.Private.BuiltinProviders, settings.Private.BuiltinPool, patch)
+	case "provider":
+		settings.Private.BuiltinProviders = patchOneBuiltinProvider(settings.Private.BuiltinProviders, patch)
 	default:
 		return safeMessageError{message: "未知的来源类型"}
 	}
@@ -146,6 +150,116 @@ func patchChannelSource(private *model.PrivateSetting, patch ModelSourcePatch) e
 		return safeMessageError{message: "渠道中没有模型 " + patch.Model}
 	}
 	return safeMessageError{message: "渠道不存在"}
+}
+
+
+// patchBuiltinProvidersFromPool keeps flat provider settings aligned with legacy
+// pool patches so selection and overview see the same priority/enable changes.
+
+func patchOneBuiltinProvider(providers []model.BuiltinProviderSource, patch ModelSourcePatch) []model.BuiltinProviderSource {
+	provider := normalizeBuiltinProvider(patch.Provider)
+	if provider == "" {
+		provider = BuiltinProviderOf(model.ModelChannel{ID: patch.ChannelID})
+	}
+	if provider == "" {
+		return providers
+	}
+	if len(providers) == 0 {
+		providers = migrateBuiltinProviders(model.PrivateSetting{})
+	}
+	found := false
+	for i := range providers {
+		if normalizeBuiltinProvider(providers[i].Provider) != provider {
+			continue
+		}
+		found = true
+		providers[i] = patchProviderSource(providers[i], patch)
+	}
+	if !found {
+		providers = append(providers, patchProviderSource(model.BuiltinProviderSource{Provider: provider}, patch))
+	}
+	return normalizeBuiltinProviders(providers)
+}
+
+func patchProviderSource(src model.BuiltinProviderSource, patch ModelSourcePatch) model.BuiltinProviderSource {
+	if patch.Model == "" {
+		if patch.Enabled != nil {
+			enabled := *patch.Enabled
+			src.Enabled = &enabled
+		}
+		if patch.Priority.Set {
+			src.Priority = cloneIntPtr(patch.Priority.Value)
+		}
+		if patch.Weight.Set {
+			src.Weight = cloneIntPtr(patch.Weight.Value)
+		}
+		return src
+	}
+	index := -1
+	for i, item := range src.Models {
+		if strings.TrimSpace(item.Model) == patch.Model {
+			index = i
+		}
+	}
+	if index < 0 {
+		src.Models = append(src.Models, model.BuiltinPoolModelSource{Model: patch.Model})
+		index = len(src.Models) - 1
+	}
+	item := &src.Models[index]
+	if patch.Enabled != nil {
+		item.Disabled = !*patch.Enabled
+	}
+	if patch.Priority.Set {
+		item.Priority = cloneIntPtr(patch.Priority.Value)
+	}
+	if patch.Weight.Set {
+		item.Weight = cloneIntPtr(patch.Weight.Value)
+	}
+	return src
+}
+
+func patchBuiltinProvidersFromPool(providers []model.BuiltinProviderSource, pool *model.BuiltinPoolSource, patch ModelSourcePatch) []model.BuiltinProviderSource {
+	if len(providers) == 0 {
+		providers = migrateBuiltinProviders(model.PrivateSetting{BuiltinPool: pool})
+	}
+	out := make([]model.BuiltinProviderSource, len(providers))
+	copy(out, providers)
+	for i := range out {
+		if patch.Model == "" {
+			if patch.Enabled != nil {
+				enabled := *patch.Enabled
+				out[i].Enabled = &enabled
+			}
+			if patch.Priority.Set {
+				out[i].Priority = cloneIntPtr(patch.Priority.Value)
+			}
+			if patch.Weight.Set {
+				out[i].Weight = cloneIntPtr(patch.Weight.Value)
+			}
+			continue
+		}
+		index := -1
+		for j, item := range out[i].Models {
+			if strings.TrimSpace(item.Model) == patch.Model {
+				index = j
+			}
+		}
+		if index < 0 {
+			out[i].Models = append(out[i].Models, model.BuiltinPoolModelSource{Model: patch.Model})
+			index = len(out[i].Models) - 1
+		}
+		item := &out[i].Models[index]
+		if patch.Enabled != nil {
+			item.Disabled = !*patch.Enabled
+		}
+		if patch.Priority.Set {
+			item.Priority = cloneIntPtr(patch.Priority.Value)
+		}
+		if patch.Weight.Set {
+			item.Weight = cloneIntPtr(patch.Weight.Value)
+		}
+	}
+	return normalizeBuiltinProviders(out)
 }
 
 func patchPoolSource(pool *model.BuiltinPoolSource, patch ModelSourcePatch) *model.BuiltinPoolSource {

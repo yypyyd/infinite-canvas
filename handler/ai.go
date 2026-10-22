@@ -244,7 +244,7 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		return
 	}
 	pricingRequest := service.NormalizePricingRequest(pricingRequestForAIPath(path, requestMeta))
-	selection, err := service.SelectModelChannel(pricingRequest)
+	selection, err := selectChannelForAIRequest(r, pricingRequest)
 	if err != nil {
 		log.Printf("AI proxy select channel failed: model=%s operation=%s resolution=%s err=%v", requestMeta.ModelName, pricingRequest.Operation, pricingRequest.ResolutionTier, err)
 		FailError(w, err)
@@ -551,6 +551,31 @@ func proxyAutoDLGetRequest(w http.ResponseWriter, r *http.Request, path string, 
 	_, _ = w.Write(body)
 }
 
+
+// fixedChannelFromRequest returns an explicit channel id/name from query or header.
+func fixedChannelFromRequest(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	for _, key := range []string{"channel", "channel_id", "fixed_channel"} {
+		if value := strings.TrimSpace(r.URL.Query().Get(key)); value != "" {
+			return value
+		}
+	}
+	if value := strings.TrimSpace(r.Header.Get("X-Fixed-Channel")); value != "" {
+		return value
+	}
+	return ""
+}
+
+// selectChannelForAIRequest uses a fixed channel when requested, otherwise weighted pick.
+func selectChannelForAIRequest(r *http.Request, pricingRequest service.PricingRequest) (service.ModelChannelSelection, error) {
+	if fixed := fixedChannelFromRequest(r); fixed != "" {
+		return service.SelectFixedModelChannel(pricingRequest, fixed)
+	}
+	return service.SelectModelChannel(pricingRequest)
+}
+
 func buildAIUpstreamRequest(r *http.Request, path string, body []byte, contentType string, selection service.ModelChannelSelection, idempotencyKey string) (*http.Request, error) {
 	body, contentType, err := replaceAIRequestModel(body, contentType, selection.Model.UpstreamModel)
 	if err != nil {
@@ -573,6 +598,9 @@ func buildAIUpstreamRequest(r *http.Request, path string, body []byte, contentTy
 	}
 	if idempotencyKey != "" {
 		request.Header.Set("Idempotency-Key", idempotencyKey)
+	}
+	if preferred := service.PreferredProviderForChannel(selection.Channel); preferred != "" {
+		request.Header.Set("X-Preferred-Provider", preferred)
 	}
 	return request, nil
 }
@@ -690,6 +718,9 @@ func buildAIUpstreamStorageRequest(ctx context.Context, r *http.Request, user mo
 	}
 	if idempotencyKey != "" {
 		request.Header.Set("Idempotency-Key", idempotencyKey)
+	}
+	if preferred := service.PreferredProviderForChannel(selection.Channel); preferred != "" {
+		request.Header.Set("X-Preferred-Provider", preferred)
 	}
 	return request, cleanup, nil
 }

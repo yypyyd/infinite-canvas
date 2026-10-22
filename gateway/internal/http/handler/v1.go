@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -140,6 +141,17 @@ func adminTestError(c *gin.Context, err error) {
 // authenticated. Re-reading and hashing the bearer token in every handler
 // doubled database traffic and created two independent auth decisions for one
 // request.
+// preferredProviderContext forwards X-Preferred-Provider from the main site
+// so matchingRoutes only considers that provider pool.
+func preferredProviderContext(c *gin.Context) context.Context {
+	ctx := c.Request.Context()
+	preferred := strings.TrimSpace(c.GetHeader("X-Preferred-Provider"))
+	if preferred == "" {
+		preferred = strings.TrimSpace(c.Query("preferred_provider"))
+	}
+	return service.WithPreferredProvider(ctx, preferred)
+}
+
 func apiPrincipal(c *gin.Context) *service.APIPrincipal {
 	credential := middleware.CurrentAPICredential(c)
 	if credential == nil {
@@ -171,6 +183,7 @@ func (h *V1Handler) Models(c *gin.Context) {
 // forwarded to a configured custom OpenAI-compatible upstream; both ordinary
 // JSON responses and SSE streaming are relayed without buffering.
 func (h *V1Handler) ChatCompletions(c *gin.Context) {
+	c.Request = c.Request.WithContext(preferredProviderContext(c))
 	principal := apiPrincipal(c)
 	body, err := io.ReadAll(io.LimitReader(c.Request.Body, 10<<20+1))
 	if err != nil || len(body) > 10<<20 {
@@ -318,6 +331,7 @@ func (h *V1Handler) ImageEdits(c *gin.Context) {
 }
 
 func (h *V1Handler) respondImageRequest(c *gin.Context, principal *service.APIPrincipal, request service.V1ImageRequest) {
+	c.Request = c.Request.WithContext(preferredProviderContext(c))
 	// Every public image request gets a durable request ID, including synchronous
 	// calls whose upstream task can outlive the HTTP request. If a non-idempotent
 	// provider accepted work before a timeout, callers can use these headers to
@@ -421,6 +435,7 @@ func imageAsyncRequested(c *gin.Context) bool {
 // seconds, size} or multipart (with an input_reference file). size→ratio+
 // resolution, seconds→duration.
 func (h *V1Handler) CreateVideo(c *gin.Context) {
+	c.Request = c.Request.WithContext(preferredProviderContext(c))
 	principal := apiPrincipal(c)
 	var err error
 	var modelID, prompt, seconds, size, resolutionOverride string

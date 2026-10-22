@@ -30,10 +30,10 @@ const (
 
 // defaultProviderPriority applies only when no site setting is stored.
 var defaultProviderPriority = map[string]int{
-	"chatgpt":  100,
-	"grok":     100,
-	"byteplus": 90,
-	"adobe":    80,
+	"chatgpt":  200,
+	"grok":     200,
+	"byteplus": 190,
+	"adobe":    180,
 }
 
 func providerPrioritySettingKey(pool string) string { return "provider." + pool + ".priority" }

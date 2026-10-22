@@ -117,6 +117,9 @@ func SaveSettings(settings model.Settings) (model.Settings, error) {
 	if settings.Private.BuiltinPool == nil {
 		settings.Private.BuiltinPool = saved.Private.BuiltinPool
 	}
+	if settings.Private.BuiltinProviders == nil {
+		settings.Private.BuiltinProviders = saved.Private.BuiltinProviders
+	}
 	settings = normalizeSettings(settings)
 	if emailDomainRestriction && len(settings.Public.Auth.EmailDomains) == 0 {
 		return model.Settings{}, safeMessageError{message: "启用邮箱域名限制前请至少填写一个有效域名"}
@@ -899,6 +902,7 @@ func normalizePrivateSetting(setting model.PrivateSetting) model.PrivateSetting 
 	if setting.PoolModelAliases == nil {
 		setting.PoolModelAliases = []model.PoolModelAlias{}
 	}
+	setting.BuiltinProviders = migrateBuiltinProviders(setting)
 	for i := range setting.Channels {
 		setting.Channels[i] = normalizeModelChannel(setting.Channels[i])
 	}
@@ -1166,12 +1170,24 @@ func SelectModelChannelByName(request PricingRequest, channelName string) (Model
 		return ModelChannelSelection{}, err
 	}
 	for _, selection := range selections {
-		if selection.Channel.Name == channelName {
+		if selection.Channel.Name == channelName || selection.Channel.ID == channelName {
 			return selection, nil
 		}
 	}
 	return ModelChannelSelection{}, safeMessageError{message: "原生成渠道已不可用"}
 }
+
+// SelectFixedModelChannel forces one channel/provider (no weighted pick).
+func SelectFixedModelChannel(request PricingRequest, channelName string) (ModelChannelSelection, error) {
+	return SelectModelChannelByName(request, channelName)
+}
+
+// PreferredProviderForChannel returns the gateway preferred_provider for a
+// built-in provider channel, or empty for third-party / legacy pool.
+func PreferredProviderForChannel(channel model.ModelChannel) string {
+	return BuiltinProviderOf(channel)
+}
+
 
 // SelectModelChannelExcluding selects a compatible channel that has not already failed this request.
 func SelectModelChannelExcluding(request PricingRequest, excludedChannels []string) (ModelChannelSelection, error) {

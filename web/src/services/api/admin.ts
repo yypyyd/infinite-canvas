@@ -559,6 +559,15 @@ export type AdminPoolModelAlias = {
     remark: string;
 };
 
+export type AdminBuiltinProviderSource = {
+  provider: string;
+  enabled?: boolean | null;
+  priority?: number | null;
+  weight?: number | null;
+  models?: { model: string; enabled?: boolean; priority?: number | null; weight?: number | null; disabled?: boolean }[];
+  modelMappings?: AdminPoolModelAlias[];
+};
+
 export type AdminBuiltinPoolSource = {
     enabled?: boolean;
     priority?: number;
@@ -587,6 +596,7 @@ export type AdminPoolRouteOverview = {
 export type AdminModelSourceOverview = {
     kind: "channel" | "pool";
     channelId?: string;
+  provider?: string;
     channelName: string;
     upstreamModel: string;
     aliasTarget?: string;
@@ -627,8 +637,9 @@ export type AdminModelOverview = {
 
 /** null clears an override; an absent field is left unchanged. */
 export type AdminModelSourcePatch = {
-    kind: "channel" | "pool" | "pool-route";
+    kind: "channel" | "pool" | "provider" | "pool-route";
     channelId?: string;
+    provider?: string;
     model?: string;
     logicalModelId?: string;
     routeId?: string;
@@ -656,6 +667,7 @@ export type AdminPrivateSettings = {
     /** Omitted on save keeps the stored list. */
     poolModelAliases?: AdminPoolModelAlias[];
     builtinPool?: AdminBuiltinPoolSource;
+    builtinProviders?: AdminBuiltinProviderSource[];
     protocolTemplates: ProtocolTemplate[];
     storage: AdminStorageSetting;
     promptSync: {

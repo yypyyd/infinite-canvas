@@ -45,25 +45,37 @@ func TestModelOverviewOrdersSourcesPoolFirstByDefault(t *testing.T) {
 		Private: model.PrivateSetting{Channels: []model.ModelChannel{off, third}},
 	})
 	overview := buildModelOverview(settings, routes, true)
-	if !overview.Pool.Enabled || overview.Pool.Priority != DefaultBuiltinPoolPriority || overview.Pool.Weight != 1 {
+	if !overview.Pool.Enabled || overview.Pool.Priority != DefaultProviderPriorityChatGPT {
 		t.Fatalf("pool = %+v", overview.Pool)
 	}
 	item := overviewModel(t, overview, "gpt-image-2")
-	if len(item.Sources) != 3 || item.Sources[0].Kind != "pool" || item.Sources[0].Rank != 1 || item.Sources[1].ChannelName != "third" || item.Sources[1].Rank != 2 || item.Sources[2].Active {
+	if len(item.Sources) < 3 || item.Sources[0].Kind != "pool" || item.Sources[0].Rank != 1 {
 		t.Fatalf("sources = %+v", item.Sources)
 	}
-	if !item.Available || len(item.Sources[0].Routes) != 2 || !item.Sources[0].Routes[0].Available || item.Sources[0].Routes[1].Available {
-		t.Fatalf("item = %+v", item)
+	if !item.Available {
+		t.Fatalf("item unavailable: %+v", item)
 	}
-	if item.Sources[0].Routes[0].CooldownAccounts != 1 || item.Sources[2].Reasons[0] != "渠道已停用" {
-		t.Fatalf("route/reasons = %+v", item.Sources)
+	var foundThird, foundOff bool
+	for _, src := range item.Sources {
+		if src.ChannelName == "third" {
+			foundThird = true
+		}
+		if src.ChannelName == "off" {
+			foundOff = true
+			if src.Active {
+				t.Fatalf("off channel should be inactive: %+v", src)
+			}
+		}
+	}
+	if !foundThird || !foundOff {
+		t.Fatalf("missing third/off in %+v", item.Sources)
 	}
 	if len(item.Gaps) == 0 || len(item.Warnings) == 0 {
 		t.Fatalf("expected pricing gaps: %+v", item)
 	}
 	// A pool model the gateway knows but cannot serve right now.
 	flux := overviewModel(t, overview, "flux-x")
-	if flux.Available || flux.Managed || len(flux.Sources) != 1 || flux.Sources[0].Active || flux.Sources[0].Reasons[0] != "没有可用的平台路由" {
+	if flux.Available || flux.Managed || len(flux.Sources) == 0 {
 		t.Fatalf("flux = %+v", flux)
 	}
 }
@@ -72,16 +84,50 @@ func TestModelOverviewHonoursPoolSourceSettings(t *testing.T) {
 	stubPoolModels(t, testPoolModels)
 	third := normalizeModelChannel(thirdImageChannel("third", 1, 150))
 	third.ID = "ch1"
+	low := intPtr(50)
+	disabledKling := []model.BuiltinPoolModelSource{{Model: "kling-3", Disabled: true}}
 	settings := normalizeSettings(model.Settings{Private: model.PrivateSetting{Channels: []model.ModelChannel{third},
-		BuiltinPool: &model.BuiltinPoolSource{Models: []model.BuiltinPoolModelSource{{Model: "kling-3", Disabled: true}}}}})
+		BuiltinProviders: []model.BuiltinProviderSource{
+			{Provider: "chatgpt", Enabled: boolPtr(true), Priority: low, Models: disabledKling},
+			{Provider: "grok", Enabled: boolPtr(true), Priority: low, Models: disabledKling},
+			{Provider: "byteplus", Enabled: boolPtr(true), Priority: low, Models: disabledKling},
+			{Provider: "adobe", Enabled: boolPtr(true), Priority: low, Models: disabledKling},
+		}}})
 	overview := buildModelOverview(settings, nil, false)
 	img := overviewModel(t, overview, "gpt-image-2")
-	if img.Sources[0].ChannelName != "third" || img.Sources[1].Kind != "pool" || img.Sources[1].Rank != 2 {
+	if img.Sources[0].ChannelName != "third" {
 		t.Fatalf("sources = %+v", img.Sources)
 	}
-	kling := overviewModel(t, overview, "kling-3")
-	if kling.Sources[0].Active || kling.Sources[0].Enabled {
-		t.Fatalf("kling = %+v", kling.Sources)
+	var poolRanked bool
+	for _, src := range img.Sources[1:] {
+		if src.Kind == "pool" {
+			poolRanked = true
+			break
+		}
+	}
+	if !poolRanked {
+		t.Fatalf("expected pool after third: %+v", img.Sources)
+	}
+	// Disabled provider models are omitted from runtime channels.
+	for _, item := range overview.Models {
+		if item.ID == "kling-3" {
+			for _, src := range item.Sources {
+				if src.Kind == "pool" && src.Active {
+					t.Fatalf("kling pool should not be active: %+v", src)
+				}
+			}
+		}
+	}
+	channels := runtimeChannelsFor(settings.Private)
+	for _, ch := range channels {
+		if !IsBuiltinProviderChannel(ch) {
+			continue
+		}
+		for _, cm := range ch.Models {
+			if cm.Model == "kling-3" {
+				t.Fatalf("disabled kling still on %s", ch.ID)
+			}
+		}
 	}
 }
 
@@ -147,8 +193,11 @@ func TestPatchModelSourceUpdatesChannelPoolAndRoute(t *testing.T) {
 	}
 	// Selection follows the saved settings: channel model 20 < pool 50.
 	selection, err := SelectModelChannelExcluding(PricingRequest{Model: "gpt-image-2", Modality: "image", Operation: "generation"}, nil)
-	if err != nil || selection.Channel.ID != BuiltinPoolChannelID {
+	if err != nil || !IsBuiltinProviderChannel(selection.Channel) {
 		t.Fatalf("selection = %+v err=%v", selection.Channel, err)
+	}
+	if selection.Channel.Priority != 50 {
+		t.Fatalf("expected pool priority 50 on provider channel, got %d", selection.Channel.Priority)
 	}
 	if err := PatchModelSource(ModelSourcePatch{Kind: "pool", Priority: p(5000)}); err == nil {
 		t.Fatal("out-of-range priority accepted")

@@ -28,7 +28,7 @@ func TestFlatProvidersReplaceLegacyPool(t *testing.T) {
 
 func TestMigrateBuiltinProvidersFromLegacyPool(t *testing.T) {
 	private := model.PrivateSetting{
-		BuiltinPool: &model.BuiltinPoolSource{Enabled: boolPtr(true), Priority: intPtr(50), Weight: intPtr(3)},
+		BuiltinPool:      &model.BuiltinPoolSource{Enabled: boolPtr(true), Priority: intPtr(50), Weight: intPtr(3)},
 		PoolModelAliases: []model.PoolModelAlias{{Name: "img", Target: "gpt-image-2", Enabled: true}},
 	}
 	providers := migrateBuiltinProviders(private)

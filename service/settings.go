@@ -1188,7 +1188,6 @@ func PreferredProviderForChannel(channel model.ModelChannel) string {
 	return BuiltinProviderOf(channel)
 }
 
-
 // SelectModelChannelExcluding selects a compatible channel that has not already failed this request.
 func SelectModelChannelExcluding(request PricingRequest, excludedChannels []string) (ModelChannelSelection, error) {
 	selections, request, err := channelSelectionsFor(request)

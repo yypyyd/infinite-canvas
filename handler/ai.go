@@ -551,7 +551,6 @@ func proxyAutoDLGetRequest(w http.ResponseWriter, r *http.Request, path string, 
 	_, _ = w.Write(body)
 }
 
-
 // fixedChannelFromRequest returns an explicit channel id/name from query or header.
 func fixedChannelFromRequest(r *http.Request) string {
 	if r == nil {

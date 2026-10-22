@@ -17,10 +17,10 @@ import (
 // then a weighted pick among channels" — the behaviour before priorities
 // became configurable.
 const (
-	SourcePriorityMin          = 0
-	SourcePriorityMax          = 1000
-	SourceWeightMin            = 1
-	SourceWeightMax            = 1000
+	SourcePriorityMin = 0
+	SourcePriorityMax = 1000
+	SourceWeightMin   = 1
+	SourceWeightMax   = 1000
 	// DefaultBuiltinPoolPriority is legacy (single virtual pool). Flat providers
 	// use DefaultProviderPriority* in builtin_providers.go instead.
 	DefaultBuiltinPoolPriority = 100

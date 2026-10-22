@@ -152,7 +152,6 @@ func patchChannelSource(private *model.PrivateSetting, patch ModelSourcePatch) e
 	return safeMessageError{message: "渠道不存在"}
 }
 
-
 // patchBuiltinProvidersFromPool keeps flat provider settings aligned with legacy
 // pool patches so selection and overview see the same priority/enable changes.
 

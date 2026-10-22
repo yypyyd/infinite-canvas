@@ -560,12 +560,12 @@ export type AdminPoolModelAlias = {
 };
 
 export type AdminBuiltinProviderSource = {
-  provider: string;
-  enabled?: boolean | null;
-  priority?: number | null;
-  weight?: number | null;
-  models?: { model: string; enabled?: boolean; priority?: number | null; weight?: number | null; disabled?: boolean }[];
-  modelMappings?: AdminPoolModelAlias[];
+    provider: string;
+    enabled?: boolean | null;
+    priority?: number | null;
+    weight?: number | null;
+    models?: { model: string; enabled?: boolean; priority?: number | null; weight?: number | null; disabled?: boolean }[];
+    modelMappings?: AdminPoolModelAlias[];
 };
 
 export type AdminBuiltinPoolSource = {
@@ -596,7 +596,7 @@ export type AdminPoolRouteOverview = {
 export type AdminModelSourceOverview = {
     kind: "channel" | "pool";
     channelId?: string;
-  provider?: string;
+    provider?: string;
     channelName: string;
     upstreamModel: string;
     aliasTarget?: string;

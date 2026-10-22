@@ -79,7 +79,6 @@ func isLegacyBuiltinPoolChannel(channel model.ModelChannel) bool {
 	return IsBuiltinPoolBaseURL(channel.BaseURL) && !strings.HasPrefix(channel.ID, BuiltinProviderChannelPrefix)
 }
 
-
 // IsBuiltinPoolChannel reports whether a channel is any built-in pool surface
 // (legacy unified pool or a flat provider channel). Kept for call-site compat.
 func IsBuiltinPoolChannel(channel model.ModelChannel) bool {

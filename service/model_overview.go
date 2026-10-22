@@ -334,7 +334,6 @@ func buildModelOverview(settings model.Settings, routes []gateway.RouteDetail, r
 		emitOne(BuiltinPoolChannelID, BuiltinPoolChannelName, poolPriority, poolWeight, true, "")
 	}
 
-
 	// Pricing rules, gaps and availability.
 	rules := normalizePricingRules(settings.Public.ModelChannel.PricingRules)
 	priced := map[string]bool{}

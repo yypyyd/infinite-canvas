@@ -1316,6 +1316,10 @@ func requestAgentCompletion(ctx context.Context, run model.AgentRun, userGroup, 
 	}
 	publisher.flush()
 	completion.Content = strings.TrimSpace(message.Content)
+	if len(message.ToolCalls) > 0 {
+		// 真实工具调用与伪造的调用文本同时出现时，以真实调用为准并去掉伪造文本。
+		completion.Content = stripAgentFakeToolCallText(completion.Content)
+	}
 	// 第一个调用沿用原有的校验与去重；同一轮里后续彼此独立、无需确认的调用一起下发，
 	// 结果全部提交后才继续下一轮规划。
 	if len(message.ToolCalls) > 0 {
@@ -3147,7 +3151,7 @@ func agentParallelToolCall(run model.AgentRun, toolSteps []model.AgentStep, acce
 func requestAgentUpstreamMessage(ctx context.Context, channel model.ModelChannel, requestID string, bodyValue map[string]any, requestMessages *[]agentChatMessage, hasPreviewImages bool, publisher *agentRunStreamPublisher) (agentUpstreamMessage, error) {
 	streaming := agentChannelStreams(channel)
 	plainRetried := false
-	retries := 0
+	quickRetries, lateRetries := 0, 0
 	client := &http.Client{}
 	modelName, _ := bodyValue["model"].(string)
 	for attempt := 1; attempt <= 6; attempt++ {
@@ -3165,20 +3169,26 @@ func requestAgentUpstreamMessage(ctx context.Context, channel model.ModelChannel
 			if ctx.Err() != nil {
 				return agentUpstreamMessage{}, ctx.Err()
 			}
-			if !agentUpstreamShouldRetry(err, elapsed, retries) {
+			retry, late := agentUpstreamShouldRetry(err, elapsed, quickRetries, lateRetries)
+			if !retry {
 				return agentUpstreamMessage{}, err
 			}
-			retries++
+			delay := agentUpstreamRetryDelay(quickRetries)
+			if late {
+				lateRetries++
+			} else {
+				quickRetries++
+			}
 			select {
 			case <-ctx.Done():
 				return agentUpstreamMessage{}, ctx.Err()
-			case <-time.After(agentUpstreamRetryDelay(retries - 1)):
+			case <-time.After(delay):
 			}
 			continue
 		}
 		if statusCode >= 200 && statusCode < 300 {
-			if streaming && !plainRetried && agentStreamNeedsPlainRetry(bodyValue, message) {
-				// 部分代理在流式模式下把工具调用写成文本或界面标记，改用非流式重试一次。
+			if !plainRetried && agentStreamNeedsPlainRetry(bodyValue, message) {
+				// 部分代理把工具调用写成文本或界面标记，改用非流式重试一次（本就非流式的渠道也重新请求一次）。
 				plainRetried = true
 				streaming = false
 				continue

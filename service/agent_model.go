@@ -93,9 +93,28 @@ func keepModelToolSupport(next *model.Settings, saved model.Settings) {
 	}
 }
 
-var agentFakeToolCallPattern = regexp.MustCompile(`(?i)<\s*function[\s_-]*call|<\s*tool_call|<\s*tool_name\b|<\s*invoke\b|<\s*(box|icon|row|title|entity)\b|_parameters\b|"tool_calls"\s*:|\bcall\s+(canvas|image|video|agent)[._][a-z_]+\s+with\b`)
+var agentFakeToolCallPattern = regexp.MustCompile(`(?i)<\s*function[\s_-]*call|<\s*tool_call|<\s*tool_name\b|<\s*invoke\b|<\s*(box|icon|row|title|entity)\b|_parameters\b|"tool_calls"\s*:|\b(?:tool\s+call|call(?:ing)?|invoke|invoking)\s+[a-z][a-z0-9]*[._][a-z0-9_.]*\s+with\b`)
 
-// agentStreamNeedsPlainRetry 判断流式回复是否把工具调用伪装成了文本或界面标记。
+// agentFakeToolCallFence 匹配伪工具调用常见的 ```xml / ```tool 代码块围栏。
+var agentFakeToolCallFence = regexp.MustCompile("(?i)^```\\s*(xml|tool|tool_call|function)?\\s*$")
+
+// stripAgentFakeToolCallText 在已有真实工具调用时去掉正文里伪造的调用文本行和空代码块围栏。
+func stripAgentFakeToolCallText(content string) string {
+	if !agentFakeToolCallPattern.MatchString(content) {
+		return content
+	}
+	kept := make([]string, 0)
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if agentFakeToolCallPattern.MatchString(trimmed) || agentFakeToolCallFence.MatchString(trimmed) || strings.HasPrefix(trimmed, "</") {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return strings.TrimSpace(strings.Join(kept, "\n"))
+}
+
+// agentStreamNeedsPlainRetry 判断回复是否把工具调用伪装成了文本或界面标记（且没有真实调用）。
 func agentStreamNeedsPlainRetry(bodyValue map[string]any, message agentUpstreamMessage) bool {
 	if _, hasTools := bodyValue["tools"]; !hasTools || len(message.ToolCalls) > 0 {
 		return false
@@ -110,8 +129,11 @@ const (
 	agentUpstreamAttemptTimeout = 150 * time.Second
 	// agentUpstreamMaxRetries 是连接类错误的最多重试次数。
 	agentUpstreamMaxRetries = 2
-	// agentUpstreamSlowDropThreshold：尝试持续这么久后才断开的视为代理空闲超时，不再重试。
+	// agentUpstreamSlowDropThreshold / agentUpstreamLateDropLimit：在 [25s, 40s) 内断开的视为代理空闲掐断（实测约 30.5s），
+	// 允许额外重试 agentUpstreamMaxLateRetries 次；40s 以后才断开的不再重试。
 	agentUpstreamSlowDropThreshold = 25 * time.Second
+	agentUpstreamLateDropLimit     = 40 * time.Second
+	agentUpstreamMaxLateRetries    = 1
 	// agentHistoryMaxMessages / agentHistoryMaxRunes 控制随请求发送的历史对话条数与每条长度。
 	agentHistoryMaxMessages = 6
 	agentHistoryMaxRunes    = 1500
@@ -128,9 +150,19 @@ func agentUpstreamRetryDelay(retry int) time.Duration {
 	return time.Duration(500<<retry) * time.Millisecond
 }
 
-// agentUpstreamShouldRetry：只重试很快出现的连接类错误（含单次超时之外的断连），且总次数有限。
-func agentUpstreamShouldRetry(err error, elapsed time.Duration, retries int) bool {
-	return retries < agentUpstreamMaxRetries && isAgentTransportError(err) && elapsed < agentUpstreamSlowDropThreshold
+// agentUpstreamShouldRetry 判断连接类错误能否重试：25s 内的快速断连最多重试 agentUpstreamMaxRetries 次；
+// 25–40s 的代理空闲掐断另计，最多重试 agentUpstreamMaxLateRetries 次（即最多两次晚断尝试）；其余不重试。
+func agentUpstreamShouldRetry(err error, elapsed time.Duration, quickRetries, lateRetries int) (retry bool, late bool) {
+	if !isAgentTransportError(err) {
+		return false, false
+	}
+	if elapsed < agentUpstreamSlowDropThreshold {
+		return quickRetries < agentUpstreamMaxRetries, false
+	}
+	if elapsed < agentUpstreamLateDropLimit {
+		return lateRetries < agentUpstreamMaxLateRetries, true
+	}
+	return false, true
 }
 
 // agentNonStreamingHosts 是会把流式响应整段缓冲后才返回的代理：流式没有收益，且长时间无字节时易被掐断。

@@ -2,9 +2,6 @@ package bootstrap
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
-	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -32,18 +29,13 @@ import (
 	"github.com/yypyyd/infinite-canvas/gateway/internal/storage"
 )
 
-// BuiltinCredentialID owns every request 幻图 sends to the gateway
-// in-process. Its key hash is random and never revealed, so it cannot be used
-// over the network.
-const BuiltinCredentialID = "cred-huantu-builtin"
-
 type App struct {
-	Config      *config.Config
-	DB          *gorm.DB
-	Redis       *redis.Client
-	Handlers    router.Handlers
-	Credentials *service.APICredentialService
-	Builtin     *model.APICredential
+	Config   *config.Config
+	DB       *gorm.DB
+	Redis    *redis.Client
+	Handlers router.Handlers
+	Builtin  *model.APICredential
+	V1       *service.V1Service
 
 	cancel context.CancelFunc
 }
@@ -58,11 +50,11 @@ func OpenDB(ctx context.Context, dsn, schema string, gormLogger logger.Interface
 		schema = "gateway"
 	}
 	if !validSchemaName(schema) {
-		return nil, fmt.Errorf("invalid GATEWAY_DB_SCHEMA %q", schema)
+		return nil, fmt.Errorf("invalid POOL_DB_SCHEMA %q", schema)
 	}
 	pgCfg, err := pgx.ParseConfig(strings.TrimSpace(dsn))
 	if err != nil {
-		return nil, fmt.Errorf("parse GATEWAY_POSTGRES_DSN: %w", err)
+		return nil, fmt.Errorf("parse pool PostgreSQL DSN: %w", err)
 	}
 	bootstrapConn, err := pgx.ConnectConfig(ctx, pgCfg)
 	if err != nil {
@@ -79,7 +71,7 @@ func OpenDB(ctx context.Context, dsn, schema string, gormLogger logger.Interface
 	}
 	if currentUser == schema {
 		_ = bootstrapConn.Close(ctx)
-		return nil, fmt.Errorf("GATEWAY_DB_SCHEMA %q must differ from the PostgreSQL role name; use another role or schema", schema)
+		return nil, fmt.Errorf("POOL_DB_SCHEMA %q must differ from the PostgreSQL role name; use another role or schema", schema)
 	}
 	_, err = bootstrapConn.Exec(ctx, "CREATE SCHEMA IF NOT EXISTS "+pgx.Identifier{schema}.Sanitize())
 	_ = bootstrapConn.Close(ctx)
@@ -164,13 +156,20 @@ func NewApp(ctx context.Context) (*App, error) {
 		return nil, err
 	}
 
-	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr, Password: cfg.RedisPassword, DB: cfg.RedisDB})
-	if err := rdb.Ping(ctx).Err(); err != nil {
-		_ = sqlDB.Close()
-		return nil, fmt.Errorf("ping redis: %w", err)
+	// Redis is optional. Without it, concurrency gates, round-robin cursors
+	// and the settings cache run in-process, which is correct for the single
+	// 幻图 process this deployment supports. Configure Redis only when several
+	// 幻图 replicas share one account pool.
+	var rdb *redis.Client
+	if strings.TrimSpace(cfg.RedisAddr) != "" {
+		rdb = redis.NewClient(&redis.Options{Addr: cfg.RedisAddr, Password: cfg.RedisPassword, DB: cfg.RedisDB})
+		if err := rdb.Ping(ctx).Err(); err != nil {
+			_ = rdb.Close()
+			_ = sqlDB.Close()
+			return nil, fmt.Errorf("ping redis: %w", err)
+		}
 	}
 
-	credentialRepo := repo.NewAPICredentialRepository(db)
 	modelRepo := repo.NewModelRepository(db)
 	eventRepo := repo.NewEventRepository(db)
 	tokenRepo := repo.NewTokenRepository(db)
@@ -179,15 +178,7 @@ func NewApp(ctx context.Context) (*App, error) {
 	bannedRepo := repo.NewBannedWordRepository(db)
 
 	concurrencySvc := service.NewConcurrencyService(rdb)
-	credentialSvc := service.NewAPICredentialService(credentialRepo)
-	credentialSvc.SetConcurrency(concurrencySvc)
-
-	builtin, err := ensureBuiltinCredential(ctx, credentialRepo)
-	if err != nil {
-		_ = rdb.Close()
-		_ = sqlDB.Close()
-		return nil, fmt.Errorf("ensure built-in credential: %w", err)
-	}
+	builtin := model.BuiltinCredential()
 
 	adobeClient := adobe.NewClient("clio-playground-web", "")
 	bytePlusClient := byteplus.NewClient("")
@@ -203,7 +194,7 @@ func NewApp(ctx context.Context) (*App, error) {
 	)
 	refreshSvc := service.NewRefreshProfileService(refreshRepo, tokenRepo, adobeClient, bytePlusClient, tokenSvc)
 	v1Svc := service.NewV1Service(
-		cfg, modelRepo, credentialSvc, eventRepo, tokenRepo, settingsRepo, concurrencySvc,
+		cfg, modelRepo, eventRepo, tokenRepo, settingsRepo, concurrencySvc,
 		adobeClient, bytePlusClient, chatGPTClient,
 		grokClient, objectStore,
 	)
@@ -215,45 +206,13 @@ func NewApp(ctx context.Context) (*App, error) {
 	go maintenanceSvc.Run(maintenanceCtx)
 
 	handlers := router.Handlers{
-		Health:         handler.NewHealthHandler(db, rdb, objectStore),
-		V1:             handler.NewV1Handler(v1Svc),
-		APICredentials: handler.NewUserToolsHandler(credentialSvc),
-		Admin:          handler.NewAdminConsoleHandler(adminConsoleSvc),
-		BannedWords:    handler.NewBannedWordsHandler(bannedRepo),
+		Health:      handler.NewHealthHandler(db, rdb, objectStore),
+		V1:          handler.NewV1Handler(v1Svc),
+		Admin:       handler.NewAdminConsoleHandler(adminConsoleSvc),
+		BannedWords: handler.NewBannedWordsHandler(bannedRepo),
 	}
 
-	return &App{Config: cfg, DB: db, Redis: rdb, Handlers: handlers, Credentials: credentialSvc, Builtin: builtin, cancel: cancelMaintenance}, nil
-}
-
-func ensureBuiltinCredential(ctx context.Context, credentials *repo.APICredentialRepository) (*model.APICredential, error) {
-	existing, err := credentials.GetByID(ctx, BuiltinCredentialID)
-	if err == nil && existing != nil {
-		if !existing.IsActive() {
-			log.Printf("gateway: built-in credential %s is %s; 幻图 in-process calls will be rejected", BuiltinCredentialID, existing.Status)
-		}
-		return existing, nil
-	}
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, err
-	}
-	secret := make([]byte, 32)
-	if _, err := rand.Read(secret); err != nil {
-		return nil, err
-	}
-	now := time.Now()
-	credential := &model.APICredential{
-		ID:         BuiltinCredentialID,
-		Name:       "幻图内置调用（进程内）",
-		KeyPreview: "in-process",
-		KeyHash:    service.HashAPIKey("builtin-" + hex.EncodeToString(secret)),
-		Status:     model.APICredentialStatusActive,
-		CreatedAt:  now,
-		UpdatedAt:  now,
-	}
-	if err := credentials.Create(ctx, credential); err != nil {
-		return nil, err
-	}
-	return credential, nil
+	return &App{Config: cfg, DB: db, Redis: rdb, Handlers: handlers, Builtin: builtin, V1: v1Svc, cancel: cancelMaintenance}, nil
 }
 
 func (a *App) Close() error {

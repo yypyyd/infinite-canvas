@@ -3,9 +3,11 @@
 //
 // Usage:
 //
-//	GATEWAY_POSTGRES_DSN=... go run ./cmd/gateway-import -source "postgres://user:pass@host:5432/nexa?sslmode=disable" [-source-schema public] [-dry-run]
+//	go run ./cmd/gateway-import -source "postgres://user:pass@host:5432/nexa?sslmode=disable" [-source-schema public] [-dry-run]
 //
-// The target is read from GATEWAY_POSTGRES_DSN / GATEWAY_DB_SCHEMA (or .env).
+// The target is the account pool database: POOL_POSTGRES_DSN, or 幻图's
+// DATABASE_DSN when STORAGE_DRIVER=postgres (environment or .env), schema
+// POOL_DB_SCHEMA (default "gateway").
 // The command is idempotent and safe to re-run; see docs/gateway.md.
 package main
 

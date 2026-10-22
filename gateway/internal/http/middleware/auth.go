@@ -1,39 +1,18 @@
 package middleware
 
 import (
-	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/model"
-	"github.com/yypyyd/infinite-canvas/gateway/internal/service"
 )
 
 // The standalone Nexa admin session (login, bootstrap token, CSRF cookie) was
 // removed when the gateway was embedded into 幻图. Admin routes are now gated
-// by 幻图's super-admin middleware; only the /v1 data-plane credential check
-// lives here.
+// by 幻图's super-admin middleware. There is no external data plane: the pool
+// is only reachable in-process, under a fixed built-in principal.
 
 const currentAPICredentialKey = "api_credential"
-
-// RequireAPICredential authenticates external Bearer sk-* callers.
-func RequireAPICredential(credentials *service.APICredentialService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		credential, err := credentials.AuthenticateBearer(c.Request.Context(), c.GetHeader("Authorization"))
-		if err != nil {
-			if errors.Is(err, service.ErrInvalidAPICredential) {
-				c.Header("WWW-Authenticate", `Bearer realm="nexa"`)
-				writeOpenAIAuthError(c, http.StatusUnauthorized, "Incorrect API key provided.", "invalid_api_key")
-			} else {
-				writeOpenAIAuthError(c, http.StatusInternalServerError, "Authentication service unavailable.", "internal_error")
-			}
-			c.Abort()
-			return
-		}
-		c.Set(currentAPICredentialKey, credential)
-		c.Next()
-	}
-}
 
 // UseCredential attaches a fixed credential. It is only mounted on the
 // in-process listener that 幻图 itself dials, which is unreachable from the

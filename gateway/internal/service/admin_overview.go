@@ -30,10 +30,5 @@ func (s *AdminConsoleService) overviewTotals(ctx context.Context, health map[str
 	for _, provider := range adminAccountProviders {
 		totals["accounts"] += health[provider]["active"]
 	}
-	if err := s.db.WithContext(ctx).Model(&model.APICredential{}).
-		Where("status = ? AND revoked_at IS NULL", model.APICredentialStatusActive).Count(&count).Error; err != nil {
-		return nil, err
-	}
-	totals["keys"] = count
 	return totals, nil
 }

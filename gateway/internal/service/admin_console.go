@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"net"
 	"net/url"
 	"sort"
 	"strconv"
@@ -734,29 +733,13 @@ func (s *AdminConsoleService) ListLogs(ctx context.Context, filter LogListFilter
 	if err := query.Order("ts desc").Limit(limit).Offset(offset).Find(&events).Error; err != nil {
 		return nil, 0, err
 	}
-	credentialIDs := make([]string, 0)
-	seenCredential := make(map[string]bool)
-	for _, event := range events {
-		if event.APICredentialID != "" && !seenCredential[event.APICredentialID] {
-			seenCredential[event.APICredentialID] = true
-			credentialIDs = append(credentialIDs, event.APICredentialID)
-		}
-	}
-	credentials := make(map[string]model.APICredential, len(credentialIDs))
-	if len(credentialIDs) > 0 {
-		var items []model.APICredential
-		if err := s.db.WithContext(ctx).Where("id IN ?", credentialIDs).Find(&items).Error; err != nil {
-			return nil, 0, err
-		}
-		for _, item := range items {
-			credentials[item.ID] = item
-		}
-	}
 	rows := make([]map[string]any, 0, len(events))
 	for _, event := range events {
+		// Every non-admin request now comes from 幻图 in-process. Older rows
+		// may carry the ID of an external API key that no longer exists.
 		credential := map[string]any(nil)
-		if item, ok := credentials[event.APICredentialID]; ok {
-			credential = map[string]any{"id": item.ID, "name": item.Name, "key_preview": item.KeyPreview}
+		if event.APICredentialID == model.BuiltinCredentialID {
+			credential = map[string]any{"id": event.APICredentialID, "name": "幻图"}
 		}
 		row := map[string]any{
 			"id": event.ID, "request_id": event.RequestID, "model": event.Model, "kind": event.Kind,
@@ -783,11 +766,11 @@ func (s *AdminConsoleService) ListLogs(ctx context.Context, filter LogListFilter
 func (s *AdminConsoleService) GetSettings(ctx context.Context) (map[string]any, error) {
 	values := map[string]any{
 		"logs_retention_days": 30, "artifacts_retention_days": 30,
-		"outbound_proxy": "", "public_base_url": s.cfg.PublicBaseURL,
+		"outbound_proxy": "",
 	}
 	for settingKey, responseKey := range map[string]string{
 		"logs.retention_days": "logs_retention_days", "artifacts.retention_days": "artifacts_retention_days",
-		"proxy.url": "outbound_proxy", "public.base_url": "public_base_url",
+		"proxy.url": "outbound_proxy",
 	} {
 		value, err := s.settings.GetValue(ctx, settingKey)
 		if err != nil {
@@ -911,14 +894,6 @@ func (s *AdminConsoleService) UpdateSettings(ctx context.Context, input map[stri
 			updates[providerProxySettingKey(normalized)] = proxy
 		}
 	}
-	if value, ok := input["public_base_url"]; ok {
-		production := s.cfg != nil && strings.EqualFold(strings.TrimSpace(s.cfg.AppEnv), "production")
-		baseURL, err := normalizeAdminPublicOrigin(fmt.Sprint(value), production)
-		if err != nil {
-			return nil, err
-		}
-		updates["public.base_url"] = baseURL
-	}
 	if value, ok := input["deai_enabled"]; ok {
 		enabled, valid := value.(bool)
 		if !valid {
@@ -1001,40 +976,6 @@ func normalizeExtractAPI(raw, field string) (string, error) {
 		out += "?" + parsed.RawQuery
 	}
 	return out, nil
-}
-
-func normalizeAdminPublicOrigin(raw string, production bool) (string, error) {
-	value := strings.TrimSpace(raw)
-	if value == "" {
-		return "", nil
-	}
-	parsed, err := url.Parse(value)
-	if err != nil || parsed.Host == "" || parsed.User != nil {
-		return "", errors.New("public_base_url must be an absolute HTTP(S) origin")
-	}
-	parsed.Scheme = strings.ToLower(parsed.Scheme)
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return "", errors.New("public_base_url must be an absolute HTTP(S) origin")
-	}
-	if parsed.Path != "" && parsed.Path != "/" || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return "", errors.New("public_base_url must not contain a path, query, user info, or fragment")
-	}
-	if production && (parsed.Scheme != "https" || localOriginHost(parsed.Hostname())) {
-		return "", errors.New("public_base_url must be a non-local HTTPS origin in production")
-	}
-	parsed.Path, parsed.RawPath = "", ""
-	return strings.TrimRight(parsed.String(), "/"), nil
-}
-
-func localOriginHost(host string) bool {
-	host = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(host), "."))
-	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
-		return true
-	}
-	if ip := net.ParseIP(host); ip != nil {
-		return ip.IsLoopback() || ip.IsUnspecified()
-	}
-	return false
 }
 
 func normalizeAdminProvider(value string) string {

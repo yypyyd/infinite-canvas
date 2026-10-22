@@ -12,15 +12,14 @@ import (
 // plane has no authentication of its own: the caller mounts it behind 幻图's
 // super-admin middleware.
 type Handlers struct {
-	Health         *handler.HealthHandler
-	V1             *handler.V1Handler
-	APICredentials *handler.UserToolsHandler
-	Admin          *handler.AdminConsoleHandler
-	BannedWords    *handler.BannedWordsHandler
+	Health      *handler.HealthHandler
+	V1          *handler.V1Handler
+	Admin       *handler.AdminConsoleHandler
+	BannedWords *handler.BannedWordsHandler
 }
 
-// MountV1 registers the OpenAI-compatible routes on group. auth decides who
-// the caller is (Bearer sk-* externally, the built-in credential in-process).
+// MountV1 registers the OpenAI-compatible routes on group. It is only used on
+// the in-process listener; auth attaches the built-in principal.
 func MountV1(v1 *gin.RouterGroup, auth gin.HandlerFunc, h Handlers) {
 	v1.Use(cors.New(cors.Config{
 		AllowOriginFunc:  func(origin string) bool { return strings.TrimSpace(origin) != "" },
@@ -46,12 +45,6 @@ func MountV1(v1 *gin.RouterGroup, auth gin.HandlerFunc, h Handlers) {
 func MountAdmin(admin *gin.RouterGroup, h Handlers) {
 	admin.GET("/health/live", h.Health.Live)
 	admin.GET("/health/ready", h.Health.Ready)
-
-	admin.GET("/api-credentials", h.APICredentials.APICredentialsList)
-	admin.POST("/api-credentials", h.APICredentials.APICredentialsCreate)
-	admin.PATCH("/api-credentials/:id", h.APICredentials.APICredentialsUpdate)
-	admin.POST("/api-credentials/:id/rotate", h.APICredentials.APICredentialsRotate)
-	admin.DELETE("/api-credentials/:id", h.APICredentials.APICredentialsRevoke)
 
 	admin.GET("/logical-models", h.Admin.LogicalModels)
 	admin.PATCH("/logical-models/:id", h.Admin.UpdateLogicalModel)

@@ -21,13 +21,20 @@ var ErrConcurrencyBackendUnavailable = errors.New("concurrency backend unavailab
 // unavailable; observational capacity reads are best-effort.
 type ConcurrencyService struct {
 	redis *redis.Client
+	// local replaces Redis when none is configured. It is correct for a
+	// single 幻图 process, which is the only supported topology without Redis.
+	local *localSlots
 	// ttl covers the image/video execution deadlines plus bookkeeping headroom.
 	// A crashed worker cannot retain a slot indefinitely.
 	ttl int
 }
 
 func NewConcurrencyService(rdb *redis.Client) *ConcurrencyService {
-	return &ConcurrencyService{redis: rdb, ttl: int(videoGenerationTimeout.Seconds()) + 300} // longest video deadline plus bookkeeping
+	c := &ConcurrencyService{redis: rdb, ttl: int(videoGenerationTimeout.Seconds()) + 300} // longest video deadline plus bookkeeping
+	if rdb == nil {
+		c.local = newLocalSlots()
+	}
+	return c
 }
 
 // acquireScript: KEYS[1]=set, ARGV[1]=max (0=unlimited), ARGV[2]=ttl secs,
@@ -53,6 +60,9 @@ func (c *ConcurrencyService) Acquire(ctx context.Context, key string, max int, t
 	if max <= 0 {
 		return true, nil
 	}
+	if c != nil && c.local != nil {
+		return c.local.acquire(key, max, time.Duration(c.ttl)*time.Second, token), nil
+	}
 	if c == nil || c.redis == nil {
 		return false, ErrConcurrencyBackendUnavailable
 	}
@@ -66,6 +76,10 @@ func (c *ConcurrencyService) Acquire(ctx context.Context, key string, max int, t
 // Release frees the slot held by `token` under `key`. Safe to call even if the
 // slot already expired.
 func (c *ConcurrencyService) Release(ctx context.Context, key, token string) {
+	if c != nil && c.local != nil {
+		c.local.release(key, token)
+		return
+	}
 	if c == nil || c.redis == nil {
 		return
 	}
@@ -88,6 +102,9 @@ func (c *ConcurrencyService) ActiveCount(ctx context.Context, key string) int64 
 // the observation is unavailable; callers must treat that as unknown and rely
 // on Acquire's atomic decision rather than incorrectly declaring accounts full.
 func (c *ConcurrencyService) ActiveCounts(ctx context.Context, keys []string) (map[string]int64, bool) {
+	if c != nil && c.local != nil {
+		return c.local.counts(keys), true
+	}
 	if c == nil || c.redis == nil {
 		return nil, false
 	}
@@ -150,6 +167,9 @@ return counts
 // the account list over and over and leaves the tail of a large pool idle.
 // ok=false when Redis is unavailable, so the caller can fall back.
 func (c *ConcurrencyService) NextCursor(ctx context.Context, key string) (uint64, bool) {
+	if c != nil && c.local != nil {
+		return c.local.next(key), true
+	}
 	if c == nil || c.redis == nil {
 		return 0, false
 	}

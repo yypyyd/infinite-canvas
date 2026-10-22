@@ -1773,4 +1773,20 @@ BEGIN
 END
 $dola$;
 `,
+	"000032_remove_external_api.sql": `-- The pool is now only reachable in-process from 幻图. External API keys
+-- (sk-*) are gone: drop their hashes and the public base URL setting. The
+-- api_credentials table itself is kept (empty) because historical
+-- migrations reference it; event_logs.api_credential_id keeps old IDs as
+-- plain text for history.
+DO $ext$
+BEGIN
+  IF to_regclass('api_credentials') IS NOT NULL THEN
+    DELETE FROM api_credentials;
+  END IF;
+  IF to_regclass('site_settings') IS NOT NULL THEN
+    DELETE FROM site_settings WHERE key = 'public.base_url';
+  END IF;
+END
+$ext$;
+`,
 }

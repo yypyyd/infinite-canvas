@@ -1,29 +1,19 @@
 package model
 
-import "time"
+// BuiltinCredentialID identifies 幻图 as the only caller of the account pool.
+// It is stored on event logs and used to scope image/video job lookups.
+const BuiltinCredentialID = "cred-huantu-builtin"
 
-const (
-	APICredentialStatusActive   = "active"
-	APICredentialStatusDisabled = "disabled"
-	APICredentialStatusRevoked  = "revoked"
-)
-
-// APICredential authenticates downstream /v1 callers independently of the
-// administrator. Only KeyHash and a non-sensitive preview are persisted; the
-// plaintext sk-* value is returned once when the credential is created.
+// APICredential is the in-memory principal attached to in-process requests.
+// External API keys were removed; the legacy api_credentials table is
+// emptied by migration 000032 and no longer read.
 type APICredential struct {
-	ID               string     `json:"id" gorm:"primaryKey;size:32"`
-	Name             string     `json:"name" gorm:"size:100;not null"`
-	KeyPreview       string     `json:"key_preview" gorm:"size:32;not null"`
-	KeyHash          string     `json:"-" gorm:"size:255;uniqueIndex;not null"`
-	Status           string     `json:"status" gorm:"size:32;index;not null;default:'active'"`
-	ConcurrencyLimit int        `json:"concurrency_limit" gorm:"not null;default:0"` // zero means unlimited
-	LastUsedAt       *time.Time `json:"last_used_at,omitempty"`
-	RevokedAt        *time.Time `json:"revoked_at,omitempty"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
+	ID               string
+	Name             string
+	ConcurrencyLimit int // zero means unlimited
 }
 
-func (c APICredential) IsActive() bool {
-	return c.Status == APICredentialStatusActive && c.RevokedAt == nil
+// BuiltinCredential returns the principal for 幻图's in-process calls.
+func BuiltinCredential() *APICredential {
+	return &APICredential{ID: BuiltinCredentialID, Name: "幻图"}
 }

@@ -103,7 +103,6 @@ type V1Service struct {
 	events   *repo.EventRepository
 	tokens   *repo.TokenRepository
 	settings *repo.SiteSettingRepository
-	apiKeys  *APICredentialService
 	adobe    *adobe.Client
 	byteplus *byteplus.Client
 	chatgpt  *chatgpt.Client
@@ -380,14 +379,13 @@ type MediaReference struct {
 	Filename    string
 }
 
-func NewV1Service(cfg *config.Config, models *repo.ModelRepository, apiKeys *APICredentialService, events *repo.EventRepository, tokens *repo.TokenRepository, settings *repo.SiteSettingRepository, conc *ConcurrencyService, adobeClient *adobe.Client, bytePlusClient *byteplus.Client, chatGPTClient *chatgpt.Client, grokClient *grok.Client, store *storage.Client) *V1Service {
+func NewV1Service(cfg *config.Config, models *repo.ModelRepository, events *repo.EventRepository, tokens *repo.TokenRepository, settings *repo.SiteSettingRepository, conc *ConcurrencyService, adobeClient *adobe.Client, bytePlusClient *byteplus.Client, chatGPTClient *chatgpt.Client, grokClient *grok.Client, store *storage.Client) *V1Service {
 	service := &V1Service{
 		cfg:      cfg,
 		models:   models,
 		events:   events,
 		tokens:   tokens,
 		settings: settings,
-		apiKeys:  apiKeys,
 		conc:     conc,
 		adobe:    adobeClient,
 		byteplus: bytePlusClient,
@@ -539,23 +537,6 @@ func (s *V1Service) refreshAdobeToken(ctx context.Context, tokenID string) (mode
 		return model.TokenAccount{}, false
 	}
 	return *t, true
-}
-
-func (s *V1Service) Authenticate(ctx context.Context, authHeader string) (*APIPrincipal, error) {
-	if ParseBearer(authHeader) == "" {
-		return nil, ErrMissingAPIKey
-	}
-	credential, err := s.apiKeys.AuthenticateBearer(ctx, authHeader)
-	if err != nil {
-		if errors.Is(err, ErrInvalidAPICredential) {
-			return nil, ErrInvalidAPIKey
-		}
-		return nil, err
-	}
-	return &APIPrincipal{
-		Credential: credential,
-		TokenType:  "user",
-	}, nil
 }
 
 func (s *V1Service) ListModels(ctx context.Context, extended bool) ([]map[string]any, error) {
@@ -1290,7 +1271,7 @@ func imageJobKey(credentialID, requestID string) string {
 }
 
 func (s *V1Service) imageTaskURL(requestID, requestBaseURL string) string {
-	path := config.V1PathPrefix + "/images/tasks?request_id=" + url.QueryEscape(strings.TrimSpace(requestID))
+	path := "/v1/images/tasks?request_id=" + url.QueryEscape(strings.TrimSpace(requestID))
 	if base := s.outputBaseURL(requestBaseURL); base != "" {
 		return base + path
 	}
@@ -2497,7 +2478,7 @@ func guardMediaStream(body io.ReadCloser, contentType string, kind netguard.Medi
 }
 
 func publicImageContentURL(baseURL, eventID string) string {
-	path := config.V1PathPrefix + "/images/" + strings.TrimSpace(eventID) + "/content"
+	path := "/v1/images/" + strings.TrimSpace(eventID) + "/content"
 	if base := strings.TrimRight(strings.TrimSpace(baseURL), "/"); base != "" {
 		return base + path
 	}
@@ -2505,23 +2486,8 @@ func publicImageContentURL(baseURL, eventID string) string {
 }
 
 func (s *V1Service) outputBaseURL(requestBaseURL string) string {
-	// In-process callers (幻图 itself) must get URLs they can dial back
-	// in-process with the built-in credential, not the public site URL.
-	if parsed, err := url.Parse(strings.TrimSpace(requestBaseURL)); err == nil && strings.EqualFold(parsed.Hostname(), config.InternalHost) {
-		return strings.TrimRight(strings.TrimSpace(requestBaseURL), "/")
-	}
-	if s != nil && s.settings != nil {
-		if value, err := s.settings.GetValue(context.Background(), "public.base_url"); err == nil {
-			if configured := strings.TrimRight(strings.TrimSpace(value), "/"); configured != "" {
-				return configured
-			}
-		}
-	}
-	if s != nil && s.cfg != nil {
-		if configured := strings.TrimRight(strings.TrimSpace(s.cfg.PublicBaseURL), "/"); configured != "" {
-			return configured
-		}
-	}
+	// The only caller is 幻图 in-process, so generated URLs must point back
+	// at the in-process host it dialled (http://nexa.internal).
 	return strings.TrimRight(strings.TrimSpace(requestBaseURL), "/")
 }
 

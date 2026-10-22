@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/yypyyd/infinite-canvas/gateway/internal/config"
 	"io"
 	"net/http"
 	"net/url"
@@ -137,7 +136,7 @@ func adminTestError(c *gin.Context, err error) {
 	}
 }
 
-// apiPrincipal reuses the credential that RequireAPICredential already
+// apiPrincipal reuses the built-in principal that UseCredential already
 // authenticated. Re-reading and hashing the bearer token in every handler
 // doubled database traffic and created two independent auth decisions for one
 // request.
@@ -351,7 +350,7 @@ func (h *V1Handler) respondImageRequest(c *gin.Context, principal *service.APIPr
 }
 
 func imageTaskPollURL(_ *gin.Context, requestID string) string {
-	path := config.V1PathPrefix + "/images/tasks?request_id=" + url.QueryEscape(strings.TrimSpace(requestID))
+	path := "/v1/images/tasks?request_id=" + url.QueryEscape(strings.TrimSpace(requestID))
 	return path
 }
 

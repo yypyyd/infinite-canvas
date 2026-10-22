@@ -259,7 +259,6 @@ func safeAdminValidationMessage(err error) (string, bool) {
 		"provider_extract_apis must be an object of pool => URL",
 		"outbound_extract_api must be an absolute http(s) URL",
 		"deai_enabled must be a boolean",
-		"public_base_url must be an http(s) URL",
 		"cookie required",
 		"not a byteplus lumina cookie",
 		"access_token required",

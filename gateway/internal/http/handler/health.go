@@ -39,13 +39,13 @@ func (h *HealthHandler) Ready(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
 	defer cancel()
 
-	if h.db == nil || h.redis == nil || h.store == nil {
+	if h.db == nil || h.store == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "not_ready"})
 		return
 	}
 
 	sqlDB, err := h.db.DB()
-	if err != nil || sqlDB.PingContext(ctx) != nil || h.redis.Ping(ctx).Err() != nil || h.store.Check(ctx) != nil || !schemaIsCurrent(ctx, h.db) {
+	if err != nil || sqlDB.PingContext(ctx) != nil || (h.redis != nil && h.redis.Ping(ctx).Err() != nil) || h.store.Check(ctx) != nil || !schemaIsCurrent(ctx, h.db) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "not_ready"})
 		return
 	}

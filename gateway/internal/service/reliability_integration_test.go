@@ -145,16 +145,6 @@ func TestOverviewCountsEntireAccountPoolIntegration(t *testing.T) {
 	if err := db.CreateInBatches(&accounts, 100).Error; err != nil {
 		t.Fatal(err)
 	}
-	keys := make([]model.APICredential, 0, 206)
-	for i := range 205 {
-		keys = append(keys, model.APICredential{
-			ID: fmt.Sprintf("summary-key-%d", i), Name: "test", KeyHash: fmt.Sprintf("%064x", i+1), Status: model.APICredentialStatusActive,
-		})
-	}
-	keys = append(keys, model.APICredential{ID: "summary-key-disabled", Name: "test", KeyHash: fmt.Sprintf("%064x", 206), Status: model.APICredentialStatusDisabled})
-	if err := db.CreateInBatches(&keys, 100).Error; err != nil {
-		t.Fatal(err)
-	}
 	svc := NewAdminConsoleService(nil, db, repo.NewModelRepository(db), repo.NewTokenRepository(db), nil, nil)
 	overview, err := svc.Overview(context.Background())
 	if err != nil {
@@ -165,7 +155,7 @@ func TestOverviewCountsEntireAccountPoolIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	var totals map[string]int64
-	if err := json.Unmarshal(raw, &totals); err != nil || totals["accounts"] != 205 || totals["keys"] != 205 {
+	if err := json.Unmarshal(raw, &totals); err != nil || totals["accounts"] != 205 {
 		t.Fatalf("overview truncated or misclassified totals: %s, err=%v", raw, err)
 	}
 }

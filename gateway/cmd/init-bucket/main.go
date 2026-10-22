@@ -37,9 +37,9 @@ func main() {
 	}
 }
 
-// env prefers GATEWAY_<key> and falls back to the bare key.
+// env prefers POOL_<key> and falls back to the bare key.
 func env(key string) string {
-	if v := os.Getenv("GATEWAY_" + key); v != "" {
+	if v := os.Getenv("POOL_" + key); v != "" {
 		return v
 	}
 	return os.Getenv(key)

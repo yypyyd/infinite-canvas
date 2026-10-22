@@ -1,17 +1,19 @@
-// Package gateway embeds the former standalone Nexa API gateway into 幻图.
+// Package gateway is 幻图's built-in account pool (the former Nexa gateway).
 //
-// It exposes three things to the host application:
+// It exposes only what 幻图 itself needs:
 //
-//   - Mount: the OpenAI-compatible data plane (Bearer sk-* keys) on /v1 and
-//     /api/gateway/v1, plus the admin control plane on /api/admin/gateway/*
-//     behind the middleware supplied by 幻图 (super admin only).
-//   - WrapDialContext / InstallDefaultTransport: an in-process route so that
-//     幻图 can use the gateway as a built-in model channel at
-//     http://nexa.internal/v1 without a network hop or a stored API key.
-//   - Enabled / Start / Close lifecycle helpers.
+//   - Mount: the super-admin control plane on /api/admin/account-pool/*.
+//   - WrapDialContext / InstallDefaultTransport: the in-process route that
+//     幻图 uses to call the pool at http://nexa.internal/v1. There is no
+//     network listener and no external API key: the pool is not reachable
+//     from outside the 幻图 process.
+//   - Models: the pool's enabled models, which 幻图 offers as a built-in
+//     channel without any channel configuration.
 //
-// The gateway keeps its own PostgreSQL schema (GATEWAY_DB_SCHEMA, default
-// "gateway") and Redis, configured through GATEWAY_* environment variables.
+// The pool stores its tables in its own PostgreSQL schema (POOL_DB_SCHEMA,
+// default "gateway"). By default it shares 幻图's database
+// (STORAGE_DRIVER=postgres + DATABASE_DSN); POOL_POSTGRES_DSN overrides that.
+// Redis is optional (POOL_REDIS_ADDR); without it, coordination is in-process.
 package gateway
 
 import (
@@ -37,70 +39,71 @@ import (
 )
 
 const (
-	// InternalHost is the sentinel host for in-process calls. Configure a 幻图
-	// OpenAI-compatible channel with base URL InternalBaseURL to use it.
+	// InternalHost is the sentinel host for in-process calls.
 	InternalHost = config.InternalHost
 	// InternalBaseURL is the base URL of the built-in channel.
 	InternalBaseURL = "http://" + config.InternalHost + "/v1"
-	// PublicV1Prefix is the public OpenAI-compatible base path.
-	PublicV1Prefix = config.V1PathPrefix
 	// AdminPrefix is the admin control plane base path.
 	AdminPrefix = config.AdminPathPrefix
 )
 
-// Module is a running gateway.
+// ErrNotConfigured is returned by Start when no PostgreSQL is available.
+var ErrNotConfigured = config.ErrNotConfigured
+
+// Module is a running account pool.
 type Module struct {
 	app      *bootstrap.App
 	listener *memoryListener
 	server   *http.Server
-	builtin  atomic.Pointer[model.APICredential]
+	models   modelCache
 }
 
 var current atomic.Pointer[Module]
 
-// Enabled reports whether GATEWAY_ENABLED is truthy.
-func Enabled() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("GATEWAY_ENABLED"))) {
-	case "1", "true", "yes", "on":
+// Disabled reports whether the pool was explicitly turned off with
+// POOL_ENABLED=false. The pool is otherwise on whenever PostgreSQL is
+// available.
+func Disabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("POOL_ENABLED"))) {
+	case "0", "false", "no", "off":
 		return true
 	}
 	return false
 }
 
-// Current returns the running module, or nil when the gateway is disabled.
+// Current returns the running module, or nil when the pool is not running.
 func Current() *Module { return current.Load() }
 
-// Start boots the gateway (migrations, Redis, maintenance workers) and the
-// in-process listener, and registers it as the current module.
+// Start boots the pool (migrations, optional Redis, maintenance workers) and
+// the in-process listener, and registers it as the current module. It returns
+// ErrNotConfigured when no PostgreSQL is available.
 func Start(ctx context.Context) (*Module, error) {
 	app, err := bootstrap.NewApp(ctx)
 	if err != nil {
 		return nil, err
 	}
 	m := &Module{app: app, listener: newMemoryListener()}
-	m.builtin.Store(app.Builtin)
 
 	internal := gin.New()
 	internal.Use(middleware.RequestID(), gin.Recovery())
-	auth := middleware.UseCredential(m.builtin.Load)
+	builtin := app.Builtin
+	auth := middleware.UseCredential(func() *model.APICredential { return builtin })
 	router.MountV1(internal.Group("/v1"), auth, app.Handlers)
-	router.MountV1(internal.Group(PublicV1Prefix), auth, app.Handlers)
+	// Older 幻图 tasks may have stored URLs under the former public prefix.
+	router.MountV1(internal.Group("/api/gateway/v1"), auth, app.Handlers)
 	m.server = &http.Server{Handler: internal, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		if err := m.server.Serve(m.listener); err != nil && !errors.Is(err, http.ErrServerClosed) && !errors.Is(err, net.ErrClosed) {
-			log.Printf("gateway in-process server: %v", err)
+			log.Printf("account pool in-process server: %v", err)
 		}
 	}()
 	current.Store(m)
 	return m, nil
 }
 
-// Mount registers the public data plane and the admin control plane on the
-// 幻图 engine. adminAuth must enforce 幻图's super-admin role.
+// Mount registers the admin control plane on the 幻图 engine. adminAuth must
+// enforce 幻图's super-admin role.
 func (m *Module) Mount(engine *gin.Engine, adminAuth gin.HandlerFunc) {
-	external := middleware.RequireAPICredential(m.app.Credentials)
-	router.MountV1(engine.Group("/v1"), external, m.app.Handlers)
-	router.MountV1(engine.Group(PublicV1Prefix), external, m.app.Handlers)
 	router.MountAdmin(engine.Group(AdminPrefix, adminAuth), m.app.Handlers)
 }
 
@@ -129,7 +132,7 @@ func WrapDialContext(next DialFunc) DialFunc {
 		if strings.EqualFold(host, InternalHost) {
 			m := current.Load()
 			if m == nil {
-				return nil, errors.New("内置网关未启用（GATEWAY_ENABLED=false）")
+				return nil, errors.New("内置账号池未运行（需要 PostgreSQL）")
 			}
 			return m.listener.dial(ctx)
 		}
@@ -206,8 +209,9 @@ type memoryAddr struct{}
 func (memoryAddr) Network() string { return "memory" }
 func (memoryAddr) String() string  { return InternalHost }
 
-// Health is the connectivity state of the gateway's dependencies. Values are
-// "ok" or "unavailable"; error details are never included.
+// Health is the connectivity state of the pool's dependencies. Values are
+// "ok", "unavailable" or, for Redis when not configured, "disabled". Error
+// details are never included.
 type Health struct {
 	Status   string `json:"status"`
 	Database string `json:"database"`
@@ -248,13 +252,15 @@ func (m *Module) CheckHealth(ctx context.Context, timeout time.Duration) (Health
 	}()
 	go func() {
 		defer wg.Done()
-		redisErr = errors.New("gateway redis not configured")
 		if m.app.Redis != nil {
 			redisErr = withDeadline(ctx, func() error { return m.app.Redis.Ping(ctx).Err() })
 		}
 	}()
 	wg.Wait()
 	h := Health{Status: "ok", Database: "ok", Redis: "ok"}
+	if m.app.Redis == nil {
+		h.Redis = "disabled"
+	}
 	if dbErr != nil {
 		h.Status, h.Database = "unavailable", "unavailable"
 	}
@@ -268,4 +274,12 @@ func (m *Module) CheckHealth(ctx context.Context, timeout time.Duration) (Health
 		return h, fmt.Errorf("gateway redis: %w", redisErr)
 	}
 	return h, nil
+}
+
+// MountUnavailable answers the admin control plane with 503 and reason when
+// the pool is not running, so the admin pages can say what is missing.
+func MountUnavailable(engine *gin.Engine, adminAuth gin.HandlerFunc, reason string) {
+	engine.Group(AdminPrefix, adminAuth).Any("/*path", func(c *gin.Context) {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{"code": "pool_unavailable", "message": reason}})
+	})
 }

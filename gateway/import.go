@@ -30,8 +30,9 @@ type ImportOptions struct {
 }
 
 // importSkipTables are never copied: migration bookkeeping belongs to the
-// target, and the standalone admin login is replaced by 幻图's super admin.
-var importSkipTables = map[string]bool{"schema_migrations": true, "admins": true}
+// target, the standalone admin login is replaced by 幻图's super admin, and
+// external API keys no longer exist (the pool is only reachable in-process).
+var importSkipTables = map[string]bool{"schema_migrations": true, "admins": true, "api_credentials": true}
 
 // Dola was removed from 幻图's gateway. dolaExclusion returns a source-side
 // WHERE clause (table alias t) that drops Dola accounts, routes, Dola-only
@@ -65,7 +66,7 @@ func dolaExclusion(schema, table string) string {
 	case "refresh_profiles":
 		return "t.pool <> 'dola'"
 	case "site_settings":
-		return "t.key NOT LIKE 'provider.dola.%' AND t.key NOT LIKE 'proxy.dola.%'"
+		return "t.key NOT LIKE 'provider.dola.%' AND t.key NOT LIKE 'proxy.dola.%' AND t.key <> 'public.base_url'"
 	}
 	return ""
 }
@@ -79,7 +80,8 @@ func sourceFrom(schema, table string) string {
 }
 
 // ImportStandalone copies data from a standalone Nexa database into the
-// embedded gateway schema (GATEWAY_POSTGRES_DSN / GATEWAY_DB_SCHEMA).
+// account pool schema: POOL_POSTGRES_DSN, or 幻图's DATABASE_DSN when
+// STORAGE_DRIVER=postgres; schema POOL_DB_SCHEMA (default "gateway").
 //
 // It is idempotent: the target schema is migrated first, tables are copied in
 // foreign-key order, rows are upserted by primary key (source wins), tables
@@ -161,6 +163,9 @@ func ImportStandalone(ctx context.Context, opts ImportOptions) error {
 	var failures []string
 	for _, table := range ordered {
 		if importSkipTables[table] {
+			if sourceSet[table] {
+				fmt.Fprintf(out, "skip %-36s (not imported)\n", table)
+			}
 			continue
 		}
 		if !sourceSet[table] {
@@ -183,7 +188,9 @@ func ImportStandalone(ctx context.Context, opts ImportOptions) error {
 		if err := resetSequences(ctx, target, targetSchema, out); err != nil {
 			return err
 		}
-		invalidateSettingsCache(ctx, target, targetSchema, cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB, out)
+		if strings.TrimSpace(cfg.RedisAddr) != "" {
+			invalidateSettingsCache(ctx, target, targetSchema, cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB, out)
+		}
 	}
 	if len(failures) > 0 {
 		return fmt.Errorf("import failed for %d table(s): %s", len(failures), strings.Join(failures, ", "))

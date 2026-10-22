@@ -3,123 +3,106 @@ package config
 import (
 	"fmt"
 	"net"
-	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 )
 
-// Paths and host used once the gateway is embedded in 幻图.
+// Paths and host used by the built-in account pool.
 const (
-	// V1PathPrefix is where the public OpenAI-compatible API is mounted
-	// (behind 幻图's Next.js /api proxy). /v1 is also served on the Go port.
-	V1PathPrefix = "/api/gateway/v1"
-	// AdminPathPrefix replaces the standalone /admin/api control plane.
-	AdminPathPrefix = "/api/admin/gateway"
-	// InternalHost is the sentinel host 幻图 dials to reach the gateway
-	// in-process (see gateway.WrapDialContext).
+	// AdminPathPrefix is where the account pool admin API is mounted, behind
+	// 幻图's super-admin middleware.
+	AdminPathPrefix = "/api/admin/account-pool"
+	// InternalHost is the sentinel host 幻图 dials to reach the pool
+	// in-process (see gateway.WrapDialContext). It never resolves over DNS.
 	InternalHost = "nexa.internal"
 )
 
 type Config struct {
-	AppEnv              string
-	HTTPAddr            string
-	PublicBaseURL       string
-	AppTitle            string
-	PostgresDSN         string
-	DBSchema            string
-	RedisAddr           string
-	RedisPassword       string
-	RedisDB             int
-	SessionCookieName   string
-	CookieSecure        bool
-	SessionTTL          time.Duration
-	SessionSlideAfter   time.Duration
-	CORSOrigins         []string
-	TrustedProxyCIDRs   []netip.Prefix
-	AdminBootstrapToken string
-	GeneratedRoot       string
-	RustFSEndpoint      string
-	RustFSBucket        string
-	RustFSAccessKey     string
-	RustFSSecretKey     string
+	AppEnv          string
+	PostgresDSN     string
+	DBSchema        string
+	RedisAddr       string
+	RedisPassword   string
+	RedisDB         int
+	GeneratedRoot   string
+	RustFSEndpoint  string
+	RustFSBucket    string
+	RustFSAccessKey string
+	RustFSSecretKey string
 }
 
-func Load() (*Config, error) {
-	// 幻图 loads .env itself (godotenv); the gateway only reads GATEWAY_* keys.
+// ErrNotConfigured means no PostgreSQL is available for the pool.
+var ErrNotConfigured = fmt.Errorf("account pool needs PostgreSQL: set STORAGE_DRIVER=postgres with DATABASE_DSN, or POOL_POSTGRES_DSN")
 
+// EmbeddedDSNFile is written by the Docker entrypoint when it starts the
+// embedded PostgreSQL, so commands run with `docker exec` find it too.
+const EmbeddedDSNFile = "/run/postgresql/huantu-pool.dsn"
+
+// ResolvePostgresDSN returns the pool database: POOL_POSTGRES_DSN when set,
+// otherwise 幻图's own DATABASE_DSN when 幻图 runs on PostgreSQL, otherwise
+// the container's embedded PostgreSQL if it is running.
+func ResolvePostgresDSN() string {
+	if v := strings.TrimSpace(os.Getenv("POOL_POSTGRES_DSN")); v != "" {
+		return v
+	}
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("STORAGE_DRIVER"))) {
+	case "postgres", "postgresql":
+		return strings.TrimSpace(os.Getenv("DATABASE_DSN"))
+	}
+	if data, err := os.ReadFile(embeddedDSNFile); err == nil {
+		return strings.TrimSpace(string(data))
+	}
+	return ""
+}
+
+var embeddedDSNFile = EmbeddedDSNFile
+
+func Load() (*Config, error) {
+	// 幻图 loads .env itself (godotenv); the pool only reads POOL_* keys plus
+	// 幻图's STORAGE_DRIVER / DATABASE_DSN.
 	wd, err := os.Getwd()
 	if err != nil {
 		return nil, err
 	}
-
-	appEnv := envString("APP_ENV", "development")
-	trustedProxyCIDRs, err := parseCIDRs(envList("TRUSTED_PROXY_CIDRS", []string{
-		"127.0.0.0/8",
-		"::1/128",
-	}))
-	if err != nil {
-		return nil, err
-	}
-
 	cfg := &Config{
-		AppEnv:              appEnv,
-		HTTPAddr:            envString("HTTP_ADDR", ":6061"),
-		PublicBaseURL:       strings.TrimRight(envString("PUBLIC_BASE_URL", ""), "/"),
-		AppTitle:            envString("APP_TITLE", "2API"),
-		PostgresDSN:         envString("POSTGRES_DSN", "host=127.0.0.1 user=postgres password=postgres dbname=vivid_ai port=5432 sslmode=disable TimeZone=Asia/Shanghai"),
-		DBSchema:            envString("DB_SCHEMA", "gateway"),
-		RedisAddr:           envString("REDIS_ADDR", "127.0.0.1:6379"),
-		RedisPassword:       envString("REDIS_PASSWORD", ""),
-		RedisDB:             envInt("REDIS_DB", 0),
-		SessionCookieName:   envString("SESSION_COOKIE_NAME", "twoapi_admin_session"),
-		CookieSecure:        envBool("COOKIE_SECURE", appEnv != "development"),
-		SessionTTL:          time.Duration(envInt("SESSION_TTL_HOURS", 24)) * time.Hour,
-		SessionSlideAfter:   time.Duration(envInt("SESSION_SLIDE_AFTER_HOURS", 22)) * time.Hour,
-		CORSOrigins:         envList("CORS_ORIGINS", []string{"http://localhost:5173", "http://127.0.0.1:5173"}),
-		TrustedProxyCIDRs:   trustedProxyCIDRs,
-		AdminBootstrapToken: envString("ADMIN_BOOTSTRAP_TOKEN", ""),
-		GeneratedRoot: filepath.Clean(envString(
-			"GENERATED_ROOT",
-			// vivid-ai's own data dir (backend/data/generated) — NOT the Python
-			// original's tree. Generated outputs and user-uploaded reference
-			// images both live here and are served (cookie-authed) via /images.
-			filepath.Join(wd, "data", "generated"),
-		)),
+		AppEnv:        envString("APP_ENV", "production"),
+		PostgresDSN:   ResolvePostgresDSN(),
+		DBSchema:      envString("DB_SCHEMA", "gateway"),
+		RedisAddr:     envString("REDIS_ADDR", ""),
+		RedisPassword: envString("REDIS_PASSWORD", ""),
+		RedisDB:       envInt("REDIS_DB", 0),
+		// Generated outputs and uploaded reference images live under 幻图's
+		// data dir so the production volume (/app/data) persists them.
+		GeneratedRoot:   filepath.Clean(envString("GENERATED_ROOT", filepath.Join(wd, "data", "generated"))),
 		RustFSEndpoint:  envString("RUSTFS_ENDPOINT", ""),
 		RustFSBucket:    envString("RUSTFS_BUCKET", ""),
 		RustFSAccessKey: envString("RUSTFS_ACCESS_KEY", ""),
 		RustFSSecretKey: envString("RUSTFS_SECRET_KEY", ""),
 	}
+	if cfg.PostgresDSN == "" {
+		return nil, ErrNotConfigured
+	}
 	if err := cfg.validate(); err != nil {
 		return nil, err
 	}
-
 	return cfg, nil
 }
 
 func (c *Config) validate() error {
 	appEnv := strings.ToLower(strings.TrimSpace(c.AppEnv))
-	if appEnv == "development" {
-		return nil
+	if appEnv != "development" && appEnv != "production" {
+		return fmt.Errorf("POOL_APP_ENV must be either development or production")
 	}
-	if appEnv != "production" {
-		return fmt.Errorf("APP_ENV must be either development or production")
+	if _, err := pgx.ParseConfig(c.PostgresDSN); err != nil {
+		return fmt.Errorf("parse pool PostgreSQL DSN: %w", err)
 	}
-	if err := validateProductionOrigin("PUBLIC_BASE_URL", c.PublicBaseURL); err != nil {
-		return err
-	}
-	if err := validatePostgresDSN(c.PostgresDSN); err != nil {
-		return err
-	}
-	// Object storage is optional inside 幻图: without it image caching is
-	// skipped and stored videos cannot be replayed. Only validate it when an
-	// endpoint is configured.
+	// Object storage is optional: without it image caching is skipped and
+	// stored videos cannot be replayed. Only validate it when configured.
 	if strings.TrimSpace(c.RustFSEndpoint) == "" {
 		return nil
 	}
@@ -140,24 +123,6 @@ func (c *Config) validate() error {
 		if err := validateProductionSecret(secret.name, secret.value, secret.minLen); err != nil {
 			return err
 		}
-	}
-	return nil
-}
-
-func validateProductionOrigin(name, raw string) error {
-	value := strings.TrimSpace(raw)
-	parsed, err := url.Parse(value)
-	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil {
-		return fmt.Errorf("%s must be an absolute HTTPS origin in production", name)
-	}
-	if parsed.Path != "" && parsed.Path != "/" || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return fmt.Errorf("%s must not contain a path, query, user info, or fragment in production", name)
-	}
-	if isLocalHostname(parsed.Hostname()) {
-		return fmt.Errorf("%s must not use a loopback or localhost origin in production", name)
-	}
-	if err := validateURLPort(name, parsed); err != nil {
-		return err
 	}
 	return nil
 }
@@ -183,17 +148,6 @@ func validateURLPort(name string, parsed *url.URL) error {
 	port, err := strconv.Atoi(parsed.Port())
 	if err != nil || port < 1 || port > 65535 {
 		return fmt.Errorf("%s contains an invalid port in production", name)
-	}
-	return nil
-}
-
-func validatePostgresDSN(raw string) error {
-	parsed, err := pgx.ParseConfig(strings.TrimSpace(raw))
-	if err != nil {
-		return fmt.Errorf("POSTGRES_DSN is invalid in production")
-	}
-	if err := validateProductionSecret("POSTGRES_DSN password", parsed.Password, 16); err != nil {
-		return err
 	}
 	return nil
 }
@@ -236,18 +190,6 @@ func isLocalHostname(host string) bool {
 		return ip.IsLoopback() || ip.IsUnspecified()
 	}
 	return false
-}
-
-func parseCIDRs(values []string) ([]netip.Prefix, error) {
-	prefixes := make([]netip.Prefix, 0, len(values))
-	for _, value := range values {
-		prefix, err := netip.ParsePrefix(strings.TrimSpace(value))
-		if err != nil {
-			return nil, fmt.Errorf("invalid TRUSTED_PROXY_CIDRS entry %q: %w", value, err)
-		}
-		prefixes = append(prefixes, prefix.Masked())
-	}
-	return prefixes, nil
 }
 
 // loadDotEnv loads a .env file (KEY=VALUE per line) into the process environment
@@ -358,8 +300,8 @@ func envBool(key string, fallback bool) bool {
 	return fallback
 }
 
-// lookupGatewayEnv reads gateway settings from GATEWAY_<KEY> so the embedded
-// module never collides with 幻图's own environment (PORT, PUBLIC_BASE_URL, ...).
+// lookupGatewayEnv reads pool settings from POOL_<KEY> so they never collide
+// with 幻图's own environment (PORT, PUBLIC_BASE_URL, ...).
 func lookupGatewayEnv(key string) (string, bool) {
-	return os.LookupEnv("GATEWAY_" + key)
+	return os.LookupEnv("POOL_" + key)
 }

@@ -25,6 +25,8 @@ type PoolModel struct {
 	MaxReferenceAudios  int
 	MaxReferenceMedia   int
 	SupportsAudioOutput bool
+	// MaxImagesPerRequest is the union cap across the model's routes; 0 = none.
+	MaxImagesPerRequest int
 }
 
 const modelCacheTTL = 30 * time.Second
@@ -65,6 +67,7 @@ func (m *Module) Models(ctx context.Context) ([]PoolModel, error) {
 			MaxReferenceAudios:  intValue(entry["max_reference_audios"]),
 			MaxReferenceMedia:   intValue(entry["max_reference_media"]),
 			SupportsAudioOutput: entry["supports_audio_output"] == true,
+			MaxImagesPerRequest: intValue(entry["max_images_per_request"]),
 		}
 		if item.ID == "" {
 			continue

@@ -182,7 +182,7 @@ func normalizePublicSettingWithChannels(setting model.PublicSetting, channels []
 	}
 	enabledModels := enabledChannelModels(channels)
 	setting.ModelChannel.Models = normalizeModelDefinitions(appendBuiltinPoolDefinitions(setting.ModelChannel.Models, channels), setting.ModelChannel.AvailableModels, setting.ModelChannel.ModelAspectRatios, enabledModels)
-	setting.ModelChannel.Models = applyImageCountLimits(setting.ModelChannel.Models, channels)
+	setting.ModelChannel.Models = applyImageCountLimits(setting.ModelChannel.Models, channels, builtinPoolModels())
 	setting.ModelChannel.Models = mergeEnabledChannelCapabilities(setting.ModelChannel.Models, channels)
 	setting.ModelChannel.PricingRules = normalizePricingRules(setting.ModelChannel.PricingRules)
 	setting.ModelChannel.GroupRatios = normalizeGroupRatios(setting.ModelChannel.GroupRatios)

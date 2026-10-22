@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sort"
 	"strings"
@@ -107,4 +108,37 @@ func TestPoolImageRoutesCapImagesPerRequest(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestModelEntryReportsCapabilityUnion(t *testing.T) {
+	ctx := context.Background()
+	routes, err := repo.NewModelRepository(nil).Routes().ListRoutes(ctx, "gpt-image-2", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := v1LogicalModelEntry(model.LogicalModel{ID: "gpt-image-2", Kind: "image"}, routes, 0, true)
+	res := strings.Join(entry["supported_resolutions"].([]string), ",")
+	if res != "1K,2K,4K" {
+		t.Fatalf("resolutions=%s, want union 1K,2K,4K", res)
+	}
+	if !strings.Contains(","+strings.Join(entry["supported_ratios"].([]string), ",")+",", ",21:9,") {
+		t.Fatal("union must include the Adobe-only 21:9 ratio")
+	}
+	if entry["max_images_per_request"] != 1 {
+		t.Fatalf("max_images_per_request=%v, want 1", entry["max_images_per_request"])
+	}
+	uncapped := model.ModelRoute{Capabilities: datatypesJSON(t, []model.CapabilityProfile{{Operations: []string{"generation"}}})}
+	entry = v1LogicalModelEntry(model.LogicalModel{ID: "x", Kind: "image"}, append(routes, uncapped), 0, true)
+	if entry["max_images_per_request"] != 0 {
+		t.Fatalf("an uncapped route must lift the cap, got %v", entry["max_images_per_request"])
+	}
+}
+
+func datatypesJSON(t *testing.T, profiles []model.CapabilityProfile) []byte {
+	t.Helper()
+	raw, err := json.Marshal(profiles)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
 }

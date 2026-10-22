@@ -173,11 +173,15 @@ func appendBuiltinPoolDefinitions(items []model.ModelDefinition, channels []mode
 	return items
 }
 
-// applyImageCountLimits sets MaxImageCount to 1 for image models that only the
-// built-in pool serves, so clients do not offer several images per request.
-// Models also served by another enabled channel keep no extra limit: 幻图
-// routes multi-image requests there.
-func applyImageCountLimits(items []model.ModelDefinition, channels []model.ModelChannel) []model.ModelDefinition {
+// applyImageCountLimits applies the pool's per-request image cap
+// (max_images_per_request from route capabilities) to image models that only
+// the built-in pool serves. Models also served by another enabled channel keep
+// no extra limit: multi-image requests are routed there.
+func applyImageCountLimits(items []model.ModelDefinition, channels []model.ModelChannel, poolModels []gateway.PoolModel) []model.ModelDefinition {
+	poolCap := map[string]int{}
+	for _, item := range poolModels {
+		poolCap[item.ID] = item.MaxImagesPerRequest
+	}
 	pool, other := map[string]bool{}, map[string]bool{}
 	for _, channel := range channels {
 		if !channel.Enabled {
@@ -194,7 +198,7 @@ func applyImageCountLimits(items []model.ModelDefinition, channels []model.Model
 	for i := range items {
 		items[i].MaxImageCount = 0
 		if items[i].Modality == "image" && pool[items[i].ID] && !other[items[i].ID] {
-			items[i].MaxImageCount = 1
+			items[i].MaxImageCount = poolCap[items[i].ID]
 		}
 	}
 	return items

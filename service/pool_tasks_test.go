@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/yypyyd/infinite-canvas/gateway"
 	"testing"
 	"time"
 
@@ -222,9 +223,20 @@ func TestImageCountLimitOnlyForPoolOnlyModels(t *testing.T) {
 	}
 	items := applyImageCountLimits([]model.ModelDefinition{
 		{ID: "gpt-image-2", Modality: "image"}, {ID: "grok-imagine-image", Modality: "image", MaxImageCount: 7}, {ID: "grok-imagine-video", Modality: "video"},
-	}, channels)
+	}, channels, []gateway.PoolModel{{ID: "gpt-image-2", MaxImagesPerRequest: 1}, {ID: "grok-imagine-image", MaxImagesPerRequest: 1}})
 	if items[0].MaxImageCount != 0 || items[1].MaxImageCount != 1 || items[2].MaxImageCount != 0 {
 		t.Fatalf("limits=%d,%d,%d", items[0].MaxImageCount, items[1].MaxImageCount, items[2].MaxImageCount)
+	}
+	// The cap comes from pool capability data, not a hardcoded 1.
+	items = applyImageCountLimits([]model.ModelDefinition{{ID: "grok-imagine-image", Modality: "image"}}, channels,
+		[]gateway.PoolModel{{ID: "grok-imagine-image", MaxImagesPerRequest: 4}})
+	if items[0].MaxImageCount != 4 {
+		t.Fatalf("pool cap=%d, want 4", items[0].MaxImageCount)
+	}
+	items = applyImageCountLimits([]model.ModelDefinition{{ID: "grok-imagine-image", Modality: "image"}}, channels,
+		[]gateway.PoolModel{{ID: "grok-imagine-image"}})
+	if items[0].MaxImageCount != 0 {
+		t.Fatalf("uncapped pool model got limit %d", items[0].MaxImageCount)
 	}
 }
 

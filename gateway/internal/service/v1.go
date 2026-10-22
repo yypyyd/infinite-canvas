@@ -577,6 +577,9 @@ func v1LogicalModelEntry(item model.LogicalModel, routes []model.ModelRoute, cre
 	profiles := make([]map[string]any, 0)
 	seenProfiles := map[string]bool{}
 	maxImages, maxVideos, maxAudios, maxMedia, audioOutput := 0, 0, 0, 0, false
+	// max_images_per_request is the loosest cap across routes: 0 (no cap) on any
+	// route wins, otherwise the largest cap.
+	perRequest, uncapped := 0, false
 	for _, route := range routes {
 		for _, profile := range model.DecodeCapabilityProfiles(route.Capabilities) {
 			ratios = unionStrings(ratios, profile.Ratios)
@@ -586,6 +589,11 @@ func v1LogicalModelEntry(item model.LogicalModel, routes []model.ModelRoute, cre
 			maxImages, maxVideos = max(maxImages, profile.MaxReferenceImages), max(maxVideos, profile.MaxReferenceVideos)
 			maxAudios, maxMedia = max(maxAudios, profile.MaxReferenceAudios), max(maxMedia, profile.MaxReferenceMedia)
 			audioOutput = audioOutput || profile.SupportsAudioOutput
+			if profile.MaxImagesPerRequest <= 0 {
+				uncapped = true
+			} else {
+				perRequest = max(perRequest, profile.MaxImagesPerRequest)
+			}
 			raw, _ := json.Marshal(profile)
 			if !seenProfiles[string(raw)] {
 				seenProfiles[string(raw)] = true
@@ -609,6 +617,10 @@ func v1LogicalModelEntry(item model.LogicalModel, routes []model.ModelRoute, cre
 	entry["maxReferenceImages"], entry["maxReferenceVideos"] = maxImages, maxVideos
 	entry["maxReferenceAudios"], entry["maxReferenceMedia"] = maxAudios, maxMedia
 	entry["supportsAudioOutput"] = audioOutput
+	if uncapped {
+		perRequest = 0
+	}
+	entry["max_images_per_request"], entry["maxImagesPerRequest"] = perRequest, perRequest
 	return entry
 }
 

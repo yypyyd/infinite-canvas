@@ -54,6 +54,8 @@ func MountAdmin(admin *gin.RouterGroup, h Handlers) {
 	admin.GET("/accounts", h.Admin.Accounts)
 	admin.POST("/accounts/import", h.Admin.ImportAccount)
 	admin.POST("/accounts/delete-dead", h.Admin.DeleteDeadAccounts)
+	admin.POST("/accounts/batch-status", h.Admin.BatchUpdateAccounts)
+	admin.POST("/providers/:provider/probe", h.Admin.ProbeProvider)
 	admin.PATCH("/accounts/:id", h.Admin.UpdateAccount)
 	admin.DELETE("/accounts/:id", h.Admin.DeleteAccount)
 	admin.PATCH("/accounts/:id/routes/:binding_id", h.Admin.SetAccountRoute)

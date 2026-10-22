@@ -25,7 +25,7 @@ import { useUserStore } from "@/stores/use-user-store";
 import { inferModelModality, inferModelOperations } from "../model-capabilities";
 import { ModelCatalogEditor, NEW_MODEL_REQUEST, capabilitySummary, hasPricing } from "./components/model-catalog-editor";
 import { ModelListTable, PricingTable, specKey, type PricingSpec } from "./components/catalog-tables";
-import { ModelTags, PoolChannelDrawer, PoolModelTags, usePoolChannels, type PoolChannelRow } from "./components/pool-channels";
+import { ChannelHealthBadge, ModelTags, PoolChannelDrawer, PoolModelTags, usePoolChannels, type PoolChannelRow } from "./components/pool-channels";
 import { ChannelModelCapabilitiesEditor } from "./components/channel-model-capabilities-editor";
 import { ProtocolTemplatesEditor } from "./components/protocol-templates-editor";
 
@@ -64,6 +64,9 @@ export default function AdminModelsPage() {
     const [poolRow, setPoolRow] = useState<PoolChannelRow | null>(null);
     const [poolDrawerTab, setPoolDrawerTab] = useState("base");
     const [protocolDrawerOpen, setProtocolDrawerOpen] = useState(false);
+    const [routingDrawerOpen, setRoutingDrawerOpen] = useState(false);
+    const [probingProvider, setProbingProvider] = useState<string | null>(null);
+    const [probeResults, setProbeResults] = useState<Record<string, { ok: boolean; text: string }>>({});
     const poolChannels = usePoolChannels();
 
     // Deep-link from /admin/account-pool/accounts?provider=… → open builtin Accounts tab.
@@ -239,7 +242,25 @@ export default function AdminModelsPage() {
             },
         }));
     };
-    const openPoolChannel = (row: PoolChannelRow, tab = "base") => {
+        const probePoolChannel = async (provider: string) => {
+        if (!token || probingProvider) return;
+        setProbingProvider(provider);
+        try {
+            const result = await gatewayApi.probeProvider(token, provider);
+            const data = result.data;
+            setProbeResults((current) => ({ ...current, [provider]: { ok: Boolean(data.ok), text: data.message || (data.ok ? "连通正常" : "探测失败") } }));
+            message[data.ok ? "success" : "warning"](data.message || (data.ok ? "连通正常" : "探测失败"));
+            await poolChannels.reload();
+        } catch (error) {
+            const errText = error instanceof Error ? error.message : "探测失败";
+            setProbeResults((current) => ({ ...current, [provider]: { ok: false, text: errText } }));
+            message.error(errText);
+        } finally {
+            setProbingProvider(null);
+        }
+    };
+
+const openPoolChannel = (row: PoolChannelRow, tab = "base") => {
         setPoolDrawerTab(tab);
         setPoolRow(row);
     };
@@ -542,6 +563,9 @@ export default function AdminModelsPage() {
                             {poolChannels.rows.length} 个内置平台 · {channels.length} 个兼容 API · 同优先级按权重分流
                         </Typography.Text>
                         <Space>
+                            <Button disabled={isSaving} onClick={() => setRoutingDrawerOpen(true)}>
+                                路由说明
+                            </Button>
                             <Button disabled={!settings || isSaving} onClick={() => setProtocolDrawerOpen(true)}>
                                 协议模板
                             </Button>
@@ -554,7 +578,7 @@ export default function AdminModelsPage() {
                     <Table<ChannelRow>
                         rowKey="key"
                         loading={isSaving || poolChannels.loading}
-                        scroll={{ x: 1180 }}
+                        scroll={{ x: 1280 }}
                         pagination={false}
                         dataSource={[
                             ...poolChannels.rows.map((pool): ChannelRow => ({ key: `pool:${pool.provider}`, kind: "pool", pool })),
@@ -616,15 +640,43 @@ export default function AdminModelsPage() {
                                     ),
                             },
                             {
-                                title: "测试",
-                                width: 90,
+                                title: "健康",
+                                width: 100,
                                 render: (_, row) =>
                                     row.kind === "pool" ? (
-                                        <Typography.Text type="secondary">—</Typography.Text>
+                                        <ChannelHealthBadge health={row.pool.health} enabled={row.pool.enabled && overview?.pool.enabled !== false} />
                                     ) : testDurations[row.channel.id || row.index] ? (
                                         <Tag color={testDurations[row.channel.id || row.index].ok ? "green" : "red"}>{testDurations[row.channel.id || row.index].text}</Tag>
                                     ) : (
                                         <Typography.Text type="secondary">未测试</Typography.Text>
+                                    ),
+                            },
+                            {
+                                title: "测试",
+                                width: 100,
+                                render: (_, row) =>
+                                    row.kind === "pool" ? (
+                                        <Flex vertical gap={2}>
+                                            <Button
+                                                type="link"
+                                                size="small"
+                                                className="!px-0"
+                                                loading={probingProvider === row.pool.provider}
+                                                disabled={isSaving || Boolean(probingProvider)}
+                                                onClick={() => void probePoolChannel(row.pool.provider)}
+                                            >
+                                                测一下
+                                            </Button>
+                                            {probeResults[row.pool.provider] ? (
+                                                <Typography.Text type={probeResults[row.pool.provider].ok ? "success" : "danger"} className="text-xs" ellipsis={{ tooltip: probeResults[row.pool.provider].text }}>
+                                                    {probeResults[row.pool.provider].ok ? "通过" : "失败"}
+                                                </Typography.Text>
+                                            ) : null}
+                                        </Flex>
+                                    ) : (
+                                        <Button type="link" size="small" className="!px-0" disabled={isSaving} onClick={() => openTestDialog(row.index)}>
+                                            测一下
+                                        </Button>
                                     ),
                             },
                             {
@@ -755,6 +807,38 @@ export default function AdminModelsPage() {
                     onChanged={() => void Promise.all([poolChannels.reload(), loadOverview(), loadChannels()])}
                 />
             ) : null}
+            
+            <Drawer title="调度路由说明" width="min(720px, calc(100vw - 32px))" open={routingDrawerOpen} onClose={() => setRoutingDrawerOpen(false)} destroyOnHidden>
+                <Typography.Title level={5}>总览</Typography.Title>
+                <Typography.Paragraph>
+                    一次请求会先按<strong>逻辑模型</strong>找出所有匹配路由（能力 / 分辨率 / 时长等），再去掉管理员关闭的平台，最后按优先级与权重排序后做故障转移。站点侧若选定了某个内置平台渠道，会通过{" "}
+                    <Typography.Text code>X-Preferred-Provider</Typography.Text> 把调度钉在该平台上。
+                </Typography.Paragraph>
+                <Typography.Title level={5}>1. preferred_provider（钉选平台）</Typography.Title>
+                <Typography.Paragraph>
+                    <Typography.Text code>WithPreferredProvider</Typography.Text> 把首选平台写入上下文；
+                    <Typography.Text code>filterPreferredProviderRoutes</Typography.Text> 只保留该平台的路由。空值表示不钉选，仍参与跨平台调度。
+                </Typography.Paragraph>
+                <Typography.Title level={5}>2. matchingRoutes → orderRoutes（筛选与排序）</Typography.Title>
+                <Typography.Paragraph>
+                    <Typography.Text code>matchingRoutes</Typography.Text>：能力匹配 → 过滤关闭平台 → 应用 preferred_provider →{" "}
+                    <Typography.Text code>orderRoutes</Typography.Text>。
+                    排序规则：有效优先级高者优先（路由覆盖优先于平台默认）；同优先级按权重加权随机；同组内可 fast-failover 换账号 / 换路由。
+                </Typography.Paragraph>
+                <Typography.Title level={5}>3. 站点优先级 vs 池内优先级</Typography.Title>
+                <Typography.Paragraph>
+                    渠道列表里的「站点优先级 / 权重」与兼容 API 渠道比较；「池内优先级 / 权重」只影响同平台账号之间的调度。路由上的优先级 / 权重覆盖为空时继承平台值（见 effective_priority / effective_weight）。
+                </Typography.Paragraph>
+                <Typography.Title level={5}>4. route_details（运营可见）</Typography.Title>
+                <Typography.Paragraph>
+                    管理端概览用 <Typography.Text code>RouteDetails</Typography.Text> 列出每条逻辑模型路由的有效优先级 / 权重、平台是否启用，以及绑定 / 可用 / 冷却账号数，与真实调度字段一致，便于对照本页渠道健康徽章。
+                </Typography.Paragraph>
+                <Typography.Title level={5}>5. 故障转移</Typography.Title>
+                <Typography.Paragraph type="secondary" className="!mb-0">
+                    文本路由在未写出响应体前可换路由；图片 / 视频按账号池与 fastFailover 策略跳过饱和或失败账号。额度不足、凭据失效的账号不会进入可用集合。
+                </Typography.Paragraph>
+            </Drawer>
+
             <Drawer title="协议模板" width="min(1120px, calc(100vw - 32px))" open={protocolDrawerOpen} onClose={() => setProtocolDrawerOpen(false)} destroyOnHidden>
                 {settings ? (
                     <ProtocolTemplatesEditor templates={protocolTemplates} channels={channels} isSaving={isSaving} onSave={(templates) => persistSettings((latest) => ({ ...latest, private: { ...latest.private, protocolTemplates: templates } }))} />

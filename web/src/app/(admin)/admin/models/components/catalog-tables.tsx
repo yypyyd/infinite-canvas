@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Flex, Input, InputNumber, Segmented, Switch, Table, Tag, Tooltip, Typography } from "antd";
+import { App, Button, Flex, Input, InputNumber, Modal, Segmented, Space, Switch, Table, Tag, Tooltip, Typography } from "antd";
 import { useMemo, useState } from "react";
 
 import type { AdminManagedModel, AdminModelOverviewItem, AdminPricingRule } from "@/services/api/admin";
@@ -130,6 +130,18 @@ export type PricingSpec = Pick<AdminPricingRule, "model" | "modality" | "operati
 
 type PricingRow = PricingSpec & { key: string; name: string; rule?: AdminPricingRule; missing: boolean; providers: string[] };
 
+type PricingGroup = {
+    key: string;
+    model: string;
+    name: string;
+    modality: string;
+    specs: PricingRow[];
+    missingCount: number;
+    minCredits: number | null;
+    maxCredits: number | null;
+    hasRatio: boolean;
+};
+
 type PricingProps = {
     models: AdminModelOverviewItem[];
     loading: boolean;
@@ -139,20 +151,16 @@ type PricingProps = {
 };
 
 export function PricingTable({ models, loading, isSaving, onEdit, onSetPrice }: PricingProps) {
+    const { message } = App.useApp();
     const [filter, setFilter] = useState("all");
     const [keyword, setKeyword] = useState("");
+    const [selectedGroupKeys, setSelectedGroupKeys] = useState<string[]>([]);
+    const [batchOpen, setBatchOpen] = useState(false);
+    const [batchCredits, setBatchCredits] = useState<number | null>(null);
+    const [batchScope, setBatchScope] = useState<"missing" | "all-fixed">("missing");
+    const [applying, setApplying] = useState(false);
+
     const groups = useMemo(() => {
-        type PricingGroup = {
-            key: string;
-            model: string;
-            name: string;
-            modality: string;
-            specs: PricingRow[];
-            missingCount: number;
-            minCredits: number | null;
-            maxCredits: number | null;
-            hasRatio: boolean;
-        };
         const byModel = new Map<string, PricingGroup>();
         for (const item of models) {
             const specs: PricingRow[] = [];
@@ -195,27 +203,74 @@ export function PricingTable({ models, loading, isSaving, onEdit, onSetPrice }: 
             .filter((group) => filter === "all" || group.missingCount > 0)
             .sort((a, b) => a.name.localeCompare(b.name) || a.model.localeCompare(b.model));
     }, [models, filter, keyword]);
+
     const missingCount = useMemo(() => models.reduce((sum, item) => sum + item.pricingGaps.length, 0), [models]);
+
+    const applyBatch = async () => {
+        if (batchCredits == null || batchCredits < 0) {
+            message.warning("请填写有效积分价格");
+            return;
+        }
+        const targets = groups.filter((group) => selectedGroupKeys.includes(group.key));
+        if (!targets.length) {
+            message.warning("请先勾选模型");
+            return;
+        }
+        const rows: PricingRow[] = [];
+        for (const group of targets) {
+            for (const row of group.specs) {
+                if (row.rule?.billingMode === "ratio") continue;
+                if (batchScope === "missing" && !row.missing) continue;
+                rows.push(row);
+            }
+        }
+        if (!rows.length) {
+            message.warning(batchScope === "missing" ? "选中模型没有缺价规格" : "选中模型没有可改的固定价规格");
+            return;
+        }
+        setApplying(true);
+        try {
+            for (const row of rows) onSetPrice(row, batchCredits);
+            message.success(`已提交 ${rows.length} 条改价`);
+            setBatchOpen(false);
+            setSelectedGroupKeys([]);
+        } finally {
+            setApplying(false);
+        }
+    };
+
     return (
         <Flex vertical gap={12}>
-            <Flex gap={8} wrap>
-                <Input.Search allowClear placeholder="搜索模型名称" style={{ width: 240 }} onChange={(event) => setKeyword(event.target.value)} />
-                <Segmented
-                    value={filter}
-                    onChange={(value) => setFilter(String(value))}
-                    options={[
-                        { label: "全部", value: "all" },
-                        { label: `缺少价格${missingCount ? ` (${missingCount})` : ""}`, value: "missing" },
-                    ]}
-                />
+            <Flex gap={8} wrap justify="space-between">
+                <Flex gap={8} wrap>
+                    <Input.Search allowClear placeholder="搜索模型名称" style={{ width: 240 }} onChange={(event) => setKeyword(event.target.value)} />
+                    <Segmented
+                        value={filter}
+                        onChange={(value) => setFilter(String(value))}
+                        options={[
+                            { label: "全部", value: "all" },
+                            { label: `缺少价格${missingCount ? ` (${missingCount})` : ""}`, value: "missing" },
+                        ]}
+                    />
+                </Flex>
+                <Space wrap>
+                    {selectedGroupKeys.length ? <Typography.Text type="secondary">已选 {selectedGroupKeys.length} 个模型</Typography.Text> : null}
+                    <Button disabled={!selectedGroupKeys.length || isSaving} onClick={() => setBatchOpen(true)}>
+                        批量改价
+                    </Button>
+                </Space>
             </Flex>
             <Table
                 rowKey="key"
-                size="middle"
+                size="small"
                 loading={loading}
                 dataSource={groups}
-                pagination={{ pageSize: 20, hideOnSinglePage: true }}
-                scroll={{ x: 800 }}
+                pagination={{ pageSize: 25, hideOnSinglePage: true }}
+                scroll={{ x: 720 }}
+                rowSelection={{
+                    selectedRowKeys: selectedGroupKeys,
+                    onChange: (keys) => setSelectedGroupKeys(keys.map(String)),
+                }}
                 expandable={{
                     expandedRowRender: (group) => (
                         <Table
@@ -223,17 +278,18 @@ export function PricingTable({ models, loading, isSaving, onEdit, onSetPrice }: 
                             size="small"
                             pagination={false}
                             dataSource={group.specs}
+                            className="pricing-spec-table"
                             columns={[
-                                { title: "操作类型", width: 110, render: (_, row) => operationLabels[row.operation] || row.operation },
-                                { title: "规格", width: 90, render: (_, row) => row.resolutionTier || "通用" },
-                                { title: "单位", width: 80, render: (_, row) => row.unit },
+                                { title: "操作", width: 88, render: (_, row) => operationLabels[row.operation] || row.operation },
+                                { title: "规格", width: 72, render: (_, row) => row.resolutionTier || "通用" },
+                                { title: "单位", width: 64, render: (_, row) => row.unit },
                                 {
-                                    title: "价格（积分）",
-                                    width: 180,
+                                    title: "积分",
+                                    width: 140,
                                     render: (_, row) =>
                                         row.rule && row.rule.billingMode === "ratio" ? (
-                                            <Typography.Text>
-                                                倍率 {row.rule.modelRatio} / 补全 {row.rule.completionRatio}
+                                            <Typography.Text type="secondary" className="text-xs">
+                                                倍率 {row.rule.modelRatio}/{row.rule.completionRatio}
                                             </Typography.Text>
                                         ) : (
                                             <PriceInput key={`${row.key}:${row.rule?.credits ?? ""}`} value={row.rule?.draft ? null : (row.rule?.credits ?? null)} disabled={isSaving} onSave={(credits) => onSetPrice(row, credits)} />
@@ -241,16 +297,20 @@ export function PricingTable({ models, loading, isSaving, onEdit, onSetPrice }: 
                                 },
                                 {
                                     title: "状态",
-                                    width: 120,
+                                    width: 88,
                                     render: (_, row) =>
                                         row.missing ? (
                                             <Tooltip title={row.providers.length ? `由 ${row.providers.map((item) => providerLabels[item] || item).join("、")} 提供` : undefined}>
-                                                <Tag color="orange">{row.rule?.draft ? "草稿·缺价" : "缺少价格"}</Tag>
+                                                <Tag color="orange" className="!m-0">
+                                                    {row.rule?.draft ? "缺价" : "缺价"}
+                                                </Tag>
                                             </Tooltip>
                                         ) : row.rule?.enabled === false ? (
-                                            <Tag>已停用</Tag>
+                                            <Tag className="!m-0">停用</Tag>
                                         ) : (
-                                            <Tag color="green">已定价</Tag>
+                                            <Tag color="green" className="!m-0">
+                                                已定
+                                            </Tag>
                                         ),
                                 },
                             ]}
@@ -271,29 +331,29 @@ export function PricingTable({ models, loading, isSaving, onEdit, onSetPrice }: 
                             </Flex>
                         ),
                     },
-                    { title: "类型", width: 70, render: (_, group) => modalityLabels[group.modality] || group.modality },
+                    { title: "类型", width: 64, render: (_, group) => modalityLabels[group.modality] || group.modality },
                     {
                         title: "规格 / 价区",
-                        width: 220,
+                        width: 200,
                         render: (_, group) => {
                             const count = group.specs.length;
                             let summary = `${count} 规格`;
                             if (group.minCredits != null && group.maxCredits != null) {
-                                summary += group.minCredits === group.maxCredits ? ` · ${group.minCredits} 积分` : ` · ${group.minCredits}–${group.maxCredits} 积分`;
+                                summary += group.minCredits === group.maxCredits ? ` · ${group.minCredits}` : ` · ${group.minCredits}–${group.maxCredits}`;
                             } else if (group.hasRatio) {
-                                summary += " · 倍率计费";
+                                summary += " · 倍率";
                             }
                             return <Typography.Text type="secondary">{summary}</Typography.Text>;
                         },
                     },
                     {
                         title: "状态",
-                        width: 110,
+                        width: 96,
                         render: (_, group) => (group.missingCount > 0 ? <Tag color="orange">缺价 {group.missingCount}</Tag> : <Tag color="green">已定价</Tag>),
                     },
                     {
                         title: "操作",
-                        width: 90,
+                        width: 80,
                         fixed: "right",
                         render: (_, group) => (
                             <Button size="small" type="link" onClick={() => onEdit(group.model)}>
@@ -303,6 +363,32 @@ export function PricingTable({ models, loading, isSaving, onEdit, onSetPrice }: 
                     },
                 ]}
             />
+            <Modal
+                open={batchOpen}
+                title="批量改价"
+                okText="应用"
+                cancelText="取消"
+                confirmLoading={applying}
+                onOk={() => void applyBatch()}
+                onCancel={() => setBatchOpen(false)}
+                destroyOnHidden
+            >
+                <Space direction="vertical" style={{ width: "100%" }} size={12}>
+                    <Typography.Text type="secondary">将对已勾选的 {selectedGroupKeys.length} 个模型生效；倍率计费规格会自动跳过。</Typography.Text>
+                    <Segmented
+                        value={batchScope}
+                        onChange={(value) => setBatchScope(value as "missing" | "all-fixed")}
+                        options={[
+                            { label: "仅缺价规格", value: "missing" },
+                            { label: "全部固定价规格", value: "all-fixed" },
+                        ]}
+                    />
+                    <Space>
+                        <Typography.Text>统一积分</Typography.Text>
+                        <InputNumber min={0} value={batchCredits} onChange={(value) => setBatchCredits(typeof value === "number" ? value : null)} placeholder="例如 10" />
+                    </Space>
+                </Space>
+            </Modal>
         </Flex>
     );
 }
@@ -314,7 +400,7 @@ function PriceInput({ value, disabled, onSave }: { value: number | null; disable
             size="small"
             min={0}
             value={draft}
-            placeholder="填写价格"
+            placeholder="价格"
             disabled={disabled}
             onChange={setDraft}
             onBlur={() => draft !== null && draft !== value && onSave(draft)}

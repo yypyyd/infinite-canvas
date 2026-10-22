@@ -12,8 +12,18 @@ import { AccountTestModal } from "../../account-pool/accounts/account-test-modal
 
 type ImportItem = { provider: string; credential: unknown };
 
-const healthColors: Record<string, string> = { active: "green", quota: "orange", pending: "blue", disabled: "default", dead: "red" };
-const healthLabels: Record<string, string> = { active: "可用", quota: "额度耗尽", pending: "待验证", disabled: "已停用", dead: "凭据失效" };
+const healthColors: Record<string, string> = { active: "green", quota: "orange", pending: "blue", disabled: "default", dead: "red", busy: "gold" };
+const healthLabels: Record<string, string> = { active: "可用", quota: "额度耗尽", pending: "待验证", disabled: "已停用", dead: "凭据失效", busy: "忙碌" };
+
+const statusFilterOptions = [
+    { value: "", label: "全部状态" },
+    { value: "active", label: "可用" },
+    { value: "disabled", label: "已停用" },
+    { value: "quota", label: "额度耗尽" },
+    { value: "pending", label: "待验证" },
+    { value: "dead", label: "凭据失效" },
+    { value: "busy", label: "忙碌" },
+];
 
 export type AccountsPanelProps = {
     /** Lock the provider filter (builtin channel Accounts tab). */
@@ -38,11 +48,18 @@ export function AccountsPanel({ fixedProvider = "", embedded = false }: Accounts
     const [importing, setImporting] = useState(false);
     const [importResult, setImportResult] = useState("");
     const [testing, setTesting] = useState<GatewayAccount | null>(null);
+    const [selectedIds, setSelectedIds] = useState<string[]>([]);
+    const [batching, setBatching] = useState(false);
 
     useEffect(() => {
         setProvider(fixedProvider);
         setPage(1);
+        setSelectedIds([]);
     }, [fixedProvider]);
+
+    useEffect(() => {
+        setSelectedIds([]);
+    }, [page, limit, provider, status, keyword]);
 
     const accounts = useGatewayQuery(["accounts", page, limit, provider, status, keyword], (t) => gatewayApi.accounts(t, { page, limit, provider, status, q: keyword }), { refetchInterval: 15000 });
     const models = useGatewayQuery(["models"], gatewayApi.models);
@@ -73,6 +90,25 @@ export function AccountsPanel({ fixedProvider = "", embedded = false }: Accounts
         } else setImportResult(`成功 ${succeeded} · 失败 ${failures.length} · ${failures.slice(0, 3).join("；")}`);
     };
 
+    const batchSetStatus = async (next: "active" | "disabled") => {
+        if (!selectedIds.length) return;
+        const label = next === "active" ? "启用" : "停用";
+        const ids = [...selectedIds];
+        setBatching(true);
+        try {
+            const result = await run(async (t) => {
+                const out = await gatewayApi.batchUpdateAccounts(t, ids, next);
+                if (out.failed) {
+                    throw new Error(`${label}成功 ${out.updated}，失败 ${out.failed}${out.error ? `：${out.error}` : ""}`);
+                }
+                return out;
+            }, `已批量${label} ${ids.length} 个账号`);
+            if (result) setSelectedIds([]);
+        } finally {
+            setBatching(false);
+        }
+    };
+
     const body = (
         <>
             <Space style={{ width: "100%", justifyContent: "space-between", marginBottom: 16 }} wrap>
@@ -90,16 +126,7 @@ export function AccountsPanel({ fixedProvider = "", embedded = false }: Accounts
                             ]}
                         />
                     )}
-                    <Select
-                        value={status}
-                        onChange={(value) => (setStatus(value), setPage(1))}
-                        style={{ width: 140 }}
-                        options={[
-                            { value: "", label: "全部状态" },
-                            { value: "active", label: "启用" },
-                            { value: "disabled", label: "停用" },
-                        ]}
-                    />
+                    <Select value={status} onChange={(value) => (setStatus(value), setPage(1))} style={{ width: 140 }} options={statusFilterOptions} />
                     <Input.Search allowClear placeholder="搜索账号 / 邮箱 / ID" onSearch={(value) => (setKeyword(value), setPage(1))} style={{ width: embedded ? 200 : 260 }} />
                 </Space>
                 <Space wrap>
@@ -116,12 +143,31 @@ export function AccountsPanel({ fixedProvider = "", embedded = false }: Accounts
                     </Button>
                 </Space>
             </Space>
+            {selectedIds.length ? (
+                <Space style={{ marginBottom: 12 }} wrap>
+                    <Typography.Text type="secondary">已选 {selectedIds.length} 个</Typography.Text>
+                    <Button size="small" loading={batching} onClick={() => void batchSetStatus("active")}>
+                        批量启用
+                    </Button>
+                    <Button size="small" loading={batching} onClick={() => void batchSetStatus("disabled")}>
+                        批量停用
+                    </Button>
+                    <Button size="small" type="text" onClick={() => setSelectedIds([])}>
+                        取消选择
+                    </Button>
+                </Space>
+            ) : null}
             <Table<GatewayAccount>
                 rowKey="id"
                 loading={accounts.isLoading}
                 dataSource={accounts.data?.data || []}
                 scroll={{ x: embedded ? 960 : 1200 }}
                 size={embedded ? "small" : "middle"}
+                rowSelection={{
+                    selectedRowKeys: selectedIds,
+                    onChange: (keys) => setSelectedIds(keys.map(String)),
+                    getCheckboxProps: (item) => ({ disabled: !["active", "disabled"].includes(item.status) }),
+                }}
                 pagination={{
                     current: page,
                     pageSize: limit,

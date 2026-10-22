@@ -18,6 +18,8 @@ export type PoolChannelRow = {
     poolWeight: number;
     accounts: number;
     activeAccounts: number;
+    /** provider_health buckets: active / quota / disabled / dead / pending */
+    health: Record<string, number>;
     models: { id: string; name: string; enabled: boolean; route: GatewayRoute }[];
 };
 
@@ -40,6 +42,13 @@ export function usePoolChannels() {
                 poolWeight: data?.providers_weight?.[provider] ?? 1,
                 accounts: Object.values(counts).reduce((sum, value) => sum + Number(value || 0), 0),
                 activeAccounts: Number(counts.active || 0),
+                health: {
+                    active: Number(counts.active || 0),
+                    quota: Number(counts.quota || 0),
+                    disabled: Number(counts.disabled || 0),
+                    dead: Number(counts.dead || 0),
+                    pending: Number(counts.pending || 0),
+                },
                 models: (models.data?.data || []).flatMap((model: GatewayModel) =>
                     model.routes.filter((route) => route.provider === provider).map((route) => ({ id: model.id, name: model.name || model.id, enabled: model.enabled && route.enabled, route })),
                 ),
@@ -87,6 +96,8 @@ export function PoolChannelDrawer({ token, row, pool: _pool, builtinProvider, le
     const [form] = Form.useForm<PoolForm>();
     const [saving, setSaving] = useState(false);
     const [tab, setTab] = useState(initialTab);
+    const [probing, setProbing] = useState(false);
+    const [probeMsg, setProbeMsg] = useState<{ ok: boolean; text: string } | null>(null);
     const settings = useGatewayQuery(["settings"], gatewayApi.settings);
 
     useEffect(() => {
@@ -347,13 +358,35 @@ export function PoolChannelDrawer({ token, row, pool: _pool, builtinProvider, le
                         <AccountsPanel fixedProvider={row.provider} embedded />
                     </div>
                     <div hidden={tab !== "test"}>
-                        <Alert type="info" showIcon message="内置平台测试" description="请在「账号」页签对单个账号执行测试；列表页的兼容 API 渠道仍可在渠道详情「测试」页签批量测模型。" />
+                        <Alert type="info" showIcon message="内置平台连通探测" description="「测一下」会挑一个可用账号刷新额度，用于快速确认渠道连通；完整模型测试请到「账号」页签对单个账号执行。" />
                         <Typography.Paragraph type="secondary" className="!mt-3">
-                            当前可用账号 {row.activeAccounts}/{row.accounts} · 模型路由 {row.models.length} 条
+                            当前可用账号 {row.activeAccounts}/{row.accounts} · 模型路由 {row.models.length} 条 · <ChannelHealthBadge health={row.health} enabled={row.enabled} />
                         </Typography.Paragraph>
-                        <Button type="primary" onClick={() => setTab("accounts")}>
-                            前往账号测试
-                        </Button>
+                        <Flex gap={8} wrap className="!mb-3">
+                            <Button
+                                type="primary"
+                                loading={probing}
+                                onClick={() =>
+                                    void (async () => {
+                                        setProbing(true);
+                                        setProbeMsg(null);
+                                        try {
+                                            const result = await run((t) => gatewayApi.probeProvider(t, row.provider));
+                                            if (!result) return;
+                                            const data = result.data;
+                                            setProbeMsg({ ok: Boolean(data.ok), text: data.message || (data.ok ? "连通正常" : "探测失败") });
+                                            onChanged();
+                                        } finally {
+                                            setProbing(false);
+                                        }
+                                    })()
+                                }
+                            >
+                                测一下
+                            </Button>
+                            <Button onClick={() => setTab("accounts")}>前往账号测试</Button>
+                        </Flex>
+                        {probeMsg ? <Alert type={probeMsg.ok ? "success" : "error"} showIcon message={probeMsg.text} /> : null}
                     </div>
                 </>
             ) : null}
@@ -417,6 +450,30 @@ export function ModelTags({ names, max = 4 }: { names: { name: string; off?: boo
             ))}
             {names.length > max ? <Tag className="!m-0">+{names.length - max}</Tag> : null}
         </Flex>
+    );
+}
+
+
+export function channelHealthTone(health: Record<string, number> | undefined, enabled: boolean): { color: string; label: string; tip: string } {
+    if (!enabled) return { color: "default", label: "已关闭", tip: "平台调度已关闭" };
+    const active = Number(health?.active || 0);
+    const dead = Number(health?.dead || 0);
+    const quota = Number(health?.quota || 0);
+    const pending = Number(health?.pending || 0);
+    const tip = `可用 ${active} · 额度耗尽 ${quota} · 失效 ${dead} · 待验证 ${pending}`;
+    if (active > 0) return { color: "green", label: "健康", tip };
+    if (quota > 0) return { color: "orange", label: "额度耗尽", tip };
+    if (dead > 0) return { color: "red", label: "异常", tip };
+    if (pending > 0) return { color: "blue", label: "待验证", tip };
+    return { color: "default", label: "无账号", tip };
+}
+
+export function ChannelHealthBadge({ health, enabled }: { health?: Record<string, number>; enabled: boolean }) {
+    const tone = channelHealthTone(health, enabled);
+    return (
+        <Tag color={tone.color} title={tone.tip} className="!m-0">
+            {tone.label}
+        </Tag>
     );
 }
 

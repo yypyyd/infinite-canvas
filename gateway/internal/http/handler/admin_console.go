@@ -153,6 +153,31 @@ func (h *AdminConsoleHandler) UpdateAccount(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": item})
 }
 
+func (h *AdminConsoleHandler) ProbeProvider(c *gin.Context) {
+	item, err := h.console.ProbeProvider(c.Request.Context(), c.Param("provider"))
+	if err != nil {
+		adminConsoleError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": item})
+}
+
+func (h *AdminConsoleHandler) BatchUpdateAccounts(c *gin.Context) {
+	var body struct {
+		IDs    []string `json:"ids"`
+		Status string   `json:"status"`
+	}
+	if !bindAdminJSON(c, &body, "invalid request body") {
+		return
+	}
+	item, err := h.console.BatchUpdateAccountStatus(c.Request.Context(), body.IDs, body.Status)
+	if err != nil {
+		adminConsoleError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, item)
+}
+
 func (h *AdminConsoleHandler) DeleteAccount(c *gin.Context) {
 	if err := h.console.DeleteAccount(c.Request.Context(), c.Param("id")); err != nil {
 		adminConsoleError(c, err)
@@ -280,6 +305,7 @@ func safeAdminValidationMessage(err error) (string, bool) {
 		"unsupported provider",
 		"custom accounts must bind at least one existing canonical model",
 		"status must be active or disabled",
+		"account ids required",
 		"weight must be between -1000 and 1000",
 		"max_concurrency must be between 0 and 1000",
 		"outbound_proxy must be an http(s) or socks5 URL",

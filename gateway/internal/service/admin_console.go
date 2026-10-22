@@ -311,7 +311,26 @@ func (s *AdminConsoleService) ListAccounts(ctx context.Context, filter AccountLi
 		query = query.Where("pool = ?", provider)
 	}
 	if status := strings.TrimSpace(filter.Status); status != "" {
-		query = query.Where("status = ?", status)
+		switch strings.ToLower(status) {
+		case "dead":
+			query = query.Where("dead = ? OR status = ?", true, "auth_error")
+		case "busy":
+			if s.db.Migrator().HasTable(&model.DispatchAttempt{}) {
+				query = query.Where(`EXISTS (
+					SELECT 1 FROM dispatch_attempts da
+					WHERE da.account_id = provider_accounts.id
+					  AND da.state IN ?
+				)`, []string{"created", "submitting", "accepted", "unknown"})
+			} else {
+				query = query.Where("1 = 0")
+			}
+		case "active":
+			query = query.Where("status = ? AND dead = ?", "active", false)
+		case "disabled", "quota", "pending":
+			query = query.Where("status = ?", strings.ToLower(status))
+		default:
+			query = query.Where("status = ?", status)
+		}
 	}
 	if term := strings.TrimSpace(filter.Query); term != "" {
 		like := "%" + term + "%"
@@ -677,6 +696,113 @@ func (s *AdminConsoleService) UpdateAccount(ctx context.Context, accountID strin
 		}
 	}
 	return s.accountRow(ctx, *account)
+}
+
+// ProbeProvider checks one built-in provider pool: returns health buckets and
+// optionally probes connectivity by refreshing quota on one active account.
+func (s *AdminConsoleService) ProbeProvider(ctx context.Context, provider string) (map[string]any, error) {
+	provider = normalizeAdminProvider(provider)
+	if provider == "" {
+		return nil, errors.New("unsupported provider")
+	}
+	enabled, err := providerEnabled(ctx, s.settingsReader(), provider)
+	if err != nil {
+		return nil, err
+	}
+	healthAll, err := s.CountAccountHealthByProvider(ctx)
+	if err != nil {
+		return nil, err
+	}
+	health := healthAll[provider]
+	if health == nil {
+		health = map[string]int64{"active": 0, "quota": 0, "disabled": 0, "dead": 0, "pending": 0}
+	}
+	out := map[string]any{
+		"provider": provider,
+		"enabled":  enabled,
+		"health":   health,
+		"ok":       false,
+		"message":  "",
+	}
+	if !enabled {
+		out["message"] = "渠道已关闭（管理员关闭了该平台调度）"
+		return out, nil
+	}
+	active := health["active"]
+	if active <= 0 {
+		out["message"] = "无可用账号（active=0）"
+		return out, nil
+	}
+	var account model.TokenAccount
+	err = s.db.WithContext(ctx).
+		Where("pool = ? AND status = ? AND dead = ?", provider, "active", false).
+		Order("weight desc, created_at desc").
+		First(&account).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			out["message"] = "无可用账号可探测"
+			return out, nil
+		}
+		return nil, err
+	}
+	out["account_id"] = account.ID
+	if _, probeErr := s.RefreshAccountQuota(ctx, account.ID); probeErr != nil {
+		out["ok"] = false
+		msg := strings.TrimSpace(probeErr.Error())
+		if msg == "" {
+			msg = "连通探测失败"
+		}
+		// Keep operator-facing reason short; strip obvious secrets.
+		if len(msg) > 160 {
+			msg = msg[:160] + "…"
+		}
+		out["message"] = msg
+		return out, nil
+	}
+	out["ok"] = true
+	out["message"] = "连通正常（已刷新一个可用账号额度）"
+	return out, nil
+}
+
+// BatchUpdateAccountStatus enables or disables many accounts in one call.
+func (s *AdminConsoleService) BatchUpdateAccountStatus(ctx context.Context, ids []string, status string) (map[string]any, error) {
+	status = strings.ToLower(strings.TrimSpace(status))
+	if status != "active" && status != "disabled" {
+		return nil, errors.New("status must be active or disabled")
+	}
+	cleaned := make([]string, 0, len(ids))
+	seen := map[string]struct{}{}
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		cleaned = append(cleaned, id)
+	}
+	if len(cleaned) == 0 {
+		return nil, errors.New("account ids required")
+	}
+	updated, failed := 0, 0
+	var firstErr string
+	for _, id := range cleaned {
+		if _, err := s.UpdateAccount(ctx, id, map[string]any{"status": status}); err != nil {
+			failed++
+			if firstErr == "" {
+				firstErr = err.Error()
+			}
+			continue
+		}
+		updated++
+	}
+	out := map[string]any{"updated": updated, "failed": failed, "status": status}
+	if failed > 0 && firstErr != "" {
+		out["error"] = firstErr
+	}
+	return out, nil
 }
 
 func (s *AdminConsoleService) DeleteAccount(ctx context.Context, accountID string) error {

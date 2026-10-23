@@ -21,7 +21,7 @@ export function servingChannels(item: AdminModelOverviewItem) {
     );
 }
 
-/** Prefer item.reasons; fall back to inactive source reasons so the red tag never looks silent. */
+/** Prefer item.reasons; fall back to inactive source reasons so status tooltips never look silent. */
 export function unavailableReasons(item: AdminModelOverviewItem) {
     const reasons = [...(item.reasons || [])];
     if (!reasons.length) {
@@ -56,7 +56,7 @@ export function ModelListTable({ models, loading, isSaving, channelModelIds, onE
         const text = keyword.trim().toLowerCase();
         return models
             .filter((item) => !text || item.id.toLowerCase().includes(text) || item.name.toLowerCase().includes(text))
-            .filter((item) => filter === "all" || (filter === "available" ? item.available : filter === "unavailable" ? !item.available : !item.managed || !item.enabled))
+            .filter((item) => filter === "all" || (filter === "available" ? item.available : filter === "unavailable" ? !item.available && item.managed && item.enabled : !item.managed || !item.enabled))
             .sort((a, b) => (a.definition?.sort ?? 1e9) - (b.definition?.sort ?? 1e9) || a.id.localeCompare(b.id));
     }, [models, keyword, filter]);
     const removeSelectedModels = () => {
@@ -138,14 +138,31 @@ export function ModelListTable({ models, loading, isSaving, channelModelIds, onE
                     {
                         title: "状态",
                         width: 90,
-                        render: (_, item) =>
-                            item.available ? (
-                                <Tag color="green">可用</Tag>
-                            ) : (
-                                <Tooltip title={unavailableReasons(item).join("；") || "不可用"}>
+                        render: (_, item) => {
+                            const reasons = unavailableReasons(item);
+                            const tip = reasons.join("；");
+                            if (item.available) return <Tag color="green">可用</Tag>;
+                            // Prefer closed/not-in-catalog over generic unavailable — open switch off is not a route failure.
+                            if (!item.managed) {
+                                return (
+                                    <Tooltip title={tip || "未加入模型目录"}>
+                                        <Tag>未加入</Tag>
+                                    </Tooltip>
+                                );
+                            }
+                            if (!item.enabled) {
+                                return (
+                                    <Tooltip title={tip || "模型未开放"}>
+                                        <Tag>未开放</Tag>
+                                    </Tooltip>
+                                );
+                            }
+                            return (
+                                <Tooltip title={tip || "不可用"}>
                                     <Tag color="red">不可用</Tag>
                                 </Tooltip>
-                            ),
+                            );
+                        },
                     },
                     {
                         title: "开放",

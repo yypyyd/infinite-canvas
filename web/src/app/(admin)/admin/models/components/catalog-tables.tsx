@@ -1,6 +1,7 @@
 "use client";
 
-import { App, Button, Flex, Input, InputNumber, Modal, Segmented, Space, Switch, Table, Tag, Tooltip, Typography } from "antd";
+import { DeleteOutlined } from "@ant-design/icons";
+import { App, Button, Flex, Input, InputNumber, Modal, Popconfirm, Segmented, Space, Switch, Table, Tag, Tooltip, Typography } from "antd";
 import { useMemo, useState } from "react";
 
 import type { AdminManagedModel, AdminModelOverviewItem, AdminPricingRule } from "@/services/api/admin";
@@ -24,12 +25,15 @@ type ModelsProps = {
     models: AdminModelOverviewItem[];
     loading: boolean;
     isSaving: boolean;
+    channelModelIds?: Set<string>;
     onEdit: (id: string) => void;
     onCreate: () => void;
     onUpdate: (id: string, patch: Partial<AdminManagedModel>) => void;
+    onDelete: (id: string) => void;
 };
 
-export function ModelListTable({ models, loading, isSaving, onEdit, onCreate, onUpdate }: ModelsProps) {
+export function ModelListTable({ models, loading, isSaving, channelModelIds, onEdit, onCreate, onUpdate, onDelete }: ModelsProps) {
+    const { message } = App.useApp();
     const [keyword, setKeyword] = useState("");
     const [filter, setFilter] = useState("all");
     const rows = useMemo(() => {
@@ -107,12 +111,35 @@ export function ModelListTable({ models, loading, isSaving, onEdit, onCreate, on
                     },
                     {
                         title: "操作",
-                        width: 90,
+                        width: 140,
                         fixed: "right",
                         render: (_, item) => (
-                            <Button size="small" type="link" onClick={() => onEdit(item.id)}>
-                                {item.managed ? "编辑" : "加入目录"}
-                            </Button>
+                            <Space size={0}>
+                                <Button size="small" type="link" onClick={() => onEdit(item.id)}>
+                                    {item.managed ? "编辑" : "加入目录"}
+                                </Button>
+                                {item.managed ? (
+                                    <Popconfirm
+                                        title={`删除模型 ${item.id}？`}
+                                        description="模型信息与对应计费规则会一并移除。"
+                                        okText="删除"
+                                        okButtonProps={{ danger: true }}
+                                        cancelText="取消"
+                                        disabled={isSaving || Boolean(channelModelIds?.has(item.id))}
+                                        onConfirm={() => {
+                                            if (channelModelIds?.has(item.id)) {
+                                                message.info("该模型仍由渠道提供，可停用；如需彻底移除，请先从渠道中删除");
+                                                return;
+                                            }
+                                            onDelete(item.id);
+                                        }}
+                                    >
+                                        <Button size="small" type="link" danger disabled={isSaving || Boolean(channelModelIds?.has(item.id))} icon={<DeleteOutlined />}>
+                                            删除
+                                        </Button>
+                                    </Popconfirm>
+                                ) : null}
+                            </Space>
                         ),
                     },
                 ]}
@@ -148,9 +175,10 @@ type PricingProps = {
     isSaving: boolean;
     onEdit: (id: string) => void;
     onSetPrice: (spec: PricingSpec, credits: number) => void;
+    onRemovePrice: (spec: PricingSpec) => void;
 };
 
-export function PricingTable({ models, loading, isSaving, onEdit, onSetPrice }: PricingProps) {
+export function PricingTable({ models, loading, isSaving, onEdit, onSetPrice, onRemovePrice }: PricingProps) {
     const { message } = App.useApp();
     const [filter, setFilter] = useState("all");
     const [keyword, setKeyword] = useState("");
@@ -311,6 +339,20 @@ export function PricingTable({ models, loading, isSaving, onEdit, onSetPrice }: 
                                             <Tag color="green" className="!m-0">
                                                 已定
                                             </Tag>
+                                        ),
+                                },
+                                {
+                                    title: "操作",
+                                    width: 72,
+                                    render: (_, row) =>
+                                        row.rule && !row.rule.draft ? (
+                                            <Popconfirm title="删除该定价规则？" description="删除后该规格将回到缺价状态。" okText="删除" okButtonProps={{ danger: true }} cancelText="取消" disabled={isSaving} onConfirm={() => onRemovePrice(row)}>
+                                                <Button size="small" type="link" danger disabled={isSaving}>
+                                                    删除
+                                                </Button>
+                                            </Popconfirm>
+                                        ) : (
+                                            <Typography.Text type="secondary">—</Typography.Text>
                                         ),
                                 },
                             ]}

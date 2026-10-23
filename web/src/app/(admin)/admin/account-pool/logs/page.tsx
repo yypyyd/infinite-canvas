@@ -73,15 +73,8 @@ export default function GatewayLogsPage() {
                     rowKey="id"
                     loading={logs.isLoading}
                     dataSource={logs.data?.data || []}
-                    scroll={{ x: 1300 }}
+                    scroll={{ x: 1500 }}
                     pagination={{ current: page, pageSize: limit, total: logs.data?.total || 0, showSizeChanger: true, pageSizeOptions: [20, 50, 100, 200], onChange: (next, size) => (size !== limit ? (setLimit(size), setPage(1)) : setPage(next)) }}
-                    expandable={{
-                        expandedRowRender: (row) => (
-                            <Typography.Paragraph copyable style={{ whiteSpace: "pre-wrap", marginBottom: 0 }}>
-                                {row.prompt || "（无提示词）"}
-                            </Typography.Paragraph>
-                        ),
-                    }}
                     columns={[
                         { title: "时间", width: 170, render: (_, row) => formatTime(row.created_at) },
                         ...(tab === "artifacts"
@@ -109,6 +102,18 @@ export default function GatewayLogsPage() {
                         { title: "来源", width: 140, render: (_, row) => (row.source === "admin" ? "后台测试" : row.credential?.name || "幻图") },
                         { title: "参数", width: 180, render: (_, row) => requestParams(row) },
                         { title: "耗时", width: 90, render: (_, row) => formatMs(row.duration_ms) },
+                        {
+                            title: "提示词",
+                            width: 280,
+                            render: (_, row) =>
+                                row.prompt ? (
+                                    <Typography.Text ellipsis={{ tooltip: row.prompt }} copyable={{ text: row.prompt, tooltips: ["复制", "已复制"] }}>
+                                        {row.prompt}
+                                    </Typography.Text>
+                                ) : (
+                                    <Typography.Text type="secondary">—</Typography.Text>
+                                ),
+                        },
                         {
                             title: "错误",
                             render: (_, row) =>

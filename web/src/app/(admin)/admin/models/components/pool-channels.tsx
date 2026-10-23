@@ -95,13 +95,11 @@ export function PoolChannelDrawer({ token, row, pool: _pool, builtinProvider, le
     const run = useGatewayAction();
     const [form] = Form.useForm<PoolForm>();
     const [saving, setSaving] = useState(false);
-    const [tab, setTab] = useState(initialTab);
-    const [probing, setProbing] = useState(false);
-    const [probeMsg, setProbeMsg] = useState<{ ok: boolean; text: string } | null>(null);
+    const [tab, setTab] = useState(initialTab === "test" ? "accounts" : initialTab);
     const settings = useGatewayQuery(["settings"], gatewayApi.settings);
 
     useEffect(() => {
-        setTab(initialTab || "base");
+        setTab(initialTab === "test" ? "accounts" : initialTab || "base");
     }, [row?.provider, initialTab]);
 
     const providerMappings = builtinProvider?.modelMappings || [];
@@ -189,7 +187,7 @@ export function PoolChannelDrawer({ token, row, pool: _pool, builtinProvider, le
             extra={
                 <Flex gap={8}>
                     <Button onClick={onClose}>取消</Button>
-                    {tab === "accounts" || tab === "test" ? null : (
+                    {tab === "accounts" ? null : (
                         <Button type="primary" loading={saving} disabled={isSaving} onClick={() => void saveBaseAndMappings()}>
                             保存
                         </Button>
@@ -207,7 +205,6 @@ export function PoolChannelDrawer({ token, row, pool: _pool, builtinProvider, le
                             { key: "base", label: "基础配置" },
                             { key: "mappings", label: "模型映射" },
                             { key: "accounts", label: "账号" },
-                            { key: "test", label: "测试" },
                         ]}
                     />
                     <Form form={form} layout="vertical" requiredMark={false} disabled={saving || isSaving}>
@@ -354,39 +351,7 @@ export function PoolChannelDrawer({ token, row, pool: _pool, builtinProvider, le
                         </div>
                     </Form>
                     <div hidden={tab !== "accounts"}>
-                        <Alert type="info" showIcon className="!mb-3" message="账号增删改走网关账号 API，与渠道设置分次提交，不会写入 settings 大 JSON。" />
                         <AccountsPanel fixedProvider={row.provider} embedded />
-                    </div>
-                    <div hidden={tab !== "test"}>
-                        <Alert type="info" showIcon message="内置平台连通探测" description="「测一下」会挑一个可用账号刷新额度，用于快速确认渠道连通；完整模型测试请到「账号」页签对单个账号执行。" />
-                        <Typography.Paragraph type="secondary" className="!mt-3">
-                            当前可用账号 {row.activeAccounts}/{row.accounts} · 模型路由 {row.models.length} 条 · <ChannelHealthBadge health={row.health} enabled={row.enabled} />
-                        </Typography.Paragraph>
-                        <Flex gap={8} wrap className="!mb-3">
-                            <Button
-                                type="primary"
-                                loading={probing}
-                                onClick={() =>
-                                    void (async () => {
-                                        setProbing(true);
-                                        setProbeMsg(null);
-                                        try {
-                                            const result = await run((t) => gatewayApi.probeProvider(t, row.provider));
-                                            if (!result) return;
-                                            const data = result.data;
-                                            setProbeMsg({ ok: Boolean(data.ok), text: data.message || (data.ok ? "连通正常" : "探测失败") });
-                                            onChanged();
-                                        } finally {
-                                            setProbing(false);
-                                        }
-                                    })()
-                                }
-                            >
-                                测一下
-                            </Button>
-                            <Button onClick={() => setTab("accounts")}>前往账号测试</Button>
-                        </Flex>
-                        {probeMsg ? <Alert type={probeMsg.ok ? "success" : "error"} showIcon message={probeMsg.text} /> : null}
                     </div>
                 </>
             ) : null}

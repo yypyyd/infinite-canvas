@@ -2,6 +2,7 @@
 
 import { DeleteOutlined, ExperimentOutlined, ImportOutlined, ReloadOutlined, SyncOutlined } from "@ant-design/icons";
 import { Alert, Button, Card, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tag, Tooltip, Typography, Upload } from "antd";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
 import { parseCredentialFile, parseCredentialImports, uniqueCredentialImports } from "@/lib/gateway/credential";
@@ -50,6 +51,8 @@ export function AccountsPanel({ fixedProvider = "", embedded = false }: Accounts
     const [testing, setTesting] = useState<GatewayAccount | null>(null);
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [batching, setBatching] = useState(false);
+    const [busyIds, setBusyIds] = useState<Record<string, boolean>>({});
+    const queryClient = useQueryClient();
 
     useEffect(() => {
         setProvider(fixedProvider);
@@ -109,6 +112,54 @@ export function AccountsPanel({ fixedProvider = "", embedded = false }: Accounts
         }
     };
 
+    const markBusy = (id: string, busy: boolean) => setBusyIds((prev) => ({ ...prev, [id]: busy }));
+
+    const accountsQueryKey = ["admin", "gateway", "accounts", page, limit, provider, status, keyword, token] as const;
+
+    const patchAccountLocal = (accountId: string, patch: (item: GatewayAccount) => GatewayAccount) => {
+        queryClient.setQueryData(accountsQueryKey, (previous: { data?: GatewayAccount[] } | undefined) => {
+            if (!previous?.data) return previous;
+            return { ...previous, data: previous.data.map((item) => (item.id === accountId ? patch(item) : item)) };
+        });
+    };
+
+    const runOnAccount = async <T,>(accountId: string, fn: (t: string) => Promise<T>, success?: string, optimistic?: (item: GatewayAccount) => GatewayAccount) => {
+        if (optimistic) patchAccountLocal(accountId, optimistic);
+        markBusy(accountId, true);
+        try {
+            return await run(fn, success);
+        } finally {
+            markBusy(accountId, false);
+        }
+    };
+
+    const batchDelete = async () => {
+        if (!selectedIds.length) return;
+        const ids = [...selectedIds];
+        setBatching(true);
+        try {
+            const result = await run(async (t) => {
+                let updated = 0;
+                let failed = 0;
+                let error = "";
+                for (const id of ids) {
+                    try {
+                        await gatewayApi.deleteAccount(t, id);
+                        updated++;
+                    } catch (err) {
+                        failed++;
+                        if (!error) error = err instanceof Error ? err.message : "删除失败";
+                    }
+                }
+                if (failed) throw new Error(`删除成功 ${updated}，失败 ${failed}${error ? `：${error}` : ""}`);
+                return updated;
+            }, `已删除 ${ids.length} 个账号`);
+            if (result !== undefined) setSelectedIds([]);
+        } finally {
+            setBatching(false);
+        }
+    };
+
     const body = (
         <>
             <Space style={{ width: "100%", justifyContent: "space-between", marginBottom: 16 }} wrap>
@@ -133,7 +184,15 @@ export function AccountsPanel({ fixedProvider = "", embedded = false }: Accounts
                     <Button icon={<ReloadOutlined />} onClick={() => void accounts.refetch()} loading={accounts.isFetching}>
                         刷新
                     </Button>
-                    <Popconfirm title={`删除全部 ${deadCount} 个凭据失效账号？`} description="手动停用但凭据有效的账号不会删除" disabled={!deadCount} onConfirm={() => void run((t) => gatewayApi.deleteDeadAccounts(t), "已删除失效账号")}>
+                    <Popconfirm
+                        title={`删除全部 ${deadCount} 个凭据失效账号？`}
+                        description="手动停用但凭据有效的账号不会删除。此操作不可恢复。"
+                        okText="删除"
+                        okButtonProps={{ danger: true }}
+                        cancelText="取消"
+                        disabled={!deadCount || batching}
+                        onConfirm={() => void run((t) => gatewayApi.deleteDeadAccounts(t), "已删除失效账号")}
+                    >
                         <Button danger icon={<DeleteOutlined />} disabled={!deadCount}>
                             删除失效账号{deadCount ? ` ${deadCount}` : ""}
                         </Button>
@@ -152,7 +211,20 @@ export function AccountsPanel({ fixedProvider = "", embedded = false }: Accounts
                     <Button size="small" loading={batching} onClick={() => void batchSetStatus("disabled")}>
                         批量停用
                     </Button>
-                    <Button size="small" type="text" onClick={() => setSelectedIds([])}>
+                    <Popconfirm
+                        title={`删除选中的 ${selectedIds.length} 个账号？`}
+                        description="将从号池移除，绑定的路由与额度桶会一并清理。"
+                        okText="删除"
+                        okButtonProps={{ danger: true }}
+                        cancelText="取消"
+                        disabled={batching}
+                        onConfirm={() => void batchDelete()}
+                    >
+                        <Button size="small" danger loading={batching} icon={<DeleteOutlined />}>
+                            批量删除
+                        </Button>
+                    </Popconfirm>
+                    <Button size="small" type="text" disabled={batching} onClick={() => setSelectedIds([])}>
                         取消选择
                     </Button>
                 </Space>
@@ -161,7 +233,7 @@ export function AccountsPanel({ fixedProvider = "", embedded = false }: Accounts
                 rowKey="id"
                 loading={accounts.isLoading}
                 dataSource={accounts.data?.data || []}
-                scroll={{ x: embedded ? 960 : 1200 }}
+                scroll={{ x: embedded ? 1180 : 1480 }}
                 size={embedded ? "small" : "middle"}
                 rowSelection={{
                     selectedRowKeys: selectedIds,
@@ -177,19 +249,9 @@ export function AccountsPanel({ fixedProvider = "", embedded = false }: Accounts
                     onChange: (next, size) => (size !== limit ? (setLimit(size), setPage(1)) : setPage(next)),
                 }}
                 expandable={{
+                    rowExpandable: (item) => Boolean(item.quota_buckets?.length || item.readiness_detail),
                     expandedRowRender: (item) => (
-                        <Space direction="vertical" style={{ width: "100%" }}>
-                            <Typography.Text strong>模型路由</Typography.Text>
-                            <Space wrap>
-                                {item.routes.map((route) => (
-                                    <Tag key={route.id}>
-                                        <Space size={6}>
-                                            {route.model_id}
-                                            <Switch size="small" checked={route.enabled} onChange={(checked) => void run((t) => gatewayApi.setAccountRoute(t, item.id, route.id, checked), "路由已更新")} />
-                                        </Space>
-                                    </Tag>
-                                ))}
-                            </Space>
+                        <Space direction="vertical" style={{ width: "100%" }} size={8}>
                             {item.quota_buckets?.length ? (
                                 <Table
                                     size="small"
@@ -211,72 +273,125 @@ export function AccountsPanel({ fixedProvider = "", embedded = false }: Accounts
                 }}
                 columns={[
                     ...(fixedProvider ? [] : [{ title: "平台", dataIndex: "provider" as const, width: 120, fixed: "left" as const, render: (value: string) => providerLabels[value] || value }]),
-                    { title: "账号", width: 220, render: (_: unknown, item: GatewayAccount) => <Typography.Text ellipsis={{ tooltip: item.id }}>{item.label || item.email || item.id}</Typography.Text> },
-                    { title: "健康", dataIndex: "health", width: 100, render: (value: string) => <Tag color={healthColors[value] || "default"}>{healthLabels[value] || value}</Tag> },
-                    { title: "额度", dataIndex: "quota_state", width: 110 },
+                    { title: "账号", width: 200, render: (_: unknown, item: GatewayAccount) => <Typography.Text ellipsis={{ tooltip: item.id }}>{item.label || item.email || item.id}</Typography.Text> },
+                    { title: "健康", dataIndex: "health", width: 96, render: (value: string) => <Tag color={healthColors[value] || "default"}>{healthLabels[value] || value}</Tag> },
+                    { title: "额度", dataIndex: "quota_state", width: 100 },
+                    {
+                        title: "模型路由",
+                        width: embedded ? 280 : 360,
+                        render: (_: unknown, item: GatewayAccount) =>
+                            item.routes?.length ? (
+                                <Space size={[4, 4]} wrap>
+                                    {item.routes.map((route) => (
+                                        <Tag key={route.id} className="!m-0 !inline-flex !items-center !gap-1 !py-0.5">
+                                            <Typography.Text className="text-xs" ellipsis={{ tooltip: route.model_id }} style={{ maxWidth: 120 }}>
+                                                {route.model_id}
+                                            </Typography.Text>
+                                            <Switch
+                                                size="small"
+                                                checked={route.enabled}
+                                                disabled={Boolean(busyIds[item.id]) || batching}
+                                                onChange={(checked) =>
+                                                    void runOnAccount(
+                                                        item.id,
+                                                        (t) => gatewayApi.setAccountRoute(t, item.id, route.id, checked),
+                                                        checked ? "路由已启用" : "路由已关闭",
+                                                        (current) => ({
+                                                            ...current,
+                                                            routes: current.routes.map((candidate) => (candidate.id === route.id ? { ...candidate, enabled: checked } : candidate)),
+                                                        }),
+                                                    )
+                                                }
+                                            />
+                                        </Tag>
+                                    ))}
+                                </Space>
+                            ) : (
+                                <Typography.Text type="secondary">—</Typography.Text>
+                            ),
+                    },
                     {
                         title: "权重",
-                        width: 100,
+                        width: 88,
                         render: (_: unknown, item: GatewayAccount) => (
                             <InputNumber
+                                key={`w-${item.id}-${item.weight}`}
                                 size="small"
                                 min={-1000}
                                 max={1000}
                                 defaultValue={item.weight}
+                                disabled={Boolean(busyIds[item.id]) || batching}
                                 onBlur={(event) => {
                                     const value = Number(event.target.value);
-                                    if (value !== item.weight) void run((t) => gatewayApi.updateAccount(t, item.id, { weight: value }), "权重已更新");
+                                    if (value !== item.weight) void runOnAccount(item.id, (t) => gatewayApi.updateAccount(t, item.id, { weight: value }), "权重已更新");
                                 }}
                             />
                         ),
                     },
                     {
                         title: "并发上限",
-                        width: 100,
+                        width: 88,
                         render: (_: unknown, item: GatewayAccount) => (
                             <Tooltip title="0 表示不限">
                                 <InputNumber
+                                    key={`c-${item.id}-${item.max_concurrency}`}
                                     size="small"
                                     min={0}
                                     max={1000}
                                     defaultValue={item.max_concurrency}
+                                    disabled={Boolean(busyIds[item.id]) || batching}
                                     onBlur={(event) => {
                                         const value = Number(event.target.value);
-                                        if (value !== item.max_concurrency) void run((t) => gatewayApi.updateAccount(t, item.id, { max_concurrency: value }), "并发已更新");
+                                        if (value !== item.max_concurrency) void runOnAccount(item.id, (t) => gatewayApi.updateAccount(t, item.id, { max_concurrency: value }), "并发已更新");
                                     }}
                                 />
                             </Tooltip>
                         ),
                     },
-                    { title: "进行中", dataIndex: "active_jobs", width: 80 },
-                    { title: "成功 / 失败", width: 110, render: (_: unknown, item: GatewayAccount) => `${item.success_total} / ${item.fail_total}` },
-                    { title: "最近使用", width: 160, render: (_: unknown, item: GatewayAccount) => formatTime(item.last_used_at) },
+                    { title: "进行中", dataIndex: "active_jobs", width: 72 },
+                    { title: "成功 / 失败", width: 100, render: (_: unknown, item: GatewayAccount) => `${item.success_total} / ${item.fail_total}` },
+                    { title: "最近使用", width: 150, render: (_: unknown, item: GatewayAccount) => formatTime(item.last_used_at) },
                     {
                         title: "启用",
-                        width: 80,
+                        width: 72,
                         render: (_: unknown, item: GatewayAccount) => (
                             <Switch
                                 size="small"
                                 checked={item.status === "active"}
-                                disabled={!["active", "disabled"].includes(item.status)}
-                                onChange={(checked) => void run((t) => gatewayApi.updateAccount(t, item.id, { status: checked ? "active" : "disabled" }), "状态已更新")}
+                                disabled={!["active", "disabled"].includes(item.status) || Boolean(busyIds[item.id]) || batching}
+                                onChange={(checked) =>
+                                    void runOnAccount(
+                                        item.id,
+                                        (t) => gatewayApi.updateAccount(t, item.id, { status: checked ? "active" : "disabled" }),
+                                        "状态已更新",
+                                        (current) => ({ ...current, status: checked ? "active" : "disabled", health: checked ? (current.health === "disabled" ? "active" : current.health) : "disabled" }),
+                                    )
+                                }
                             />
                         ),
                     },
                     {
                         title: "操作",
-                        width: 200,
+                        width: 168,
                         fixed: "right",
                         render: (_: unknown, item: GatewayAccount) => (
-                            <Space size={4}>
-                                <Button type="text" size="small" icon={<ExperimentOutlined />} onClick={() => setTesting(item)}>
+                            <Space size={0}>
+                                <Button type="text" size="small" icon={<ExperimentOutlined />} disabled={Boolean(busyIds[item.id])} onClick={() => setTesting(item)}>
                                     测试
                                 </Button>
                                 <Tooltip title="刷新额度">
-                                    <Button type="text" size="small" icon={<SyncOutlined />} onClick={() => void run((t) => gatewayApi.refreshQuota(t, item.id), "额度已刷新")} />
+                                    <Button type="text" size="small" icon={<SyncOutlined />} loading={Boolean(busyIds[item.id])} disabled={batching} onClick={() => void runOnAccount(item.id, (t) => gatewayApi.refreshQuota(t, item.id), "额度已刷新")} />
                                 </Tooltip>
-                                <Popconfirm title="删除该账号？" onConfirm={() => void run((t) => gatewayApi.deleteAccount(t, item.id), "已删除")}>
-                                    <Button type="text" size="small" danger icon={<DeleteOutlined />}>
+                                <Popconfirm
+                                    title="删除该账号？"
+                                    description="将从号池移除，路由与额度桶会一并清理。"
+                                    okText="删除"
+                                    okButtonProps={{ danger: true }}
+                                    cancelText="取消"
+                                    disabled={Boolean(busyIds[item.id]) || batching}
+                                    onConfirm={() => void runOnAccount(item.id, (t) => gatewayApi.deleteAccount(t, item.id), "已删除")}
+                                >
+                                    <Button type="text" size="small" danger icon={<DeleteOutlined />} disabled={Boolean(busyIds[item.id]) || batching}>
                                         删除
                                     </Button>
                                 </Popconfirm>

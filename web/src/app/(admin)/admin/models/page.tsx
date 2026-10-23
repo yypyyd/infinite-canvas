@@ -1,7 +1,7 @@
 "use client";
 
 import { LoadingOutlined, PlusOutlined, ReloadOutlined } from "@ant-design/icons";
-import { Alert, App, Button, Checkbox, Col, Drawer, Dropdown, Flex, Form, Input, InputNumber, Modal, Row, Select, Space, Spin, Switch, Table, Tabs, Tag, Typography } from "antd";
+import { Alert, App, Button, Checkbox, Col, Drawer, Flex, Form, Input, InputNumber, Modal, Row, Select, Space, Spin, Switch, Table, Tabs, Tag, Typography } from "antd";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -65,8 +65,6 @@ export default function AdminModelsPage() {
     const [poolDrawerTab, setPoolDrawerTab] = useState("base");
     const [protocolDrawerOpen, setProtocolDrawerOpen] = useState(false);
     const [routingDrawerOpen, setRoutingDrawerOpen] = useState(false);
-    const [probingProvider, setProbingProvider] = useState<string | null>(null);
-    const [probeResults, setProbeResults] = useState<Record<string, { ok: boolean; text: string }>>({});
     const poolChannels = usePoolChannels();
 
     // Deep-link from /admin/account-pool/accounts?provider=… → open builtin Accounts tab.
@@ -77,7 +75,7 @@ export default function AdminModelsPage() {
         if (!provider || poolChannels.loading || !poolChannels.rows.length) return;
         const match = poolChannels.rows.find((row) => row.provider === provider);
         if (!match) return;
-        setPoolDrawerTab(subtab === "accounts" || subtab === "mappings" || subtab === "test" || subtab === "base" ? subtab : "accounts");
+        setPoolDrawerTab(subtab === "accounts" || subtab === "mappings" || subtab === "base" ? subtab : "accounts");
         setPoolRow(match);
         const url = new URL(window.location.href);
         url.searchParams.delete("provider");
@@ -242,24 +240,6 @@ export default function AdminModelsPage() {
             },
         }));
     };
-    const probePoolChannel = async (provider: string) => {
-        if (!token || probingProvider) return;
-        setProbingProvider(provider);
-        try {
-            const result = await gatewayApi.probeProvider(token, provider);
-            const data = result.data;
-            setProbeResults((current) => ({ ...current, [provider]: { ok: Boolean(data.ok), text: data.message || (data.ok ? "连通正常" : "探测失败") } }));
-            message[data.ok ? "success" : "warning"](data.message || (data.ok ? "连通正常" : "探测失败"));
-            await poolChannels.reload();
-        } catch (error) {
-            const errText = error instanceof Error ? error.message : "探测失败";
-            setProbeResults((current) => ({ ...current, [provider]: { ok: false, text: errText } }));
-            message.error(errText);
-        } finally {
-            setProbingProvider(null);
-        }
-    };
-
     const openPoolChannel = (row: PoolChannelRow, tab = "base") => {
         setPoolDrawerTab(tab);
         setPoolRow(row);
@@ -312,6 +292,27 @@ export default function AdminModelsPage() {
                   },
               ];
         void persistModels(managedModels, next);
+    };
+    const removePrice = (spec: PricingSpec) => {
+        const rules = settings?.public.modelChannel.pricingRules || [];
+        const key = specKey(spec);
+        const next = rules.filter((rule) => !(rule.model === spec.model && specKey(rule) === key));
+        if (next.length === rules.length) {
+            message.info("没有可删除的定价规则");
+            return;
+        }
+        void persistModels(managedModels, next);
+    };
+    const channelModelIds = useMemo(() => new Set(channels.flatMap((channel) => channelModelNames(channel.models || []))), [channels]);
+    const deleteManagedModel = (id: string) => {
+        if (channelModelIds.has(id)) {
+            message.info("该模型仍由渠道提供，可停用；如需彻底移除，请先从渠道中删除");
+            return;
+        }
+        void persistModels(
+            managedModels.filter((model) => model.id !== id),
+            (settings?.public.modelChannel.pricingRules || []).filter((rule) => rule.model !== id),
+        );
     };
     const copyChannel = (index: number) => {
         openChannelDrawer(null);
@@ -538,7 +539,7 @@ export default function AdminModelsPage() {
                     { key: "pricing", label: "定价", disabled: isSaving },
                 ]}
             />
-            <Spin spinning={isLoading}>
+            <Spin spinning={isLoading && !settings}>
                 {settings ? (
                     <ModelCatalogEditor
                         value={managedModels}
@@ -555,8 +556,19 @@ export default function AdminModelsPage() {
                         drawerOnly
                     />
                 ) : null}
-                {activeTab === "models" ? <ModelListTable models={overview?.models || []} loading={overviewLoading} isSaving={isSaving} onEdit={showModel} onCreate={() => showModel(NEW_MODEL_REQUEST)} onUpdate={updateModel} /> : null}
-                {activeTab === "pricing" ? <PricingTable models={overview?.models || []} loading={overviewLoading} isSaving={isSaving} onEdit={showModel} onSetPrice={setPrice} /> : null}
+                {activeTab === "models" ? (
+                    <ModelListTable
+                        models={overview?.models || []}
+                        loading={overviewLoading}
+                        isSaving={isSaving}
+                        channelModelIds={channelModelIds}
+                        onEdit={showModel}
+                        onCreate={() => showModel(NEW_MODEL_REQUEST)}
+                        onUpdate={updateModel}
+                        onDelete={deleteManagedModel}
+                    />
+                ) : null}
+                {activeTab === "pricing" ? <PricingTable models={overview?.models || []} loading={overviewLoading} isSaving={isSaving} onEdit={showModel} onSetPrice={setPrice} onRemovePrice={removePrice} /> : null}
                 <div hidden={activeTab !== "channels"}>
                     <Flex justify="space-between" align="center" gap={16} wrap style={{ marginBottom: 16 }}>
                         <Typography.Text type="secondary">
@@ -652,27 +664,6 @@ export default function AdminModelsPage() {
                                     ),
                             },
                             {
-                                title: "测试",
-                                width: 100,
-                                render: (_, row) =>
-                                    row.kind === "pool" ? (
-                                        <Flex vertical gap={2}>
-                                            <Button type="link" size="small" className="!px-0" loading={probingProvider === row.pool.provider} disabled={isSaving || Boolean(probingProvider)} onClick={() => void probePoolChannel(row.pool.provider)}>
-                                                测一下
-                                            </Button>
-                                            {probeResults[row.pool.provider] ? (
-                                                <Typography.Text type={probeResults[row.pool.provider].ok ? "success" : "danger"} className="text-xs" ellipsis={{ tooltip: probeResults[row.pool.provider].text }}>
-                                                    {probeResults[row.pool.provider].ok ? "通过" : "失败"}
-                                                </Typography.Text>
-                                            ) : null}
-                                        </Flex>
-                                    ) : (
-                                        <Button type="link" size="small" className="!px-0" disabled={isSaving} onClick={() => openTestDialog(row.index)}>
-                                            测一下
-                                        </Button>
-                                    ),
-                            },
-                            {
                                 title: "余额 / 账号",
                                 width: 110,
                                 render: (_, row) =>
@@ -737,47 +728,35 @@ export default function AdminModelsPage() {
                                             <Button type="text" size="small" disabled={isSaving} onClick={() => openPoolChannel(row.pool, "accounts")}>
                                                 账号
                                             </Button>
-                                            <Button type="text" size="small" disabled={isSaving} onClick={() => openPoolChannel(row.pool, "test")}>
-                                                测试
-                                            </Button>
                                         </Space>
                                     ) : (
                                         <Space size={4}>
-                                            <Button type="text" size="small" disabled={isSaving} onClick={() => openTestDialog(row.index)}>
-                                                测试
-                                            </Button>
                                             <Button type="text" size="small" disabled={isSaving} onClick={() => openChannelDrawer(row.index)}>
                                                 编辑
                                             </Button>
-                                            <Dropdown
-                                                trigger={["click"]}
-                                                menu={{
-                                                    items: [
-                                                        { key: "copy", label: "复制渠道", disabled: isSaving, onClick: () => copyChannel(row.index) },
-                                                        {
-                                                            key: "delete",
-                                                            label: "删除渠道",
-                                                            danger: true,
-                                                            disabled: isSaving,
-                                                            onClick: () =>
-                                                                modal.confirm({
-                                                                    title: `删除渠道 ${row.channel.name}？`,
-                                                                    content: "仅移除此渠道及其模型映射，保留对外模型与统一价格。没有其他渠道承接的模型将无法生成。",
-                                                                    okText: "删除",
-                                                                    cancelText: "取消",
-                                                                    okButtonProps: { danger: true },
-                                                                    onOk: async () => {
-                                                                        if (!(await persistChannels(channels.filter((_, index) => index !== row.index)))) throw new Error("删除失败");
-                                                                    },
-                                                                }),
+                                            <Button type="text" size="small" disabled={isSaving} onClick={() => copyChannel(row.index)}>
+                                                复制
+                                            </Button>
+                                            <Button
+                                                type="text"
+                                                size="small"
+                                                danger
+                                                disabled={isSaving}
+                                                onClick={() =>
+                                                    modal.confirm({
+                                                        title: `删除渠道 ${row.channel.name}？`,
+                                                        content: "仅移除此渠道及其模型映射，保留对外模型与统一价格。没有其他渠道承接的模型将无法生成。",
+                                                        okText: "删除",
+                                                        cancelText: "取消",
+                                                        okButtonProps: { danger: true },
+                                                        onOk: async () => {
+                                                            if (!(await persistChannels(channels.filter((_, index) => index !== row.index)))) throw new Error("删除失败");
                                                         },
-                                                    ],
-                                                }}
+                                                    })
+                                                }
                                             >
-                                                <Button type="text" size="small" aria-label="更多渠道操作">
-                                                    ···
-                                                </Button>
-                                            </Dropdown>
+                                                删除
+                                            </Button>
                                         </Space>
                                     ),
                             },
@@ -901,7 +880,6 @@ export default function AdminModelsPage() {
                         items={[
                             { key: "connection", label: "基础配置" },
                             { key: "models", label: "模型映射" },
-                            { key: "test", label: "测试", disabled: editingChannelIndex === null },
                         ]}
                     />
                     <div hidden={channelEditorTab !== "connection"}>
@@ -1006,6 +984,16 @@ export default function AdminModelsPage() {
                                 <Form.Item label="渠道可用模型" extra="先选择模型，再为每个模型声明当前渠道实际支持的操作和分辨率。">
                                     <Flex align="center" gap={12} wrap>
                                         <Button onClick={() => openChannelModelSelector()}>选择模型</Button>
+                                        {editingChannelIndex !== null ? (
+                                            <Button
+                                                onClick={() => {
+                                                    closeChannelDrawer();
+                                                    openTestDialog(editingChannelIndex);
+                                                }}
+                                            >
+                                                模型测试
+                                            </Button>
+                                        ) : null}
                                         {channelProtocol === "openai" ? (
                                             <Button icon={<ReloadOutlined />} loading={isFetchingChannelModels} onClick={() => void fetchChannelModelList()}>
                                                 拉取模型
@@ -1020,24 +1008,6 @@ export default function AdminModelsPage() {
                                 <ChannelModelCapabilitiesEditor managedModels={managedModels} />
                             </Col>
                         </Row>
-                    </div>
-                    <div hidden={channelEditorTab !== "test"}>
-                        {editingChannelIndex === null ? (
-                            <Alert type="info" showIcon message="请先保存渠道后再测试模型连通性。" />
-                        ) : (
-                            <Space direction="vertical" style={{ width: "100%" }} size={12}>
-                                <Typography.Text type="secondary">在渠道详情内测试已映射模型（与列表「测试」相同）。</Typography.Text>
-                                <Button
-                                    type="primary"
-                                    onClick={() => {
-                                        closeChannelDrawer();
-                                        openTestDialog(editingChannelIndex);
-                                    }}
-                                >
-                                    打开模型测试
-                                </Button>
-                            </Space>
-                        )}
                     </div>
                 </Form>
             </Drawer>

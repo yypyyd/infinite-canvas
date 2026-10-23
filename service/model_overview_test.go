@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/yypyyd/infinite-canvas/gateway"
@@ -221,5 +222,87 @@ func TestPatchModelSourceUpdatesChannelPoolAndRoute(t *testing.T) {
 	}
 	if !gotRoute.ClearPriority || gotRoute.Weight == nil || *gotRoute.Weight != 9 || gotRoute.ClearWeight {
 		t.Fatalf("route update = %+v", gotRoute)
+	}
+}
+
+func TestModelOverviewTrustsRouteDetailsOverUsableCatalog(t *testing.T) {
+	// Channel UI lists logical models from admin routes; overview used to require
+	// membership in the /v1/models usable snapshot and otherwise marked the
+	// source inactive with "账号池暂未提供该模型" even when RouteDetails showed
+	// healthy accounts — leaving the Models tab silently red.
+	stubPoolModels(t, []gateway.PoolModel{
+		{ID: "gpt-image-2", Name: "GPT Image 2", Modality: "image", Operations: []string{"generation"},
+			Routes: []gateway.PoolRoute{{ID: "image.gpt-image-2.chatgpt", Provider: "chatgpt"}}},
+	})
+	routes := []gateway.RouteDetail{
+		{LogicalModelID: "gpt-5-5-thinking", LogicalEnabled: true, RouteID: "text.gpt-5-5-thinking.chatgpt", Provider: "chatgpt", UpstreamModel: "gpt-5-5-thinking", Enabled: true, ProviderEnabled: true, EffectivePriority: 200, EffectiveWeight: 1, BoundAccounts: 2, AvailableAccounts: 2},
+		{LogicalModelID: "gpt-image-2", LogicalEnabled: true, RouteID: "image.gpt-image-2.chatgpt", Provider: "chatgpt", UpstreamModel: "gpt-image-2", Enabled: true, ProviderEnabled: true, EffectivePriority: 200, EffectiveWeight: 1, BoundAccounts: 1, AvailableAccounts: 1},
+	}
+	settings := normalizeSettings(model.Settings{
+		Public: model.PublicSetting{ModelChannel: model.PublicModelChannelSetting{
+			Models: []model.ModelDefinition{
+				{ID: "gpt-5-5-thinking", Name: "GPT-5.5 Thinking", Modality: "text", Enabled: true, Operations: []string{"completion"}},
+				{ID: "gpt-image-2", Name: "GPT Image 2", Modality: "image", Enabled: true, Operations: []string{"generation"}},
+			},
+		}},
+		Private: model.PrivateSetting{
+			BuiltinProviders: []model.BuiltinProviderSource{{Provider: "chatgpt", Enabled: boolPtr(true)}},
+		},
+	})
+	overview := buildModelOverview(settings, routes, true)
+	item := overviewModel(t, overview, "gpt-5-5-thinking")
+	if !item.Available {
+		t.Fatalf("expected available when chatgpt route is healthy: %+v reasons=%v sources=%+v", item, item.Reasons, item.Sources)
+	}
+	found := false
+	for _, src := range item.Sources {
+		if src.ChannelName == "ChatGPT" {
+			found = true
+			if !src.Active {
+				t.Fatalf("chatgpt source should be active: %+v", src)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("missing ChatGPT source: %+v", item.Sources)
+	}
+}
+
+func TestModelOverviewSurfacesRouteReasonsWhenUnavailable(t *testing.T) {
+	stubPoolModels(t, nil)
+	routes := []gateway.RouteDetail{
+		{LogicalModelID: "gpt-5-5-thinking", LogicalEnabled: true, RouteID: "text.gpt-5-5-thinking.chatgpt", Provider: "chatgpt", UpstreamModel: "gpt-5-5-thinking", Enabled: true, ProviderEnabled: true, EffectivePriority: 200, EffectiveWeight: 1, BoundAccounts: 1, AvailableAccounts: 0, CooldownAccounts: 1},
+	}
+	settings := normalizeSettings(model.Settings{
+		Public: model.PublicSetting{ModelChannel: model.PublicModelChannelSetting{
+			Models: []model.ModelDefinition{{ID: "gpt-5-5-thinking", Name: "GPT-5.5 Thinking", Modality: "text", Enabled: true, Operations: []string{"completion"}}},
+		}},
+		Private: model.PrivateSetting{
+			BuiltinProviders: []model.BuiltinProviderSource{{Provider: "chatgpt", Enabled: boolPtr(true)}},
+		},
+	})
+	overview := buildModelOverview(settings, routes, true)
+	item := overviewModel(t, overview, "gpt-5-5-thinking")
+	if item.Available {
+		t.Fatalf("expected unavailable when accounts are cooling down: %+v", item)
+	}
+	joined := strings.Join(item.Reasons, ";")
+	if !strings.Contains(joined, "没有可用的平台路由") && !strings.Contains(joined, "账号均在冷却") {
+		t.Fatalf("expected concrete reason, got %q sources=%+v", joined, item.Sources)
+	}
+}
+
+func TestAppendBuiltinPoolDefinitionsMergesAllProviders(t *testing.T) {
+	channels := []model.ModelChannel{
+		{ID: BuiltinProviderChannelID("chatgpt"), Name: "ChatGPT", Enabled: true, Models: []model.ChannelModel{{Model: "gpt-5-5-thinking", Modality: "text", Operations: []string{"completion"}}}},
+		{ID: BuiltinProviderChannelID("byteplus"), Name: "BytePlus", Enabled: true, Models: []model.ChannelModel{{Model: "seedream-5.0-pro", Modality: "image", Operations: []string{"generation"}}}},
+	}
+	items := appendBuiltinPoolDefinitions([]model.ModelDefinition{{ID: "kept", Modality: "image", Enabled: true, Sort: 1}}, channels)
+	got := map[string]bool{}
+	for _, item := range items {
+		got[item.ID] = true
+	}
+	if !got["kept"] || !got["gpt-5-5-thinking"] || !got["seedream-5.0-pro"] {
+		t.Fatalf("definitions = %#v", items)
 	}
 }

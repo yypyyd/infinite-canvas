@@ -272,14 +272,13 @@ func runtimeChannelsFromPrivate(private model.PrivateSetting) []model.ModelChann
 // managed, so they show up without any setup. Existing definitions (renamed,
 // sorted or disabled by the admin) are kept as they are.
 func appendBuiltinPoolDefinitions(items []model.ModelDefinition, channels []model.ModelChannel) []model.ModelDefinition {
-	var pool *model.ModelChannel
+	poolModels := make([]model.ChannelModel, 0)
 	for i := range channels {
 		if IsBuiltinProviderChannel(channels[i]) || isBuiltinPoolChannel(channels[i]) {
-			pool = &channels[i]
-			break
+			poolModels = append(poolModels, channels[i].Models...)
 		}
 	}
-	if pool == nil || len(items) == 0 {
+	if len(poolModels) == 0 || len(items) == 0 {
 		return items
 	}
 	seen := make(map[string]bool, len(items))
@@ -288,7 +287,7 @@ func appendBuiltinPoolDefinitions(items []model.ModelDefinition, channels []mode
 		seen[item.ID] = true
 		sortBase = max(sortBase, item.Sort+1)
 	}
-	for _, channelModel := range pool.Models {
+	for _, channelModel := range poolModels {
 		if seen[channelModel.Model] {
 			continue
 		}
@@ -311,10 +310,6 @@ func appendBuiltinPoolDefinitions(items []model.ModelDefinition, channels []mode
 	return items
 }
 
-// applyImageCountLimits applies the pool's per-request image cap
-// (max_images_per_request from route capabilities) to image models that only
-// the built-in pool serves. Models also served by another enabled channel keep
-// no extra limit: multi-image requests are routed there.
 func applyImageCountLimits(items []model.ModelDefinition, channels []model.ModelChannel, poolModels []gateway.PoolModel) []model.ModelDefinition {
 	poolCap := map[string]int{}
 	for _, item := range poolModels {

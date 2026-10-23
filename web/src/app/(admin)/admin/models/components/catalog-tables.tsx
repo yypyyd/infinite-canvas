@@ -21,6 +21,20 @@ export function servingChannels(item: AdminModelOverviewItem) {
     );
 }
 
+/** Prefer item.reasons; fall back to inactive source reasons so the red tag never looks silent. */
+export function unavailableReasons(item: AdminModelOverviewItem) {
+    const reasons = [...(item.reasons || [])];
+    if (!reasons.length) {
+        for (const source of item.sources || []) {
+            if (source.active) continue;
+            for (const reason of source.reasons || []) {
+                if (reason && !reasons.includes(reason)) reasons.push(reason);
+            }
+        }
+    }
+    return reasons;
+}
+
 type ModelsProps = {
     models: AdminModelOverviewItem[];
     loading: boolean;
@@ -94,7 +108,7 @@ export function ModelListTable({ models, loading, isSaving, channelModelIds, onE
                             item.available ? (
                                 <Tag color="green">可用</Tag>
                             ) : (
-                                <Tooltip title={item.reasons.join("；") || "不可用"}>
+                                <Tooltip title={unavailableReasons(item).join("；") || "不可用"}>
                                     <Tag color="red">不可用</Tag>
                                 </Tooltip>
                             ),

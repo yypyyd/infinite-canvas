@@ -292,15 +292,24 @@ func buildModelOverview(settings model.Settings, routes []gateway.RouteDetail, r
 			if hasOverride && override.Disabled {
 				source.Reasons = append(source.Reasons, "\u8be5\u6765\u6e90\u5df2\u505c\u7528")
 			}
-			if _, ok := usable[name]; !ok {
-				switch {
-				case poolChannel == nil && !routesKnown:
-					source.Reasons = append(source.Reasons, "\u8d26\u53f7\u6c60\u672a\u8fd0\u884c")
-				case len(routesByLogical[target]) == 0:
+			// Prefer RouteDetails health over the /v1/models usable snapshot so a
+			// channel that lists a healthy route is not marked inactive just because
+			// the catalog cache lagged. When routes are known, require at least one
+			// available route for this provider; when unknown, fall back to usable.
+			inUsable := source.Capabilities != nil
+			switch {
+			case routesKnown && len(source.Routes) == 0:
+				if len(routesByLogical[target]) == 0 {
 					source.Reasons = append(source.Reasons, "\u8d26\u53f7\u6c60\u4e2d\u4e0d\u5b58\u5728\u76ee\u6807\u6a21\u578b "+target)
-				case !anyRoute:
-					source.Reasons = append(source.Reasons, "\u6ca1\u6709\u53ef\u7528\u7684\u5e73\u53f0\u8def\u7531")
-				default:
+				} else {
+					source.Reasons = append(source.Reasons, "\u8be5\u5e73\u53f0\u672a\u914d\u7f6e\u8be5\u6a21\u578b\u8def\u7531")
+				}
+			case routesKnown && !anyRoute:
+				source.Reasons = append(source.Reasons, "\u6ca1\u6709\u53ef\u7528\u7684\u5e73\u53f0\u8def\u7531")
+			case !routesKnown && !inUsable:
+				if poolChannel == nil && len(providerChannels) == 0 {
+					source.Reasons = append(source.Reasons, "\u8d26\u53f7\u6c60\u672a\u8fd0\u884c")
+				} else {
 					source.Reasons = append(source.Reasons, "\u8d26\u53f7\u6c60\u6682\u672a\u63d0\u4f9b\u8be5\u6a21\u578b")
 				}
 			}
@@ -313,7 +322,7 @@ func buildModelOverview(settings model.Settings, routes []gateway.RouteDetail, r
 		}
 		if emitProviders {
 			for _, pch := range providerChannels {
-				// Only list the model when this provider channel carries it (or aliases).
+				provider := BuiltinProviderOf(pch)
 				hasModel := false
 				for _, cm := range pch.Models {
 					if cm.Model == name {
@@ -322,12 +331,17 @@ func buildModelOverview(settings model.Settings, routes []gateway.RouteDetail, r
 						break
 					}
 				}
-				if !hasModel {
-					if _, ok := usable[name]; !ok && len(routesByLogical[target]) == 0 {
-						continue
+				providerRoutes := 0
+				for _, route := range routesByLogical[target] {
+					if normalizeBuiltinProvider(route.Provider) == provider {
+						providerRoutes++
 					}
 				}
-				emitOne(pch.ID, pch.Name, pch.Priority, pch.Weight, pch.Enabled, BuiltinProviderOf(pch))
+				// Only attach this provider when it carries the model or has routes.
+				if !hasModel && providerRoutes == 0 {
+					continue
+				}
+				emitOne(pch.ID, pch.Name, pch.Priority, pch.Weight, pch.Enabled, provider)
 			}
 			continue
 		}
@@ -383,11 +397,28 @@ func buildModelOverview(settings model.Settings, routes []gateway.RouteDetail, r
 			item.Reasons = append(item.Reasons, "未加入模型目录")
 		case !item.Enabled:
 			item.Reasons = append(item.Reasons, "模型未开放")
+		case !public[id]:
+			item.Reasons = append(item.Reasons, "未加入公开可用列表")
 		}
 		if len(item.Sources) == 0 {
 			item.Reasons = append(item.Reasons, "没有接入来源")
 		} else if !active {
-			item.Reasons = append(item.Reasons, "没有可用来源")
+			seenReason := map[string]bool{}
+			for _, source := range item.Sources {
+				if source.Active {
+					continue
+				}
+				for _, reason := range source.Reasons {
+					if reason == "" || seenReason[reason] {
+						continue
+					}
+					seenReason[reason] = true
+					item.Reasons = append(item.Reasons, reason)
+				}
+			}
+			if len(seenReason) == 0 {
+				item.Reasons = append(item.Reasons, "没有可用来源")
+			}
 		}
 		if len(item.Gaps) > 0 {
 			item.Warnings = append(item.Warnings, "存在未定价规格，相应请求无法计费")

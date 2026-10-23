@@ -14,7 +14,7 @@ func TestParseEmulatedToolCalls(t *testing.T) {
 			"function": map[string]any{
 				"name":        "image.generate",
 				"description": "Generate an image",
-				"parameters":   map[string]any{"type": "object"},
+				"parameters":  map[string]any{"type": "object"},
 			},
 		},
 	}
@@ -63,7 +63,7 @@ func TestSanitizeGeneratedChatText(t *testing.T) {
 func TestReshapeGenerateTextWithTools(t *testing.T) {
 	tools := []any{
 		map[string]any{
-			"type": "function",
+			"type":     "function",
 			"function": map[string]any{"name": "image.generate", "parameters": map[string]any{}},
 		},
 	}
@@ -94,7 +94,7 @@ func TestChatPromptWithToolsIncludesCatalog(t *testing.T) {
 			"function": map[string]any{
 				"name":        "image.generate",
 				"description": "Create image",
-				"parameters":   map[string]any{"type": "object"},
+				"parameters":  map[string]any{"type": "object"},
 			},
 		},
 	}

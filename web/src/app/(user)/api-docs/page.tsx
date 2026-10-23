@@ -10,6 +10,7 @@ import { useCopyText } from "@/hooks/use-copy-text";
 import { hasUserSpecPricing, requestCreditQuote, userSpecPricingRatio, type UserSpecPricingIndex } from "@/constant/credits";
 import { videoOutputSize } from "@/lib/video-format";
 import type { AdminManagedModel, AdminPricingRule } from "@/services/api/admin";
+import { fetchModelStatus, type ModelStatusItem } from "@/services/api/model-status";
 import { useConfigStore } from "@/stores/use-config-store";
 import { usePricingStore } from "@/stores/use-pricing-store";
 import { useUserStore } from "@/stores/use-user-store";
@@ -45,10 +46,19 @@ export default function ModelSquarePage() {
     const [page, setPage] = useState(1);
     const [selectedModelId, setSelectedModelId] = useState("");
     const [selectedOperation, setSelectedOperation] = useState<ModelOperation>("generation");
+    const [modelStatusById, setModelStatusById] = useState<Record<string, ModelStatusItem>>({});
 
     useEffect(() => {
         setEndpoint(`${window.location.origin}/api/v1`);
         const refresh = () => void loadPublicSettings().catch(() => undefined);
+        const refreshStatus = () =>
+            void fetchModelStatus()
+                .then((payload) => {
+                    const next: Record<string, ModelStatusItem> = {};
+                    for (const item of payload.models || []) next[item.id] = item;
+                    setModelStatusById(next);
+                })
+                .catch(() => undefined);
         const focusSearch = (event: KeyboardEvent) => {
             if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
                 event.preventDefault();
@@ -56,10 +66,13 @@ export default function ModelSquarePage() {
             }
         };
         refresh();
+        refreshStatus();
         const timer = window.setInterval(refresh, 60_000);
+        const statusTimer = window.setInterval(refreshStatus, 30_000);
         document.addEventListener("keydown", focusSearch);
         return () => {
             window.clearInterval(timer);
+            window.clearInterval(statusTimer);
             document.removeEventListener("keydown", focusSearch);
         };
     }, [loadPublicSettings]);
@@ -236,6 +249,7 @@ export default function ModelSquarePage() {
                                         <ModelCard
                                             key={model.id}
                                             model={model}
+                                            status={modelStatusById[model.id]}
                                             rules={enabledPricingRules(modelChannel.pricingRules || [], model.id)}
                                             pricing={pricingContext}
                                             onDetails={() => chooseModel(model)}
@@ -271,6 +285,7 @@ export default function ModelSquarePage() {
                 {selectedModel ? (
                     <ModelDetails
                         model={selectedModel}
+                        status={modelStatusById[selectedModel.id]}
                         rules={selectedRules}
                         pricing={pricingContext}
                         endpoint={endpoint}
@@ -310,7 +325,7 @@ function FilterChip({ label, count, active, icon: Icon, onClick }: { label: stri
     );
 }
 
-function ModelCard({ model, rules, pricing, onDetails, onCopy }: { model: MarketplaceModel; rules: AdminPricingRule[]; pricing: PricingContext; onDetails: () => void; onCopy: () => void }) {
+function ModelCard({ model, status, rules, pricing, onDetails, onCopy }: { model: MarketplaceModel; status?: ModelStatusItem; rules: AdminPricingRule[]; pricing: PricingContext; onDetails: () => void; onCopy: () => void }) {
     const meta = modalityMeta[model.modality];
     const Icon = meta.icon;
     const tags = capabilityTags(model);
@@ -322,9 +337,12 @@ function ModelCard({ model, rules, pricing, onDetails, onCopy }: { model: Market
                         <Icon className="size-[18px]" />
                     </span>
                     <div className="min-w-0">
-                        <h2 className="truncate font-mono text-[15px] font-semibold" title={model.id}>
-                            {model.name || model.id}
-                        </h2>
+                        <div className="flex min-w-0 items-center gap-2">
+                            <h2 className="truncate font-mono text-[15px] font-semibold" title={model.id}>
+                                {model.name || model.id}
+                            </h2>
+                            <ModelStatusBadge status={status} />
+                        </div>
                         <p className="mt-1 truncate font-mono text-[11px] text-muted-foreground" title={model.id}>
                             {model.id}
                         </p>
@@ -366,6 +384,7 @@ function ModelCard({ model, rules, pricing, onDetails, onCopy }: { model: Market
 
 function ModelDetails({
     model,
+    status,
     rules,
     pricing,
     endpoint,
@@ -377,6 +396,7 @@ function ModelDetails({
     onCopySnippet,
 }: {
     model: MarketplaceModel;
+    status?: ModelStatusItem;
     rules: AdminPricingRule[];
     pricing: PricingContext;
     endpoint: string;
@@ -408,6 +428,15 @@ function ModelDetails({
                     <p className="mt-3 text-sm leading-6 text-muted-foreground">{meta.description}。以下能力与价格来自后台当前公开配置。</p>
                 </div>
             </div>
+
+
+            <section className="mt-6">
+                <div className="flex flex-wrap items-center gap-3">
+                    <ModelStatusBadge status={status} />
+                    {typeof status?.latencyMs === "number" ? <span className="font-mono text-[11px] text-muted-foreground">近 30 分钟均延迟 {Math.round(status.latencyMs)} ms</span> : null}
+                </div>
+                <ModelStatusTimeline buckets={status?.timeline} />
+            </section>
 
             <section className="mt-6">
                 <div className="flex items-center gap-2 text-sm font-semibold">
@@ -555,6 +584,63 @@ function Capability({ label, values, fallback }: { label: string; values: Array<
 function enabledPricingRules(rules: AdminPricingRule[], modelId: string, operation?: ModelOperation) {
     return rules.filter((rule) => rule.enabled && rule.model === modelId && (!operation || rule.operation === operation));
 }
+
+const modelStatusTone: Record<string, { dot: string; text: string }> = {
+    operational: { dot: "bg-emerald-500", text: "text-emerald-700 dark:text-emerald-300" },
+    degraded: { dot: "bg-amber-500", text: "text-amber-700 dark:text-amber-300" },
+    unavailable: { dot: "bg-red-500", text: "text-red-700 dark:text-red-300" },
+    unknown: { dot: "bg-muted-foreground/40", text: "text-muted-foreground" },
+};
+
+function ModelStatusBadge({ status }: { status?: ModelStatusItem }) {
+    const tone = modelStatusTone[status?.status || "unknown"] || modelStatusTone.unknown;
+    const label = status?.label || "暂无数据";
+    return (
+        <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full bg-muted/70 px-2 py-0.5 text-[11px] font-medium ${tone.text}`} title="根据近期生成结果与可用容量汇总，不展示渠道细节">
+            <span className={`size-1.5 rounded-full ${tone.dot}`} />
+            {label}
+        </span>
+    );
+}
+
+function ModelStatusTimeline({ buckets }: { buckets?: ModelStatusItem["timeline"] }) {
+    const bars = [...(buckets || [])].slice(0, 15).reverse();
+    if (!bars.length) return null;
+    const height: Record<string, string> = {
+        operational: "h-full",
+        degraded: "h-[65%]",
+        unavailable: "h-[35%]",
+        unknown: "h-[15%]",
+    };
+    const color: Record<string, string> = {
+        operational: "bg-emerald-500",
+        degraded: "bg-amber-500",
+        unavailable: "bg-red-500",
+        unknown: "bg-muted-foreground/25",
+    };
+    return (
+        <div className="mt-3">
+            <div className="mb-1.5 flex items-center justify-between text-[10px] text-muted-foreground">
+                <span>近 30 分钟</span>
+                <span>现在</span>
+            </div>
+            <div className="flex h-8 items-end gap-0.5 rounded-md bg-muted/40 px-1.5 py-1">
+                {bars.map((bucket, index) => {
+                    const label = bucket.status === "operational" ? "正常" : bucket.status === "degraded" ? "繁忙" : bucket.status === "unavailable" ? "不可用" : "暂无数据";
+                    const latency = typeof bucket.latencyMs === "number" ? ` · ${Math.round(bucket.latencyMs)}ms` : "";
+                    return (
+                        <span
+                            key={`${bucket.at}-${index}`}
+                            title={`${bucket.at} · ${label}${latency}`}
+                            className={`min-w-0 flex-1 rounded-[2px] ${color[bucket.status] || color.unknown} ${height[bucket.status] || height.unknown}`}
+                        />
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
 
 function pricingSummary(rules: AdminPricingRule[], pricing: PricingContext) {
     if (!rules.length) return "暂未定价";

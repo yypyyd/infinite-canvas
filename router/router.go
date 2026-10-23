@@ -113,6 +113,7 @@ func New() *gin.Engine {
 	})
 	commerce.GET("/audit-logs", gin.WrapF(handler.CommerceAuditLogs))
 	api.GET("/settings", gin.WrapF(handler.Settings))
+	api.GET("/model-status", gin.WrapF(handler.ModelStatus))
 	api.GET("/check-in", middleware.UserAuth, gin.WrapF(handler.CheckInStatus))
 	api.POST("/check-in", middleware.UserAuth, gin.WrapF(handler.CheckIn))
 	api.POST("/redeem-codes/redeem", middleware.UserAuth, gin.WrapF(handler.RedeemCode))

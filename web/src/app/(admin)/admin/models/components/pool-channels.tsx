@@ -173,7 +173,11 @@ export function PoolChannelDrawer({ token, row, pool: _pool, builtinProvider, le
         }
     };
 
-    const updateRoute = (modelId: string, routeId: string, patch: { enabled?: boolean; priority?: number | null; weight?: number | null }) => run((t) => gatewayApi.updateRoute(t, modelId, routeId, patch), "已更新").then(() => onChanged());
+    const updateRoute = (modelId: string, routeId: string, patch: { enabled?: boolean; priority?: number | null; weight?: number | null }, opts?: { enableLogical?: boolean }) =>
+        run(async (t) => {
+            if (opts?.enableLogical) await gatewayApi.setModelEnabled(t, modelId, true);
+            return gatewayApi.updateRoute(t, modelId, routeId, patch);
+        }, "已更新").then(() => onChanged());
 
     const channelId = row ? `builtin-provider-${row.provider}` : "";
 
@@ -320,9 +324,10 @@ export function PoolChannelDrawer({ token, row, pool: _pool, builtinProvider, le
                                 extra='JSON，例如 {"my-image": "gpt-image-2"}。写入本渠道 BuiltinProviders[].modelMappings；对外名称可在「模型」页开放和定价。'
                                 rules={[{ validator: async (_, value) => void mappingToAliases(value || "{}", providerMappings.length ? providerMappings : legacyAliases) }]}
                             >
-                                <Input.TextArea rows={6} className="font-mono" disabled={usingLegacyFallback || saving || isSaving} />
+                                <Input.TextArea rows={6} className="font-mono" placeholder="{}" disabled={usingLegacyFallback || saving || isSaving} />
                             </Form.Item>
-                            <Typography.Title level={5}>本平台模型（{row.models.length}）</Typography.Title>
+                            <Typography.Title level={5}>本平台模型（{row.models.length ? row.models.length : "—"}）</Typography.Title>
+                            {!row.models.length ? <Alert type="info" showIcon className="!mb-3" message="暂无本平台路由。空的模型映射请填 {}，不要填 0。" /> : null}
                             <Table
                                 rowKey={(item) => item.route.id}
                                 size="small"
@@ -358,7 +363,14 @@ export function PoolChannelDrawer({ token, row, pool: _pool, builtinProvider, le
                                     {
                                         title: "启用",
                                         width: 70,
-                                        render: (_, item) => <Switch size="small" checked={item.route.enabled} onChange={(enabled) => void updateRoute(item.id, item.route.id, { enabled })} />,
+                                        render: (_, item) => (
+                                            <Switch
+                                                size="small"
+                                                checked={item.enabled}
+                                                title={item.enabled ? "网关模型与路由均已启用" : "打开时同时启用网关模型与本路由；关闭时仅停用本路由"}
+                                                onChange={(enabled) => void updateRoute(item.id, item.route.id, { enabled }, enabled ? { enableLogical: true } : undefined)}
+                                            />
+                                        ),
                                     },
                                     {
                                         title: "优先级覆盖",

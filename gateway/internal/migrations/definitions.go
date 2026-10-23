@@ -1898,4 +1898,18 @@ SET capabilities = (
 ), updated_at = NOW()
 WHERE r.id LIKE 'image.%' AND jsonb_typeof(r.capabilities) = 'array';
 `,
+	"000037_reenable_routed_logical_models.sql": `-- Heal logical models that still have an enabled route but were left
+-- disabled (admin mapping Switch only toggled model_routes.enabled, so the
+-- Models tab showed gateway-model-disabled while the channel drawer looked healthy).
+-- Retired catalog entries keep enabled=false because their routes are disabled.
+UPDATE logical_models AS logical
+SET enabled = TRUE, updated_at = NOW()
+WHERE logical.enabled = FALSE
+  AND EXISTS (
+      SELECT 1
+      FROM model_routes AS route
+      WHERE route.logical_model_id = logical.id
+        AND route.enabled = TRUE
+  );
+`,
 }

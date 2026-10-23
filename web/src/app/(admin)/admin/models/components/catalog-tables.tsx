@@ -16,7 +16,7 @@ const operationLabels: Record<string, string> = { generation: "生成", edit: "�
 export function servingChannels(item: AdminModelOverviewItem) {
     return item.sources.flatMap((source) =>
         source.kind === "pool"
-            ? (source.routes || []).map((route) => ({ name: `号池·${providerLabels[route.provider] || route.provider}`, off: !source.active || !route.enabled || !route.providerEnabled }))
+            ? (source.routes || []).map((route) => ({ name: `号池·${providerLabels[route.provider] || route.provider}`, off: !source.active || !route.enabled || !route.providerEnabled || !route.available }))
             : [{ name: source.channelName, off: !source.active }],
     );
 }

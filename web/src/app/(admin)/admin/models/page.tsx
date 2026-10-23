@@ -263,11 +263,24 @@ export default function AdminModelsPage() {
         setViewChannelIndex(null);
         setRequestedModel(id);
     };
-    const updateModel = (id: string, patch: Partial<AdminManagedModel>) =>
-        void persistModels(
-            managedModels.map((model) => (model.id === id ? { ...model, ...patch } : model)),
-            settings?.public.modelChannel.pricingRules || [],
-        );
+    const updateModel = (id: string, patch: Partial<AdminManagedModel>) => {
+        void (async () => {
+            // Keep gateway LogicalModel.Enabled aligned with the Models-tab 开放 switch
+            // so RouteDetails never reports 网关模型已停用 while the site model is open.
+            if (patch.enabled === true && token) {
+                try {
+                    await gatewayApi.setModelEnabled(token, id, true);
+                } catch {
+                    // Non-canonical / non-pool ids have no logical model; ignore.
+                }
+            }
+            await persistModels(
+                managedModels.map((model) => (model.id === id ? { ...model, ...patch } : model)),
+                settings?.public.modelChannel.pricingRules || [],
+            );
+            await loadOverview();
+        })();
+    };
     const setPrice = (spec: PricingSpec, credits: number) => {
         const rules = settings?.public.modelChannel.pricingRules || [];
         const key = specKey(spec);
@@ -303,7 +316,13 @@ export default function AdminModelsPage() {
         }
         void persistModels(managedModels, next);
     };
-    const channelModelIds = useMemo(() => new Set(channels.flatMap((channel) => channelModelNames(channel.models || []))), [channels]);
+    const channelModelIds = useMemo(() => {
+        const ids = new Set(channels.flatMap((channel) => channelModelNames(channel.models || [])));
+        for (const row of poolChannels.rows) {
+            for (const model of row.models) ids.add(model.id);
+        }
+        return ids;
+    }, [channels, poolChannels.rows]);
     const deleteManagedModel = (id: string) => {
         if (channelModelIds.has(id)) {
             message.info("该模型仍由渠道提供，可停用；如需彻底移除，请先从渠道中删除");

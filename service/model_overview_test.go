@@ -354,3 +354,30 @@ func TestAppendBuiltinPoolDefinitionsMergesAllProviders(t *testing.T) {
 		t.Fatalf("definitions = %#v", items)
 	}
 }
+
+func TestModelOverviewLogicalModelDisabledReason(t *testing.T) {
+	// Mapping UI can show route.enabled=ON with accounts while LogicalModel.Enabled
+	// is false; overview must surface 网关模型已停用 (same gate channel routing uses).
+	stubPoolModels(t, nil)
+	routes := []gateway.RouteDetail{
+		{LogicalModelID: "gpt-5-5-mini", LogicalEnabled: false, RouteID: "text.gpt-5-5-mini.chatgpt", Provider: "chatgpt", UpstreamModel: "gpt-5-5-mini", Enabled: true, ProviderEnabled: true, EffectivePriority: 200, EffectiveWeight: 1, BoundAccounts: 20, AvailableAccounts: 20},
+	}
+	settings := normalizeSettings(model.Settings{
+		Public: model.PublicSetting{ModelChannel: model.PublicModelChannelSetting{
+			Models:          []model.ModelDefinition{{ID: "gpt-5-5-mini", Name: "GPT-5.5 Mini", Modality: "text", Enabled: true, Operations: []string{"completion"}}},
+			AvailableModels: []string{"gpt-5-5-mini"},
+		}},
+		Private: model.PrivateSetting{
+			BuiltinProviders: []model.BuiltinProviderSource{{Provider: "chatgpt", Enabled: boolPtr(true)}},
+		},
+	})
+	overview := buildModelOverview(settings, routes, true)
+	item := overviewModel(t, overview, "gpt-5-5-mini")
+	if item.Available {
+		t.Fatalf("expected unavailable when LogicalEnabled=false: %+v", item)
+	}
+	joined := strings.Join(item.Reasons, ";")
+	if !strings.Contains(joined, "网关模型已停用") {
+		t.Fatalf("expected 网关模型已停用 in reasons, got %v", item.Reasons)
+	}
+}

@@ -28,6 +28,9 @@ type AdminConsoleService struct {
 	tokens   *repo.TokenRepository
 	tokenSvc *TokenService
 	settings *repo.SiteSettingRepository
+
+	// invalidateModels drops the /v1 models cache after admin edits.
+	invalidateModels func()
 }
 
 type AccountListFilter struct {
@@ -62,6 +65,18 @@ var adminAccountProviders = SchedulableProviders()
 
 func NewAdminConsoleService(cfg *config.Config, db *gorm.DB, models *repo.ModelRepository, tokens *repo.TokenRepository, tokenSvc *TokenService, settings *repo.SiteSettingRepository) *AdminConsoleService {
 	return &AdminConsoleService{cfg: cfg, db: db, models: models, tokens: tokens, tokenSvc: tokenSvc, settings: settings}
+}
+
+func (s *AdminConsoleService) SetInvalidateModels(fn func()) {
+	if s != nil {
+		s.invalidateModels = fn
+	}
+}
+
+func (s *AdminConsoleService) bumpModels() {
+	if s != nil && s.invalidateModels != nil {
+		s.invalidateModels()
+	}
 }
 
 // Overview restores the retained operational dashboard without bringing back
@@ -234,6 +249,7 @@ func (s *AdminConsoleService) UpdateLogicalModel(ctx context.Context, id string,
 	if err != nil {
 		return nil, err
 	}
+	s.bumpModels()
 	return map[string]any{"id": item.ID, "enabled": item.Enabled}, nil
 }
 
@@ -289,6 +305,15 @@ func (s *AdminConsoleService) UpdateLogicalRoute(ctx context.Context, logicalID,
 	if err != nil {
 		return nil, err
 	}
+	// Mapping Switch historically toggled only model_routes.enabled. Enabling a
+	// route must also open the parent logical model, otherwise RouteDetails keeps
+	// reporting LogicalEnabled=false while the channel drawer looks healthy.
+	if update.Enabled != nil && *update.Enabled {
+		if _, err := s.models.Update(ctx, logicalID, map[string]any{"enabled": true}); err != nil {
+			return nil, err
+		}
+	}
+	s.bumpModels()
 	schedules, err := routeSchedules(ctx, s.settingsReader(), []model.ModelRoute{*item})
 	if err != nil {
 		return nil, err

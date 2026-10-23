@@ -97,6 +97,9 @@ func Start(ctx context.Context) (*Module, error) {
 			log.Printf("account pool in-process server: %v", err)
 		}
 	}()
+	if m.app != nil && m.app.Admin != nil {
+		m.app.Admin.SetInvalidateModels(m.InvalidateModels)
+	}
 	current.Store(m)
 	return m, nil
 }

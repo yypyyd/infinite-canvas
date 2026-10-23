@@ -801,6 +801,9 @@ func (s *V1Service) prepareChatCompletion(ctx context.Context, principal *APIPri
 	stream, _ := request["stream"].(bool)
 	tools := chatRequestTools(request)
 	prompt := chatPromptWithTools(messages, tools)
+	if hint := chatToolChoiceForceHint(request); hint != "" && len(tools) > 0 {
+		prompt = strings.TrimSpace(prompt) + hint
+	}
 
 	logicalItem, err := s.models.Get(ctx, modelName)
 	if err != nil {
@@ -929,12 +932,35 @@ func (s *V1Service) prepareChatCompletion(ctx context.Context, principal *APIPri
 				} else {
 					text, callErr = s.grok.GenerateText(ctx, token.Value, prompt, grok.ChatModeForModel(upstreamModel))
 				}
+				if callErr == nil && len(tools) > 0 && !generateTextHasToolCalls(text, tools) {
+					retryPrompt := forcedToolRetryPrompt(prompt, text, tools)
+					var retryText string
+					var retryErr error
+					if grok.IsBuildTextModel(upstreamModel) {
+						var accessToken string
+						accessToken, retryErr = s.ensureGrokBuildCredential(ctx, token)
+						if retryErr == nil {
+							retryText, retryErr = s.grok.GenerateBuildText(ctx, accessToken, retryPrompt, upstreamModel)
+						}
+					} else {
+						retryText, retryErr = s.grok.GenerateText(ctx, token.Value, retryPrompt, grok.ChatModeForModel(upstreamModel))
+					}
+					if retryErr == nil {
+						text = retryText
+					}
+				}
 				if callErr == nil {
 					responseHeader, responseBody = reshapeGenerateTextWithTools(modelItem.EffectiveName(), text, tools, stream)
 				}
 			case "chatgpt":
 				var text string
 				text, callErr = s.chatgpt.GenerateText(ctx, token.Value, prompt, upstreamModel)
+				if callErr == nil && len(tools) > 0 && !generateTextHasToolCalls(text, tools) {
+					retryPrompt := forcedToolRetryPrompt(prompt, text, tools)
+					if retryText, retryErr := s.chatgpt.GenerateText(ctx, token.Value, retryPrompt, upstreamModel); retryErr == nil {
+						text = retryText
+					}
+				}
 				if callErr == nil {
 					responseHeader, responseBody = reshapeGenerateTextWithTools(modelItem.EffectiveName(), text, tools, stream)
 				}

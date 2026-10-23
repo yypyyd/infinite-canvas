@@ -103,3 +103,21 @@ func TestChatPromptWithToolsIncludesCatalog(t *testing.T) {
 		t.Fatalf("prompt missing tools: %s", prompt)
 	}
 }
+
+func TestGenerateTextHasToolCalls(t *testing.T) {
+	tools := []any{map[string]any{"type": "function", "function": map[string]any{"name": "image_generate"}}}
+	if generateTextHasToolCalls("already generated an image for you", tools) {
+		t.Fatal("plain success prose must not count as tool calls")
+	}
+	emulated := `{"tool_calls":[{"id":"call_1","type":"function","function":{"name":"image_generate","arguments":"{\"prompt\":\"girl\"}"}}]}`
+	if !generateTextHasToolCalls(emulated, tools) {
+		t.Fatal("emulated tool_calls JSON should parse")
+	}
+}
+
+func TestChatToolChoiceForceHint(t *testing.T) {
+	hint := chatToolChoiceForceHint(map[string]any{"tool_choice": map[string]any{"type": "function", "function": map[string]any{"name": "image_generate"}}})
+	if hint == "" || !strings.Contains(hint, "image_generate") {
+		t.Fatalf("expected forced tool hint, got %q", hint)
+	}
+}

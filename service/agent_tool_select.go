@@ -58,3 +58,37 @@ func selectAgentToolSchemas(content string, steps []model.AgentStep) []any {
 	}
 	return selected
 }
+
+// agentIntentWantsImage reports whether the user message should trigger image tools.
+func agentIntentWantsImage(content string) bool {
+	for _, intent := range agentToolIntentPatterns {
+		for _, name := range intent.tools {
+			if name == "image_generate" && intent.pattern.MatchString(content) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func agentToolSchemasInclude(schemas []any, alias string) bool {
+	alias = strings.TrimSpace(alias)
+	if alias == "" {
+		return false
+	}
+	for _, schema := range schemas {
+		name, _ := schema.(map[string]any)["function"].(map[string]any)["name"].(string)
+		if name == alias || name == strings.ReplaceAll(alias, "_", ".") || name == strings.ReplaceAll(alias, ".", "_") {
+			return true
+		}
+	}
+	return false
+}
+
+var agentFakeMediaSuccessPattern = regexp.MustCompile(`(?i)已经为你生成|已为你生成|已生成.{0,24}(图|形象|画面|照片|image|picture)|generated (an? |the )?(image|picture)|here('s| is) (an? |the )?(image|picture)`)
+
+// agentClaimedMediaWithoutTools detects assistant prose that pretends media/canvas
+// work finished when no tool_calls were returned.
+func agentClaimedMediaWithoutTools(content string) bool {
+	return agentFakeMediaSuccessPattern.MatchString(strings.TrimSpace(content))
+}

@@ -307,3 +307,84 @@ func reshapeGenerateTextWithTools(modelName, text string, tools []any, stream bo
 	}
 	return openAITextResponse(modelName, text, stream)
 }
+
+// generateTextHasToolCalls reports whether a GenerateText reply already contains
+// emulated tool_calls that reshapeGenerateTextWithTools would honor.
+func generateTextHasToolCalls(text string, tools []any) bool {
+	if len(tools) == 0 {
+		return false
+	}
+	_, ok := parseEmulatedToolCalls(sanitizeGeneratedChatText(text), allowedToolNames(tools))
+	return ok
+}
+
+// forcedToolRetryPrompt asks the model again when it answered in plain text
+// despite tools being available (common ChatGPT GenerateText failure mode).
+func forcedToolRetryPrompt(originalPrompt, previousText string, tools []any) string {
+	var b strings.Builder
+	b.WriteString(strings.TrimSpace(originalPrompt))
+	b.WriteString("\n\nCRITICAL CORRECTION: Your previous reply did not call any tool. ")
+	b.WriteString("Plain-text claims that you already generated an image or edited the canvas are invalid in this API. ")
+	b.WriteString("You MUST reply with ONLY the tool_calls JSON object now (no markdown, no HTML, no assistant prose). ")
+	b.WriteString("If the user asked for an image, call image.generate or image_generate with a concrete prompt. ")
+	b.WriteString("Available tool names: ")
+	names := make([]string, 0, len(tools))
+	for _, raw := range tools {
+		item, _ := raw.(map[string]any)
+		if item == nil {
+			continue
+		}
+		fn, _ := item["function"].(map[string]any)
+		if fn == nil {
+			fn = item
+		}
+		name := strings.TrimSpace(stringValue(fn["name"]))
+		if name != "" {
+			names = append(names, name)
+		}
+	}
+	b.WriteString(strings.Join(names, ", "))
+	b.WriteString(".\nPrevious invalid reply (do not repeat):\n")
+	b.WriteString(truncateForToolRetry(previousText, 500))
+	return b.String()
+}
+
+func truncateForToolRetry(text string, maxRunes int) string {
+	text = strings.TrimSpace(sanitizeGeneratedChatText(text))
+	if maxRunes <= 0 || text == "" {
+		return text
+	}
+	runes := []rune(text)
+	if len(runes) <= maxRunes {
+		return text
+	}
+	return string(runes[:maxRunes]) + "..."
+}
+
+// chatToolChoiceForceHint strengthens the prompt when the client asked for
+// required / specific tool_choice (agent does this for image intents).
+func chatToolChoiceForceHint(request map[string]any) string {
+	raw, ok := request["tool_choice"]
+	if !ok || raw == nil {
+		return ""
+	}
+	switch v := raw.(type) {
+	case string:
+		if strings.EqualFold(strings.TrimSpace(v), "required") {
+			return "\nYou MUST call at least one tool via the tool_calls JSON object. Do not answer with plain text."
+		}
+	case map[string]any:
+		fn, _ := v["function"].(map[string]any)
+		name := strings.TrimSpace(stringValue(fn["name"]))
+		if name == "" {
+			name = strings.TrimSpace(stringValue(v["name"]))
+		}
+		if name != "" {
+			return "\nYou MUST call tool \"" + name + "\" via the tool_calls JSON object now. Do not answer with plain text or claim the work is already done."
+		}
+		if typ := strings.TrimSpace(stringValue(v["type"])); strings.EqualFold(typ, "required") || strings.EqualFold(typ, "any") {
+			return "\nYou MUST call at least one tool via the tool_calls JSON object. Do not answer with plain text."
+		}
+	}
+	return ""
+}

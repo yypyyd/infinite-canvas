@@ -1308,11 +1308,30 @@ func requestAgentCompletion(ctx context.Context, run model.AgentRun, userGroup, 
 		requestMessages = append(requestMessages, agentChatMessage{Role: "system", Content: "本次运行已达到工具调用上限，请根据已有真实结果直接总结，不要再请求工具。"})
 	}
 	hasPreviewImages := agentChatMessagesHaveImageURLs(requestMessages)
-	bodyValue := map[string]any{"model": selection.Model.UpstreamModel, "messages": requestMessages, "tools": selectAgentToolSchemas(intentText, toolSteps), "tool_choice": "auto", "parallel_tool_calls": true, "stream": true, "max_tokens": 2048}
+	toolSchemas := selectAgentToolSchemas(intentText, toolSteps)
+	bodyValue := map[string]any{"model": selection.Model.UpstreamModel, "messages": requestMessages, "tools": toolSchemas, "tool_choice": "auto", "parallel_tool_calls": true, "stream": true, "max_tokens": 2048}
+	wantsImage := agentIntentWantsImage(intentText) && agentToolSchemasInclude(toolSchemas, "image_generate")
+	if wantsImage {
+		bodyValue["tool_choice"] = map[string]any{"type": "function", "function": map[string]any{"name": "image_generate"}}
+	}
 	publisher := newAgentRunStreamPublisher(run.ID)
 	message, err := requestAgentUpstreamMessage(ctx, selection.Channel, requestID, bodyValue, &requestMessages, hasPreviewImages, publisher)
 	if err != nil {
 		return completion, err
+	}
+	// ChatGPT text routes may still answer with fake "already generated" prose.
+	// Force one more attempt that requires image_generate before accepting text.
+	if wantsImage && len(message.ToolCalls) == 0 {
+		retryMessages := append(append([]agentChatMessage{}, requestMessages...), agentChatMessage{
+			Role:    "system",
+			Content: "上一次回复没有调用工具。你必须立刻调用 image_generate（或 image.generate）生成图片，禁止用纯文字声称已经生成。只允许通过 function call 完成，不要输出普通助手正文。",
+		})
+		retryBody := map[string]any{"model": selection.Model.UpstreamModel, "messages": retryMessages, "tools": toolSchemas, "tool_choice": map[string]any{"type": "function", "function": map[string]any{"name": "image_generate"}}, "parallel_tool_calls": true, "stream": true, "max_tokens": 2048}
+		retryPublisher := newAgentRunStreamPublisher(run.ID)
+		if retryMessage, retryErr := requestAgentUpstreamMessage(ctx, selection.Channel, requestID+"-toolforce", retryBody, &retryMessages, hasPreviewImages, retryPublisher); retryErr == nil {
+			message = retryMessage
+		}
+		retryPublisher.flush()
 	}
 	publisher.flush()
 	completion.Content = strings.TrimSpace(message.Content)
@@ -1383,6 +1402,9 @@ func requestAgentCompletion(ctx context.Context, run model.AgentRun, userGroup, 
 	}
 	if completion.Content == "" {
 		return completion, errors.New("agent upstream returned empty content")
+	}
+	if wantsImage && agentClaimedMediaWithoutTools(completion.Content) {
+		completion.Content = "生图工具未能成功调用，画布上还没有新图片。请再试一次，或换用支持工具的文本模型。"
 	}
 	completion.Content = sanitizeAgentUserFacingText(completion.Content)
 	return completion, nil

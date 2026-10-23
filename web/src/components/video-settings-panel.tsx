@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
 
 import { ImageSettingsTheme } from "@/components/image-settings-panel";
 import { type CanvasTheme } from "@/lib/canvas-theme";
@@ -20,6 +20,13 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
     const definition = useConfigStore((state) => state.publicSettings?.modelChannel.models?.find((item) => item.id === model));
     const pricingRules = useConfigStore((state) => state.publicSettings?.modelChannel.pricingRules);
     const { ratios, resolutions, durations, ratio, resolution, seconds } = resolveVideoPricingSettings(config, definition, model, pricingRules);
+
+    // Sync clamped video options when model catalog capabilities change (union → active model).
+    useEffect(() => {
+        if (ratio !== config.size) onConfigChange("size", ratio);
+        if (resolution !== config.vquality) onConfigChange("vquality", resolution);
+        if (String(seconds) !== String(config.videoSeconds)) onConfigChange("videoSeconds", String(seconds));
+    }, [ratio, resolution, seconds, config.size, config.vquality, config.videoSeconds, onConfigChange]);
 
     return (
         <ImageSettingsTheme theme={theme}>

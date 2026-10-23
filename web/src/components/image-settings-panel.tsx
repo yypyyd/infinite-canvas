@@ -1,11 +1,12 @@
 "use client";
 
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { ConfigProvider, Switch } from "antd";
 
 import type { PricingRule } from "@/constant/credits";
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import { normalizeImageCount } from "@/lib/image-utils";
+import { clampImageSizeToResolutionTiers, resolveImageResolutionTiers } from "@/lib/image-model-capabilities";
 import { type AiConfig, modelImageCountLimit, useConfigStore } from "@/stores/use-config-store";
 
 const qualityOptions = [
@@ -98,7 +99,10 @@ export function ImageSettingsPanel({
     const count = normalizeImageCount(config.count, maxCount);
     const activeSize = config.size || "auto";
     const activeRatios = normalizeSupportedRatios(supportedRatios);
-    const activeResolutionTiers = supportedResolutionTiers ? normalizeSupportedResolutionTiers(supportedResolutionTiers) : null;
+    const activeResolutionTiers = useMemo(() => {
+        const resolved = resolveImageResolutionTiers(model || config.model, supportedResolutionTiers);
+        return resolved ? normalizeSupportedResolutionTiers(resolved) : null;
+    }, [config.model, model, supportedResolutionTiers]);
     const baseOptions = baseAspectOptions.filter((item) => activeRatios.includes(item.value) && hasResolutionTier(activeResolutionTiers, item.resolutionTier || "1k"));
     const aspectOptions = [
         ...baseOptions,
@@ -107,6 +111,12 @@ export function ImageSettingsPanel({
         ),
         ...autoAspectOption,
     ];
+    useEffect(() => {
+        if (!activeResolutionTiers?.length) return;
+        const nextSize = clampImageSizeToResolutionTiers(activeSize, activeResolutionTiers);
+        if (nextSize !== activeSize) onConfigChange("size", nextSize);
+    }, [activeResolutionTiers, activeSize, onConfigChange]);
+
     const selectedAspect = aspectOptions.find((item) => (item.size || item.value) === activeSize || item.value === activeSize);
     const dimensions = readSizeDimensions(activeSize, selectedAspect || aspectOptions[0]);
     const selectAspect = (value: string) => {

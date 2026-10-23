@@ -5,6 +5,7 @@ import { Image as ImageIcon, LoaderCircle, MessageSquare, Music2, Play, Settings
 import { Button, Segmented } from "antd";
 
 import { ModelPicker } from "@/components/model-picker";
+import { canvasImageModelPatch } from "../utils/canvas-image-config";
 import { defaultConfig, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { CreditSymbol, requestCreditQuote } from "@/constant/credits";
 import { useUserStore } from "@/stores/use-user-store";
@@ -136,7 +137,7 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
                     className="canvas-compact-control h-10"
                     config={config}
                     value={config.model}
-                    onChange={(model) => onConfigChange(node.id, mode === "video" ? canvasVideoModelPatch(config, model, managedModels, pricingRules) : { model })}
+                    onChange={(model) => onConfigChange(node.id, mode === "video" ? canvasVideoModelPatch(config, model, managedModels, pricingRules) : mode === "image" ? canvasImageModelPatch(config, model, managedModels) : { model })}
                     capability={mode}
                     onMissingConfig={() => openConfigDialog(true)}
                     fullWidth

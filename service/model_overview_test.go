@@ -292,7 +292,6 @@ func TestModelOverviewSurfacesRouteReasonsWhenUnavailable(t *testing.T) {
 	}
 }
 
-
 func TestModelOverviewBubblesUnboundAccountReason(t *testing.T) {
 	stubPoolModels(t, nil)
 	routes := []gateway.RouteDetail{
@@ -316,7 +315,6 @@ func TestModelOverviewBubblesUnboundAccountReason(t *testing.T) {
 		t.Fatalf("expected bubbled unbound reason %q, got %q sources=%+v", "没有绑定账号", joined, item.Sources)
 	}
 }
-
 
 func TestModelOverviewEmitsRoutesWhenLegacyPoolOmitsModel(t *testing.T) {
 	stubPoolModels(t, nil) // no usable catalog / no virtual provider channels

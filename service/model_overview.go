@@ -519,7 +519,6 @@ func poolRouteOverview(route gateway.RouteDetail) PoolRouteOverview {
 	return row
 }
 
-
 // uniqueNonEmptyReasons collects distinct non-empty reasons from pool routes,
 // preserving first-seen order so status tooltips stay stable.
 func uniqueNonEmptyReasons(routes []PoolRouteOverview) []string {

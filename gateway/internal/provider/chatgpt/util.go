@@ -21,7 +21,7 @@ const (
 	// sseAsyncGrace bounds how long startImageGeneration keeps reading the SSE
 	// waiting for the image_gen_async marker after the conversation id is known.
 	// The marker normally arrives within ~1s; when it never streams (intermittent
-	// on gpt-5-5-thinking) we must not hold the stream open for the whole ctx
+	// on gpt-6-t-mini) we must not hold the stream open for the whole ctx
 	// budget, so we break after this grace and fall through to polling.
 	sseAsyncGrace = 10 * time.Second
 )

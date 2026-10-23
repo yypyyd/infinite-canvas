@@ -261,7 +261,7 @@ func buildModelOverview(settings model.Settings, routes []gateway.RouteDetail, r
 		if hasLegacyPool && !emitProviders {
 			// Legacy saved pool channel already contributed sources above. Still
 			// emit RouteDetails-backed sources for logical models it omitted (e.g.
-			// newly seeded gpt-5-5-*), otherwise the Models tab stays red with
+			// newly seeded gpt-6*), otherwise the Models tab stays red with
 			// "no sources" while the channel UI lists healthy routes.
 			if !routesKnown {
 				break

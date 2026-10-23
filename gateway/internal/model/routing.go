@@ -270,11 +270,11 @@ func CanonicalRoutingCatalog() []CanonicalModelDefinition {
 	chatGPTImageRatios := []string{"1:1", "16:9", "9:16", "4:3", "3:4", "3:2"}
 	adobeWideRatios := []string{"1:1", "5:4", "9:16", "21:9", "16:9", "4:3", "3:2", "4:5", "3:4", "2:3"}
 	return []CanonicalModelDefinition{
-		{Model: LogicalModel{ID: "gpt-5-5-mini", Kind: "text", Name: "GPT-5.5 Mini", Enabled: true}, Routes: []ModelRoute{
-			route("text.gpt-5-5-mini.chatgpt", "gpt-5-5-mini", "chatgpt", "gpt-5-5-mini", "gpt-5-5-mini", textProfile()),
+		{Model: LogicalModel{ID: "gpt-6", Kind: "text", Name: "GPT-6", Enabled: true}, Routes: []ModelRoute{
+			route("text.gpt-6.chatgpt", "gpt-6", "chatgpt", "gpt-6", "gpt-6", textProfile()),
 		}},
-		{Model: LogicalModel{ID: "gpt-5-5-thinking", Kind: "text", Name: "GPT-5.5 Thinking", Enabled: true}, Routes: []ModelRoute{
-			route("text.gpt-5-5-thinking.chatgpt", "gpt-5-5-thinking", "chatgpt", "gpt-5-5-thinking", "gpt-5-5-thinking", textProfile()),
+		{Model: LogicalModel{ID: "gpt-6-t-mini", Kind: "text", Name: "Thinking mini", Enabled: true}, Routes: []ModelRoute{
+			route("text.gpt-6-t-mini.chatgpt", "gpt-6-t-mini", "chatgpt", "gpt-6-t-mini", "gpt-6-t-mini", textProfile()),
 		}},
 		{Model: LogicalModel{ID: "grok-4.5", Kind: "text", Name: "Grok 4.5", Enabled: true}, Routes: []ModelRoute{
 			route("text.grok-4.5.grok", "grok-4.5", "grok", "grok-4.5", "grok-4.5", textProfile()),

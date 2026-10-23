@@ -16,12 +16,12 @@ func boolPointer(value bool) *bool { return &value }
 
 func TestResolveAgentModelFallsBackToToolCapableModel(t *testing.T) {
 	models := []model.ModelDefinition{
-		{ID: "gpt-5-5-thinking", Modality: "text", Enabled: true, Sort: 1, SupportsTools: boolPointer(false)},
+		{ID: "gpt-6-t-mini", Modality: "text", Enabled: true, Sort: 1, SupportsTools: boolPointer(false)},
 		{ID: "grok-4.5", Modality: "text", Enabled: true, Sort: 2, SupportsTools: boolPointer(true)},
 		{ID: "grok-4.6", Modality: "text", Enabled: true, Sort: 3, SupportsTools: boolPointer(true)},
 		{ID: "legacy-text", Modality: "text", Enabled: true, Sort: 0},
 	}
-	cases := map[string]string{"gpt-5-5-thinking": "grok-4.6", "grok-4.5": "grok-4.5", "legacy-text": "legacy-text", "outside-catalog": "outside-catalog"}
+	cases := map[string]string{"gpt-6-t-mini": "grok-4.6", "grok-4.5": "grok-4.5", "legacy-text": "legacy-text", "outside-catalog": "outside-catalog"}
 	for requested, want := range cases {
 		got, err := resolveAgentModelFrom(models, requested)
 		if err != nil || got != want {
@@ -29,7 +29,7 @@ func TestResolveAgentModelFallsBackToToolCapableModel(t *testing.T) {
 		}
 	}
 	models[2].Enabled = false
-	if got, _ := resolveAgentModelFrom(models, "gpt-5-5-thinking"); got != "grok-4.5" {
+	if got, _ := resolveAgentModelFrom(models, "gpt-6-t-mini"); got != "grok-4.5" {
 		t.Fatalf("fallback without grok-4.6 = %q", got)
 	}
 	if _, err := resolveAgentModelFrom([]model.ModelDefinition{{ID: "a", Modality: "text", Enabled: true, SupportsTools: boolPointer(false)}}, "a"); err == nil {

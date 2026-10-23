@@ -235,13 +235,13 @@ func TestModelOverviewTrustsRouteDetailsOverUsableCatalog(t *testing.T) {
 			Routes: []gateway.PoolRoute{{ID: "image.gpt-image-2.chatgpt", Provider: "chatgpt"}}},
 	})
 	routes := []gateway.RouteDetail{
-		{LogicalModelID: "gpt-5-5-thinking", LogicalEnabled: true, RouteID: "text.gpt-5-5-thinking.chatgpt", Provider: "chatgpt", UpstreamModel: "gpt-5-5-thinking", Enabled: true, ProviderEnabled: true, EffectivePriority: 200, EffectiveWeight: 1, BoundAccounts: 2, AvailableAccounts: 2},
+		{LogicalModelID: "gpt-6-t-mini", LogicalEnabled: true, RouteID: "text.gpt-6-t-mini.chatgpt", Provider: "chatgpt", UpstreamModel: "gpt-6-t-mini", Enabled: true, ProviderEnabled: true, EffectivePriority: 200, EffectiveWeight: 1, BoundAccounts: 2, AvailableAccounts: 2},
 		{LogicalModelID: "gpt-image-2", LogicalEnabled: true, RouteID: "image.gpt-image-2.chatgpt", Provider: "chatgpt", UpstreamModel: "gpt-image-2", Enabled: true, ProviderEnabled: true, EffectivePriority: 200, EffectiveWeight: 1, BoundAccounts: 1, AvailableAccounts: 1},
 	}
 	settings := normalizeSettings(model.Settings{
 		Public: model.PublicSetting{ModelChannel: model.PublicModelChannelSetting{
 			Models: []model.ModelDefinition{
-				{ID: "gpt-5-5-thinking", Name: "GPT-5.5 Thinking", Modality: "text", Enabled: true, Operations: []string{"completion"}},
+				{ID: "gpt-6-t-mini", Name: "Thinking mini", Modality: "text", Enabled: true, Operations: []string{"completion"}},
 				{ID: "gpt-image-2", Name: "GPT Image 2", Modality: "image", Enabled: true, Operations: []string{"generation"}},
 			},
 		}},
@@ -250,7 +250,7 @@ func TestModelOverviewTrustsRouteDetailsOverUsableCatalog(t *testing.T) {
 		},
 	})
 	overview := buildModelOverview(settings, routes, true)
-	item := overviewModel(t, overview, "gpt-5-5-thinking")
+	item := overviewModel(t, overview, "gpt-6-t-mini")
 	if !item.Available {
 		t.Fatalf("expected available when chatgpt route is healthy: %+v reasons=%v sources=%+v", item, item.Reasons, item.Sources)
 	}
@@ -271,18 +271,18 @@ func TestModelOverviewTrustsRouteDetailsOverUsableCatalog(t *testing.T) {
 func TestModelOverviewSurfacesRouteReasonsWhenUnavailable(t *testing.T) {
 	stubPoolModels(t, nil)
 	routes := []gateway.RouteDetail{
-		{LogicalModelID: "gpt-5-5-thinking", LogicalEnabled: true, RouteID: "text.gpt-5-5-thinking.chatgpt", Provider: "chatgpt", UpstreamModel: "gpt-5-5-thinking", Enabled: true, ProviderEnabled: true, EffectivePriority: 200, EffectiveWeight: 1, BoundAccounts: 1, AvailableAccounts: 0, CooldownAccounts: 1},
+		{LogicalModelID: "gpt-6-t-mini", LogicalEnabled: true, RouteID: "text.gpt-6-t-mini.chatgpt", Provider: "chatgpt", UpstreamModel: "gpt-6-t-mini", Enabled: true, ProviderEnabled: true, EffectivePriority: 200, EffectiveWeight: 1, BoundAccounts: 1, AvailableAccounts: 0, CooldownAccounts: 1},
 	}
 	settings := normalizeSettings(model.Settings{
 		Public: model.PublicSetting{ModelChannel: model.PublicModelChannelSetting{
-			Models: []model.ModelDefinition{{ID: "gpt-5-5-thinking", Name: "GPT-5.5 Thinking", Modality: "text", Enabled: true, Operations: []string{"completion"}}},
+			Models: []model.ModelDefinition{{ID: "gpt-6-t-mini", Name: "Thinking mini", Modality: "text", Enabled: true, Operations: []string{"completion"}}},
 		}},
 		Private: model.PrivateSetting{
 			BuiltinProviders: []model.BuiltinProviderSource{{Provider: "chatgpt", Enabled: boolPtr(true)}},
 		},
 	})
 	overview := buildModelOverview(settings, routes, true)
-	item := overviewModel(t, overview, "gpt-5-5-thinking")
+	item := overviewModel(t, overview, "gpt-6-t-mini")
 	if item.Available {
 		t.Fatalf("expected unavailable when accounts are cooling down: %+v", item)
 	}
@@ -295,18 +295,18 @@ func TestModelOverviewSurfacesRouteReasonsWhenUnavailable(t *testing.T) {
 func TestModelOverviewBubblesUnboundAccountReason(t *testing.T) {
 	stubPoolModels(t, nil)
 	routes := []gateway.RouteDetail{
-		{LogicalModelID: "gpt-5-5-mini", LogicalEnabled: true, RouteID: "text.gpt-5-5-mini.chatgpt", Provider: "chatgpt", UpstreamModel: "gpt-5-5-mini", Enabled: true, ProviderEnabled: true, EffectivePriority: 200, EffectiveWeight: 1, BoundAccounts: 0, AvailableAccounts: 0},
+		{LogicalModelID: "gpt-6", LogicalEnabled: true, RouteID: "text.gpt-6.chatgpt", Provider: "chatgpt", UpstreamModel: "gpt-6", Enabled: true, ProviderEnabled: true, EffectivePriority: 200, EffectiveWeight: 1, BoundAccounts: 0, AvailableAccounts: 0},
 	}
 	settings := normalizeSettings(model.Settings{
 		Public: model.PublicSetting{ModelChannel: model.PublicModelChannelSetting{
-			Models: []model.ModelDefinition{{ID: "gpt-5-5-mini", Name: "GPT-5.5 Mini", Modality: "text", Enabled: true, Operations: []string{"completion"}}},
+			Models: []model.ModelDefinition{{ID: "gpt-6", Name: "GPT-6", Modality: "text", Enabled: true, Operations: []string{"completion"}}},
 		}},
 		Private: model.PrivateSetting{
 			BuiltinProviders: []model.BuiltinProviderSource{{Provider: "chatgpt", Enabled: boolPtr(true)}},
 		},
 	})
 	overview := buildModelOverview(settings, routes, true)
-	item := overviewModel(t, overview, "gpt-5-5-mini")
+	item := overviewModel(t, overview, "gpt-6")
 	if item.Available {
 		t.Fatalf("expected unavailable when no accounts bound: %+v", item)
 	}
@@ -319,22 +319,22 @@ func TestModelOverviewBubblesUnboundAccountReason(t *testing.T) {
 func TestModelOverviewEmitsRoutesWhenLegacyPoolOmitsModel(t *testing.T) {
 	stubPoolModels(t, nil) // no usable catalog / no virtual provider channels
 	routes := []gateway.RouteDetail{
-		{LogicalModelID: "gpt-5-5-mini", LogicalEnabled: true, RouteID: "text.gpt-5-5-mini.chatgpt", Provider: "chatgpt", UpstreamModel: "gpt-5-5-mini", Enabled: true, ProviderEnabled: true, EffectivePriority: 200, EffectiveWeight: 1, BoundAccounts: 2, AvailableAccounts: 2},
+		{LogicalModelID: "gpt-6", LogicalEnabled: true, RouteID: "text.gpt-6.chatgpt", Provider: "chatgpt", UpstreamModel: "gpt-6", Enabled: true, ProviderEnabled: true, EffectivePriority: 200, EffectiveWeight: 1, BoundAccounts: 2, AvailableAccounts: 2},
 	}
 	legacy := model.ModelChannel{
 		ID: BuiltinPoolChannelID, Name: "内置账号池", Protocol: "openai",
 		BaseURL: "http://nexa.internal", APIKey: "in-process", Enabled: true,
-		// Omits gpt-5-5-mini on purpose — only an older model is listed.
+		// Omits gpt-6 on purpose — only an older model is listed.
 		Models: []model.ChannelModel{{Model: "gpt-image-2", UpstreamModel: "gpt-image-2", Modality: "image", Operations: []string{"generation"}}},
 	}
 	settings := normalizeSettings(model.Settings{
 		Public: model.PublicSetting{ModelChannel: model.PublicModelChannelSetting{
-			Models: []model.ModelDefinition{{ID: "gpt-5-5-mini", Name: "GPT-5.5 Mini", Modality: "text", Enabled: true, Operations: []string{"completion"}}},
+			Models: []model.ModelDefinition{{ID: "gpt-6", Name: "GPT-6", Modality: "text", Enabled: true, Operations: []string{"completion"}}},
 		}},
 		Private: model.PrivateSetting{Channels: []model.ModelChannel{legacy}},
 	})
 	overview := buildModelOverview(settings, routes, true)
-	item := overviewModel(t, overview, "gpt-5-5-mini")
+	item := overviewModel(t, overview, "gpt-6")
 	if !item.Available {
 		t.Fatalf("expected available via RouteDetails when legacy pool omitted the model: reasons=%v sources=%+v", item.Reasons, item.Sources)
 	}
@@ -342,7 +342,7 @@ func TestModelOverviewEmitsRoutesWhenLegacyPoolOmitsModel(t *testing.T) {
 
 func TestAppendBuiltinPoolDefinitionsMergesAllProviders(t *testing.T) {
 	channels := []model.ModelChannel{
-		{ID: BuiltinProviderChannelID("chatgpt"), Name: "ChatGPT", Enabled: true, Models: []model.ChannelModel{{Model: "gpt-5-5-thinking", Modality: "text", Operations: []string{"completion"}}}},
+		{ID: BuiltinProviderChannelID("chatgpt"), Name: "ChatGPT", Enabled: true, Models: []model.ChannelModel{{Model: "gpt-6-t-mini", Modality: "text", Operations: []string{"completion"}}}},
 		{ID: BuiltinProviderChannelID("byteplus"), Name: "BytePlus", Enabled: true, Models: []model.ChannelModel{{Model: "seedream-5.0-pro", Modality: "image", Operations: []string{"generation"}}}},
 	}
 	items := appendBuiltinPoolDefinitions([]model.ModelDefinition{{ID: "kept", Modality: "image", Enabled: true, Sort: 1}}, channels)
@@ -350,7 +350,7 @@ func TestAppendBuiltinPoolDefinitionsMergesAllProviders(t *testing.T) {
 	for _, item := range items {
 		got[item.ID] = true
 	}
-	if !got["kept"] || !got["gpt-5-5-thinking"] || !got["seedream-5.0-pro"] {
+	if !got["kept"] || !got["gpt-6-t-mini"] || !got["seedream-5.0-pro"] {
 		t.Fatalf("definitions = %#v", items)
 	}
 }
@@ -360,19 +360,19 @@ func TestModelOverviewLogicalModelDisabledReason(t *testing.T) {
 	// is false; overview must surface 网关模型已停用 (same gate channel routing uses).
 	stubPoolModels(t, nil)
 	routes := []gateway.RouteDetail{
-		{LogicalModelID: "gpt-5-5-mini", LogicalEnabled: false, RouteID: "text.gpt-5-5-mini.chatgpt", Provider: "chatgpt", UpstreamModel: "gpt-5-5-mini", Enabled: true, ProviderEnabled: true, EffectivePriority: 200, EffectiveWeight: 1, BoundAccounts: 20, AvailableAccounts: 20},
+		{LogicalModelID: "gpt-6", LogicalEnabled: false, RouteID: "text.gpt-6.chatgpt", Provider: "chatgpt", UpstreamModel: "gpt-6", Enabled: true, ProviderEnabled: true, EffectivePriority: 200, EffectiveWeight: 1, BoundAccounts: 20, AvailableAccounts: 20},
 	}
 	settings := normalizeSettings(model.Settings{
 		Public: model.PublicSetting{ModelChannel: model.PublicModelChannelSetting{
-			Models:          []model.ModelDefinition{{ID: "gpt-5-5-mini", Name: "GPT-5.5 Mini", Modality: "text", Enabled: true, Operations: []string{"completion"}}},
-			AvailableModels: []string{"gpt-5-5-mini"},
+			Models:          []model.ModelDefinition{{ID: "gpt-6", Name: "GPT-6", Modality: "text", Enabled: true, Operations: []string{"completion"}}},
+			AvailableModels: []string{"gpt-6"},
 		}},
 		Private: model.PrivateSetting{
 			BuiltinProviders: []model.BuiltinProviderSource{{Provider: "chatgpt", Enabled: boolPtr(true)}},
 		},
 	})
 	overview := buildModelOverview(settings, routes, true)
-	item := overviewModel(t, overview, "gpt-5-5-mini")
+	item := overviewModel(t, overview, "gpt-6")
 	if item.Available {
 		t.Fatalf("expected unavailable when LogicalEnabled=false: %+v", item)
 	}

@@ -215,10 +215,10 @@ func (c *Client) GenerateText(ctx context.Context, accessToken, prompt, model st
 
 func textModelSlug(model string) string {
 	switch strings.ToLower(strings.TrimSpace(model)) {
-	case "", "chatgpt-auto", "auto", "gpt-5-5-mini":
-		return "auto"
-	case "chatgpt-thinking":
-		return "gpt-5-5-thinking"
+	case "", "chatgpt-auto", "auto", "gpt-6", "gpt-5-5-mini":
+		return "gpt-6"
+	case "gpt-6-t-mini", "chatgpt-thinking", "gpt-5-5-thinking":
+		return "gpt-6-t-mini"
 	default:
 		return strings.TrimSpace(model)
 	}
@@ -1131,9 +1131,9 @@ func (c *Client) uploadReferenceImages(ctx context.Context, controlSession, dire
 
 func imageModelSlug(model string) string {
 	if strings.EqualFold(strings.TrimSpace(model), "gpt-image-2") {
-		return "gpt-5-5-thinking"
+		return "gpt-6-t-mini"
 	}
-	return "auto"
+	return "gpt-6"
 }
 
 func inspectReferenceImage(data []byte, index int) (uploadedReference, error) {

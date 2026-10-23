@@ -1912,4 +1912,86 @@ WHERE logical.enabled = FALSE
         AND route.enabled = TRUE
   );
 `,
+	"000038_chatgpt_free_text_gpt6.sql": `-- Replace retired ChatGPT Free text models gpt-5-5-mini / gpt-5-5-thinking
+-- with live official Free slugs gpt-6 (Instant) and gpt-6-t-mini (Thinking mini).
+-- Upstream wire uses those slugs directly; do not send auto for this pair.
+INSERT INTO logical_models (id, kind, name, enabled, weight, generation_count, created_at, updated_at)
+VALUES
+ ('gpt-6', 'text', 'GPT-6', TRUE, 0, 0, NOW(), NOW()),
+ ('gpt-6-t-mini', 'text', 'Thinking mini', TRUE, 0, 0, NOW(), NOW())
+ON CONFLICT (id) DO UPDATE SET
+    kind = EXCLUDED.kind,
+    name = EXCLUDED.name,
+    enabled = TRUE,
+    updated_at = NOW();
+
+-- Carry generation counters / weight from retired Free text models.
+UPDATE logical_models AS target
+SET generation_count = target.generation_count + COALESCE(old.generation_count, 0),
+    weight = GREATEST(target.weight, COALESCE(old.weight, 0)),
+    updated_at = NOW()
+FROM (VALUES
+    ('gpt-5-5-mini', 'gpt-6'),
+    ('gpt-5-5-thinking', 'gpt-6-t-mini')
+) AS map(old_id, new_id)
+JOIN logical_models AS old ON old.id = map.old_id
+WHERE target.id = map.new_id;
+
+INSERT INTO model_routes (
+    id, logical_model_id, provider, runtime_model, upstream_model, enabled,
+    priority, weight, quota_bucket_key, quota_costs, capabilities, created_at, updated_at
+) VALUES
+ (
+  'text.gpt-6.chatgpt', 'gpt-6', 'chatgpt', 'gpt-6', 'gpt-6', TRUE,
+  NULL, NULL, 'chatgpt.text', '{"mode":"unknown","unit":"credits"}'::jsonb,
+  '[{"operations":["completion"]}]'::jsonb, NOW(), NOW()
+ ),
+ (
+  'text.gpt-6-t-mini.chatgpt', 'gpt-6-t-mini', 'chatgpt', 'gpt-6-t-mini', 'gpt-6-t-mini', TRUE,
+  NULL, NULL, 'chatgpt.text', '{"mode":"unknown","unit":"credits"}'::jsonb,
+  '[{"operations":["completion"]}]'::jsonb, NOW(), NOW()
+ )
+ON CONFLICT (id) DO UPDATE SET
+    logical_model_id = EXCLUDED.logical_model_id,
+    provider = EXCLUDED.provider,
+    runtime_model = EXCLUDED.runtime_model,
+    upstream_model = EXCLUDED.upstream_model,
+    enabled = TRUE,
+    priority = EXCLUDED.priority,
+    weight = EXCLUDED.weight,
+    quota_bucket_key = EXCLUDED.quota_bucket_key,
+    quota_costs = EXCLUDED.quota_costs,
+    capabilities = EXCLUDED.capabilities,
+    updated_at = NOW();
+
+-- Bind every ChatGPT pool account to the new Free text routes (same as bindAccountRoutes).
+INSERT INTO account_model_routes (id, account_id, model_route_id, enabled, entitled, quota_bucket_key)
+SELECT a.id || ':' || r.id, a.id, r.id, TRUE, TRUE, r.quota_bucket_key
+FROM provider_accounts a
+JOIN model_routes r ON r.provider = a.pool
+WHERE a.pool = 'chatgpt'
+  AND r.id IN ('text.gpt-6.chatgpt', 'text.gpt-6-t-mini.chatgpt')
+ON CONFLICT (account_id, model_route_id) DO UPDATE SET
+    enabled = TRUE,
+    entitled = TRUE,
+    quota_bucket_key = EXCLUDED.quota_bucket_key,
+    updated_at = NOW();
+
+UPDATE event_logs AS event
+SET model = map.new_id
+FROM (VALUES
+    ('gpt-5-5-mini', 'gpt-6'),
+    ('gpt-5-5-thinking', 'gpt-6-t-mini')
+) AS map(old_id, new_id)
+WHERE event.model = map.old_id;
+
+-- Retire old Free text routes/models so admin overview no longer treats them as primary.
+UPDATE model_routes
+SET enabled = FALSE, updated_at = NOW()
+WHERE id IN ('text.gpt-5-5-mini.chatgpt', 'text.gpt-5-5-thinking.chatgpt');
+
+UPDATE logical_models
+SET enabled = FALSE, updated_at = NOW()
+WHERE id IN ('gpt-5-5-mini', 'gpt-5-5-thinking');
+`,
 }

@@ -9,7 +9,24 @@ import { providerLabels } from "../../account-pool/use-gateway";
 import { capabilitySummary } from "./model-catalog-editor";
 import { ModelTags } from "./pool-channels";
 
-const modalityLabels: Record<string, string> = { image: "图片", video: "视频", text: "文本", audio: "音频" };
+const modalityLabels: Record<string, string> = { text: "文本", image: "图片", video: "视频", audio: "音频" };
+const modalityTagColors: Record<string, string> = { text: "blue", image: "green", video: "purple", audio: "orange" };
+const modalityFilterOrder = ["text", "image", "video", "audio"];
+
+/** Prefer catalog order; only surface modalities that appear in the current list. */
+function modalityFilterOptions(models: { modality?: string }[]) {
+    const present = new Set(models.map((item) => item.modality).filter((value): value is string => Boolean(value)));
+    const ordered = modalityFilterOrder.filter((key) => present.has(key));
+    for (const key of present) {
+        if (!ordered.includes(key)) ordered.push(key);
+    }
+    return [{ label: "全部", value: "all" }, ...ordered.map((value) => ({ label: modalityLabels[value] || value, value }))];
+}
+
+function modalityTag(modality: string) {
+    const label = modalityLabels[modality] || modality || "—";
+    return <Tag color={modalityTagColors[modality] || "default"}>{label}</Tag>;
+}
 const operationLabels: Record<string, string> = { generation: "生成", edit: "编辑", chat: "对话", "text-to-video": "文生视频", "image-to-video": "图生视频" };
 
 /** Channels serving a model; pool sources expand to their providers. */
@@ -63,14 +80,17 @@ export function ModelListTable({ models, loading, isSaving, channelModelIds, onE
     const { message, modal } = App.useApp();
     const [keyword, setKeyword] = useState("");
     const [filter, setFilter] = useState("all");
+    const [modalityFilter, setModalityFilter] = useState("all");
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
+    const modalityOptions = useMemo(() => modalityFilterOptions(models), [models]);
     const rows = useMemo(() => {
         const text = keyword.trim().toLowerCase();
         return models
             .filter((item) => !text || item.id.toLowerCase().includes(text) || item.name.toLowerCase().includes(text))
             .filter((item) => filter === "all" || (filter === "available" ? item.available : filter === "unavailable" ? !item.available && item.managed && item.enabled : !item.managed || !item.enabled))
+            .filter((item) => modalityFilter === "all" || item.modality === modalityFilter)
             .sort((a, b) => (a.definition?.sort ?? 1e9) - (b.definition?.sort ?? 1e9) || a.id.localeCompare(b.id));
-    }, [models, keyword, filter]);
+    }, [models, keyword, filter, modalityFilter]);
     const removeSelectedModels = () => {
         const managedSelected = selectedIds.filter((id) => models.some((item) => item.id === id && item.managed));
         const deletable = managedSelected.filter((id) => !channelModelIds?.has(id));
@@ -106,6 +126,7 @@ export function ModelListTable({ models, loading, isSaving, channelModelIds, onE
                             { label: "未开放", value: "closed" },
                         ]}
                     />
+                    <Segmented value={modalityFilter} onChange={(value) => setModalityFilter(String(value))} options={modalityOptions} />
                 </Flex>
                 <Space wrap>
                     {selectedIds.length ? (
@@ -144,7 +165,7 @@ export function ModelListTable({ models, loading, isSaving, channelModelIds, onE
                             </Flex>
                         ),
                     },
-                    { title: "类型", width: 70, render: (_, item) => modalityLabels[item.modality] || item.modality },
+                    { title: "类型", width: 80, render: (_, item) => modalityTag(item.modality) },
                     { title: "能力", width: 220, render: (_, item) => <Typography.Text type="secondary">{item.definition ? capabilitySummary(item.definition) : "—"}</Typography.Text> },
                     { title: "渠道", width: 260, render: (_, item) => <ModelTags names={servingChannels(item)} max={3} /> },
                     {

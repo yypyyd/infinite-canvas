@@ -429,7 +429,6 @@ function ModelDetails({
                 </div>
             </div>
 
-
             <section className="mt-6">
                 <div className="flex flex-wrap items-center gap-3">
                     <ModelStatusBadge status={status} />
@@ -628,19 +627,12 @@ function ModelStatusTimeline({ buckets }: { buckets?: ModelStatusItem["timeline"
                 {bars.map((bucket, index) => {
                     const label = bucket.status === "operational" ? "正常" : bucket.status === "degraded" ? "繁忙" : bucket.status === "unavailable" ? "不可用" : "暂无数据";
                     const latency = typeof bucket.latencyMs === "number" ? ` · ${Math.round(bucket.latencyMs)}ms` : "";
-                    return (
-                        <span
-                            key={`${bucket.at}-${index}`}
-                            title={`${bucket.at} · ${label}${latency}`}
-                            className={`min-w-0 flex-1 rounded-[2px] ${color[bucket.status] || color.unknown} ${height[bucket.status] || height.unknown}`}
-                        />
-                    );
+                    return <span key={`${bucket.at}-${index}`} title={`${bucket.at} · ${label}${latency}`} className={`min-w-0 flex-1 rounded-[2px] ${color[bucket.status] || color.unknown} ${height[bucket.status] || height.unknown}`} />;
                 })}
             </div>
         </div>
     );
 }
-
 
 function pricingSummary(rules: AdminPricingRule[], pricing: PricingContext) {
     if (!rules.length) return "暂未定价";

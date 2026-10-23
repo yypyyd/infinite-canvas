@@ -207,7 +207,7 @@ func buildModelStatusTimeline(rows []repository.GenerationOutcomeRow, nowTime ti
 	bucketDur := modelStatusWindow / time.Duration(modelStatusBucketCount)
 	buckets := make([]model.ModelStatusBucket, modelStatusBucketCount)
 	type stats struct {
-		success, fail, busy int
+		success, fail, busy  int
 		latencySum, latencyN int64
 	}
 	statsByIndex := make([]stats, modelStatusBucketCount)

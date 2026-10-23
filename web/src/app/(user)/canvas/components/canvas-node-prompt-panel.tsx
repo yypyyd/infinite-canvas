@@ -133,7 +133,14 @@ export function CanvasNodePromptPanel({
                     {onOpenPromptEditor ? <Button type="text" size="small" icon={<Expand className="size-4" />} onClick={() => onOpenPromptEditor(node.id)} aria-label="展开提示词编辑器" /> : null}
                     {mode === "image" ? (
                         <>
-                            <ModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, canvasImageModelPatch(config, model, managedModels))} capability="image" className="!h-10 !w-auto !min-w-0 flex-1" onMissingConfig={() => openConfigDialog(true)} />
+                            <ModelPicker
+                                config={config}
+                                value={config.model}
+                                onChange={(model) => onConfigChange(node.id, canvasImageModelPatch(config, model, managedModels))}
+                                capability="image"
+                                className="!h-10 !w-auto !min-w-0 flex-1"
+                                onMissingConfig={() => openConfigDialog(true)}
+                            />
                             <CanvasImageSettingsPopover
                                 config={config}
                                 model={config.model}

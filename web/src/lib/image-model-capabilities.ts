@@ -60,11 +60,7 @@ export function clampImageSizeToResolutionTiers(size: string, tiers?: string[] |
     return (ratio && ONE_K_SIZE_BY_RATIO[ratio]) || "1024x1024";
 }
 
-export function clampImageConfigForModel(
-    config: { size?: string; quality?: string },
-    model: string | undefined,
-    catalogTiers?: string[],
-) {
+export function clampImageConfigForModel(config: { size?: string; quality?: string }, model: string | undefined, catalogTiers?: string[]) {
     const tiers = resolveImageResolutionTiers(model, catalogTiers);
     return {
         size: clampImageSizeToResolutionTiers(config.size || "auto", tiers),
@@ -74,7 +70,10 @@ export function clampImageConfigForModel(
 }
 
 function parseImageSizeDimensions(size: string) {
-    const match = size.trim().toLowerCase().match(/^(\d+)x(\d+)$/);
+    const match = size
+        .trim()
+        .toLowerCase()
+        .match(/^(\d+)x(\d+)$/);
     if (!match) return null;
     return { width: Number(match[1]), height: Number(match[2]) };
 }

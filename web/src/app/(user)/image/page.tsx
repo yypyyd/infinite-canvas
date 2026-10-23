@@ -701,12 +701,19 @@ function GenerationSettings({
         <>
             <label className="col-span-2 block min-w-0 sm:col-span-1">
                 <span className="mb-1.5 block text-sm font-semibold sm:mb-2 sm:text-base">模型</span>
-                <ModelPicker config={config} value={model} onChange={(value) => {
-                    const next = clampImageConfigForModel({ size: config.size, quality: config.quality }, value, managedModels?.find((item) => item.id === value)?.resolutionTiers);
-                    updateConfig("imageModel", value);
-                    if (next.size !== config.size) updateConfig("size", next.size);
-                    if (next.quality !== config.quality) updateConfig("quality", next.quality);
-                }} capability="image" fullWidth onMissingConfig={() => openConfigDialog(false)} />
+                <ModelPicker
+                    config={config}
+                    value={model}
+                    onChange={(value) => {
+                        const next = clampImageConfigForModel({ size: config.size, quality: config.quality }, value, managedModels?.find((item) => item.id === value)?.resolutionTiers);
+                        updateConfig("imageModel", value);
+                        if (next.size !== config.size) updateConfig("size", next.size);
+                        if (next.quality !== config.quality) updateConfig("quality", next.quality);
+                    }}
+                    capability="image"
+                    fullWidth
+                    onMissingConfig={() => openConfigDialog(false)}
+                />
             </label>
             <div className="col-span-2">
                 <ImageSettingsPanel

@@ -314,6 +314,22 @@ export default function AdminModelsPage() {
             (settings?.public.modelChannel.pricingRules || []).filter((rule) => rule.model !== id),
         );
     };
+    const deleteManagedModels = async (ids: string[]) => {
+        const removable = ids.filter((id) => !channelModelIds.has(id));
+        const blocked = ids.length - removable.length;
+        if (!removable.length) {
+            message.info("选中模型仍由渠道提供，可停用；如需彻底移除，请先从渠道中删除");
+            return;
+        }
+        if (blocked) {
+            message.warning(`${blocked} 个仍由渠道提供的模型已跳过`);
+        }
+        const removed = new Set(removable);
+        await persistModels(
+            managedModels.filter((model) => !removed.has(model.id)),
+            (settings?.public.modelChannel.pricingRules || []).filter((rule) => !removed.has(rule.model)),
+        );
+    };
     const copyChannel = (index: number) => {
         openChannelDrawer(null);
         const source = normalizeChannel(channels[index]);
@@ -566,6 +582,7 @@ export default function AdminModelsPage() {
                         onCreate={() => showModel(NEW_MODEL_REQUEST)}
                         onUpdate={updateModel}
                         onDelete={deleteManagedModel}
+                        onBatchDelete={deleteManagedModels}
                     />
                 ) : null}
                 {activeTab === "pricing" ? <PricingTable models={overview?.models || []} loading={overviewLoading} isSaving={isSaving} onEdit={showModel} onSetPrice={setPrice} onRemovePrice={removePrice} /> : null}

@@ -44,12 +44,14 @@ type ModelsProps = {
     onCreate: () => void;
     onUpdate: (id: string, patch: Partial<AdminManagedModel>) => void;
     onDelete: (id: string) => void;
+    onBatchDelete: (ids: string[]) => void | Promise<void>;
 };
 
-export function ModelListTable({ models, loading, isSaving, channelModelIds, onEdit, onCreate, onUpdate, onDelete }: ModelsProps) {
-    const { message } = App.useApp();
+export function ModelListTable({ models, loading, isSaving, channelModelIds, onEdit, onCreate, onUpdate, onDelete, onBatchDelete }: ModelsProps) {
+    const { message, modal } = App.useApp();
     const [keyword, setKeyword] = useState("");
     const [filter, setFilter] = useState("all");
+    const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const rows = useMemo(() => {
         const text = keyword.trim().toLowerCase();
         return models
@@ -57,6 +59,26 @@ export function ModelListTable({ models, loading, isSaving, channelModelIds, onE
             .filter((item) => filter === "all" || (filter === "available" ? item.available : filter === "unavailable" ? !item.available : !item.managed || !item.enabled))
             .sort((a, b) => (a.definition?.sort ?? 1e9) - (b.definition?.sort ?? 1e9) || a.id.localeCompare(b.id));
     }, [models, keyword, filter]);
+    const removeSelectedModels = () => {
+        const managedSelected = selectedIds.filter((id) => models.some((item) => item.id === id && item.managed));
+        const deletable = managedSelected.filter((id) => !channelModelIds?.has(id));
+        const blocked = managedSelected.length - deletable.length;
+        if (!deletable.length) {
+            message.info("选中模型仍由渠道提供，可停用；如需彻底移除，请先从渠道中删除");
+            return;
+        }
+        modal.confirm({
+            title: `删除选中的 ${deletable.length} 个模型？`,
+            content: blocked ? `模型信息和对应计费规则会一并移除；${blocked} 个仍由渠道提供的模型会被跳过。` : "模型信息与对应计费规则会一并移除。",
+            okText: "删除",
+            okButtonProps: { danger: true },
+            cancelText: "取消",
+            onOk: async () => {
+                await onBatchDelete(deletable);
+                setSelectedIds((current) => current.filter((id) => !deletable.includes(id)));
+            },
+        });
+    };
     return (
         <Flex vertical gap={12}>
             <Flex gap={8} wrap justify="space-between">
@@ -73,9 +95,16 @@ export function ModelListTable({ models, loading, isSaving, channelModelIds, onE
                         ]}
                     />
                 </Flex>
-                <Button type="primary" onClick={onCreate}>
-                    新增模型
-                </Button>
+                <Space wrap>
+                    {selectedIds.length ? (
+                        <Button danger disabled={isSaving} icon={<DeleteOutlined />} onClick={removeSelectedModels}>
+                            删除选中（{selectedIds.length}）
+                        </Button>
+                    ) : null}
+                    <Button type="primary" onClick={onCreate}>
+                        新增模型
+                    </Button>
+                </Space>
             </Flex>
             <Table
                 rowKey="id"
@@ -84,6 +113,11 @@ export function ModelListTable({ models, loading, isSaving, channelModelIds, onE
                 dataSource={rows}
                 pagination={{ pageSize: 20, hideOnSinglePage: true }}
                 scroll={{ x: 1000 }}
+                rowSelection={{
+                    selectedRowKeys: selectedIds,
+                    onChange: (keys) => setSelectedIds(keys.map(String)),
+                    getCheckboxProps: (item) => ({ disabled: !item.managed || isSaving }),
+                }}
                 columns={[
                     {
                         title: "模型",

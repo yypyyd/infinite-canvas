@@ -311,6 +311,11 @@ func (r *ModelRouteRepository) SetAccountRoute(ctx context.Context, binding *mod
 	}).Create(binding).Error
 }
 
+// RecordAccountRouteResult updates durable per-route health after an attempt.
+// success clears cooldown; failureClass "temporary" sets cooldown_until for 45s.
+// Callers must not pass success=false with class temporary for state=accepted
+// create_task outcomes - those are pending recovery, not demotions (see
+// routeBookkeepingAfterDispatch).
 func (r *ModelRouteRepository) RecordAccountRouteResult(ctx context.Context, accountID, routeID, failureClass string, success bool) error {
 	if strings.TrimSpace(accountID) == "" || strings.TrimSpace(routeID) == "" || r == nil || r.db == nil || !r.db.Migrator().HasTable(&model.AccountModelRoute{}) {
 		return nil

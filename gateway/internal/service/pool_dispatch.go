@@ -431,7 +431,14 @@ func (s *V1Service) tryAccount(ctx context.Context, eventID, pool string, token 
 		}
 		if dispatchID != "" {
 			recordBookkeepingError("finish dispatch attempt", s.models.Dispatch().Finish(context.WithoutCancel(ctx), dispatchID, state, failureClass, dispatchUpstreamTaskID(err), publicGenerationError(err)))
-			recordBookkeepingError("record account route result", s.models.Routes().RecordAccountRouteResult(context.WithoutCancel(ctx), token.ID, routeID, failureClass, err == nil))
+			// Accepted create_task outcomes use failure_class=temporary so recovery can
+			// keep the attempt pending without authorizing failover. That class must not
+			// demote account_model_routes: otherwise RouteDetails counts every in-flight
+			// ChatGPT/Grok/BytePlus acceptance as cooldown (mapping looked like healthy/bound
+			// while overview available=0 / accounts cooling).
+			if class, ok, record := routeBookkeepingAfterDispatch(state, failureClass, err); record {
+				recordBookkeepingError("record account route result", s.models.Routes().RecordAccountRouteResult(context.WithoutCancel(ctx), token.ID, routeID, class, ok))
+			}
 		}
 		if err == nil {
 			_, updateErr := s.tokens.Update(ctx, pool, token.ID, map[string]any{
@@ -747,6 +754,17 @@ func (s *V1Service) nextCursor(pool string) uint64 {
 func randomCursor() *uint64 {
 	start := rand.Uint64()
 	return &start
+}
+
+// routeBookkeepingAfterDispatch decides whether a finished dispatch should update
+// the durable account-route binding. state=accepted means create_task already
+// succeeded; recovery records the terminal outcome and must not be preceded by a
+// temporary-failure cooldown write.
+func routeBookkeepingAfterDispatch(state, failureClass string, err error) (class string, success bool, record bool) {
+	if state == "accepted" {
+		return "", false, false
+	}
+	return failureClass, err == nil, true
 }
 
 // coolDownAccount demotes an account in its pool's rotation for a short window

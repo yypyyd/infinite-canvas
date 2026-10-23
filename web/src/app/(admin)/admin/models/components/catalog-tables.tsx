@@ -196,25 +196,29 @@ export function ModelListTable({ models, loading, isSaving, channelModelIds, onE
                                     {item.managed ? "编辑" : "加入目录"}
                                 </Button>
                                 {item.managed ? (
-                                    <Popconfirm
-                                        title={`删除模型 ${item.id}？`}
-                                        description="模型信息与对应计费规则会一并移除。"
-                                        okText="删除"
-                                        okButtonProps={{ danger: true }}
-                                        cancelText="取消"
-                                        disabled={isSaving || Boolean(channelModelIds?.has(item.id))}
-                                        onConfirm={() => {
-                                            if (channelModelIds?.has(item.id)) {
-                                                message.info("该模型仍由渠道提供，可停用；如需彻底移除，请先从渠道中删除");
-                                                return;
-                                            }
-                                            onDelete(item.id);
-                                        }}
-                                    >
-                                        <Button size="small" type="link" danger disabled={isSaving || Boolean(channelModelIds?.has(item.id))} icon={<DeleteOutlined />}>
-                                            删除
-                                        </Button>
-                                    </Popconfirm>
+                                    <Tooltip title={isSaving ? "保存中，请稍候" : channelModelIds?.has(item.id) ? "该模型仍由渠道提供，可停用；如需彻底移除，请先从渠道中删除" : undefined}>
+                                        <span>
+                                            <Popconfirm
+                                                title={`删除模型 ${item.id}？`}
+                                                description="模型信息与对应计费规则会一并移除。"
+                                                okText="删除"
+                                                okButtonProps={{ danger: true }}
+                                                cancelText="取消"
+                                                disabled={isSaving || Boolean(channelModelIds?.has(item.id))}
+                                                onConfirm={() => {
+                                                    if (channelModelIds?.has(item.id)) {
+                                                        message.info("该模型仍由渠道提供，可停用；如需彻底移除，请先从渠道中删除");
+                                                        return;
+                                                    }
+                                                    onDelete(item.id);
+                                                }}
+                                            >
+                                                <Button size="small" type="link" danger disabled={isSaving || Boolean(channelModelIds?.has(item.id))} icon={<DeleteOutlined />}>
+                                                    删除
+                                                </Button>
+                                            </Popconfirm>
+                                        </span>
+                                    </Tooltip>
                                 ) : null}
                             </Space>
                         ),
@@ -285,7 +289,8 @@ export function PricingTable({ models, loading, isSaving, onEdit, onSetPrice, on
                     key,
                     name: item.name,
                     rule,
-                    missing: Boolean(rule.draft) || (rule.billingMode === "fixed" && rule.credits == null),
+                    // Align with hasPricing / drawer: only enabled non-draft rules with a usable price count as priced.
+                    missing: Boolean(rule.draft) || !rule.enabled || (rule.billingMode === "fixed" && rule.credits == null),
                     providers: [],
                 });
             }
@@ -456,7 +461,9 @@ export function PricingTable({ models, loading, isSaving, onEdit, onSetPrice, on
                         width: 200,
                         render: (_, group) => {
                             const count = group.specs.length;
-                            let summary = `${count} 规格`;
+                            const tiers = Array.from(new Set(group.specs.map((row) => row.resolutionTier).filter(Boolean)));
+                            // Image/video: show unique price tiers, not ops×tiers as 规格.
+                            let summary = (group.modality === "image" || group.modality === "video") && tiers.length ? `${tiers.length} 价档` : `${count} 规格`;
                             if (group.minCredits != null && group.maxCredits != null) {
                                 summary += group.minCredits === group.maxCredits ? ` · ${group.minCredits}` : ` · ${group.minCredits}–${group.maxCredits}`;
                             } else if (group.hasRatio) {
@@ -468,7 +475,12 @@ export function PricingTable({ models, loading, isSaving, onEdit, onSetPrice, on
                     {
                         title: "状态",
                         width: 96,
-                        render: (_, group) => (group.missingCount > 0 ? <Tag color="orange">缺价 {group.missingCount}</Tag> : <Tag color="green">已定价</Tag>),
+                        render: (_, group) => {
+                            const usable = group.specs.some((row) => !row.missing && row.rule && row.rule.enabled && !row.rule.draft && (row.rule.billingMode === "ratio" || row.rule.credits != null));
+                            if (group.missingCount > 0) return <Tag color="orange">缺价 {group.missingCount}</Tag>;
+                            if (!usable || group.specs.length === 0) return <Tag>未设价</Tag>;
+                            return <Tag color="green">已定价</Tag>;
+                        },
                     },
                     {
                         title: "操作",

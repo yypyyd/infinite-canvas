@@ -1,7 +1,7 @@
 "use client";
 
 import { DeleteOutlined, EditOutlined, PlusOutlined, SyncOutlined } from "@ant-design/icons";
-import { Alert, App, AutoComplete, Button, Card, Col, Drawer, Dropdown, Empty, Flex, Form, Input, InputNumber, Row, Segmented, Select, Space, Switch, Table, Tag, theme, Typography } from "antd";
+import { Alert, App, AutoComplete, Button, Card, Col, Drawer, Dropdown, Empty, Flex, Form, Input, InputNumber, Row, Segmented, Select, Space, Switch, Table, Tag, theme, Tooltip, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
 
 import type { AdminChannelModel, AdminManagedModel, AdminModelChannel, AdminPricingRule } from "@/services/api/admin";
@@ -370,7 +370,23 @@ export function ModelCatalogEditor({ value, pricingRules, channels, isSaving, on
                                                 menu={{
                                                     items: [
                                                         { key: "copy", label: "复制为独立定价模型", disabled: isSaving, onClick: () => openCopy(model) },
-                                                        { key: "delete", label: "删除模型", danger: true, disabled: isSaving || channelModelSet.has(model.id), onClick: () => removeModel(model) },
+                                                        {
+                                                            key: "delete",
+                                                            label: channelModelSet.has(model.id) ? (
+                                                                <Tooltip title="该模型仍由渠道提供，可停用；如需彻底移除，请先从渠道中删除">
+                                                                    <span>删除模型</span>
+                                                                </Tooltip>
+                                                            ) : isSaving ? (
+                                                                <Tooltip title="保存中，请稍候">
+                                                                    <span>删除模型</span>
+                                                                </Tooltip>
+                                                            ) : (
+                                                                "删除模型"
+                                                            ),
+                                                            danger: true,
+                                                            disabled: isSaving || channelModelSet.has(model.id),
+                                                            onClick: () => removeModel(model),
+                                                        },
                                                     ],
                                                 }}
                                                 trigger={["click"]}
@@ -843,7 +859,13 @@ export function capabilitySummary(model: AdminManagedModel | AdminChannelModel) 
         capabilityLabel(model.operations),
         model.aspectRatios.length ? `比例 ${model.aspectRatios.length}` : "",
         model.resolutionTiers.length ? model.resolutionTiers.map((item) => item.toUpperCase()).join("/") : "",
-        model.durations.length ? `${Math.min(...model.durations)}-${Math.max(...model.durations)} 秒` : "",
+        model.durations.length
+            ? (() => {
+                  const min = Math.min(...model.durations);
+                  const max = Math.max(...model.durations);
+                  return min === max ? `${min} 秒` : `${min}-${max} 秒`;
+              })()
+            : "",
         model.maxReferenceImages ? `参考图 ${model.maxReferenceImages}` : "",
         model.maxReferenceVideos ? `参考视频 ${model.maxReferenceVideos}` : "",
         model.maxReferenceAudios ? `参考音频 ${model.maxReferenceAudios}` : "",

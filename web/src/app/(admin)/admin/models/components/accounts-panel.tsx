@@ -15,6 +15,7 @@ type ImportItem = { provider: string; credential: unknown };
 
 const healthColors: Record<string, string> = { active: "green", quota: "orange", pending: "blue", disabled: "default", dead: "red", busy: "gold" };
 const healthLabels: Record<string, string> = { active: "可用", quota: "额度耗尽", pending: "待验证", disabled: "已停用", dead: "凭据失效", busy: "忙碌" };
+const quotaStateLabels: Record<string, string> = { available: "有额度", empty: "额度耗尽", unknown: "未探测" };
 
 const statusFilterOptions = [
     { value: "", label: "全部状态" },
@@ -275,7 +276,7 @@ export function AccountsPanel({ fixedProvider = "", embedded = false }: Accounts
                     ...(fixedProvider ? [] : [{ title: "平台", dataIndex: "provider" as const, width: 120, fixed: "left" as const, render: (value: string) => providerLabels[value] || value }]),
                     { title: "账号", width: 200, render: (_: unknown, item: GatewayAccount) => <Typography.Text ellipsis={{ tooltip: item.id }}>{item.label || item.email || item.id}</Typography.Text> },
                     { title: "健康", dataIndex: "health", width: 96, render: (value: string) => <Tag color={healthColors[value] || "default"}>{healthLabels[value] || value}</Tag> },
-                    { title: "额度", dataIndex: "quota_state", width: 100 },
+                    { title: "额度", dataIndex: "quota_state", width: 100, render: (value: string) => quotaStateLabels[value] || value || "—" },
                     {
                         title: "权重",
                         width: 88,

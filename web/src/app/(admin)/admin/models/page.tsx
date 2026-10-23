@@ -704,7 +704,10 @@ export default function AdminModelsPage() {
                                 width: 110,
                                 render: (_, row) =>
                                     row.kind === "pool" ? (
-                                        <Typography.Link onClick={() => openPoolChannel(row.pool, "accounts")}>
+                                        <Typography.Link
+                                            onClick={() => openPoolChannel(row.pool, "accounts")}
+                                            title={`可用 ${row.pool.activeAccounts} · 额度耗尽 ${row.pool.health?.quota || 0} · 停用 ${row.pool.health?.disabled || 0} · 失效 ${row.pool.health?.dead || 0} · 待验证 ${row.pool.health?.pending || 0}`}
+                                        >
                                             {row.pool.activeAccounts}/{row.pool.accounts} 可用
                                         </Typography.Link>
                                     ) : (
@@ -1353,7 +1356,11 @@ function discoveredSummary(item?: AdminDiscoveredModel) {
     if (item.modality) parts.push(item.modality);
     if (item.supportedRatios?.length) parts.push("比例 " + item.supportedRatios.length);
     if (item.supportedResolutions?.length) parts.push(item.supportedResolutions.map((value) => value.toUpperCase()).join("/"));
-    if (item.supportedDurations?.length) parts.push(Math.min(...item.supportedDurations) + "-" + Math.max(...item.supportedDurations) + " 秒");
+    if (item.supportedDurations?.length) {
+        const min = Math.min(...item.supportedDurations);
+        const max = Math.max(...item.supportedDurations);
+        parts.push(min === max ? `${min} 秒` : `${min}-${max} 秒`);
+    }
     if (item.referenceCapabilityProvided && item.maxReferenceImages) parts.push("参考图 " + item.maxReferenceImages);
     if (item.referenceVideosProvided && item.maxReferenceVideos) parts.push("参考视频 " + item.maxReferenceVideos);
     if (item.referenceAudiosProvided && item.maxReferenceAudios) parts.push("参考音频 " + item.maxReferenceAudios);

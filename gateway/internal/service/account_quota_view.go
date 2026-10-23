@@ -36,6 +36,10 @@ func accountQuotaState(provider string, buckets []model.AccountQuotaBucket, now 
 
 // Aggregate the same primary bucket shown on the account row. Obsolete Grok
 // text buckets cannot inflate today's media capacity.
+//
+// Keys written here (quota_available / quota_empty / quota_unknown) are a
+// snapshot of status=active rows and must NOT be summed with status
+// buckets when computing total account counts in the admin UI.
 func (s *AdminConsoleService) countQuotaHealth(ctx context.Context, counts map[string]map[string]int64) error {
 	now := time.Now()
 	for _, provider := range adminAccountProviders {

@@ -40,8 +40,8 @@ export function usePoolChannels() {
                 enabled: data?.providers_enabled?.[provider] !== false,
                 poolPriority: data?.providers_priority?.[provider] ?? 0,
                 poolWeight: data?.providers_weight?.[provider] ?? 1,
-                accounts: Object.values(counts).reduce((sum, value) => sum + Number(value || 0), 0),
-                activeAccounts: Number(counts.active || 0),
+                // Only status buckets. provider_health also carries quota_* snapshots of the
+                // same active rows; summing Object.values double-counts (e.g. 20/40).
                 health: {
                     active: Number(counts.active || 0),
                     quota: Number(counts.quota || 0),
@@ -49,6 +49,8 @@ export function usePoolChannels() {
                     dead: Number(counts.dead || 0),
                     pending: Number(counts.pending || 0),
                 },
+                accounts: ["active", "quota", "disabled", "dead", "pending"].reduce((sum, key) => sum + Number(counts[key] || 0), 0),
+                activeAccounts: Number(counts.active || 0),
                 models: (models.data?.data || []).flatMap((model: GatewayModel) =>
                     model.routes.filter((route) => route.provider === provider).map((route) => ({ id: model.id, name: model.name || model.id, enabled: model.enabled && route.enabled, route })),
                 ),

@@ -566,11 +566,7 @@ export function ModelCatalogEditor({ value, pricingRules, channels, isSaving, on
                                 <Form.Item
                                     name="resolutionTiers"
                                     label="支持分辨率档"
-                                    extra={
-                                        selectedModality === "video"
-                                            ? "视频可选 480P/720P/1080P；保存后会保留管理员勾选的档位，并在下方为各档添加价格。"
-                                            : "图片可选 1K/2K/4K；分辨率只定义模型能力，需要计费时在下方手动添加价格。"
-                                    }
+                                    extra={selectedModality === "video" ? "视频可选 480P/720P/1080P；保存后会保留管理员勾选的档位，并在下方为各档添加价格。" : "图片可选 1K/2K/4K；分辨率只定义模型能力，需要计费时在下方手动添加价格。"}
                                 >
                                     <Select
                                         mode="tags"

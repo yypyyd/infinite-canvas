@@ -255,12 +255,8 @@ export default function AdminModelsPage() {
                 models: (channel.models || []).map((item) => {
                     const managed = byId.get(item.model);
                     if (!managed?.resolutionTiers?.length) return item;
-                    const resolutionTiers = Array.from(
-                        new Set([...(item.resolutionTiers || []), ...managed.resolutionTiers].map(normalizeResolutionTier).filter(Boolean)),
-                    );
-                    return resolutionTiers.join("\0") === (item.resolutionTiers || []).map(normalizeResolutionTier).filter(Boolean).join("\0")
-                        ? item
-                        : { ...item, resolutionTiers };
+                    const resolutionTiers = Array.from(new Set([...(item.resolutionTiers || []), ...managed.resolutionTiers].map(normalizeResolutionTier).filter(Boolean)));
+                    return resolutionTiers.join("\0") === (item.resolutionTiers || []).map(normalizeResolutionTier).filter(Boolean).join("\0") ? item : { ...item, resolutionTiers };
                 }),
             }));
             return {

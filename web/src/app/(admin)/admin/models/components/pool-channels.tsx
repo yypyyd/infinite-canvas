@@ -269,6 +269,18 @@ export function PoolChannelDrawer({ token, row, pool: _pool, builtinProvider, le
                             />
                         </div>
                         <div hidden={tab !== "mappings"}>
+                            {!row.enabled ? (
+                                <Alert
+                                    type="warning"
+                                    showIcon
+                                    className="!mb-4"
+                                    message="平台账号调度已关闭"
+                                    description="基础配置里的「启用平台账号调度」关闭时，模型映射仍可看到绑定账号数，但模型 Tab 会因「平台已关闭」显示不可用。请先打开该开关并保存。"
+                                />
+                            ) : null}
+                            {builtinProvider?.enabled === false ? (
+                                <Alert type="warning" showIcon className="!mb-4" message="站点渠道已停用" description="基础配置里的「启用渠道」关闭时，本平台不会作为调度来源，模型 Tab 会显示不可用。请打开「启用渠道」并保存。" />
+                            ) : null}
                             {usingLegacyFallback ? (
                                 <Alert
                                     type="warning"
@@ -328,7 +340,21 @@ export function PoolChannelDrawer({ token, row, pool: _pool, builtinProvider, le
                                             </Flex>
                                         ),
                                     },
-                                    { title: "账号", width: 90, render: (_, item) => `${item.route.healthy_accounts}/${item.route.account_count}` },
+                                    {
+                                        title: "账号",
+                                        width: 110,
+                                        render: (_, item) => {
+                                            const bound = Number(item.route.account_count || 0);
+                                            const available = Number(item.route.available_accounts ?? item.route.healthy_accounts ?? 0);
+                                            const cooldown = Number(item.route.cooldown_accounts || 0);
+                                            const tip = cooldown > 0 ? `可用 ${available} · 绑定 ${bound} · 冷却 ${cooldown}` : `可用 ${available} · 绑定 ${bound}（与模型 Tab RouteDetails 一致）`;
+                                            return (
+                                                <Typography.Text type={available <= 0 ? "secondary" : undefined} title={tip}>
+                                                    {available}/{bound}
+                                                </Typography.Text>
+                                            );
+                                        },
+                                    },
                                     {
                                         title: "启用",
                                         width: 70,
@@ -401,8 +427,17 @@ export function mappingToAliases(text: string, previous: AdminPoolModelAlias[]):
 }
 
 export function PoolModelTags({ row }: { row: PoolChannelRow }) {
-    // Align with Models-tab availability: enabled route with no healthy accounts is off.
-    return <ModelTags names={row.models.map((item) => ({ name: item.name, off: !item.enabled || Number(item.route?.healthy_accounts || 0) <= 0 }))} />;
+    // Align with Models-tab availability: need an enabled route with non-cooling accounts,
+    // and the gateway provider switch must stay on (same gates as RouteDetails).
+    return (
+        <ModelTags
+            names={row.models.map((item) => {
+                const available = Number(item.route?.available_accounts ?? item.route?.healthy_accounts ?? 0);
+                const providerOff = item.route?.provider_enabled === false;
+                return { name: item.name, off: !item.enabled || providerOff || available <= 0 };
+            })}
+        />
+    );
 }
 
 export function ModelTags({ names, max = 4 }: { names: { name: string; off?: boolean }[]; max?: number }) {

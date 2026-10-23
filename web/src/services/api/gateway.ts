@@ -24,7 +24,13 @@ export type GatewayRoute = {
     weight_inherited?: boolean;
     capabilities: unknown;
     account_count: number;
+    /** Active, non-dead bindings (includes cooling). */
     healthy_accounts: number;
+    /** Healthy minus cooling — matches model-overview RouteDetails.availableAccounts. */
+    available_accounts?: number;
+    cooldown_accounts?: number;
+    /** Gateway providers_enabled switch for this route's provider. */
+    provider_enabled?: boolean;
 };
 
 /** Partial route update. null clears an override so the provider value applies. */

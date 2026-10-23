@@ -184,7 +184,8 @@ func (s *AdminConsoleService) ListLogicalModels(ctx context.Context) ([]map[stri
 	if err != nil {
 		return nil, err
 	}
-	counts := s.routeAccountCounts(ctx)
+	health := s.routeHealth(ctx)
+	providerState := map[string]bool{}
 	out := make([]map[string]any, 0, len(items))
 	for _, item := range items {
 		routes := routesByModel[item.ID]
@@ -195,12 +196,27 @@ func (s *AdminConsoleService) ListLogicalModels(ctx context.Context) ([]map[stri
 		routeRows := make([]map[string]any, 0, len(routes))
 		for index, route := range routes {
 			schedule := schedules[index]
-			accountCount, healthyCount := counts.lookup(route.ID, route.Provider)
+			providerOn, known := providerState[route.Provider]
+			if !known {
+				var enableErr error
+				providerOn, enableErr = providerEnabled(ctx, s.settingsReader(), route.Provider)
+				if enableErr != nil {
+					return nil, enableErr
+				}
+				providerOn = providerOn && !isDeferredAccountProvider(route.Provider)
+				providerState[route.Provider] = providerOn
+			}
+			row := health[route.ID]
+			available := row.Healthy - row.Cooldown
+			if available < 0 {
+				available = 0
+			}
 			routeRows = append(routeRows, map[string]any{
 				"id": route.ID, "provider": route.Provider, "upstream_model": route.UpstreamModel,
 				"enabled": route.Enabled, "priority": route.Priority, "weight": route.Weight,
-				"capabilities": json.RawMessage(route.Capabilities), "account_count": accountCount,
-				"healthy_accounts":   healthyCount,
+				"capabilities": json.RawMessage(route.Capabilities), "account_count": row.Total,
+				"healthy_accounts": row.Healthy, "available_accounts": available, "cooldown_accounts": row.Cooldown,
+				"provider_enabled":   providerOn,
 				"effective_priority": schedule.Priority, "effective_weight": schedule.Weight,
 				"priority_inherited": schedule.PriorityInherited, "weight_inherited": schedule.WeightInherited,
 			})

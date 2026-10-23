@@ -277,40 +277,6 @@ export function AccountsPanel({ fixedProvider = "", embedded = false }: Accounts
                     { title: "健康", dataIndex: "health", width: 96, render: (value: string) => <Tag color={healthColors[value] || "default"}>{healthLabels[value] || value}</Tag> },
                     { title: "额度", dataIndex: "quota_state", width: 100 },
                     {
-                        title: "模型路由",
-                        width: embedded ? 280 : 360,
-                        render: (_: unknown, item: GatewayAccount) =>
-                            item.routes?.length ? (
-                                <Space size={[4, 4]} wrap>
-                                    {item.routes.map((route) => (
-                                        <Tag key={route.id} className="!m-0 !inline-flex !items-center !gap-1 !py-0.5">
-                                            <Typography.Text className="text-xs" ellipsis={{ tooltip: route.model_id }} style={{ maxWidth: 120 }}>
-                                                {route.model_id}
-                                            </Typography.Text>
-                                            <Switch
-                                                size="small"
-                                                checked={route.enabled}
-                                                disabled={Boolean(busyIds[item.id]) || batching}
-                                                onChange={(checked) =>
-                                                    void runOnAccount(
-                                                        item.id,
-                                                        (t) => gatewayApi.setAccountRoute(t, item.id, route.id, checked),
-                                                        checked ? "路由已启用" : "路由已关闭",
-                                                        (current) => ({
-                                                            ...current,
-                                                            routes: current.routes.map((candidate) => (candidate.id === route.id ? { ...candidate, enabled: checked } : candidate)),
-                                                        }),
-                                                    )
-                                                }
-                                            />
-                                        </Tag>
-                                    ))}
-                                </Space>
-                            ) : (
-                                <Typography.Text type="secondary">—</Typography.Text>
-                            ),
-                    },
-                    {
                         title: "权重",
                         width: 88,
                         render: (_: unknown, item: GatewayAccount) => (

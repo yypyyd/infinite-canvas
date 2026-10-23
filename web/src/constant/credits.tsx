@@ -57,10 +57,11 @@ export function requestCreditCost(options: CreditQuoteOptions) {
 
 export function requestCreditQuote(options: CreditQuoteOptions) {
     const request = normalizePricingRequest(options);
-    const rule = selectPricingRule(options.pricingRules || [], request);
+    const rule = selectPricingRule(options.pricingRules || [], request) || selectPricingRule(options.pricingRules || [], { ...request, unit: request.modality === "video" && request.unit === "second" ? "request" : request.unit, quantity: 1 });
     if (!rule) return { credits: 0, matched: false };
-    const ratio = userSpecRatio(options.specPricing, request) ?? positiveRatio(options.currentGroupRatio) ?? groupRatio(options.groupRatios, options.userGroup);
-    const credits = calculateRuleCredits(rule, request.quantity, ratio);
+    const quantity = rule.unit === "request" ? 1 : request.quantity;
+    const ratio = userSpecRatio(options.specPricing, { ...request, unit: rule.unit }) ?? positiveRatio(options.currentGroupRatio) ?? groupRatio(options.groupRatios, options.userGroup);
+    const credits = calculateRuleCredits(rule, quantity, ratio);
     return { credits: Math.max(credits, Math.max(0, Number(rule.minCredits) || 0)), matched: true };
 }
 

@@ -485,7 +485,7 @@ export function ModelCatalogEditor({ value, pricingRules, channels, isSaving, on
                             </Form.Item>
                         </Col>
                         <Col span={8}>
-                            <Form.Item name="modality" label="模型类型" rules={[{ required: true }]} extra={`计费单位自动使用“${unitLabel[defaultUnit(selectedModality)]}”。`}>
+                            <Form.Item name="modality" label="模型类型" rules={[{ required: true }]} extra={selectedModality === "video" ? "视频可按秒或按次计费，在下方计费规则中选择。" : selectedModality === "image" ? "图片按张计费。" : "按次计费。"}>
                                 <Select options={modalityOptions} />
                             </Form.Item>
                         </Col>
@@ -598,7 +598,7 @@ export function ModelCatalogEditor({ value, pricingRules, channels, isSaving, on
                         </div>
                         <Space wrap>
                             <Tag color={token.colorPrimary} className="m-0 min-w-24 whitespace-nowrap text-center font-medium">
-                                {capabilityLabel(selectedOperations)} · 按{unitLabel[defaultUnit(selectedModality)]}
+                                {capabilityLabel(selectedOperations)} · {selectedModality === "video" ? "可按秒/按次" : `按${unitLabel[defaultUnit(selectedModality)]}`}
                             </Tag>
                             {selectedModality === "image" || selectedModality === "video" ? (
                                 <AutoComplete
@@ -639,14 +639,21 @@ export function ModelCatalogEditor({ value, pricingRules, channels, isSaving, on
                                             </Form.Item>
                                         </Col>
                                     ) : null}
+                                    {selectedModality === "video" ? (
+                                        <Col span={5}>
+                                            <Form.Item label="计费单位">
+                                                <Select value={rule.unit || "second"} options={videoUnitOptions()} onChange={(value) => setRuleField(index, "unit", value)} />
+                                            </Form.Item>
+                                        </Col>
+                                    ) : null}
                                     {rule.billingMode === "fixed" ? (
-                                        <Col span={selectedModality === "image" || selectedModality === "video" ? 11 : 15}>
-                                            <Form.Item label={`单价（算力点/${unitLabel[defaultUnit(selectedModality)]}）`}>
+                                        <Col span={selectedModality === "video" ? 8 : selectedModality === "image" ? 11 : 15}>
+                                            <Form.Item label={`单价（算力点/${unitLabel[rule.unit || defaultUnit(selectedModality)]}）`}>
                                                 <InputNumber min={0} precision={0} className="!w-full" placeholder="未设置" value={rule.credits} onChange={(value) => setRuleField(index, "credits", value == null ? null : Number(value))} />
                                             </Form.Item>
                                         </Col>
                                     ) : (
-                                        <Col span={selectedModality === "image" || selectedModality === "video" ? 11 : 15}>
+                                        <Col span={selectedModality === "video" ? 8 : selectedModality === "image" ? 11 : 15}>
                                             <Form.Item label="当前使用倍率计费">
                                                 <Space wrap>
                                                     <Typography.Text>模型倍率 ×{rule.modelRatio}</Typography.Text>
@@ -813,7 +820,17 @@ function pricingTiers(rules: AdminPricingRule[], model: AdminManagedModel) {
 }
 
 function expandPricingTiers(tiers: AdminPricingRule[], model: AdminManagedModel) {
-    return tiers.flatMap((tier) => normalizeModelOperations(model.operations, model.id, model.modality).map((operation) => normalizeRule({ ...tier, model: model.id, modality: model.modality, operation, unit: defaultUnit(model.modality) })));
+    return tiers.flatMap((tier) =>
+        normalizeModelOperations(model.operations, model.id, model.modality).map((operation) =>
+            normalizeRule({
+                ...tier,
+                model: model.id,
+                modality: model.modality,
+                operation,
+                unit: tier.unit?.trim() || defaultUnit(model.modality),
+            }),
+        ),
+    );
 }
 
 function uniquePricingTiers(rules: AdminPricingRule[]) {
@@ -864,6 +881,19 @@ function defaultUnit(modality: string) {
     return modality === "image" ? "image" : modality === "video" ? "second" : "request";
 }
 
+function videoUnitOptions() {
+    return [
+        { label: "按秒", value: "second" },
+        { label: "按次", value: "request" },
+    ];
+}
+
+function unitOptionsForModality(modality: string) {
+    if (modality === "video") return videoUnitOptions();
+    if (modality === "image") return [{ label: "按张", value: "image" }];
+    return [{ label: "按次", value: "request" }];
+}
+
 function capabilityLabel(operations: string[]) {
     return operations.map((operation) => operationLabel[operation] || operation).join(" + ");
 }
@@ -908,9 +938,12 @@ function pricingTierKey(resolutionTier: string) {
     return resolutionTier.trim().toLowerCase();
 }
 
-function pricingTierLabel(rule: Pick<AdminPricingRule, "resolutionTier">, modality: string, suffix = true) {
+function pricingTierLabel(rule: Pick<AdminPricingRule, "resolutionTier" | "unit">, modality: string, suffix = true) {
     if (!suffix) return rule.resolutionTier ? rule.resolutionTier.toUpperCase() : "模型";
-    if (modality === "video") return `${rule.resolutionTier.toUpperCase()} 每秒价格`;
+    if (modality === "video") {
+        const per = (rule.unit || "second") === "request" ? "每次价格" : "每秒价格";
+        return `${rule.resolutionTier.toUpperCase()} ${per}`;
+    }
     if (modality === "image") return `${rule.resolutionTier.toUpperCase()} 每张价格`;
     return modality === "audio" ? "每次语音价格" : "每次请求价格";
 }

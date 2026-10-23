@@ -221,3 +221,30 @@ func TestVideoModelChannelSelectionsFilterResolutionRatioAndDuration(t *testing.
 		t.Fatalf("480p 9:16 10s selections = %#v with ratio %s, want hd-video", selections, portrait480p.AspectRatio)
 	}
 }
+
+func TestVideoBillingUnitAndQuantityFromRulesUsesRequestFlatFee(t *testing.T) {
+	rules := normalizePricingRules([]model.PricingRule{{
+		Model: "seedance-flat", Modality: "video", Operation: "generation", Unit: "request", ResolutionTier: "480p", Credits: 50, Enabled: true,
+	}})
+	unit, quantity := videoBillingUnitAndQuantityFromRules(rules, "seedance-flat", "480p", "480p", 10)
+	if unit != "request" || quantity != 1 {
+		t.Fatalf("unit/quantity = %s/%d, want request/1", unit, quantity)
+	}
+	rule, ok := selectPricingRule(rules, normalizePricingRequest(PricingRequest{Model: "seedance-flat", Modality: "video", Operation: "generation", Unit: unit, ResolutionTier: "480p", Quantity: quantity}))
+	if !ok {
+		t.Fatal("expected request pricing rule")
+	}
+	if credits := calculateRuleCredits(rule, quantity, 1); credits != 50 {
+		t.Fatalf("credits = %d, want flat 50", credits)
+	}
+}
+
+func TestVideoBillingUnitAndQuantityFromRulesKeepsPerSecond(t *testing.T) {
+	rules := normalizePricingRules([]model.PricingRule{{
+		Model: "seedance-metered", Modality: "video", Operation: "generation", Unit: "second", ResolutionTier: "720p", Credits: 3, Enabled: true,
+	}})
+	unit, quantity := videoBillingUnitAndQuantityFromRules(rules, "seedance-metered", "", "720p", 8)
+	if unit != "second" || quantity != 8 {
+		t.Fatalf("unit/quantity = %s/%d, want second/8", unit, quantity)
+	}
+}

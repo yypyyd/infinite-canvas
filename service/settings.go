@@ -697,6 +697,55 @@ func normalizePricingRequest(request PricingRequest) PricingRequest {
 	return request
 }
 
+// VideoBillingUnitAndQuantity picks second (duration) or request (flat) from the
+// enabled catalog rule for this video model and resolution tier.
+func VideoBillingUnitAndQuantity(modelName string, resolutionTier string, resolution string, duration int) (string, int) {
+	settings, err := repository.GetSettings()
+	if err != nil {
+		if duration < 1 {
+			duration = 1
+		}
+		return "second", duration
+	}
+	rules := normalizePublicSetting(settings.Public).ModelChannel.PricingRules
+	return videoBillingUnitAndQuantityFromRules(rules, modelName, resolutionTier, resolution, duration)
+}
+
+func videoBillingUnitAndQuantityFromRules(rules []model.PricingRule, modelName string, resolutionTier string, resolution string, duration int) (string, int) {
+	modelName = strings.TrimSpace(modelName)
+	tier := normalizeResolutionTier(resolutionTier)
+	if tier == "" {
+		tier = normalizeVideoResolutionTier(resolution)
+	}
+	if duration < 1 {
+		duration = 1
+	}
+	var matched model.PricingRule
+	found := false
+	for _, rule := range rules {
+		if !rule.Enabled || rule.Draft || rule.Model != modelName {
+			continue
+		}
+		if rule.Modality != "video" || rule.Operation != "generation" {
+			continue
+		}
+		if rule.ResolutionTier != "" && rule.ResolutionTier != tier {
+			continue
+		}
+		if !found || rule.ResolutionTier == tier {
+			matched = rule
+			found = true
+			if rule.ResolutionTier == tier {
+				break
+			}
+		}
+	}
+	if found && matched.Unit == "request" {
+		return "request", 1
+	}
+	return "second", duration
+}
+
 // NormalizePricingRequest resolves the request fields used by routing, billing, and task logs.
 func NormalizePricingRequest(request PricingRequest) PricingRequest {
 	return normalizePricingRequest(request)

@@ -89,7 +89,7 @@ function hasVideoPricingTier(rules: VideoPricingRule[], model: string, resolutio
             rule.model === model &&
             rule.modality === "video" &&
             rule.operation === "generation" &&
-            rule.unit === "second" &&
+            (rule.unit === "second" || rule.unit === "request") &&
             rule.resolutionTier &&
             normalizeVideoResolution(rule.resolutionTier) === normalizeVideoResolution(resolution),
     );

@@ -259,7 +259,16 @@ func buildModelOverview(settings model.Settings, routes []gateway.RouteDetail, r
 	emitProviders := len(providerChannels) > 0
 	for _, name := range poolNames {
 		if hasLegacyPool && !emitProviders {
-			break
+			// Legacy saved pool channel already contributed sources above. Still
+			// emit RouteDetails-backed sources for logical models it omitted (e.g.
+			// newly seeded gpt-5-5-*), otherwise the Models tab stays red with
+			// "no sources" while the channel UI lists healthy routes.
+			if !routesKnown {
+				break
+			}
+			if item := items[name]; item != nil && len(item.Sources) > 0 {
+				continue
+			}
 		}
 		target := targets[name]
 		override, hasOverride := poolOverrides[name]
@@ -305,7 +314,14 @@ func buildModelOverview(settings model.Settings, routes []gateway.RouteDetail, r
 					source.Reasons = append(source.Reasons, "\u8be5\u5e73\u53f0\u672a\u914d\u7f6e\u8be5\u6a21\u578b\u8def\u7531")
 				}
 			case routesKnown && !anyRoute:
-				source.Reasons = append(source.Reasons, "\u6ca1\u6709\u53ef\u7528\u7684\u5e73\u53f0\u8def\u7531")
+				// Bubble concrete per-route reasons (no binding / cooldown / disabled)
+				// so the Models tab never shows a silent red "unavailable".
+				routeReasons := uniqueNonEmptyReasons(source.Routes)
+				if len(routeReasons) > 0 {
+					source.Reasons = append(source.Reasons, routeReasons...)
+				} else {
+					source.Reasons = append(source.Reasons, "\u6ca1\u6709\u53ef\u7528\u7684\u5e73\u53f0\u8def\u7531")
+				}
 			case !routesKnown && !inUsable:
 				if poolChannel == nil && len(providerChannels) == 0 {
 					source.Reasons = append(source.Reasons, "\u8d26\u53f7\u6c60\u672a\u8fd0\u884c")
@@ -333,7 +349,8 @@ func buildModelOverview(settings model.Settings, routes []gateway.RouteDetail, r
 				}
 				providerRoutes := 0
 				for _, route := range routesByLogical[target] {
-					if normalizeBuiltinProvider(route.Provider) == provider {
+					// Empty provider (legacy unified pool channel) matches every route.
+					if provider == "" || normalizeBuiltinProvider(route.Provider) == provider {
 						providerRoutes++
 					}
 				}
@@ -408,7 +425,7 @@ func buildModelOverview(settings model.Settings, routes []gateway.RouteDetail, r
 				if source.Active {
 					continue
 				}
-				for _, reason := range source.Reasons {
+				for _, reason := range append(append([]string{}, source.Reasons...), uniqueNonEmptyReasons(source.Routes)...) {
 					if reason == "" || seenReason[reason] {
 						continue
 					}
@@ -500,6 +517,25 @@ func poolRouteOverview(route gateway.RouteDetail) PoolRouteOverview {
 	}
 	row.Available = len(row.Reasons) == 0
 	return row
+}
+
+
+// uniqueNonEmptyReasons collects distinct non-empty reasons from pool routes,
+// preserving first-seen order so status tooltips stay stable.
+func uniqueNonEmptyReasons(routes []PoolRouteOverview) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, route := range routes {
+		for _, reason := range route.Reasons {
+			reason = strings.TrimSpace(reason)
+			if reason == "" || seen[reason] {
+				continue
+			}
+			seen[reason] = true
+			out = append(out, reason)
+		}
+	}
+	return out
 }
 
 func firstNonEmpty(values ...string) string {

@@ -287,8 +287,58 @@ func TestModelOverviewSurfacesRouteReasonsWhenUnavailable(t *testing.T) {
 		t.Fatalf("expected unavailable when accounts are cooling down: %+v", item)
 	}
 	joined := strings.Join(item.Reasons, ";")
-	if !strings.Contains(joined, "没有可用的平台路由") && !strings.Contains(joined, "账号均在冷却") {
-		t.Fatalf("expected concrete reason, got %q sources=%+v", joined, item.Sources)
+	if !strings.Contains(joined, "账号均在冷却") {
+		t.Fatalf("expected bubbled route reason %q, got %q sources=%+v", "账号均在冷却", joined, item.Sources)
+	}
+}
+
+
+func TestModelOverviewBubblesUnboundAccountReason(t *testing.T) {
+	stubPoolModels(t, nil)
+	routes := []gateway.RouteDetail{
+		{LogicalModelID: "gpt-5-5-mini", LogicalEnabled: true, RouteID: "text.gpt-5-5-mini.chatgpt", Provider: "chatgpt", UpstreamModel: "gpt-5-5-mini", Enabled: true, ProviderEnabled: true, EffectivePriority: 200, EffectiveWeight: 1, BoundAccounts: 0, AvailableAccounts: 0},
+	}
+	settings := normalizeSettings(model.Settings{
+		Public: model.PublicSetting{ModelChannel: model.PublicModelChannelSetting{
+			Models: []model.ModelDefinition{{ID: "gpt-5-5-mini", Name: "GPT-5.5 Mini", Modality: "text", Enabled: true, Operations: []string{"completion"}}},
+		}},
+		Private: model.PrivateSetting{
+			BuiltinProviders: []model.BuiltinProviderSource{{Provider: "chatgpt", Enabled: boolPtr(true)}},
+		},
+	})
+	overview := buildModelOverview(settings, routes, true)
+	item := overviewModel(t, overview, "gpt-5-5-mini")
+	if item.Available {
+		t.Fatalf("expected unavailable when no accounts bound: %+v", item)
+	}
+	joined := strings.Join(item.Reasons, ";")
+	if !strings.Contains(joined, "没有绑定账号") {
+		t.Fatalf("expected bubbled unbound reason %q, got %q sources=%+v", "没有绑定账号", joined, item.Sources)
+	}
+}
+
+
+func TestModelOverviewEmitsRoutesWhenLegacyPoolOmitsModel(t *testing.T) {
+	stubPoolModels(t, nil) // no usable catalog / no virtual provider channels
+	routes := []gateway.RouteDetail{
+		{LogicalModelID: "gpt-5-5-mini", LogicalEnabled: true, RouteID: "text.gpt-5-5-mini.chatgpt", Provider: "chatgpt", UpstreamModel: "gpt-5-5-mini", Enabled: true, ProviderEnabled: true, EffectivePriority: 200, EffectiveWeight: 1, BoundAccounts: 2, AvailableAccounts: 2},
+	}
+	legacy := model.ModelChannel{
+		ID: BuiltinPoolChannelID, Name: "内置账号池", Protocol: "openai",
+		BaseURL: "http://nexa.internal", APIKey: "in-process", Enabled: true,
+		// Omits gpt-5-5-mini on purpose — only an older model is listed.
+		Models: []model.ChannelModel{{Model: "gpt-image-2", UpstreamModel: "gpt-image-2", Modality: "image", Operations: []string{"generation"}}},
+	}
+	settings := normalizeSettings(model.Settings{
+		Public: model.PublicSetting{ModelChannel: model.PublicModelChannelSetting{
+			Models: []model.ModelDefinition{{ID: "gpt-5-5-mini", Name: "GPT-5.5 Mini", Modality: "text", Enabled: true, Operations: []string{"completion"}}},
+		}},
+		Private: model.PrivateSetting{Channels: []model.ModelChannel{legacy}},
+	})
+	overview := buildModelOverview(settings, routes, true)
+	item := overviewModel(t, overview, "gpt-5-5-mini")
+	if !item.Available {
+		t.Fatalf("expected available via RouteDetails when legacy pool omitted the model: reasons=%v sources=%+v", item.Reasons, item.Sources)
 	}
 }
 

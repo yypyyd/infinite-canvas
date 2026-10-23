@@ -21,18 +21,30 @@ export function servingChannels(item: AdminModelOverviewItem) {
     );
 }
 
-/** Prefer item.reasons; fall back to inactive source reasons so status tooltips never look silent. */
+/** Prefer item.reasons; fall back to inactive source / route reasons so status never looks silent. */
 export function unavailableReasons(item: AdminModelOverviewItem) {
     const reasons = [...(item.reasons || [])];
+    const push = (reason?: string) => {
+        if (reason && !reasons.includes(reason)) reasons.push(reason);
+    };
     if (!reasons.length) {
         for (const source of item.sources || []) {
             if (source.active) continue;
-            for (const reason of source.reasons || []) {
-                if (reason && !reasons.includes(reason)) reasons.push(reason);
+            for (const reason of source.reasons || []) push(reason);
+            for (const route of source.routes || []) {
+                if (route.available) continue;
+                for (const reason of route.reasons || []) push(reason);
             }
         }
     }
     return reasons;
+}
+
+/** Short label for the status cell; keep the full list in the tooltip. */
+export function statusReasonLabel(reasons: string[]) {
+    if (!reasons.length) return "不可用";
+    const primary = reasons[0];
+    return primary.length > 10 ? `${primary.slice(0, 10)}…` : primary;
 }
 
 type ModelsProps = {
@@ -137,7 +149,7 @@ export function ModelListTable({ models, loading, isSaving, channelModelIds, onE
                     { title: "渠道", width: 260, render: (_, item) => <ModelTags names={servingChannels(item)} max={3} /> },
                     {
                         title: "状态",
-                        width: 90,
+                        width: 150,
                         render: (_, item) => {
                             const reasons = unavailableReasons(item);
                             const tip = reasons.join("；");
@@ -159,7 +171,7 @@ export function ModelListTable({ models, loading, isSaving, channelModelIds, onE
                             }
                             return (
                                 <Tooltip title={tip || "不可用"}>
-                                    <Tag color="red">不可用</Tag>
+                                    <Tag color="red">{statusReasonLabel(reasons)}</Tag>
                                 </Tooltip>
                             );
                         },

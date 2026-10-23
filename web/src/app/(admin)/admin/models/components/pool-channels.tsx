@@ -401,7 +401,8 @@ export function mappingToAliases(text: string, previous: AdminPoolModelAlias[]):
 }
 
 export function PoolModelTags({ row }: { row: PoolChannelRow }) {
-    return <ModelTags names={row.models.map((item) => ({ name: item.name, off: !item.enabled }))} />;
+    // Align with Models-tab availability: enabled route with no healthy accounts is off.
+    return <ModelTags names={row.models.map((item) => ({ name: item.name, off: !item.enabled || Number(item.route?.healthy_accounts || 0) <= 0 }))} />;
 }
 
 export function ModelTags({ names, max = 4 }: { names: { name: string; off?: boolean }[]; max?: number }) {

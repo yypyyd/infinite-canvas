@@ -799,7 +799,8 @@ func (s *V1Service) prepareChatCompletion(ctx context.Context, principal *APIPri
 		return nil, fmt.Errorf("%w: model and messages are required", ErrUnsupportedParams)
 	}
 	stream, _ := request["stream"].(bool)
-	prompt := chatPrompt(messages)
+	tools := chatRequestTools(request)
+	prompt := chatPromptWithTools(messages, tools)
 
 	logicalItem, err := s.models.Get(ctx, modelName)
 	if err != nil {
@@ -929,13 +930,13 @@ func (s *V1Service) prepareChatCompletion(ctx context.Context, principal *APIPri
 					text, callErr = s.grok.GenerateText(ctx, token.Value, prompt, grok.ChatModeForModel(upstreamModel))
 				}
 				if callErr == nil {
-					responseHeader, responseBody = openAITextResponse(modelItem.EffectiveName(), text, stream)
+					responseHeader, responseBody = reshapeGenerateTextWithTools(modelItem.EffectiveName(), text, tools, stream)
 				}
 			case "chatgpt":
 				var text string
 				text, callErr = s.chatgpt.GenerateText(ctx, token.Value, prompt, upstreamModel)
 				if callErr == nil {
-					responseHeader, responseBody = openAITextResponse(modelItem.EffectiveName(), text, stream)
+					responseHeader, responseBody = reshapeGenerateTextWithTools(modelItem.EffectiveName(), text, tools, stream)
 				}
 			}
 			if callErr == nil && responseBody == nil {

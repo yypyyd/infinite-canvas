@@ -1,7 +1,7 @@
 import type { PricingRule } from "@/constant/credits";
 
 export const defaultVideoRatios = ["16:9", "9:16"];
-export const defaultVideoResolutions = ["720p"];
+export const defaultVideoResolutions = ["480p", "720p"];
 export const defaultVideoDurations = [6, 10];
 
 export type VideoModelDefinition = {

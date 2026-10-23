@@ -505,7 +505,7 @@ func mergeEnabledChannelCapabilities(items []model.ModelDefinition, channels []m
 		items[index].Modality = capability.modality
 		items[index].Operations = normalizeModelOperations(append(items[index].Operations, capability.operations...), items[index].ID, capability.modality)
 		items[index].AspectRatios = normalizeStringList(append(items[index].AspectRatios, capability.aspectRatios...), normalizePricingToken)
-		items[index].ResolutionTiers = intersectResolutionTiers(items[index].ResolutionTiers, capability.resolutionTiers, capability.unrestrictedResolution)
+		items[index].ResolutionTiers = mergeResolutionTiers(items[index].ResolutionTiers, capability.resolutionTiers, capability.unrestrictedResolution)
 		items[index].Durations = normalizeDurations(append(items[index].Durations, capability.durations...))
 		items[index].MaxReferenceImages = capability.maxReferenceImages
 		items[index].MaxReferenceVideos = capability.maxReferenceVideos
@@ -534,22 +534,14 @@ func mergeEnabledChannelCapabilities(items []model.ModelDefinition, channels []m
 	return items
 }
 
-func intersectResolutionTiers(public []string, channels []string, unrestricted bool) []string {
-	public = normalizeStringList(public, normalizeResolutionTier)
+// mergeResolutionTiers keeps catalog tiers the admin selected and unions in
+// what enabled channels declare. Intersecting used to silently drop values like
+// 480p when a channel still only listed 720p, so admin could not save them.
+func mergeResolutionTiers(public []string, channels []string, unrestricted bool) []string {
 	if unrestricted {
-		return public
+		return normalizeStringList(public, normalizeResolutionTier)
 	}
-	available := map[string]bool{}
-	for _, tier := range normalizeStringList(channels, normalizeResolutionTier) {
-		available[tier] = true
-	}
-	result := make([]string, 0, len(public))
-	for _, tier := range public {
-		if available[tier] {
-			result = append(result, tier)
-		}
-	}
-	return result
+	return normalizeStringList(append(append([]string{}, public...), channels...), normalizeResolutionTier)
 }
 
 func defaultModelResolutionTiers(modality string) []string {
@@ -557,7 +549,7 @@ func defaultModelResolutionTiers(modality string) []string {
 	case "image":
 		return []string{"1k"}
 	case "video":
-		return []string{"720p"}
+		return []string{"480p", "720p"}
 	}
 	return []string{}
 }
@@ -793,6 +785,8 @@ func normalizeResolutionTier(value string) string {
 		return "2k"
 	case "high":
 		return "4k"
+	case "480":
+		return "480p"
 	case "720":
 		return "720p"
 	case "1080":

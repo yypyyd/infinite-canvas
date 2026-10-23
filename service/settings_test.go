@@ -120,7 +120,7 @@ func TestNormalizeSettingsAddsNewChannelModelsToExistingCatalog(t *testing.T) {
 	})
 
 	models := settings.Public.ModelChannel.Models
-	if len(models) != 3 || models[0].ID != "gpt-5.5" || models[0].Enabled || models[1].ID != "gpt-image-2" || !models[1].Enabled || models[2].ID != "firefly-video" || !reflect.DeepEqual(models[2].ResolutionTiers, []string{"720p"}) {
+	if len(models) != 3 || models[0].ID != "gpt-5.5" || models[0].Enabled || models[1].ID != "gpt-image-2" || !models[1].Enabled || models[2].ID != "firefly-video" || !reflect.DeepEqual(models[2].ResolutionTiers, []string{"480p", "720p"}) {
 		t.Fatalf("model catalog = %#v", models)
 	}
 	if want := []string{"gpt-image-2", "firefly-video"}; !reflect.DeepEqual(settings.Public.ModelChannel.AvailableModels, want) {
@@ -152,7 +152,7 @@ func TestNormalizeSettingsMergesEnabledChannelCapabilitiesIntoCatalog(t *testing
 	if want := []string{"4:3", "16:9", "21:9", "9:16"}; !reflect.DeepEqual(got.AspectRatios, want) {
 		t.Fatalf("aspect ratios = %#v, want %#v", got.AspectRatios, want)
 	}
-	if want := []string{"720p"}; !reflect.DeepEqual(got.ResolutionTiers, want) {
+	if want := []string{"480p", "720p", "1080p"}; !reflect.DeepEqual(got.ResolutionTiers, want) {
 		t.Fatalf("resolution tiers = %#v, want %#v", got.ResolutionTiers, want)
 	}
 	if want := []int{4, 5, 10}; !reflect.DeepEqual(got.Durations, want) {

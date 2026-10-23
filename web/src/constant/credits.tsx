@@ -218,6 +218,7 @@ function normalizeResolutionTier(value: string) {
     if (normalized === "low") return "1k";
     if (normalized === "medium") return "2k";
     if (normalized === "high") return "4k";
+    if (normalized === "480") return "480p";
     if (normalized === "720") return "720p";
     if (normalized === "1080") return "1080p";
     if (normalized === "2160") return "4k";

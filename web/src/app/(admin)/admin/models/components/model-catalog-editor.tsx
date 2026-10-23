@@ -15,7 +15,9 @@ const modalityOptions = [
     { label: "音频", value: "audio" },
 ];
 const aspectRatioOptions = ["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "21:9"];
-const resolutionOptions = ["1k", "2k", "4k", "480p", "720p", "1080p"];
+const imageResolutionOptions = ["1k", "2k", "4k"];
+const videoResolutionOptions = ["480p", "720p", "1080p"];
+const resolutionOptions = [...imageResolutionOptions, ...videoResolutionOptions];
 const durationOptions = Array.from({ length: 27 }, (_, index) => index + 4);
 const modalityLabel = Object.fromEntries(modalityOptions.map((item) => [item.value, item.label]));
 const operationLabel: Record<string, string> = { generation: "生成", edit: "编辑", completion: "补全", speech: "语音" };
@@ -561,8 +563,24 @@ export function ModelCatalogEditor({ value, pricingRules, channels, isSaving, on
                         ) : null}
                         {selectedModality === "image" || selectedModality === "video" ? (
                             <Col span={12}>
-                                <Form.Item name="resolutionTiers" label="支持分辨率档" extra="分辨率只定义模型能力；需要计费时在下方手动添加价格。">
-                                    <Select mode="tags" allowClear options={resolutionOptions.map((item) => ({ label: item.toUpperCase(), value: item }))} />
+                                <Form.Item
+                                    name="resolutionTiers"
+                                    label="支持分辨率档"
+                                    extra={
+                                        selectedModality === "video"
+                                            ? "视频可选 480P/720P/1080P；保存后会保留管理员勾选的档位，并在下方为各档添加价格。"
+                                            : "图片可选 1K/2K/4K；分辨率只定义模型能力，需要计费时在下方手动添加价格。"
+                                    }
+                                >
+                                    <Select
+                                        mode="tags"
+                                        allowClear
+                                        tokenSeparators={[",", "\n"]}
+                                        options={(selectedModality === "video" ? videoResolutionOptions : imageResolutionOptions).map((item) => ({
+                                            label: item.toUpperCase(),
+                                            value: item,
+                                        }))}
+                                    />
                                 </Form.Item>
                             </Col>
                         ) : null}
@@ -591,7 +609,7 @@ export function ModelCatalogEditor({ value, pricingRules, channels, isSaving, on
                                     allowClear
                                     size="small"
                                     value={pricingTierInput}
-                                    options={unique([...resolutionOptions, ...selectedResolutionTiers])
+                                    options={unique([...(selectedModality === "video" ? videoResolutionOptions : selectedModality === "image" ? imageResolutionOptions : resolutionOptions), ...selectedResolutionTiers])
                                         .filter((item) => !draftRules.some((rule) => rule.resolutionTier === item))
                                         .map((item) => ({ label: item.toUpperCase(), value: item }))}
                                     placeholder="选择或输入分辨率档"
@@ -755,7 +773,7 @@ function syncModelCapabilities(model: AdminManagedModel, channelModel?: AdminCha
 
 function defaultResolutionTiers(modality: string) {
     if (modality === "image") return ["1k"];
-    if (modality === "video") return ["720p"];
+    if (modality === "video") return ["480p", "720p"];
     return [];
 }
 

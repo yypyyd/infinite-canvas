@@ -246,19 +246,38 @@ export default function AdminModelsPage() {
     };
 
     const persistModels = (models: AdminManagedModel[], pricingRules: AdminPricingRule[]) =>
-        persistSettings((latest) => ({
-            ...latest,
-            public: {
-                ...latest.public,
-                modelChannel: {
-                    ...latest.public.modelChannel,
-                    models,
-                    pricingRules,
-                    availableModels: models.filter((model) => model.enabled).map((model) => model.id),
-                    modelAspectRatios: Object.fromEntries(models.map((model) => [model.id, model.aspectRatios])),
+        persistSettings((latest) => {
+            // Keep channel capability lists in sync with catalog tiers so saving 480P
+            // on the model catalog remains routable on linked channels (e.g. LecAPI).
+            const byId = new Map(models.map((model) => [model.id, model]));
+            const channels = (latest.private.channels || []).map((channel) => ({
+                ...channel,
+                models: (channel.models || []).map((item) => {
+                    const managed = byId.get(item.model);
+                    if (!managed?.resolutionTiers?.length) return item;
+                    const resolutionTiers = Array.from(
+                        new Set([...(item.resolutionTiers || []), ...managed.resolutionTiers].map(normalizeResolutionTier).filter(Boolean)),
+                    );
+                    return resolutionTiers.join("\0") === (item.resolutionTiers || []).map(normalizeResolutionTier).filter(Boolean).join("\0")
+                        ? item
+                        : { ...item, resolutionTiers };
+                }),
+            }));
+            return {
+                ...latest,
+                public: {
+                    ...latest.public,
+                    modelChannel: {
+                        ...latest.public.modelChannel,
+                        models,
+                        pricingRules,
+                        availableModels: models.filter((model) => model.enabled).map((model) => model.id),
+                        modelAspectRatios: Object.fromEntries(models.map((model) => [model.id, model.aspectRatios])),
+                    },
                 },
-            },
-        }));
+                private: { ...latest.private, channels },
+            };
+        });
     const showModel = (id: string) => {
         setViewChannelIndex(null);
         setRequestedModel(id);
@@ -1304,7 +1323,7 @@ function createChannelModel(model: string, managedModels: AdminManagedModel[], d
             modality,
             operations: managedModel?.operations?.length ? managedModel.operations : inferModelOperations(model, modality),
             aspectRatios: discovered?.supportedRatios?.length ? discovered.supportedRatios : managedModel?.aspectRatios || [],
-            resolutionTiers: discovered?.supportedResolutions?.length ? discovered.supportedResolutions : managedModel?.resolutionTiers?.length ? managedModel.resolutionTiers : modality === "image" ? ["1k"] : modality === "video" ? ["720p"] : [],
+            resolutionTiers: discovered?.supportedResolutions?.length ? discovered.supportedResolutions : managedModel?.resolutionTiers?.length ? managedModel.resolutionTiers : modality === "image" ? ["1k"] : modality === "video" ? ["480p", "720p"] : [],
             durations: discovered?.supportedDurations?.length ? discovered.supportedDurations : managedModel?.durations || [],
             maxReferenceImages: discovered?.referenceCapabilityProvided ? discovered.maxReferenceImages : managedModel?.maxReferenceImages || 0,
             maxReferenceVideos: discovered?.referenceVideosProvided ? discovered.maxReferenceVideos : managedModel?.maxReferenceVideos || 0,
@@ -1378,6 +1397,7 @@ function normalizeResolutionTier(value: string) {
     if (normalized === "low") return "1k";
     if (normalized === "medium") return "2k";
     if (normalized === "high" || normalized === "2160") return "4k";
+    if (normalized === "480") return "480p";
     if (normalized === "720") return "720p";
     if (normalized === "1080") return "1080p";
     if (normalized.includes("4k")) return "4k";

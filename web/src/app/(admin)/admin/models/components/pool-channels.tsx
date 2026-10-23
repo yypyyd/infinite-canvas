@@ -187,7 +187,7 @@ export function PoolChannelDrawer({ token, row, pool: _pool, builtinProvider, le
         <Drawer
             title={row ? `编辑渠道 · ${row.label}` : "内置平台"}
             open={Boolean(row)}
-            width="min(1040px, calc(100vw - 32px))"
+            width="min(1400px, calc(100vw - 32px))"
             onClose={onClose}
             destroyOnHidden
             extra={

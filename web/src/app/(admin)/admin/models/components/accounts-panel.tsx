@@ -234,7 +234,7 @@ export function AccountsPanel({ fixedProvider = "", embedded = false }: Accounts
                 rowKey="id"
                 loading={accounts.isLoading}
                 dataSource={accounts.data?.data || []}
-                scroll={{ x: embedded ? 1180 : 1480 }}
+                scroll={{ x: embedded ? 1360 : 1600 }}
                 size={embedded ? "small" : "middle"}
                 rowSelection={{
                     selectedRowKeys: selectedIds,
@@ -273,13 +273,13 @@ export function AccountsPanel({ fixedProvider = "", embedded = false }: Accounts
                     ),
                 }}
                 columns={[
-                    ...(fixedProvider ? [] : [{ title: "平台", dataIndex: "provider" as const, width: 120, fixed: "left" as const, render: (value: string) => providerLabels[value] || value }]),
-                    { title: "账号", width: 200, render: (_: unknown, item: GatewayAccount) => <Typography.Text ellipsis={{ tooltip: item.id }}>{item.label || item.email || item.id}</Typography.Text> },
-                    { title: "健康", dataIndex: "health", width: 96, render: (value: string) => <Tag color={healthColors[value] || "default"}>{healthLabels[value] || value}</Tag> },
-                    { title: "额度", dataIndex: "quota_state", width: 100, render: (value: string) => quotaStateLabels[value] || value || "—" },
+                    ...(fixedProvider ? [] : [{ title: "平台", dataIndex: "provider" as const, width: 128, fixed: "left" as const, render: (value: string) => providerLabels[value] || value }]),
+                    { title: "账号", width: 240, render: (_: unknown, item: GatewayAccount) => <Typography.Text ellipsis={{ tooltip: item.id }}>{item.label || item.email || item.id}</Typography.Text> },
+                    { title: "健康", dataIndex: "health", width: 108, render: (value: string) => <Tag color={healthColors[value] || "default"}>{healthLabels[value] || value}</Tag> },
+                    { title: "额度", dataIndex: "quota_state", width: 110, render: (value: string) => quotaStateLabels[value] || value || "—" },
                     {
                         title: "权重",
-                        width: 88,
+                        width: 100,
                         render: (_: unknown, item: GatewayAccount) => (
                             <InputNumber
                                 key={`w-${item.id}-${item.weight}`}
@@ -297,7 +297,7 @@ export function AccountsPanel({ fixedProvider = "", embedded = false }: Accounts
                     },
                     {
                         title: "并发上限",
-                        width: 88,
+                        width: 120,
                         render: (_: unknown, item: GatewayAccount) => (
                             <Tooltip title="0 表示不限">
                                 <InputNumber
@@ -315,12 +315,12 @@ export function AccountsPanel({ fixedProvider = "", embedded = false }: Accounts
                             </Tooltip>
                         ),
                     },
-                    { title: "进行中", dataIndex: "active_jobs", width: 72 },
-                    { title: "成功 / 失败", width: 100, render: (_: unknown, item: GatewayAccount) => `${item.success_total} / ${item.fail_total}` },
-                    { title: "最近使用", width: 150, render: (_: unknown, item: GatewayAccount) => formatTime(item.last_used_at) },
+                    { title: "进行中", dataIndex: "active_jobs", width: 88 },
+                    { title: "成功 / 失败", width: 120, render: (_: unknown, item: GatewayAccount) => `${item.success_total} / ${item.fail_total}` },
+                    { title: "最近使用", width: 168, render: (_: unknown, item: GatewayAccount) => formatTime(item.last_used_at) },
                     {
                         title: "启用",
-                        width: 72,
+                        width: 80,
                         render: (_: unknown, item: GatewayAccount) => (
                             <Switch
                                 size="small"
@@ -339,10 +339,10 @@ export function AccountsPanel({ fixedProvider = "", embedded = false }: Accounts
                     },
                     {
                         title: "操作",
-                        width: 168,
+                        width: 200,
                         fixed: "right",
                         render: (_: unknown, item: GatewayAccount) => (
-                            <Space size={0}>
+                            <Space size={4}>
                                 <Button type="text" size="small" icon={<ExperimentOutlined />} disabled={Boolean(busyIds[item.id])} onClick={() => setTesting(item)}>
                                     测试
                                 </Button>

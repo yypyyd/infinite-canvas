@@ -255,33 +255,40 @@ function parseJSONValue(value) {
         const cookie = cookieFromObject(value);
         if (cookie) {
             const provider = cookieProvider(cookie);
-            const arpSessionToken = provider === "adobe" ? adobeARPSessionToken(value) : "";
+            if (provider === "adobe") {
+                // Our stored Adobe shape: cookie required; arp_session_token optional
+                // from aliases (arp_session_token / x-arp-session-id / ...).
+                // email, ims_sid, and top-level sherlockToken are ignored on import.
+                const arpSessionToken = adobeARPSessionToken(value);
+                return [
+                    {
+                        provider,
+                        credential: arpSessionToken ? { cookie, arp_session_token: arpSessionToken } : { cookie },
+                    },
+                ];
+            }
             return [
                 {
                     provider,
-                    credential: arpSessionToken
-                        ? {
-                              cookie,
-                              arp_session_token: arpSessionToken,
-                          }
-                        : provider === "oreate"
-                          ? {
-                                cookie,
-                                email: String(value.email || "").trim(),
-                                ouid: String(value.ouid || "").trim(),
-                                user_agent: String(value.user_agent || value.userAgent || "").trim(),
-                                reg_ts: Number(value.reg_ts || value.createTime || 0) || 0,
-                                vip: String(value.vip || "0").trim(),
-                            }
-                          : provider === "byteplus"
+                    credential:
+                        provider === "oreate"
                             ? {
-                                  cookie_string: cookie,
-                                  email: String(value.email || value.account?.account_email || "").trim(),
-                                  password: String(value.password || value.login_secret || "").trim(),
-                                  session_expires_at: String(value.session_expires_at || "").trim(),
-                                  session_expires: Number(value.session_expires || 0) || 0,
+                                  cookie,
+                                  email: String(value.email || "").trim(),
+                                  ouid: String(value.ouid || "").trim(),
+                                  user_agent: String(value.user_agent || value.userAgent || "").trim(),
+                                  reg_ts: Number(value.reg_ts || value.createTime || 0) || 0,
+                                  vip: String(value.vip || "0").trim(),
                               }
-                            : cookie,
+                            : provider === "byteplus"
+                              ? {
+                                    cookie_string: cookie,
+                                    email: String(value.email || value.account?.account_email || "").trim(),
+                                    password: String(value.password || value.login_secret || "").trim(),
+                                    session_expires_at: String(value.session_expires_at || "").trim(),
+                                    session_expires: Number(value.session_expires || 0) || 0,
+                                }
+                              : cookie,
                 },
             ];
         }
@@ -304,6 +311,54 @@ export function uniqueCredentialImports(items) {
     });
 }
 
+const IMPORT_TEXT_EXT = /\.(json|txt|ndjson|jsonl)$/i;
+
+function looksLikeJSONLine(line) {
+    const trimmed = String(line || "").trim();
+    return trimmed.startsWith("{") || trimmed.startsWith("[");
+}
+
+/**
+ * Parse one text document: whole JSON, NDJSON / JSONL, or one raw secret per line.
+ * Structured multi-account exports (arrays, {accounts:[...]}) stay supported.
+ */
+function parseTextDocument(text, label = "import", { strictJSON = false } = {}) {
+    const body = String(text ?? "").trim();
+    if (!body) return [];
+    try {
+        return parseJSONValue(JSON.parse(body));
+    } catch (error) {
+        if (strictJSON && !body.includes("\n") && !body.includes("\r")) {
+            throw new Error(`${label} 不是有效的 JSON`);
+        }
+    }
+
+    const lines = body.split(/\r?\n/);
+    const jsonish = lines.filter((line) => looksLikeJSONLine(line));
+    if (jsonish.length) {
+        const items = [];
+        let parsedAny = false;
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            if (looksLikeJSONLine(trimmed)) {
+                try {
+                    items.push(...parseJSONValue(JSON.parse(trimmed)));
+                    parsedAny = true;
+                } catch {
+                    if (strictJSON) throw new Error(`${label} 含有无效的 NDJSON 行`);
+                }
+            } else if (!strictJSON) {
+                items.push(...classifyString(trimmed));
+            }
+        }
+        if (parsedAny) return items;
+    }
+
+    if (strictJSON) throw new Error(`${label} 不是有效的 JSON 或 NDJSON`);
+    return lines.flatMap(classifyString);
+}
+
 /**
  * Restore the original smart-import contract: callers paste credentials and do
  * not choose a provider. Structured exports may contain more than one account.
@@ -311,22 +366,10 @@ export function uniqueCredentialImports(items) {
 export function parseCredentialImports(value) {
     const text = String(value ?? "").trim();
     if (!text) return [];
-    try {
-        return uniqueCredentialImports(parseJSONValue(JSON.parse(text)));
-    } catch {
-        return uniqueCredentialImports(text.split(/\r?\n/).flatMap(classifyString));
-    }
+    return uniqueCredentialImports(parseTextDocument(text));
 }
 
-function parseJSONDocument(text, label) {
-    try {
-        return parseJSONValue(JSON.parse(text));
-    } catch {
-        throw new Error(`${label} 不是有效的 JSON`);
-    }
-}
-
-/** Parse one JSON or ZIP export using the same limits as the previous importer. */
+/** Parse one JSON/TXT/NDJSON or ZIP export (nested text files allowed). */
 function parseCredentialFileBytes(bytes, filename = "accounts.json") {
     const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
     if (data.byteLength > MAX_IMPORT_FILE_BYTES) throw new Error("导入文件不能超过 20 MB");
@@ -339,26 +382,31 @@ function parseCredentialFileBytes(bytes, filename = "accounts.json") {
         let limitError = "";
         const files = unzipSync(data, {
             filter(file) {
-                if (file.name.endsWith("/") || !/\.json$/i.test(file.name)) return false;
+                const name = String(file.name || "").replace(/\\/g, "/");
+                if (name.endsWith("/") || !IMPORT_TEXT_EXT.test(name)) return false;
+                // Skip macOS resource forks / junk while still recursing folders.
+                const base = name.split("/").pop() || name;
+                if (base.startsWith(".") || name.includes("__MACOSX/")) return false;
                 count++;
                 total += Number(file.originalSize || 0);
-                if (count > MAX_ZIP_JSON_FILES) limitError = "ZIP 内 JSON 文件不能超过 1000 个";
+                if (count > MAX_ZIP_TEXT_FILES) limitError = "ZIP 内文本文件不能超过 1000 个";
                 if (Number(file.originalSize || 0) > MAX_ZIP_ENTRY_BYTES) limitError = `${file.name} 解压后超过 2 MB`;
-                if (total > MAX_IMPORT_FILE_BYTES) limitError = "ZIP 解压后的 JSON 总大小不能超过 20 MB";
+                if (total > MAX_IMPORT_FILE_BYTES) limitError = "ZIP 内解压后文本总大小不能超过 20 MB";
                 return !limitError;
             },
         });
         if (limitError) throw new Error(limitError);
         for (const [name, content] of Object.entries(files)) {
-            items.push(...parseJSONDocument(strFromU8(content), name));
+            items.push(...parseTextDocument(strFromU8(content), name, { strictJSON: IMPORT_TEXT_EXT.test(name) && /\.(json|ndjson|jsonl)$/i.test(name) }));
         }
     } else {
-        items = parseJSONDocument(strFromU8(data), filename);
+        const strictJSON = /\.(json|ndjson|jsonl)$/i.test(filename);
+        items = parseTextDocument(strFromU8(data), filename, { strictJSON });
     }
 
     items = uniqueCredentialImports(items);
     if (!items.length) {
-        throw new Error("文件中没有识别到可导入的账号凭据（仅 Agent Identity 的凭据不能用于生图）");
+        throw new Error("文件里没有识别到可导入的账号凭证（或 Agent Identity 等凭证不被当前网关支持）");
     }
     return items;
 }
@@ -370,4 +418,4 @@ export async function parseCredentialFile(file) {
 
 const MAX_IMPORT_FILE_BYTES = 20 * 1024 * 1024;
 const MAX_ZIP_ENTRY_BYTES = 2 * 1024 * 1024;
-const MAX_ZIP_JSON_FILES = 1000;
+const MAX_ZIP_TEXT_FILES = 1000;

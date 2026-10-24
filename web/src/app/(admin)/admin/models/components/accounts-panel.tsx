@@ -380,10 +380,14 @@ export function AccountsPanel({ fixedProvider = "", embedded = false }: Accounts
                 destroyOnHidden
             >
                 <Space direction="vertical" style={{ width: "100%" }}>
-                    <Typography.Text type="secondary">粘贴 Access Token / Cookie / SSO / 或完整账号 JSON，每行或每个 JSON 一个账号；平台可自动识别也可上传 JSON、TXT 或 ZIP 文件。</Typography.Text>
+                    <Typography.Text type="secondary">
+                        粘贴 Access Token / Cookie / SSO / 完整多账号 JSON（数组、每行 JSON/NDJSON、或 accounts 数组包裹）；平台会自动识别。也可上传 .json / .txt / .ndjson / .jsonl / .zip（ZIP 内嵌套文本文件会递归识别多个 Adobe 等账号）。Adobe
+                        按当前格式入库：cookie 必填，arp_session_token 可选（兼容 x-arp-session-id 等别名）；email / ims_sid / 顶层 sherlockToken 忽略。
+                    </Typography.Text>
                     <Input.TextArea rows={8} value={importText} onChange={(event) => setImportText(event.target.value)} placeholder="每行一条凭据" />
                     <Upload
                         multiple
+                        accept=".json,.txt,.ndjson,.jsonl,.zip,application/json,application/zip,text/plain"
                         showUploadList={false}
                         beforeUpload={async (file) => {
                             const items = (await parseCredentialFile(file)) as ImportItem[];

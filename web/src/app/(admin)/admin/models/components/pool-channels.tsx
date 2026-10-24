@@ -107,6 +107,10 @@ export function PoolChannelDrawer({ token, row, pool: _pool, builtinProvider, le
     const [saving, setSaving] = useState(false);
     const [tab, setTab] = useState(initialTab === "test" ? "accounts" : initialTab);
     const settings = useGatewayQuery(["settings"], gatewayApi.settings);
+    // Parent may hold a stale row snapshot; prefer the live gateway query so model
+    // enable toggles (and priority/weight) reflect PATCH + reload immediately.
+    const liveChannels = usePoolChannels();
+    const liveRow = (row && liveChannels.rows.find((item) => item.provider === row.provider)) || row;
 
     useEffect(() => {
         setTab(initialTab === "test" ? "accounts" : initialTab || "base");
@@ -197,10 +201,12 @@ export function PoolChannelDrawer({ token, row, pool: _pool, builtinProvider, le
     };
 
     const updateRoute = (modelId: string, routeId: string, patch: { enabled?: boolean; priority?: number | null; weight?: number | null }, opts?: { enableLogical?: boolean }) =>
-        run(async (t) => {
+        void run(async (t) => {
             if (opts?.enableLogical) await gatewayApi.setModelEnabled(t, modelId, true);
             return gatewayApi.updateRoute(t, modelId, routeId, patch);
-        }, "已更新").then(() => onChanged());
+        }, "已更新").then((result) => {
+            if (result !== undefined) onChanged();
+        });
 
     const channelId = row ? `builtin-provider-${row.provider}` : "";
 
@@ -362,13 +368,13 @@ export function PoolChannelDrawer({ token, row, pool: _pool, builtinProvider, le
                             >
                                 <Input.TextArea rows={6} className="font-mono" placeholder="{}" disabled={usingLegacyFallback || saving || isSaving} />
                             </Form.Item>
-                            <Typography.Title level={5}>本平台模型（{row.models.length ? row.models.length : "—"}）</Typography.Title>
-                            {!row.models.length ? <Alert type="info" showIcon className="!mb-3" message="暂无本平台路由。空的模型映射请填 {}，不要填 0。" /> : null}
+                            <Typography.Title level={5}>本平台模型（{liveRow?.models.length ? liveRow.models.length : "—"}）</Typography.Title>
+                            {!(liveRow?.models.length) ? <Alert type="info" showIcon className="!mb-3" message="暂无本平台路由。空的模型映射请填 {}，不要填 0。" /> : null}
                             <Table
                                 rowKey={(item) => item.route.id}
                                 size="small"
                                 pagination={false}
-                                dataSource={row.models}
+                                dataSource={liveRow?.models || []}
                                 columns={[
                                     {
                                         title: "模型 / 上游",
@@ -412,13 +418,13 @@ export function PoolChannelDrawer({ token, row, pool: _pool, builtinProvider, le
                                         title: "优先级覆盖",
                                         width: 130,
                                         render: (_, item) => (
-                                            <OverrideNumber value={item.route.priority} inherited={item.route.effective_priority ?? row.poolPriority} min={-1000} onSave={(priority) => void updateRoute(item.id, item.route.id, { priority })} />
+                                            <OverrideNumber value={item.route.priority} inherited={item.route.effective_priority ?? liveRow?.poolPriority ?? row.poolPriority} min={-1000} onSave={(priority) => void updateRoute(item.id, item.route.id, { priority })} />
                                         ),
                                     },
                                     {
                                         title: "权重覆盖",
                                         width: 130,
-                                        render: (_, item) => <OverrideNumber value={item.route.weight} inherited={item.route.effective_weight ?? row.poolWeight} min={1} onSave={(weight) => void updateRoute(item.id, item.route.id, { weight })} />,
+                                        render: (_, item) => <OverrideNumber value={item.route.weight} inherited={item.route.effective_weight ?? liveRow?.poolWeight ?? row.poolWeight} min={1} onSave={(weight) => void updateRoute(item.id, item.route.id, { weight })} />,
                                     },
                                 ]}
                             />

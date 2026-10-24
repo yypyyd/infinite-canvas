@@ -344,7 +344,12 @@ func (r *ModelRouteRepository) UpdateRoute(ctx context.Context, routeID string, 
 	delete(patch, "provider")
 	delete(patch, "runtime_model")
 	patch["updated_at"] = time.Now()
-	if err := r.db.WithContext(ctx).Model(&model.ModelRoute{}).Where("id = ?", routeID).Updates(patch).Error; err != nil {
+	// Select every patched column so boolean false (enabled=false) is never skipped.
+	cols := make([]string, 0, len(patch))
+	for key := range patch {
+		cols = append(cols, key)
+	}
+	if err := r.db.WithContext(ctx).Model(&model.ModelRoute{}).Where("id = ?", routeID).Select(cols).Updates(patch).Error; err != nil {
 		return nil, err
 	}
 	var item model.ModelRoute

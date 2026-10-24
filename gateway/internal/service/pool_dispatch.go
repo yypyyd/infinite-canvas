@@ -565,7 +565,7 @@ func (s *V1Service) refreshDispatchQuota(parent context.Context, pool string, to
 		switch pool {
 		case "adobe":
 			if s.adobe != nil {
-				data, err = s.adobe.FetchCreditsBalance(probeCtx, token.Value)
+				data, err = s.adobe.FetchCreditsBalance(probeCtx, token.ID, token.Value)
 			}
 		case "byteplus":
 			if s.byteplus != nil {
@@ -778,6 +778,13 @@ func (s *V1Service) coolDownAccount(pool, accountID string) {
 
 func (s *V1Service) coolDownAccountWithToken(pool string, token model.TokenAccount) {
 	s.coolDownAccount(pool, token.ID)
+	// Adobe correlates IMS + generate-async as one browser session. Temporary
+	// "system under load" responses are often WAF/fingerprint masks; rotating
+	// the residential exit after them makes the same token roam IPs and
+	// reinforces the reject. Keep the sticky lease for adobe temp cool-downs.
+	if pool == "adobe" {
+		return
+	}
 	s.rotateAccountProxy(pool, token)
 }
 
@@ -793,7 +800,7 @@ func (s *V1Service) rotateAccountProxy(pool string, token model.TokenAccount) {
 		}
 	case "adobe":
 		if s.adobe != nil {
-			s.adobe.RotateProxySession(token.Value)
+			s.adobe.RotateProxySession(token.ID)
 		}
 	case "byteplus":
 		if s.byteplus != nil {

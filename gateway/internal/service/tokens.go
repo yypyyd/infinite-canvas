@@ -730,7 +730,7 @@ func (s *TokenService) checkPendingAdobe(tokenID, cookie string) {
 		s.finishPending(ctx, "adobe", tokenID, "disabled", true, nil)
 		return
 	}
-	result, err := s.adobe.ExchangeCookie(ctx, cookie)
+	result, err := s.adobe.ExchangeCookie(ctx, tokenID, cookie)
 	if err != nil {
 		s.finishPending(ctx, "adobe", tokenID, "disabled", true, nil)
 		_, _ = s.refresh.Update(ctx, tokenID, map[string]any{
@@ -752,7 +752,7 @@ func (s *TokenService) checkPendingAdobe(tokenID, cookie string) {
 	_, _ = s.tokens.Update(ctx, "adobe", tokenID, seed)
 
 	quotaMeta := map[string]any{}
-	if cb, e := s.adobe.FetchCreditsBalance(ctx, result.AccessToken); e == nil {
+	if cb, e := s.adobe.FetchCreditsBalance(ctx, tokenID, result.AccessToken); e == nil {
 		if ra := strings.TrimSpace(stringValue(cb["available_until"])); ra != "" {
 			_, _ = s.tokens.Update(ctx, "adobe", tokenID, map[string]any{"cached_quota_reset_after": ra})
 		}
@@ -761,7 +761,7 @@ func (s *TokenService) checkPendingAdobe(tokenID, cookie string) {
 			quotaMeta["cached_quota_remaining"] = rem
 		}
 	}
-	if prof, e := s.adobe.FetchAccountProfile(ctx, result.AccessToken); e == nil {
+	if prof, e := s.adobe.FetchAccountProfile(ctx, tokenID, result.AccessToken); e == nil {
 		p := map[string]any{}
 		if em := strings.TrimSpace(stringValue(prof["email"])); em != "" {
 			p["account_email"] = em
@@ -1438,7 +1438,7 @@ func (s *TokenService) probeQuota(ctx context.Context, pool, id string) (map[str
 		}, nil
 	}
 	if poolToType(item.Pool) == "adobe" && s.adobe != nil {
-		data, err := s.adobe.FetchCreditsBalance(ctx, item.Value)
+		data, err := s.adobe.FetchCreditsBalance(ctx, item.ID, item.Value)
 		if err != nil {
 			// A balance endpoint can be independently challenged (notably generic
 			// 403s). Only a real generation verdict may disable an account/route.
@@ -1641,7 +1641,7 @@ func (s *TokenService) Email(ctx context.Context, pool, id string) (map[string]a
 		if s.adobe == nil {
 			return map[string]any{"email": nil, "cached": false}, nil
 		}
-		profile, err := s.adobe.FetchAccountProfile(ctx, item.Value)
+		profile, err := s.adobe.FetchAccountProfile(ctx, item.ID, item.Value)
 		if err != nil {
 			if errors.Is(err, adobe.ErrAuth) {
 				_, _ = s.tokens.Update(ctx, item.Pool, item.ID, map[string]any{

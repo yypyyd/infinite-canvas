@@ -2,6 +2,7 @@ package adobe
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"net/url"
 	"strings"
 	"testing"
@@ -31,5 +32,42 @@ func TestResolveARPSessionTokenUsesExportedCookie(t *testing.T) {
 	}
 	if !isBaseARPSessionToken(ResolveARPSessionToken("", "other=secret")) {
 		t.Fatal("missing cookie must retain the sid fallback")
+	}
+}
+
+func TestSubmissionARPSessionTokenKeepsBaseSid(t *testing.T) {
+	base := NewARPSessionToken()
+	first := SubmissionARPSessionToken(base)
+	second := SubmissionARPSessionToken(base)
+	if isBaseARPSessionToken(first) {
+		t.Fatal("submit token must carry Forter feature fields")
+	}
+	raw1, err := base64.StdEncoding.DecodeString(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw2, err := base64.StdEncoding.DecodeString(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var a, b map[string]any
+	if json.Unmarshal(raw1, &a) != nil || json.Unmarshal(raw2, &b) != nil {
+		t.Fatal("submit tokens must decode")
+	}
+	if a["sid"] != b["sid"] {
+		t.Fatalf("sid rotated across submits: %v vs %v", a["sid"], b["sid"])
+	}
+	baseRaw, _ := base64.StdEncoding.DecodeString(base)
+	var basePayload map[string]any
+	_ = json.Unmarshal(baseRaw, &basePayload)
+	if a["sid"] != basePayload["sid"] {
+		t.Fatalf("submit sid lost the stored base sid: %v vs %v", a["sid"], basePayload["sid"])
+	}
+	if strings.TrimSpace(stringValue(a["ftr"])) == "" || a["ftr"] == b["ftr"] {
+		t.Fatal("Forter feature token must refresh per submit")
+	}
+	rich := base64.StdEncoding.EncodeToString([]byte(`{"sid":"keep-me","ftr":"old","ark":"x","bfp":"y"}`))
+	if got := SubmissionARPSessionToken(rich); got != rich {
+		t.Fatal("rich browser ARP must pass through unchanged")
 	}
 }

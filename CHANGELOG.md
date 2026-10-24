@@ -1,6 +1,7 @@
 # CHANGELOG
 
 ## Unreleased
++ [修复] Adobe generate-async 被 3P 网关伪装成 timeout_error /「system under load」：同一账号的 IMS 换票与提交原先用不同的代理粘性键（cookie vs 转轮 access token），参考图上传还走直连出口；现统一按账号 ID 粘性出口，全局代理补 session 标签，临时失败不再转换 Adobe 出口，并对 sid-only ARP 在提交时保持同一 sid（只刷新 Forter ftr）。
 + [优化] 账号池导入：粘贴/上传 JSON、TXT、NDJSON、JSONL 或 ZIP（递归识别嵌套文本）时支持一次导入多个 Adobe 等账号；Adobe 统一按当前入库格式规范化（cookie 必填，arp_session_token 可选并兼容 x-arp-session-id 等别名；忽略 email / ims_sid / 顶层 sherlockToken），并继续自动识别其它平台。
 + [修复] 商品图 / 画布图片设置：GPT 图片家族（gpt-image*）分辨率档硬限制为 1K，避免目录把 ChatGPT(1K) 与 Adobe/BytePlus(2K/4K) 并集后误展示 2K/4K；切换模型时若当前尺寸超出可用档位则自动钳到 1K 预设。其他图片模型仍按目录/渠道档位展示。
 + [修复] 视频设置面板在目录能力变化或切换模型后，将比例 / 分辨率 / 时长写回为当前模型可用值（与商品视频页、画布已有钳制逻辑一致），避免并集档位留下无效选项。

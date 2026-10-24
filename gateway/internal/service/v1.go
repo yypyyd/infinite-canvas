@@ -2906,14 +2906,14 @@ func (s *V1Service) generateAdobeImage(ctx context.Context, eventID string, mode
 	data, err := s.runPoolWithFailoverPolicy(ctx, eventID, "adobe", active, "image", func(token model.TokenAccount) ([]byte, error) {
 		var blobIDs []string
 		for _, ref := range refs {
-			id, upErr := s.adobe.UploadImage(ctx, token.Value, ref, "image/png", "")
+			id, upErr := s.adobe.UploadImage(ctx, token.ID, token.Value, ref, "image/png", "")
 			if upErr != nil {
 				return nil, upErr
 			}
 			blobIDs = append(blobIDs, id)
 		}
 		submitARP := adobe.SubmissionARPSessionToken(token.ARPSessionToken)
-		d, meta, genErr := s.adobe.GenerateImage(ctx, token.Value, submitARP, modelItem.ID, in.Prompt, aspectRatio, resolution, blobIDs, false)
+		d, meta, genErr := s.adobe.GenerateImage(ctx, token.ID, token.Value, submitARP, modelItem.ID, in.Prompt, aspectRatio, resolution, blobIDs, false)
 		if genErr == nil {
 			imageURL = strings.TrimSpace(stringValue(meta["image_url"]))
 
@@ -2963,28 +2963,28 @@ func (s *V1Service) generateAdobeVideo(ctx context.Context, eventID string, mode
 	data, err := s.runPoolWithFailoverPolicy(ctx, eventID, "adobe", active, "video", func(token model.TokenAccount) ([]byte, error) {
 		inputs := adobe.VideoInputs{GenerateAudio: in.GenerateAudio}
 		for _, ref := range refs {
-			id, upErr := s.adobe.UploadImage(ctx, token.Value, ref, "image/png", engine)
+			id, upErr := s.adobe.UploadImage(ctx, token.ID, token.Value, ref, "image/png", engine)
 			if upErr != nil {
 				return nil, upErr
 			}
 			inputs.ImageBlobIDs = append(inputs.ImageBlobIDs, id)
 		}
 		for _, ref := range in.ReferenceVideos {
-			id, upErr := s.adobe.UploadMedia(ctx, token.Value, ref.Data, ref.ContentType, engine, "video")
+			id, upErr := s.adobe.UploadMedia(ctx, token.ID, token.Value, ref.Data, ref.ContentType, engine, "video")
 			if upErr != nil {
 				return nil, upErr
 			}
 			inputs.VideoBlobIDs = append(inputs.VideoBlobIDs, id)
 		}
 		for _, ref := range in.ReferenceAudios {
-			id, upErr := s.adobe.UploadMedia(ctx, token.Value, ref.Data, ref.ContentType, engine, "audio")
+			id, upErr := s.adobe.UploadMedia(ctx, token.ID, token.Value, ref.Data, ref.ContentType, engine, "audio")
 			if upErr != nil {
 				return nil, upErr
 			}
 			inputs.AudioBlobIDs = append(inputs.AudioBlobIDs, id)
 		}
 		submitARP := adobe.SubmissionARPSessionToken(token.ARPSessionToken)
-		bytes, meta, genErr := s.adobe.GenerateVideo(ctx, token.Value, submitARP, engine, in.Prompt, aspectRatio, durationSeconds, resolution, referenceMode, upstreamModel, inputs, false)
+		bytes, meta, genErr := s.adobe.GenerateVideo(ctx, token.ID, token.Value, submitARP, engine, in.Prompt, aspectRatio, durationSeconds, resolution, referenceMode, upstreamModel, inputs, false)
 		if genErr == nil {
 			videoURL = strings.TrimSpace(stringValue(meta["video_url"]))
 			if downloadResult {

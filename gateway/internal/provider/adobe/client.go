@@ -185,9 +185,13 @@ func (c *Client) SetAssigner(assigner proxypool.Assigner) {
 	c.proxyMu.Unlock()
 }
 
-func (c *Client) RotateProxySession(token string) {
+// RotateProxySession drops the sticky egress lease for one durable account id.
+// Pass the pool account id (or another stable identity), never the rotating IMS
+// access token - hashing the access token made cookie exchange and submit land
+// on different exits for the same Firefly session.
+func (c *Client) RotateProxySession(sessionKey string) {
 	if assigner := c.assignerValue(); assigner != nil {
-		assigner.Rotate(proxyAccountID(token))
+		assigner.Rotate(proxyAccountID(sessionKey))
 	}
 }
 
@@ -198,14 +202,19 @@ func (c *Client) assignerValue() proxypool.Assigner {
 }
 
 func (c *Client) egressProxy(account string) string {
+	session := proxyAccountID(account)
 	if assigner := c.assignerValue(); assigner != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		if url, ok := assigner.Assign(ctx, proxyAccountID(account), ""); ok {
+		if url, ok := assigner.Assign(ctx, session, ""); ok {
 			return url
 		}
 	}
-	return c.proxyValue()
+	// Global proxy URLs still need a session label. Without it, every CONNECT
+	// can land on a new residential exit while the IMS token stays the same -
+	// Adobe's 3P gateway correlates that as a stolen session and masks it as
+	// timeout_error / "system under load".
+	return proxysession.URL(c.proxyValue(), session)
 }
 
 func proxyAccountID(material string) string {
@@ -215,8 +224,8 @@ func proxyAccountID(material string) string {
 	return "shared"
 }
 
-func (c *Client) ExchangeCookie(ctx context.Context, cookie string) (*CookieExchangeResult, error) {
-	sess, err := c.newProxyTLSClient(cookie)
+func (c *Client) ExchangeCookie(ctx context.Context, sessionKey, cookie string) (*CookieExchangeResult, error) {
+	sess, err := c.newProxyTLSClient(sessionKey)
 	if err != nil {
 		return nil, err
 	}
@@ -232,20 +241,20 @@ const uploadMaxRetries = 5
 // failures are retried in place (uploadMaxRetries times); the final error keeps
 // its original (non-temporary) classification so the account is not penalized
 // for a network blip.
-func (c *Client) UploadImage(ctx context.Context, token string, content []byte, contentType, engine string) (string, error) {
-	return c.UploadMedia(ctx, token, content, contentType, engine, "image")
+func (c *Client) UploadImage(ctx context.Context, sessionKey, token string, content []byte, contentType, engine string) (string, error) {
+	return c.UploadMedia(ctx, sessionKey, token, content, contentType, engine, "image")
 }
 
 // UploadMedia stores an image, video, or audio reference and returns the blob
 // id used by the video-generation request.
-func (c *Client) UploadMedia(ctx context.Context, token string, content []byte, contentType, engine, kind string) (string, error) {
+func (c *Client) UploadMedia(ctx context.Context, sessionKey, token string, content []byte, contentType, engine, kind string) (string, error) {
 	kind = strings.ToLower(strings.TrimSpace(kind))
 	if kind != "image" && kind != "video" && kind != "audio" {
 		return "", errors.New("unsupported adobe media kind")
 	}
-	body, err, retryable := c.uploadMediaOnce(ctx, token, content, contentType, engine, kind)
+	body, err, retryable := c.uploadMediaOnce(ctx, sessionKey, token, content, contentType, engine, kind)
 	for attempt := 0; err != nil && retryable && attempt < uploadMaxRetries && ctx.Err() == nil; attempt++ {
-		body, err, retryable = c.uploadMediaOnce(ctx, token, content, contentType, engine, kind)
+		body, err, retryable = c.uploadMediaOnce(ctx, sessionKey, token, content, contentType, engine, kind)
 	}
 	if err != nil {
 		return "", err
@@ -289,8 +298,11 @@ func uploadedMediaID(payload map[string]any) string {
 // uploadImageOnce performs a single upload attempt and returns the raw response
 // body plus whether a failure is retryable (transport error / 429/451/5xx).
 // Auth failures (401/403) and other non-200s are not retryable.
-func (c *Client) uploadMediaOnce(ctx context.Context, token string, content []byte, contentType, engine, kind string) ([]byte, error, bool) {
-	sess, err := c.newDirectTLSClient()
+func (c *Client) uploadMediaOnce(ctx context.Context, sessionKey, token string, content []byte, contentType, engine, kind string) ([]byte, error, bool) {
+	// Reference uploads and generate-async must share one sticky egress. Going
+	// direct from the app host while submit uses a residential proxy made the
+	// same bearer token appear from two IPs within one request.
+	sess, err := c.newProxyTLSClient(sessionKey)
 	if err != nil {
 		return nil, err, false
 	}
@@ -357,8 +369,8 @@ func defaultMediaContentType(kind string) string {
 
 const generatedImageSafetyMaxAttempts = 3
 
-func (c *Client) GenerateImage(ctx context.Context, token, arpSessionToken, modelID, prompt, aspectRatio, resolution string, blobIDs []string, downloadResult bool) ([]byte, map[string]any, error) {
-	submitSess, err := c.newSubmitTLSClient(token)
+func (c *Client) GenerateImage(ctx context.Context, sessionKey, token, arpSessionToken, modelID, prompt, aspectRatio, resolution string, blobIDs []string, downloadResult bool) ([]byte, map[string]any, error) {
+	submitSess, err := c.newSubmitTLSClient(sessionKey)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -427,8 +439,8 @@ generationAttempts:
 // With downloadResult=false it returns nil bytes and the upstream presigned URL
 // in meta["video_url"] — used by the async /v1/videos job, which proxies that URL
 // on /content instead of persisting the file.
-func (c *Client) GenerateVideo(ctx context.Context, token, arpSessionToken, engine, prompt, aspectRatio string, durationSeconds int, resolution, referenceMode, upstreamModel string, inputs VideoInputs, downloadResult bool) ([]byte, map[string]any, error) {
-	submitSess, err := c.newSubmitTLSClient(token)
+func (c *Client) GenerateVideo(ctx context.Context, sessionKey, token, arpSessionToken, engine, prompt, aspectRatio string, durationSeconds int, resolution, referenceMode, upstreamModel string, inputs VideoInputs, downloadResult bool) ([]byte, map[string]any, error) {
+	submitSess, err := c.newSubmitTLSClient(sessionKey)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -458,12 +470,12 @@ func (c *Client) GenerateVideo(ctx context.Context, token, arpSessionToken, engi
 	return data, meta, nil
 }
 
-func (c *Client) FetchAccountProfile(ctx context.Context, token string) (map[string]any, error) {
+func (c *Client) FetchAccountProfile(ctx context.Context, sessionKey, token string) (map[string]any, error) {
 	token = strings.TrimSpace(token)
 	if token == "" {
 		return map[string]any{}, nil
 	}
-	sess, err := c.newProxyTLSClient(token)
+	sess, err := c.newProxyTLSClient(sessionKey)
 	if err != nil {
 		return nil, err
 	}
@@ -523,7 +535,7 @@ func (c *Client) FetchAccountProfile(ctx context.Context, token string) (map[str
 	return map[string]any{}, nil
 }
 
-func (c *Client) FetchCreditsBalance(ctx context.Context, token string) (map[string]any, error) {
+func (c *Client) FetchCreditsBalance(ctx context.Context, sessionKey, token string) (map[string]any, error) {
 	token = strings.TrimSpace(token)
 	if token == "" {
 		return map[string]any{
@@ -548,7 +560,7 @@ func (c *Client) FetchCreditsBalance(ctx context.Context, token string) (map[str
 		}, nil
 	}
 
-	sess, err := c.newProxyTLSClient(token)
+	sess, err := c.newProxyTLSClient(sessionKey)
 	if err != nil {
 		return nil, err
 	}
@@ -1118,14 +1130,16 @@ type tlsSession struct {
 	fp     fingerprint
 }
 
-// newProxyTLSClient is used for authentication, account maintenance, and
-// generation-submit requests. Large media and artifact transfers use direct.
-func (c *Client) newProxyTLSClient(account string) (*tlsSession, error) {
-	return c.newTLSSession(currentAdobeFingerprint(), true, account)
+// newProxyTLSClient is used for authentication, account maintenance,
+// reference uploads, and generation-submit requests. sessionKey must be a
+// durable account identity (pool account id), not the rotating IMS access
+// token. Poll/download of presigned artifact URLs still use direct.
+func (c *Client) newProxyTLSClient(sessionKey string) (*tlsSession, error) {
+	return c.newTLSSession(currentAdobeFingerprint(), true, sessionKey)
 }
 
-func (c *Client) newSubmitTLSClient(account string) (*tlsSession, error) {
-	return c.newProxyTLSClient(account)
+func (c *Client) newSubmitTLSClient(sessionKey string) (*tlsSession, error) {
+	return c.newProxyTLSClient(sessionKey)
 }
 
 func (c *Client) newDirectTLSClient() (*tlsSession, error) {

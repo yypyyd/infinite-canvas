@@ -57,7 +57,7 @@ func (s *RefreshProfileService) RefreshNow(ctx context.Context, id string) error
 		"last_attempt_at": now,
 	})
 
-	result, err := s.adobe.ExchangeCookie(ctx, profile.Cookie)
+	result, err := s.adobe.ExchangeCookie(ctx, id, profile.Cookie)
 	if err != nil {
 		failures := profile.ConsecutiveFailures + 1
 		// Exponential backoff: 60s per consecutive failure, capped at 1h.
@@ -100,7 +100,7 @@ func (s *RefreshProfileService) RefreshNow(ctx context.Context, id string) error
 	if exp != nil {
 		tokenPatch["cached_quota_reset_after"] = exp.Format(time.RFC3339)
 	}
-	if profileData, profileErr := s.adobe.FetchAccountProfile(ctx, result.AccessToken); profileErr == nil {
+	if profileData, profileErr := s.adobe.FetchAccountProfile(ctx, id, result.AccessToken); profileErr == nil {
 		if email := strings.TrimSpace(stringValue(profileData["email"])); email != "" {
 			tokenPatch["account_email"] = email
 		}
@@ -108,7 +108,7 @@ func (s *RefreshProfileService) RefreshNow(ctx context.Context, id string) error
 			tokenPatch["account_display_name"] = displayName
 		}
 	}
-	if quotaData, quotaErr := s.adobe.FetchCreditsBalance(ctx, result.AccessToken); quotaErr == nil {
+	if quotaData, quotaErr := s.adobe.FetchCreditsBalance(ctx, id, result.AccessToken); quotaErr == nil {
 		meta := datatypes.JSONMap{
 			"cached_quota_at": int(time.Now().Unix()),
 		}

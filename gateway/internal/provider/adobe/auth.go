@@ -86,13 +86,28 @@ func ARPSessionTokenFromCookie(cookie string) string {
 // the browser-shaped value expected by the partner generation gateway. A
 // structured browser export may already contain Adobe/Forter feature fields;
 // preserve that opaque value exactly instead of trying to reconstruct it.
+//
+// When only the sid-only fallback is stored, keep that same sid across submits
+// and only refresh the Forter feature token. Minting a new sid on every
+// generate-async call made one IMS access token look like many unrelated
+// Sherlock sessions, which the 3P gateway masks as timeout_error /
+// "system under load".
 func SubmissionARPSessionToken(stored string) string {
 	stored = strings.TrimSpace(stored)
 	if stored != "" && !isBaseARPSessionToken(stored) {
 		return stored
 	}
+	sid := uuid.NewString()
+	if raw, err := base64.StdEncoding.DecodeString(stored); err == nil {
+		var payload map[string]any
+		if json.Unmarshal(raw, &payload) == nil {
+			if existing, ok := payload["sid"].(string); ok && strings.TrimSpace(existing) != "" {
+				sid = existing
+			}
+		}
+	}
 	payload, _ := json.Marshal(map[string]string{
-		"sid": uuid.NewString(),
+		"sid": sid,
 		"ftr": forterFeatureToken(),
 	})
 	return base64.StdEncoding.EncodeToString(payload)

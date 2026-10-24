@@ -369,7 +369,7 @@ export function PoolChannelDrawer({ token, row, pool: _pool, builtinProvider, le
                                 <Input.TextArea rows={6} className="font-mono" placeholder="{}" disabled={usingLegacyFallback || saving || isSaving} />
                             </Form.Item>
                             <Typography.Title level={5}>本平台模型（{liveRow?.models.length ? liveRow.models.length : "—"}）</Typography.Title>
-                            {!(liveRow?.models.length) ? <Alert type="info" showIcon className="!mb-3" message="暂无本平台路由。空的模型映射请填 {}，不要填 0。" /> : null}
+                            {!liveRow?.models.length ? <Alert type="info" showIcon className="!mb-3" message="暂无本平台路由。空的模型映射请填 {}，不要填 0。" /> : null}
                             <Table
                                 rowKey={(item) => item.route.id}
                                 size="small"
@@ -418,13 +418,20 @@ export function PoolChannelDrawer({ token, row, pool: _pool, builtinProvider, le
                                         title: "优先级覆盖",
                                         width: 130,
                                         render: (_, item) => (
-                                            <OverrideNumber value={item.route.priority} inherited={item.route.effective_priority ?? liveRow?.poolPriority ?? row.poolPriority} min={-1000} onSave={(priority) => void updateRoute(item.id, item.route.id, { priority })} />
+                                            <OverrideNumber
+                                                value={item.route.priority}
+                                                inherited={item.route.effective_priority ?? liveRow?.poolPriority ?? row.poolPriority}
+                                                min={-1000}
+                                                onSave={(priority) => void updateRoute(item.id, item.route.id, { priority })}
+                                            />
                                         ),
                                     },
                                     {
                                         title: "权重覆盖",
                                         width: 130,
-                                        render: (_, item) => <OverrideNumber value={item.route.weight} inherited={item.route.effective_weight ?? liveRow?.poolWeight ?? row.poolWeight} min={1} onSave={(weight) => void updateRoute(item.id, item.route.id, { weight })} />,
+                                        render: (_, item) => (
+                                            <OverrideNumber value={item.route.weight} inherited={item.route.effective_weight ?? liveRow?.poolWeight ?? row.poolWeight} min={1} onSave={(weight) => void updateRoute(item.id, item.route.id, { weight })} />
+                                        ),
                                     },
                                 ]}
                             />

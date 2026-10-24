@@ -18,23 +18,11 @@ export function AccountTestModal({ account, models, onClose }: { account: Gatewa
     // Hide models whose route for this account's provider is off in providers_enabled,
     // so admins do not pick a silent false option that only fails at test time.
     const available = useMemo(
-        () =>
-            models.filter(
-                (item) =>
-                    item.enabled &&
-                    allowed.has(item.id) &&
-                    item.routes.some((route) => route.provider === account.provider && route.enabled && route.provider_enabled !== false),
-            ),
+        () => models.filter((item) => item.enabled && allowed.has(item.id) && item.routes.some((route) => route.provider === account.provider && route.enabled && route.provider_enabled !== false)),
         [account.provider, allowed, models],
     );
     const providerDisabledModels = useMemo(
-        () =>
-            models.filter(
-                (item) =>
-                    item.enabled &&
-                    allowed.has(item.id) &&
-                    item.routes.some((route) => route.provider === account.provider && route.enabled && route.provider_enabled === false),
-            ),
+        () => models.filter((item) => item.enabled && allowed.has(item.id) && item.routes.some((route) => route.provider === account.provider && route.enabled && route.provider_enabled === false)),
         [account.provider, allowed, models],
     );
     const [modelId, setModelId] = useState(available[0]?.id || "");

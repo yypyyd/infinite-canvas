@@ -101,4 +101,3 @@ func TestAdminProviderDisabledExplainsSettingsSwitch(t *testing.T) {
 		t.Fatalf("body=%s", body)
 	}
 }
-

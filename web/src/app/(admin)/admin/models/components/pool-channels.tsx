@@ -16,6 +16,10 @@ export type PoolChannelRow = {
     /** Provider default inside the pool (gateway scheduling). */
     poolPriority: number;
     poolWeight: number;
+    /** Per-provider outbound proxy (empty = use default). */
+    proxy: string;
+    /** Per-provider proxy extract API (empty = use default). */
+    extractApi: string;
     accounts: number;
     activeAccounts: number;
     /** provider_health buckets: active / quota / disabled / dead / pending */
@@ -40,6 +44,8 @@ export function usePoolChannels() {
                 enabled: data?.providers_enabled?.[provider] !== false,
                 poolPriority: data?.providers_priority?.[provider] ?? 0,
                 poolWeight: data?.providers_weight?.[provider] ?? 1,
+                proxy: data?.provider_proxies?.[provider] || "",
+                extractApi: data?.provider_extract_apis?.[provider] || "",
                 // Only status buckets. provider_health also carries quota_* snapshots of the
                 // same active rows; summing Object.values double-counts (e.g. 20/40).
                 health: {
@@ -86,6 +92,8 @@ type PoolForm = {
     sitePriority: number;
     siteWeight: number;
     siteEnabled: boolean;
+    proxy: string;
+    extractApi: string;
     mapping: string;
 };
 
@@ -119,6 +127,8 @@ export function PoolChannelDrawer({ token, row, pool: _pool, builtinProvider, le
             sitePriority,
             siteWeight,
             siteEnabled: builtinProvider?.enabled == null ? true : Boolean(builtinProvider.enabled),
+            proxy: row.proxy,
+            extractApi: row.extractApi,
             mapping: aliasesToMapping(providerMappings.length ? providerMappings : usingLegacyFallback ? legacyAliases : []),
         });
     }, [row, builtinProvider, providerMappings, legacyAliases, usingLegacyFallback, form]);
@@ -142,12 +152,23 @@ export function PoolChannelDrawer({ token, row, pool: _pool, builtinProvider, le
         setSaving(true);
         try {
             const current = settings.data?.data;
-            if (current && (current.providers_enabled?.[row.provider] !== values.enabled || current.providers_priority?.[row.provider] !== values.poolPriority || current.providers_weight?.[row.provider] !== values.poolWeight)) {
+            const nextProxy = String(values.proxy || "").trim();
+            const nextExtract = String(values.extractApi || "").trim();
+            if (
+                current &&
+                (current.providers_enabled?.[row.provider] !== values.enabled ||
+                    current.providers_priority?.[row.provider] !== values.poolPriority ||
+                    current.providers_weight?.[row.provider] !== values.poolWeight ||
+                    (current.provider_proxies?.[row.provider] || "") !== nextProxy ||
+                    (current.provider_extract_apis?.[row.provider] || "") !== nextExtract)
+            ) {
                 const ok = await run((t) =>
                     gatewayApi.saveSettings(t, {
                         providers_enabled: { ...current.providers_enabled, [row.provider]: values.enabled },
                         providers_priority: { ...current.providers_priority, [row.provider]: values.poolPriority },
                         providers_weight: { ...current.providers_weight, [row.provider]: values.poolWeight },
+                        provider_proxies: { ...current.provider_proxies, [row.provider]: nextProxy },
+                        provider_extract_apis: { ...current.provider_extract_apis, [row.provider]: nextExtract },
                     }),
                 );
                 if (!ok) return;
@@ -185,7 +206,7 @@ export function PoolChannelDrawer({ token, row, pool: _pool, builtinProvider, le
 
     return (
         <Drawer
-            title={row ? `编辑渠道 · ${row.label}` : "内置平台"}
+            title={row ? `编辑号池平台 · ${row.label}` : "号池平台"}
             open={Boolean(row)}
             width="min(1400px, calc(100vw - 32px))"
             onClose={onClose}
@@ -219,8 +240,8 @@ export function PoolChannelDrawer({ token, row, pool: _pool, builtinProvider, le
                                 type="info"
                                 showIcon
                                 className="!mb-4"
-                                message={`${row.label} 为内置平台渠道，与兼容 API 渠道统一参与调度。`}
-                                description="站点优先级与第三方渠道比较（ChatGPT/Grok 默认 200，BytePlus 190，Adobe 180，兼容 API 默认 0）；池内优先级/权重仅影响同平台账号调度。账号请在「账号」页签管理，不随本表单提交。"
+                                message={`${row.label} 为号池平台（内置 chatgpt/adobe/byteplus/grok），与外部渠道统一参与调度。`}
+                                description="站点优先级与外部渠道比较（ChatGPT/Grok 默认 200，BytePlus 190，Adobe 180，外部渠道默认 0）；池内优先级/权重仅影响同平台账号调度。代理提取 API 可按平台覆盖。账号请在「账号」页签管理，不随本表单提交。"
                             />
                             <Typography.Title level={5}>本平台（站点）</Typography.Title>
                             <Row gutter={16}>
@@ -255,6 +276,19 @@ export function PoolChannelDrawer({ token, row, pool: _pool, builtinProvider, le
                                 <Col xs={8}>
                                     <Form.Item name="poolWeight" label="池内权重">
                                         <InputNumber min={1} max={1000} className="!w-full" />
+                                    </Form.Item>
+                                </Col>
+                            </Row>
+                            <Typography.Title level={5}>代理与提取 API</Typography.Title>
+                            <Row gutter={16}>
+                                <Col xs={24} md={12}>
+                                    <Form.Item name="proxy" label="平台代理" extra="留空则使用号池默认出站代理。">
+                                        <Input placeholder="socks5://user:pass@host:port" />
+                                    </Form.Item>
+                                </Col>
+                                <Col xs={24} md={12}>
+                                    <Form.Item name="extractApi" label="平台代理提取 API" extra="留空则使用号池默认提取 API。">
+                                        <Input placeholder="https://proxy-provider.example.com/extract" />
                                     </Form.Item>
                                 </Col>
                             </Row>

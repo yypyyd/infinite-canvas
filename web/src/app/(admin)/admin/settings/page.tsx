@@ -4,7 +4,8 @@ import { CheckCircleOutlined, DeleteOutlined, FormatPainterOutlined, PlusOutline
 import { json } from "@codemirror/lang-json";
 import { App, Button, Card, Col, Flex, Form, Input, InputNumber, Row, Segmented, Select, Space, Switch, Table, Tag, Typography } from "antd";
 import dynamic from "next/dynamic";
-import { Activity, Boxes, HandCoins, HardDrive, Mail, Megaphone, RefreshCw, ShieldCheck, WalletCards } from "lucide-react";
+import { Activity, Boxes, HandCoins, HardDrive, Mail, Megaphone, RefreshCw, ShieldAlert, ShieldCheck, WalletCards } from "lucide-react";
+import ContentSafetyPanel from "../account-pool/banned-words/banned-words-panel";
 import { useEffect, useState } from "react";
 import { EditorView } from "@uiw/react-codemirror";
 
@@ -72,7 +73,7 @@ const emptySettings: AdminSettings = {
     },
 };
 type SettingsTabKey = "public" | "private";
-type SettingsSectionKey = "models" | "access" | "operations" | "payment" | "referral" | "storage" | "monitoring" | "email" | "sync";
+type SettingsSectionKey = "models" | "access" | "content-safety" | "operations" | "payment" | "referral" | "storage" | "monitoring" | "email" | "sync";
 type EditorMode = "visual" | "json";
 
 const modelAspectRatioOptions = ["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "21:9"];
@@ -92,6 +93,15 @@ const settingsSections = [
             <span className="inline-flex items-center gap-2">
                 <ShieldCheck className="size-4" />
                 访问与注册
+            </span>
+        ),
+    },
+    {
+        key: "content-safety",
+        label: (
+            <span className="inline-flex items-center gap-2">
+                <ShieldAlert className="size-4" />
+                内容安全
             </span>
         ),
     },
@@ -165,6 +175,13 @@ export default function AdminSettingsPage() {
     const { message } = App.useApp();
     const [form] = Form.useForm<AdminSettings>();
     const [activeSection, setActiveSection] = useState<SettingsSectionKey>("models");
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const section = params.get("section");
+        if (section && ["models", "access", "content-safety", "operations", "payment", "referral", "storage", "monitoring", "email", "sync"].includes(section)) {
+            setActiveSection(section as SettingsSectionKey);
+        }
+    }, []);
     const [editorMode, setEditorMode] = useState<Record<SettingsTabKey, EditorMode>>({ public: "visual", private: "visual" });
     const [jsonText, setJsonText] = useState<Record<SettingsTabKey, string>>({ public: "", private: "" });
     const [isLoading, setIsLoading] = useState(false);
@@ -275,135 +292,157 @@ export default function AdminSettingsPage() {
                     <Flex justify="space-between" align="start" gap={16} wrap>
                         <div className="flex min-w-0 flex-wrap gap-2" style={{ flex: "1 1 700px" }}>
                             {settingsSections.map((section) => (
-                                <Button key={section.key} type={activeSection === section.key ? "primary" : "default"} aria-pressed={activeSection === section.key} onClick={() => setActiveSection(section.key as SettingsSectionKey)}>
+                                <Button
+                                    key={section.key}
+                                    type={activeSection === section.key ? "primary" : "default"}
+                                    aria-pressed={activeSection === section.key}
+                                    onClick={() => {
+                                        setActiveSection(section.key as SettingsSectionKey);
+                                        const url = new URL(window.location.href);
+                                        url.searchParams.set("section", section.key);
+                                        window.history.replaceState(null, "", url);
+                                    }}
+                                >
                                     {section.label}
                                 </Button>
                             ))}
                         </div>
                         <Space>
-                            <Button icon={<ReloadOutlined />} loading={isLoading} onClick={() => void loadSettings()}>
-                                刷新
-                            </Button>
-                            <Button type="primary" icon={<SaveOutlined />} loading={isSaving} onClick={() => void saveSettings()}>
-                                保存设置
-                            </Button>
+                            {activeSection === "content-safety" ? null : (
+                                <Button icon={<ReloadOutlined />} loading={isLoading} onClick={() => void loadSettings()}>
+                                    刷新
+                                </Button>
+                            )}
+                            {activeSection === "content-safety" ? null : (
+                                <Button type="primary" icon={<SaveOutlined />} loading={isSaving} onClick={() => void saveSettings()}>
+                                    保存设置
+                                </Button>
+                            )}
                         </Space>
                     </Flex>
                 </Card>
 
                 <Card variant="borderless">
-                    <Flex justify="space-between" align="center" gap={16} wrap style={{ marginBottom: 16 }}>
-                        <Segmented
-                            value={activeMode}
-                            onChange={(value) => toggleMode(activeTab, value as EditorMode)}
-                            options={[
-                                { label: "可视化编辑", value: "visual" },
-                                { label: "手动编辑 JSON", value: "json" },
-                            ]}
-                        />
-                        {activeMode === "json" ? (
-                            <Space>
-                                {jsonError ? (
-                                    <Tag color="error">{jsonError}</Tag>
-                                ) : (
-                                    <Tag color="success" icon={<CheckCircleOutlined />}>
-                                        JSON 格式正确
-                                    </Tag>
-                                )}
-                                <Button icon={<FormatPainterOutlined />} onClick={() => formatJson(activeTab)}>
-                                    格式化
-                                </Button>
-                            </Space>
-                        ) : (
-                            <Typography.Text type="secondary">{activeTab === "public" ? "这些配置会暴露给前端读取" : "这些配置只会在后台保存"}</Typography.Text>
-                        )}
-                    </Flex>
-
-                    {activeMode === "json" ? (
+                    {activeSection === "content-safety" ? (
                         <div>
-                            <Typography.Paragraph type="secondary">模型目录、价格与渠道请在“模型管理”保存；这里保存其他系统配置。</Typography.Paragraph>
-                            <div style={{ overflow: "hidden", border: "1px solid var(--ant-color-border)", borderRadius: 6 }}>
-                                <CodeMirror
-                                    value={activeJsonText}
-                                    height="520px"
-                                    extensions={[json(), jsonEditorTheme]}
-                                    basicSetup={{ foldGutter: true, lineNumbers: true, highlightActiveLine: true, highlightActiveLineGutter: true }}
-                                    theme="none"
-                                    onChange={(value) => setJsonText((current) => ({ ...current, [activeTab]: value }))}
-                                    style={{ fontSize: 13 }}
-                                />
-                            </div>
+                            <Typography.Paragraph type="secondary">违禁词与触发记录（号池网关内容安全）。原「运维工具」入口已并入此处。</Typography.Paragraph>
+                            <ContentSafetyPanel />
                         </div>
-                    ) : (
-                        <Form form={form} layout="vertical" initialValues={emptySettings} requiredMark={false}>
-                            {activeSection === "models" ? (
-                                <Row gutter={16}>
-                                    <Col span={24} className="mb-4">
-                                        <Button href="/admin/models">管理模型、计费与上游渠道 →</Button>
-                                    </Col>
-                                    <Col span={24}>
-                                        <Form.Item name={["public", "modelChannel", "groupRatios"]} label="用户分组倍率" extra="最终扣费会乘以用户所属分组倍率；未命中的分组会使用 default。">
-                                            <GroupRatioEditor />
-                                        </Form.Item>
-                                    </Col>
-                                    <Col xs={24} md={6}>
-                                        <Form.Item name={["public", "modelChannel", "defaultModel"]} label="默认模型">
-                                            <Select showSearch allowClear options={publicModels.map((item) => ({ label: item, value: item }))} />
-                                        </Form.Item>
-                                    </Col>
-                                    <Col xs={24} md={6}>
-                                        <Form.Item name={["public", "modelChannel", "defaultImageModel"]} label="默认图片模型">
-                                            <Select showSearch allowClear options={publicModels.map((item) => ({ label: item, value: item }))} />
-                                        </Form.Item>
-                                    </Col>
-                                    <Col xs={24} md={6}>
-                                        <Form.Item name={["public", "modelChannel", "defaultVideoModel"]} label="默认视频模型">
-                                            <Select showSearch allowClear options={publicModels.map((item) => ({ label: item, value: item }))} />
-                                        </Form.Item>
-                                    </Col>
-                                    <Col xs={24} md={6}>
-                                        <Form.Item name={["public", "modelChannel", "defaultTextModel"]} label="默认文本模型">
-                                            <Select showSearch allowClear options={publicModels.map((item) => ({ label: item, value: item }))} />
-                                        </Form.Item>
-                                    </Col>
-                                    <Col span={24}>
-                                        <Form.Item name={["public", "modelChannel", "systemPrompt"]} label="系统提示词">
-                                            <Input.TextArea rows={4} />
-                                        </Form.Item>
-                                    </Col>
-                                </Row>
-                            ) : activeSection === "access" ? (
-                                <AccessAndRegistrationSettingsEditor />
-                            ) : activeSection === "operations" ? (
-                                <OperationSettingsEditor />
-                            ) : activeSection === "payment" ? (
-                                <PaymentSettingsEditor />
-                            ) : activeSection === "referral" ? (
-                                <ReferralSettingsEditor />
-                            ) : activeSection === "storage" ? (
-                                <StorageSettingsEditor />
-                            ) : activeSection === "monitoring" ? (
-                                <OperationsAlertSettingsEditor />
-                            ) : activeSection === "email" ? (
-                                <EmailSettingsEditor />
+                    ) : null}
+                    <div hidden={activeSection === "content-safety"}>
+                        <Flex justify="space-between" align="center" gap={16} wrap style={{ marginBottom: 16 }}>
+                            <Segmented
+                                value={activeMode}
+                                onChange={(value) => toggleMode(activeTab, value as EditorMode)}
+                                options={[
+                                    { label: "可视化编辑", value: "visual" },
+                                    { label: "手动编辑 JSON", value: "json" },
+                                ]}
+                            />
+                            {activeMode === "json" ? (
+                                <Space>
+                                    {jsonError ? (
+                                        <Tag color="error">{jsonError}</Tag>
+                                    ) : (
+                                        <Tag color="success" icon={<CheckCircleOutlined />}>
+                                            JSON 格式正确
+                                        </Tag>
+                                    )}
+                                    <Button icon={<FormatPainterOutlined />} onClick={() => formatJson(activeTab)}>
+                                        格式化
+                                    </Button>
+                                </Space>
                             ) : (
-                                <Card size="small" title="提示词定时同步">
-                                    <Row gutter={16} align="middle">
-                                        <Col xs={24} md={8}>
-                                            <Form.Item name={["private", "promptSync", "enabled"]} label="开启定时同步" valuePropName="checked">
-                                                <Switch />
+                                <Typography.Text type="secondary">{activeTab === "public" ? "这些配置会暴露给前端读取" : "这些配置只会在后台保存"}</Typography.Text>
+                            )}
+                        </Flex>
+
+                        {activeMode === "json" ? (
+                            <div>
+                                <Typography.Paragraph type="secondary">模型目录、价格与供应源请在「供应源」保存；这里保存其他系统配置。</Typography.Paragraph>
+                                <div style={{ overflow: "hidden", border: "1px solid var(--ant-color-border)", borderRadius: 6 }}>
+                                    <CodeMirror
+                                        value={activeJsonText}
+                                        height="520px"
+                                        extensions={[json(), jsonEditorTheme]}
+                                        basicSetup={{ foldGutter: true, lineNumbers: true, highlightActiveLine: true, highlightActiveLineGutter: true }}
+                                        theme="none"
+                                        onChange={(value) => setJsonText((current) => ({ ...current, [activeTab]: value }))}
+                                        style={{ fontSize: 13 }}
+                                    />
+                                </div>
+                            </div>
+                        ) : (
+                            <Form form={form} layout="vertical" initialValues={emptySettings} requiredMark={false}>
+                                {activeSection === "models" ? (
+                                    <Row gutter={16}>
+                                        <Col span={24} className="mb-4">
+                                            <Button href="/admin/models">管理供应源、模型与计费 →</Button>
+                                        </Col>
+                                        <Col span={24}>
+                                            <Form.Item name={["public", "modelChannel", "groupRatios"]} label="用户分组倍率" extra="最终扣费会乘以用户所属分组倍率；未命中的分组会使用 default。">
+                                                <GroupRatioEditor />
                                             </Form.Item>
                                         </Col>
-                                        <Col xs={24} md={16}>
-                                            <Form.Item name={["private", "promptSync", "cron"]} label="Cron 表达式" extra="默认每 5 分钟同步内置 GitHub 远程提示词源">
-                                                <Input placeholder="*/5 * * * *" />
+                                        <Col xs={24} md={6}>
+                                            <Form.Item name={["public", "modelChannel", "defaultModel"]} label="默认模型">
+                                                <Select showSearch allowClear options={publicModels.map((item) => ({ label: item, value: item }))} />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={6}>
+                                            <Form.Item name={["public", "modelChannel", "defaultImageModel"]} label="默认图片模型">
+                                                <Select showSearch allowClear options={publicModels.map((item) => ({ label: item, value: item }))} />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={6}>
+                                            <Form.Item name={["public", "modelChannel", "defaultVideoModel"]} label="默认视频模型">
+                                                <Select showSearch allowClear options={publicModels.map((item) => ({ label: item, value: item }))} />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={6}>
+                                            <Form.Item name={["public", "modelChannel", "defaultTextModel"]} label="默认文本模型">
+                                                <Select showSearch allowClear options={publicModels.map((item) => ({ label: item, value: item }))} />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col span={24}>
+                                            <Form.Item name={["public", "modelChannel", "systemPrompt"]} label="系统提示词">
+                                                <Input.TextArea rows={4} />
                                             </Form.Item>
                                         </Col>
                                     </Row>
-                                </Card>
-                            )}
-                        </Form>
-                    )}
+                                ) : activeSection === "access" ? (
+                                    <AccessAndRegistrationSettingsEditor />
+                                ) : activeSection === "operations" ? (
+                                    <OperationSettingsEditor />
+                                ) : activeSection === "payment" ? (
+                                    <PaymentSettingsEditor />
+                                ) : activeSection === "referral" ? (
+                                    <ReferralSettingsEditor />
+                                ) : activeSection === "storage" ? (
+                                    <StorageSettingsEditor />
+                                ) : activeSection === "monitoring" ? (
+                                    <OperationsAlertSettingsEditor />
+                                ) : activeSection === "email" ? (
+                                    <EmailSettingsEditor />
+                                ) : (
+                                    <Card size="small" title="提示词定时同步">
+                                        <Row gutter={16} align="middle">
+                                            <Col xs={24} md={8}>
+                                                <Form.Item name={["private", "promptSync", "enabled"]} label="开启定时同步" valuePropName="checked">
+                                                    <Switch />
+                                                </Form.Item>
+                                            </Col>
+                                            <Col xs={24} md={16}>
+                                                <Form.Item name={["private", "promptSync", "cron"]} label="Cron 表达式" extra="默认每 5 分钟同步内置 GitHub 远程提示词源">
+                                                    <Input placeholder="*/5 * * * *" />
+                                                </Form.Item>
+                                            </Col>
+                                        </Row>
+                                    </Card>
+                                )}
+                            </Form>
+                        )}
+                    </div>
                 </Card>
             </Flex>
         </main>

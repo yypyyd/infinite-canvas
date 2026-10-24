@@ -1,22 +1,6 @@
 "use client";
 
-import {
-    ApiOutlined,
-    AuditOutlined,
-    BarChartOutlined,
-    ClusterOutlined,
-    ProfileOutlined,
-    StopOutlined,
-    CloudServerOutlined,
-    FileTextOutlined,
-    HomeOutlined,
-    KeyOutlined,
-    LogoutOutlined,
-    PictureOutlined,
-    SettingOutlined,
-    TransactionOutlined,
-    UserOutlined,
-} from "@ant-design/icons";
+import { ApiOutlined, BarChartOutlined, CloudServerOutlined, FileTextOutlined, HomeOutlined, KeyOutlined, LogoutOutlined, PictureOutlined, SettingOutlined, TransactionOutlined, UserOutlined } from "@ant-design/icons";
 import { ProConfigProvider } from "@ant-design/pro-components";
 import { App, Button, Flex, Layout, Menu, Spin, Typography, theme } from "antd";
 import { usePathname, useRouter } from "next/navigation";
@@ -44,15 +28,8 @@ const adminMenus: AdminMenuItem[] = [
     { key: "/admin/redeem-codes", icon: <KeyOutlined />, label: "兑换码" },
     { key: "/admin/prompts", icon: <FileTextOutlined />, label: "提示词管理" },
     { key: "/admin/assets", icon: <PictureOutlined />, label: "素材库" },
-    { key: "/admin/models", icon: <ApiOutlined />, label: "模型管理" },
+    { key: "/admin/models", icon: <ApiOutlined />, label: "供应源" },
     { key: "/admin/settings", icon: <SettingOutlined />, label: "系统设置" },
-];
-
-/** Ops deep-links (logs / banned words / pool settings). Hidden from default nav; collapsed submenu only. */
-const opsMenus: AdminMenuItem[] = [
-    { key: "/admin/account-pool/logs", icon: <ProfileOutlined />, label: "账号池日志" },
-    { key: "/admin/account-pool/banned-words", icon: <StopOutlined />, label: "违禁词" },
-    { key: "/admin/account-pool/settings", icon: <AuditOutlined />, label: "账号池设置" },
 ];
 
 const pageTitles: Record<string, string> = {
@@ -63,20 +40,22 @@ const pageTitles: Record<string, string> = {
     "/admin/redeem-codes": "兑换码",
     "/admin/prompts": "提示词管理",
     "/admin/assets": "素材库管理",
-    "/admin/models": "模型管理",
+    "/admin/models": "供应源",
     "/admin/settings": "系统设置",
-    "/admin/account-pool/logs": "账号池日志与素材",
-    "/admin/account-pool/banned-words": "违禁词",
-    "/admin/account-pool/settings": "账号池设置",
+    "/admin/account-pool/logs": "供应源 · 号池日志",
+    "/admin/account-pool/banned-words": "内容安全",
+    "/admin/account-pool/settings": "供应源 · 号池设置",
 };
 
 function currentAdminKey(pathname: string) {
-    const all = [...adminMenus, ...opsMenus];
-    const exact = all.find((item) => item.exact && item.key === pathname);
+    // Legacy deep-links map into the new IA menus.
+    if (pathname.startsWith("/admin/account-pool/banned-words")) return "/admin/settings";
+    if (pathname.startsWith("/admin/account-pool")) return "/admin/models";
+    if (pathname.startsWith("/admin/channels")) return "/admin/models";
+    const exact = adminMenus.find((item) => item.exact && item.key === pathname);
     if (exact) return exact.key;
-    // Longest prefix wins so /admin/account-pool/* never matches a shorter key.
     return (
-        all
+        adminMenus
             .filter((item) => !item.exact)
             .sort((left, right) => right.key.length - left.key.length)
             .find((item) => pathname === item.key || pathname.startsWith(`${item.key}/`))?.key || "/admin"
@@ -95,7 +74,7 @@ export function AdminLayoutClient({ children }: { children: ReactNode }) {
     const hydrateUser = useUserStore((state) => state.hydrateUser);
     const dark = useThemeStore((state) => state.theme === "dark");
     const activeKey = currentAdminKey(pathname);
-    const pageTitle = pageTitles[activeKey] || "用户管理";
+    const pageTitle = pageTitles[activeKey] || pageTitles[pathname] || "用户管理";
     const isDashboard = pathname === "/admin";
     const submitLogout = async () => {
         try {
@@ -150,32 +129,14 @@ export function AdminLayoutClient({ children }: { children: ReactNode }) {
                     <Menu
                         mode="inline"
                         selectedKeys={[activeKey]}
-                        defaultOpenKeys={opsMenus.some((item) => item.key === activeKey) ? ["ops-account-pool"] : []}
                         style={adminLayoutStyle.menu}
-                        onClick={({ key }) => {
-                            if (key === "ops-account-pool") return;
-                            router.push(String(key));
-                        }}
-                        items={[
-                            ...adminMenus.map((menu) => ({
-                                key: menu.key,
-                                icon: menu.icon,
-                                label: menu.label,
-                                style: adminLayoutStyle.menuItem,
-                            })),
-                            {
-                                key: "ops-account-pool",
-                                icon: <ClusterOutlined />,
-                                label: "运维工具",
-                                style: adminLayoutStyle.menuItem,
-                                children: opsMenus.map((menu) => ({
-                                    key: menu.key,
-                                    icon: menu.icon,
-                                    label: menu.label,
-                                    style: adminLayoutStyle.menuItem,
-                                })),
-                            },
-                        ]}
+                        onClick={({ key }) => router.push(String(key))}
+                        items={adminMenus.map((menu) => ({
+                            key: menu.key,
+                            icon: menu.icon,
+                            label: menu.label,
+                            style: adminLayoutStyle.menuItem,
+                        }))}
                     />
                     <Flex vertical gap={8} style={{ position: "absolute", bottom: 0, insetInline: 0, padding: 12, borderTop: `1px solid ${antToken.colorBorder}`, background: antToken.colorBgContainer }}>
                         <Button block icon={<HomeOutlined />} href="/canvas" target="_blank" rel="noreferrer">

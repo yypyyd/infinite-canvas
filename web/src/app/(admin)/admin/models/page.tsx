@@ -28,17 +28,20 @@ import { ModelListTable, PricingTable, specKey, type PricingSpec } from "./compo
 import { ChannelHealthBadge, ModelTags, PoolChannelDrawer, PoolModelTags, usePoolChannels, type PoolChannelRow } from "./components/pool-channels";
 import { ChannelModelCapabilitiesEditor } from "./components/channel-model-capabilities-editor";
 import { ProtocolTemplatesEditor } from "./components/protocol-templates-editor";
+import PoolLogsPanel from "../account-pool/logs/logs-panel";
+import PoolSettingsPanel from "../account-pool/settings/settings-panel";
 
 const emptyChannel: AdminModelChannel = { id: "", templateId: "", protocol: "openai", name: "", baseUrl: "", apiKey: "", models: [], weight: 1, priority: 0, enabled: true, remark: "" };
 const modalityLabels: Record<string, string> = { image: "图片", video: "视频", text: "文本", audio: "音频" };
-type ChannelRow = { key: string; kind: "pool"; pool: PoolChannelRow } | { key: string; kind: "channel"; channel: AdminModelChannel; index: number };
+type ExternalChannelRow = AdminModelChannel & { _index: number; _rowKey: string };
 type ModelSelectTabKey = "new" | "current";
 
 export default function AdminModelsPage() {
     const token = useUserStore((state) => state.token);
     const { message, modal } = App.useApp();
     const savingRef = useRef(false);
-    const [activeTab, setActiveTab] = useState("channels");
+    const [activeTab, setActiveTab] = useState("pool");
+    const [poolTab, setPoolTab] = useState("platforms");
     const [requestedModel, setRequestedModel] = useState<string | null>(null);
     const [viewChannelIndex, setViewChannelIndex] = useState<number | null>(null);
     const [channelEditorTab, setChannelEditorTab] = useState("connection");
@@ -46,17 +49,29 @@ export default function AdminModelsPage() {
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
         const tab = params.get("tab");
-        if (tab && ["channels", "models", "pricing"].includes(tab)) setActiveTab(tab);
+        const nextPoolTab = params.get("poolTab");
+        // Legacy tab=channels opens 号池平台; protocols still open the protocol drawer.
+        if (tab === "channels") setActiveTab("pool");
+        else if (tab && ["pool", "external", "models", "pricing"].includes(tab)) setActiveTab(tab);
         if (tab === "protocols") {
-            setActiveTab("channels");
+            setActiveTab("external");
             setProtocolDrawerOpen(true);
         }
+        if (nextPoolTab && ["platforms", "logs", "settings"].includes(nextPoolTab)) setPoolTab(nextPoolTab);
     }, []);
     const changeTab = (tab: string) => {
         setActiveTab(tab);
         const url = new URL(window.location.href);
         url.searchParams.set("tab", tab);
         url.searchParams.delete("source");
+        if (tab !== "pool") url.searchParams.delete("poolTab");
+        window.history.replaceState(null, "", url);
+    };
+    const changePoolTab = (tab: string) => {
+        setPoolTab(tab);
+        const url = new URL(window.location.href);
+        url.searchParams.set("tab", "pool");
+        url.searchParams.set("poolTab", tab);
         window.history.replaceState(null, "", url);
     };
     const [overview, setOverview] = useState<AdminModelOverview | null>(null);
@@ -75,9 +90,12 @@ export default function AdminModelsPage() {
         if (!provider || poolChannels.loading || !poolChannels.rows.length) return;
         const match = poolChannels.rows.find((row) => row.provider === provider);
         if (!match) return;
+        setActiveTab("pool");
+        setPoolTab("platforms");
         setPoolDrawerTab(subtab === "accounts" || subtab === "mappings" || subtab === "base" ? subtab : "accounts");
         setPoolRow(match);
         const url = new URL(window.location.href);
+        url.searchParams.set("tab", "pool");
         url.searchParams.delete("provider");
         url.searchParams.delete("subtab");
         window.history.replaceState(null, "", url);
@@ -572,9 +590,9 @@ export default function AdminModelsPage() {
             <Flex justify="space-between" align="center" gap={16} wrap className="mb-4">
                 <div>
                     <Typography.Title level={3} className="!mb-1 !mt-0">
-                        模型管理
+                        供应源
                     </Typography.Title>
-                    <Typography.Text type="secondary">统一管理内置平台与兼容 API 渠道；模型页决定对外开放哪些模型，定价页为每个规格设置价格。账号在内置渠道「账号」页签维护。</Typography.Text>
+                    <Typography.Text type="secondary">号池平台与外部渠道分开管理；模型页决定对外开放哪些模型，定价页为每个规格设置价格。账号、能力测试与导入在号池平台抽屉中维护。</Typography.Text>
                 </div>
                 <Button icon={<ReloadOutlined />} loading={isLoading} disabled={isSaving} onClick={reloadAll}>
                     刷新
@@ -584,7 +602,8 @@ export default function AdminModelsPage() {
                 activeKey={activeTab}
                 onChange={changeTab}
                 items={[
-                    { key: "channels", label: "渠道", disabled: isSaving },
+                    { key: "pool", label: "号池平台", disabled: isSaving },
+                    { key: "external", label: "外部渠道", disabled: isSaving },
                     { key: "models", label: "模型", disabled: isSaving },
                     { key: "pricing", label: "定价", disabled: isSaving },
                 ]}
@@ -598,7 +617,7 @@ export default function AdminModelsPage() {
                         isSaving={isSaving}
                         onSave={persistModels}
                         onOpenChannel={(index) => {
-                            changeTab("channels");
+                            changeTab("external");
                             openChannelDrawer(index);
                         }}
                         requestedModel={requestedModel}
@@ -620,11 +639,139 @@ export default function AdminModelsPage() {
                     />
                 ) : null}
                 {activeTab === "pricing" ? <PricingTable models={overview?.models || []} loading={overviewLoading} isSaving={isSaving} onEdit={showModel} onSetPrice={setPrice} onRemovePrice={removePrice} /> : null}
-                <div hidden={activeTab !== "channels"}>
+                <div hidden={activeTab !== "pool"}>
+                    <Tabs
+                        activeKey={poolTab}
+                        onChange={changePoolTab}
+                        className="!mb-3"
+                        items={[
+                            { key: "platforms", label: "平台", disabled: isSaving },
+                            { key: "logs", label: "账号池日志", disabled: isSaving },
+                            { key: "settings", label: "号池设置", disabled: isSaving },
+                        ]}
+                    />
+                    <div hidden={poolTab !== "platforms"}>
+                        <Flex justify="space-between" align="center" gap={16} wrap style={{ marginBottom: 16 }}>
+                            <Typography.Text type="secondary">{poolChannels.rows.length} 个内置号池平台（chatgpt / adobe / byteplus / grok）· 启用、优先级、权重、代理提取 API、健康与账号</Typography.Text>
+                            <Space>
+                                <Button disabled={isSaving} onClick={() => setRoutingDrawerOpen(true)}>
+                                    路由说明
+                                </Button>
+                            </Space>
+                        </Flex>
+                        {poolChannels.error ? <Alert type="warning" showIcon className="!mb-3" message="无法读取内置账号池，号池平台暂不显示" /> : null}
+                        <Table<PoolChannelRow>
+                            rowKey="provider"
+                            loading={isSaving || poolChannels.loading}
+                            scroll={{ x: 1200 }}
+                            pagination={false}
+                            dataSource={poolChannels.rows}
+                            columns={[
+                                {
+                                    title: "平台",
+                                    width: 140,
+                                    render: (_, row) => (
+                                        <Typography.Link strong onClick={() => openPoolChannel(row)}>
+                                            {row.label}
+                                        </Typography.Link>
+                                    ),
+                                },
+                                {
+                                    title: "启用",
+                                    width: 80,
+                                    render: (_, row) => <Switch size="small" checked={row.enabled && overview?.pool.enabled !== false} disabled={isSaving} onChange={(enabled) => void togglePoolProvider(row.provider, enabled)} />,
+                                },
+                                {
+                                    title: "健康",
+                                    width: 100,
+                                    render: (_, row) => <ChannelHealthBadge health={row.health} enabled={row.enabled && overview?.pool.enabled !== false} />,
+                                },
+                                {
+                                    title: "账号",
+                                    width: 110,
+                                    render: (_, row) => (
+                                        <Typography.Link
+                                            onClick={() => openPoolChannel(row, "accounts")}
+                                            title={`可用 ${row.activeAccounts} · 额度耗尽 ${row.health?.quota || 0} · 停用 ${row.health?.disabled || 0} · 失效 ${row.health?.dead || 0} · 待验证 ${row.health?.pending || 0}`}
+                                        >
+                                            {row.activeAccounts}/{row.accounts} 可用
+                                        </Typography.Link>
+                                    ),
+                                },
+                                {
+                                    title: "优先级",
+                                    width: 100,
+                                    render: (_, row) => (
+                                        <Flex vertical>
+                                            <span>
+                                                {settings?.private.builtinProviders?.find((item) => item.provider === row.provider)?.priority ?? ({ chatgpt: 200, grok: 200, byteplus: 190, adobe: 180 } as Record<string, number>)[row.provider] ?? 200}
+                                            </span>
+                                            <Typography.Text type="secondary" className="text-xs">
+                                                池内 {row.poolPriority}
+                                            </Typography.Text>
+                                        </Flex>
+                                    ),
+                                },
+                                {
+                                    title: "权重",
+                                    width: 80,
+                                    render: (_, row) => (
+                                        <Flex vertical>
+                                            <span>{settings?.private.builtinProviders?.find((item) => item.provider === row.provider)?.weight ?? 1}</span>
+                                            <Typography.Text type="secondary" className="text-xs">
+                                                池内 {row.poolWeight}
+                                            </Typography.Text>
+                                        </Flex>
+                                    ),
+                                },
+                                {
+                                    title: "代理 / 提取 API",
+                                    width: 220,
+                                    render: (_, row) => (
+                                        <Flex vertical>
+                                            <Typography.Text className="text-xs" ellipsis={{ tooltip: row.proxy || "默认代理" }}>
+                                                {row.proxy || "默认代理"}
+                                            </Typography.Text>
+                                            <Typography.Text type="secondary" className="text-xs" ellipsis={{ tooltip: row.extractApi || "默认提取 API" }}>
+                                                {row.extractApi || "默认提取 API"}
+                                            </Typography.Text>
+                                        </Flex>
+                                    ),
+                                },
+                                {
+                                    title: "模型",
+                                    width: 240,
+                                    render: (_, row) => <PoolModelTags row={row} />,
+                                },
+                                {
+                                    title: "操作",
+                                    key: "actions",
+                                    width: 200,
+                                    fixed: "right",
+                                    render: (_, row) => (
+                                        <Space size={4}>
+                                            <Button type="text" size="small" disabled={isSaving} onClick={() => openPoolChannel(row)}>
+                                                编辑
+                                            </Button>
+                                            <Button type="text" size="small" disabled={isSaving} onClick={() => openPoolChannel(row, "accounts")}>
+                                                账号
+                                            </Button>
+                                        </Space>
+                                    ),
+                                },
+                            ]}
+                        />
+                    </div>
+                    <div hidden={poolTab !== "logs"}>
+                        <PoolLogsPanel />
+                    </div>
+                    <div hidden={poolTab !== "settings"}>
+                        <PoolSettingsPanel />
+                    </div>
+                </div>
+                <div hidden={activeTab !== "external"}>
                     <Flex justify="space-between" align="center" gap={16} wrap style={{ marginBottom: 16 }}>
-                        <Typography.Text type="secondary">
-                            {poolChannels.rows.length} 个内置平台 · {channels.length} 个兼容 API · 同优先级按权重分流
-                        </Typography.Text>
+                        <Typography.Text type="secondary">{channels.length} 个外部渠道（LecAPI 等）· baseUrl / Key / 读模型 / 启用 / 优先级，与号池分表单维护</Typography.Text>
                         <Space>
                             <Button disabled={isSaving} onClick={() => setRoutingDrawerOpen(true)}>
                                 路由说明
@@ -633,186 +780,111 @@ export default function AdminModelsPage() {
                                 协议模板
                             </Button>
                             <Button type="primary" icon={<PlusOutlined />} disabled={!settings || isSaving} onClick={() => openChannelDrawer(null)}>
-                                添加兼容渠道
+                                添加外部渠道
                             </Button>
                         </Space>
                     </Flex>
-                    {poolChannels.error ? <Alert type="warning" showIcon className="!mb-3" message="无法读取内置账号池，内置平台渠道暂不显示" /> : null}
-                    <Table<ChannelRow>
-                        rowKey="key"
-                        loading={isSaving || poolChannels.loading}
-                        scroll={{ x: 1280 }}
+                    <Table<ExternalChannelRow>
+                        rowKey="_rowKey"
+                        loading={isSaving}
+                        scroll={{ x: 1100 }}
                         pagination={false}
-                        dataSource={[
-                            ...poolChannels.rows.map((pool): ChannelRow => ({ key: `pool:${pool.provider}`, kind: "pool", pool })),
-                            ...channelTableData.map((channel): ChannelRow => ({ key: `channel:${channel._rowKey}`, kind: "channel", channel, index: channel._index })),
-                        ]}
+                        dataSource={channelTableData}
                         columns={[
                             {
-                                title: "ID",
-                                width: 70,
-                                render: (_, row) => (row.kind === "pool" ? <Typography.Text type="secondary">—</Typography.Text> : <Typography.Text type="secondary">{row.index + 1}</Typography.Text>),
+                                title: "#",
+                                width: 56,
+                                render: (_, row) => <Typography.Text type="secondary">{row._index + 1}</Typography.Text>,
                             },
                             {
-                                title: "名称",
-                                render: (_, row) =>
-                                    row.kind === "pool" ? (
-                                        <Typography.Link strong onClick={() => openPoolChannel(row.pool)}>
-                                            {row.pool.label}
+                                title: "渠道",
+                                width: 180,
+                                render: (_, row) => (
+                                    <Flex vertical>
+                                        <Typography.Link strong onClick={() => openChannelDrawer(row._index)}>
+                                            {row.name || "未命名渠道"}
                                         </Typography.Link>
-                                    ) : (
-                                        <Flex vertical gap={2}>
-                                            <Typography.Link strong onClick={() => showChannelModels(row.index)}>
-                                                {row.channel.name || "未命名渠道"}
-                                            </Typography.Link>
-                                            {row.channel.remark ? (
-                                                <Typography.Text type="secondary" className="text-xs" ellipsis={{ tooltip: row.channel.remark }} style={{ maxWidth: 200 }}>
-                                                    {row.channel.remark}
-                                                </Typography.Text>
-                                            ) : null}
-                                        </Flex>
-                                    ),
+                                        <Typography.Text type="secondary" className="text-xs">
+                                            {row.protocol || "openai"}
+                                        </Typography.Text>
+                                    </Flex>
+                                ),
                             },
                             {
-                                title: "类型",
-                                width: 130,
-                                render: (_, row) =>
-                                    row.kind === "pool" ? (
-                                        <Tag color="purple">内置平台</Tag>
-                                    ) : (
-                                        <Tag color="blue">
-                                            兼容 API
-                                            <Typography.Text type="secondary" className="text-xs" style={{ marginLeft: 6 }}>
-                                                {row.channel.protocol === "custom_http"
-                                                    ? protocolTemplates.find((template) => template.id === row.channel.templateId)?.name || "自定义 HTTP"
-                                                    : row.channel.protocol === "autodl_comfyui"
-                                                      ? "AutoDL"
-                                                      : "OpenAI"}
-                                            </Typography.Text>
-                                        </Tag>
-                                    ),
+                                title: "Base URL",
+                                width: 240,
+                                render: (_, row) => (
+                                    <Typography.Text className="text-xs" ellipsis={{ tooltip: row.baseUrl }}>
+                                        {row.baseUrl || "—"}
+                                    </Typography.Text>
+                                ),
                             },
                             {
-                                title: "状态",
+                                title: "启用",
                                 width: 80,
-                                render: (_, row) =>
-                                    row.kind === "pool" ? (
-                                        <Switch size="small" checked={row.pool.enabled && overview?.pool.enabled !== false} disabled={isSaving} onChange={(enabled) => void togglePoolProvider(row.pool.provider, enabled)} />
-                                    ) : (
-                                        <Switch size="small" checked={row.channel.enabled} disabled={isSaving} onChange={(enabled) => void persistChannels(channels.map((channel, index) => (index === row.index ? { ...channel, enabled } : channel)))} />
-                                    ),
+                                render: (_, row) => (
+                                    <Switch size="small" checked={row.enabled} disabled={isSaving} onChange={(enabled) => void persistChannels(channels.map((channel, index) => (index === row._index ? { ...channel, enabled } : channel)))} />
+                                ),
                             },
                             {
                                 title: "健康",
                                 width: 100,
                                 render: (_, row) =>
-                                    row.kind === "pool" ? (
-                                        <ChannelHealthBadge health={row.pool.health} enabled={row.pool.enabled && overview?.pool.enabled !== false} />
-                                    ) : testDurations[row.channel.id || row.index] ? (
-                                        <Tag color={testDurations[row.channel.id || row.index].ok ? "green" : "red"}>{testDurations[row.channel.id || row.index].text}</Tag>
-                                    ) : (
-                                        <Typography.Text type="secondary">未测试</Typography.Text>
-                                    ),
-                            },
-                            {
-                                title: "余额 / 账号",
-                                width: 110,
-                                render: (_, row) =>
-                                    row.kind === "pool" ? (
-                                        <Typography.Link
-                                            onClick={() => openPoolChannel(row.pool, "accounts")}
-                                            title={`可用 ${row.pool.activeAccounts} · 额度耗尽 ${row.pool.health?.quota || 0} · 停用 ${row.pool.health?.disabled || 0} · 失效 ${row.pool.health?.dead || 0} · 待验证 ${row.pool.health?.pending || 0}`}
-                                        >
-                                            {row.pool.activeAccounts}/{row.pool.accounts} 可用
-                                        </Typography.Link>
-                                    ) : (
-                                        <Typography.Text type="secondary">—</Typography.Text>
-                                    ),
+                                    testDurations[row.id || row._index] ? <Tag color={testDurations[row.id || row._index].ok ? "green" : "red"}>{testDurations[row.id || row._index].text}</Tag> : <Typography.Text type="secondary">未测试</Typography.Text>,
                             },
                             {
                                 title: "优先级",
-                                width: 100,
-                                render: (_, row) =>
-                                    row.kind === "pool" ? (
-                                        <Flex vertical>
-                                            <span>
-                                                {settings?.private.builtinProviders?.find((item) => item.provider === row.pool.provider)?.priority ??
-                                                    ({ chatgpt: 200, grok: 200, byteplus: 190, adobe: 180 } as Record<string, number>)[row.pool.provider] ??
-                                                    200}
-                                            </span>
-                                            <Typography.Text type="secondary" className="text-xs">
-                                                池内 {row.pool.poolPriority}
-                                            </Typography.Text>
-                                        </Flex>
-                                    ) : (
-                                        row.channel.priority || 0
-                                    ),
+                                width: 80,
+                                render: (_, row) => row.priority || 0,
                             },
                             {
                                 title: "权重",
                                 width: 80,
-                                render: (_, row) =>
-                                    row.kind === "pool" ? (
-                                        <Flex vertical>
-                                            <span>{settings?.private.builtinProviders?.find((item) => item.provider === row.pool.provider)?.weight ?? 1}</span>
-                                            <Typography.Text type="secondary" className="text-xs">
-                                                池内 {row.pool.poolWeight}
-                                            </Typography.Text>
-                                        </Flex>
-                                    ) : (
-                                        row.channel.weight
-                                    ),
+                                render: (_, row) => row.weight,
                             },
                             {
                                 title: "模型",
-                                width: 280,
-                                render: (_, row) => (row.kind === "pool" ? <PoolModelTags row={row.pool} /> : <ModelTags names={row.channel.models.map((model) => ({ name: model.model, off: model.disabled }))} />),
+                                width: 240,
+                                render: (_, row) => <ModelTags names={row.models.map((model) => ({ name: model.model, off: model.disabled }))} />,
                             },
                             {
                                 title: "操作",
                                 key: "actions",
-                                width: 200,
+                                width: 220,
                                 fixed: "right",
-                                render: (_, row) =>
-                                    row.kind === "pool" ? (
-                                        <Space size={4}>
-                                            <Button type="text" size="small" disabled={isSaving} onClick={() => openPoolChannel(row.pool)}>
-                                                编辑
-                                            </Button>
-                                            <Button type="text" size="small" disabled={isSaving} onClick={() => openPoolChannel(row.pool, "accounts")}>
-                                                账号
-                                            </Button>
-                                        </Space>
-                                    ) : (
-                                        <Space size={4}>
-                                            <Button type="text" size="small" disabled={isSaving} onClick={() => openChannelDrawer(row.index)}>
-                                                编辑
-                                            </Button>
-                                            <Button type="text" size="small" disabled={isSaving} onClick={() => copyChannel(row.index)}>
-                                                复制
-                                            </Button>
-                                            <Button
-                                                type="text"
-                                                size="small"
-                                                danger
-                                                disabled={isSaving}
-                                                onClick={() =>
-                                                    modal.confirm({
-                                                        title: `删除渠道 ${row.channel.name}？`,
-                                                        content: "仅移除此渠道及其模型映射，保留对外模型与统一价格。没有其他渠道承接的模型将无法生成。",
-                                                        okText: "删除",
-                                                        cancelText: "取消",
-                                                        okButtonProps: { danger: true },
-                                                        onOk: async () => {
-                                                            if (!(await persistChannels(channels.filter((_, index) => index !== row.index)))) throw new Error("删除失败");
-                                                        },
-                                                    })
-                                                }
-                                            >
-                                                删除
-                                            </Button>
-                                        </Space>
-                                    ),
+                                render: (_, row) => (
+                                    <Space size={4}>
+                                        <Button type="text" size="small" disabled={isSaving} onClick={() => openChannelDrawer(row._index)}>
+                                            编辑
+                                        </Button>
+                                        <Button type="text" size="small" disabled={isSaving} onClick={() => setViewChannelIndex(row._index)}>
+                                            读模型
+                                        </Button>
+                                        <Button type="text" size="small" disabled={isSaving} onClick={() => copyChannel(row._index)}>
+                                            复制
+                                        </Button>
+                                        <Button
+                                            type="text"
+                                            size="small"
+                                            danger
+                                            disabled={isSaving}
+                                            onClick={() =>
+                                                modal.confirm({
+                                                    title: `删除渠道 ${row.name}？`,
+                                                    content: "仅移除此渠道及其模型映射，保留对外模型与统一价格。没有其他渠道承接的模型将无法生成。",
+                                                    okText: "删除",
+                                                    cancelText: "取消",
+                                                    okButtonProps: { danger: true },
+                                                    onOk: async () => {
+                                                        if (!(await persistChannels(channels.filter((_, index) => index !== row._index)))) throw new Error("删除失败");
+                                                    },
+                                                })
+                                            }
+                                        >
+                                            删除
+                                        </Button>
+                                    </Space>
+                                ),
                             },
                         ]}
                     />
@@ -908,7 +980,7 @@ export default function AdminModelsPage() {
             </Drawer>
 
             <Drawer
-                title={editingChannelIndex === null ? "添加兼容渠道" : "编辑兼容渠道"}
+                title={editingChannelIndex === null ? "添加外部渠道" : "编辑外部渠道"}
                 open={isChannelDrawerOpen}
                 width="min(1120px, calc(100vw - 32px))"
                 onClose={closeChannelDrawer}
@@ -942,7 +1014,7 @@ export default function AdminModelsPage() {
                                 type="info"
                                 showIcon
                                 className="!mb-4"
-                                message="添加兼容 API 渠道"
+                                message="添加外部渠道（LecAPI 等）"
                                 description={
                                     <span>
                                         协议模板已从主 Tab 移入此处高级能力。需要自定义 HTTP 模板时，可先

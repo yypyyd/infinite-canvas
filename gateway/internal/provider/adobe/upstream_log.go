@@ -53,9 +53,18 @@ func upstreamBodyNotable(status int, body []byte) bool {
 var logUpstream = func(format string, args ...any) { log.Printf(format, args...) }
 
 // logUpstreamResponse records one Adobe reply when it is not a plain success.
-func logUpstreamResponse(op string, status int, body []byte) {
+// account is the sticky egress session key (pool account id). arpLen is the
+// length of x-arp-session-id on the request (0 = cookie-only / missing ARP).
+func logUpstreamResponse(op, account string, arpLen, status int, body []byte) {
 	if !upstreamBodyNotable(status, body) {
 		return
 	}
-	logUpstream("adobe upstream %s: status=%d body=%q", sanitizeUpstreamBody([]byte(op), 200), status, sanitizeUpstreamBody(body, upstreamLogBodyLimit))
+	logUpstream("adobe upstream %s: account=%s sticky_key=%s arp_len=%d status=%d body=%q",
+		sanitizeUpstreamBody([]byte(op), 200),
+		sanitizeUpstreamBody([]byte(account), 64),
+		sanitizeUpstreamBody([]byte(account), 64),
+		arpLen,
+		status,
+		sanitizeUpstreamBody(body, upstreamLogBodyLimit),
+	)
 }

@@ -33,12 +33,12 @@ func TestLogUpstreamResponseOnlyLogsNotableReplies(t *testing.T) {
 	logUpstream = func(format string, args ...any) { lines = append(lines, fmt.Sprintf(format, args...)) }
 	defer func() { logUpstream = old }()
 
-	logUpstreamResponse("poll", 200, []byte(`{"status":"IN_PROGRESS"}`))
+	logUpstreamResponse("poll", "ACC1", 12, 200, []byte(`{"status":"IN_PROGRESS"}`))
 	if len(lines) != 0 {
 		t.Fatalf("plain progress must not be logged: %v", lines)
 	}
-	logUpstreamResponse("submit https://firefly-3p.ff.adobe.io/v2/3p-images/generate-async?api_key=k1", 400, []byte(`{"message":"bad size","token":"t0p"}`))
-	logUpstreamResponse("submit x", 200, []byte(`{"error_code":"timeout_error","message":"system under load"}`))
+	logUpstreamResponse("submit https://firefly-3p.ff.adobe.io/v2/3p-images/generate-async?api_key=k1", "ACC1", 12, 400, []byte(`{"message":"bad size","token":"t0p"}`))
+	logUpstreamResponse("submit x", "ACC1", 12, 200, []byte(`{"error_code":"timeout_error","message":"system under load"}`))
 	if len(lines) != 2 {
 		t.Fatalf("expected 2 log lines, got %v", lines)
 	}
@@ -47,5 +47,8 @@ func TestLogUpstreamResponseOnlyLogsNotableReplies(t *testing.T) {
 	}
 	if !strings.Contains(lines[1], "system under load") {
 		t.Fatalf("busy reply not logged: %s", lines[1])
+	}
+	if !strings.Contains(lines[0], "sticky_key=ACC1") || !strings.Contains(lines[0], "arp_len=12") {
+		t.Fatalf("sticky key not logged: %s", lines[0])
 	}
 }

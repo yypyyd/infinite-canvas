@@ -398,7 +398,7 @@ generationAttempts:
 			candidates = BuildImagePayloadCandidates(modelID, prompt, aspectRatio, resolution, blobIDs)
 		}
 		for _, payload := range candidates {
-			respBody, pollURL, submitErr := c.submitImage(ctx, submitSess, token, arpSessionToken, prompt, endpoint, payload)
+			respBody, pollURL, submitErr := c.submitImage(ctx, submitSess, sessionKey, token, arpSessionToken, prompt, endpoint, payload)
 			if submitErr == nil {
 				meta, data, pollErr := c.pollImage(ctx, pollSess, downloadSess, token, pollURL, downloadResult)
 				if isRetryableGeneratedImageRejection(pollErr) {
@@ -458,7 +458,7 @@ func (c *Client) GenerateVideo(ctx context.Context, sessionKey, token, arpSessio
 	if engine == "firefly-video" {
 		endpoint = fireflyVideoSubmitURL
 	}
-	respBody, pollURL, err := c.submitVideo(ctx, submitSess, token, arpSessionToken, endpoint, payload)
+	respBody, pollURL, err := c.submitVideo(ctx, submitSess, sessionKey, token, arpSessionToken, endpoint, payload)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -641,7 +641,7 @@ func (c *Client) FetchCreditsBalance(ctx context.Context, sessionKey, token stri
 	}, nil
 }
 
-func (c *Client) submitImage(ctx context.Context, sess *tlsSession, token, arpSessionToken, prompt, endpoint string, payload map[string]any) ([]byte, string, error) {
+func (c *Client) submitImage(ctx context.Context, sess *tlsSession, sessionKey, token, arpSessionToken, prompt, endpoint string, payload map[string]any) ([]byte, string, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, "", err
@@ -703,7 +703,7 @@ func (c *Client) submitImage(ctx context.Context, sess *tlsSession, token, arpSe
 	if err != nil {
 		return nil, "", err
 	}
-	logUpstreamResponse("submit "+endpoint, resp.StatusCode, respBody)
+	logUpstreamResponse("submit "+endpoint, sessionKey, len(strings.TrimSpace(arpSessionToken)), resp.StatusCode, respBody)
 	if resp.StatusCode == 401 || resp.StatusCode == 403 {
 		if strings.EqualFold(resp.Header.Get("x-access-error"), "taste_exhausted") {
 			if stringValue(payload["modelId"]) == "gpt-image" && stringValue(payload["modelVersion"]) == "2" {
@@ -783,7 +783,7 @@ func (c *Client) pollImage(ctx context.Context, sess, downloadSess *tlsSession, 
 		if readErr != nil {
 			return nil, nil, readErr
 		}
-		logUpstreamResponse("poll", resp.StatusCode, body)
+		logUpstreamResponse("poll", "", 0, resp.StatusCode, body)
 		if b := string(body); strings.Contains(b, "system under load") || strings.Contains(b, "timeout_error") {
 			return nil, nil, ErrSystemUnderLoad
 		}
@@ -831,7 +831,7 @@ func (c *Client) pollImage(ctx context.Context, sess, downloadSess *tlsSession, 
 	}
 }
 
-func (c *Client) submitVideo(ctx context.Context, sess *tlsSession, token, arpSessionToken, endpoint string, payload map[string]any) ([]byte, string, error) {
+func (c *Client) submitVideo(ctx context.Context, sess *tlsSession, sessionKey, token, arpSessionToken, endpoint string, payload map[string]any) ([]byte, string, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, "", err
@@ -897,7 +897,7 @@ func (c *Client) submitVideo(ctx context.Context, sess *tlsSession, token, arpSe
 	if err != nil {
 		return nil, "", err
 	}
-	logUpstreamResponse("submit "+endpoint, resp.StatusCode, respBody)
+	logUpstreamResponse("submit "+endpoint, sessionKey, len(strings.TrimSpace(arpSessionToken)), resp.StatusCode, respBody)
 	if resp.StatusCode == 401 || resp.StatusCode == 403 {
 		if strings.EqualFold(resp.Header.Get("x-access-error"), "taste_exhausted") {
 			return respBody, "", ErrQuotaExhausted
@@ -978,7 +978,7 @@ func (c *Client) pollVideo(ctx context.Context, sess, downloadSess *tlsSession, 
 		if readErr != nil {
 			return nil, nil, readErr
 		}
-		logUpstreamResponse("poll", resp.StatusCode, body)
+		logUpstreamResponse("poll", "", 0, resp.StatusCode, body)
 		if resp.StatusCode == 401 || resp.StatusCode == 403 {
 			return nil, nil, accessError(resp.StatusCode, resp.Header.Get("x-access-error"), body)
 		}

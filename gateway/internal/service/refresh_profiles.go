@@ -52,6 +52,12 @@ func (s *RefreshProfileService) RefreshNow(ctx context.Context, id string) error
 		return errors.New("unsupported refresh profile")
 	}
 
+	// Bind the current residential extract/proxy before IMS exchange so the
+	// minted access token and later generate-async share one sticky egress.
+	if s.tokenSvc != nil {
+		s.tokenSvc.applyProxy(ctx)
+	}
+
 	now := time.Now()
 	_, _ = s.profiles.Update(ctx, id, map[string]any{
 		"last_attempt_at": now,

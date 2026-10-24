@@ -50,11 +50,11 @@ func TestOverloadNeverMarksAdobeAccountDead(t *testing.T) {
 		call func() error
 	}{
 		{"image_submit", func() error {
-			_, _, e := c.submitImage(ctx, sess, "token", "arp", "cup", submitURL, map[string]any{})
+			_, _, e := c.submitImage(ctx, sess, "ACC1", "token", "arp", "cup", submitURL, map[string]any{})
 			return e
 		}},
 		{"video_submit", func() error {
-			_, _, e := c.submitVideo(ctx, sess, "token", "arp", videoSubmitURL, map[string]any{})
+			_, _, e := c.submitVideo(ctx, sess, "ACC1", "token", "arp", videoSubmitURL, map[string]any{})
 			return e
 		}},
 		{"image_poll", func() error { _, _, e := c.pollImage(ctx, sess, sess, "token", submitURL, false); return e }},
@@ -81,7 +81,7 @@ func TestImage2DailyTrialExhaustionPreservesEntitlement(t *testing.T) {
 	c := NewClient("", "")
 	sess := &tlsSession{client: trialExhaustedAdobeTransport{}, fp: currentAdobeFingerprint()}
 	payload := map[string]any{"modelId": "gpt-image", "modelVersion": "2"}
-	_, _, err := c.submitImage(context.Background(), sess, "token", "arp", "cup", submitURL, payload)
+	_, _, err := c.submitImage(context.Background(), sess, "ACC1", "token", "arp", "cup", submitURL, payload)
 	if !errors.Is(err, ErrTrialExhausted) || !errors.Is(err, ErrQuotaExhausted) {
 		t.Fatalf("daily trial limit lost its quota classification: %v", err)
 	}

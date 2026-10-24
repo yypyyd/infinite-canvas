@@ -1438,6 +1438,20 @@ func (s *TokenService) probeQuota(ctx context.Context, pool, id string) (map[str
 		}, nil
 	}
 	if poolToType(item.Pool) == "adobe" && s.adobe != nil {
+		// Remint IMS on the current sticky egress before the balance probe so
+		// admin refresh-quota (and any later generate) share one residential exit
+		// after extract API / proxy changes. Failures keep the prior token.
+		if profile, perr := s.refresh.Get(ctx, item.ID); perr == nil && profile != nil && strings.TrimSpace(profile.Cookie) != "" {
+			if result, xerr := s.adobe.ExchangeCookie(ctx, item.ID, profile.Cookie); xerr == nil && result != nil && strings.TrimSpace(result.AccessToken) != "" {
+				seed := map[string]any{
+					"value":             result.AccessToken,
+					"arp_session_token": adobe.ResolveARPSessionToken(item.ARPSessionToken, profile.Cookie),
+				}
+				if updated, uerr := s.tokens.Update(ctx, item.Pool, item.ID, seed); uerr == nil && updated != nil {
+					item = updated
+				}
+			}
+		}
 		data, err := s.adobe.FetchCreditsBalance(ctx, item.ID, item.Value)
 		if err != nil {
 			// A balance endpoint can be independently challenged (notably generic

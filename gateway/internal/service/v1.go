@@ -539,6 +539,52 @@ func (s *V1Service) refreshAdobeToken(ctx context.Context, tokenID string) (mode
 	return *t, true
 }
 
+// adobeStickyEgressFingerprint hashes the adobe extract API + proxy URL so we
+// can detect when residential egress changed after an IMS mint (empty extract
+// then sticky extract causes Adobe 3P "system under load" session mismatch).
+func (s *V1Service) adobeStickyEgressFingerprint(ctx context.Context) string {
+	snap, err := loadProviderProxies(ctx, s.settings)
+	if err != nil {
+		return ""
+	}
+	raw := strings.TrimSpace(snap.ExtractByProvider["adobe"]) + "|" + strings.TrimSpace(snap.ByProvider["adobe"])
+	if raw == "|" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(sum[:16])
+}
+
+// ensureAdobeIMSMatchesEgress remints the IMS access token on the current
+// sticky residential exit when the account was last bound to a different
+// egress fingerprint (or never bound). No-op when already matched.
+func (s *V1Service) ensureAdobeIMSMatchesEgress(ctx context.Context, token model.TokenAccount) model.TokenAccount {
+	fp := s.adobeStickyEgressFingerprint(ctx)
+	if fp == "" {
+		return token
+	}
+	cur := ""
+	if token.Meta != nil {
+		cur = strings.TrimSpace(fmt.Sprint(token.Meta["sticky_egress_fp"]))
+	}
+	if cur == fp {
+		return token
+	}
+	refreshed, ok := s.refreshAdobeToken(ctx, token.ID)
+	if !ok {
+		log.Printf("adobe sticky remint failed for %s (egress_fp=%s prior=%s)", token.ID, fp, cur)
+		return token
+	}
+	if err := s.tokens.UpdateMergingMeta(ctx, "adobe", token.ID, map[string]any{"sticky_egress_fp": fp}, nil); err != nil {
+		log.Printf("adobe sticky remint meta update failed for %s: %v", token.ID, err)
+	}
+	if t, err := s.tokens.Get(ctx, "adobe", token.ID); err == nil && t != nil {
+		log.Printf("adobe sticky remint ok account=%s sticky_key=%s arp_len=%d egress_fp=%s", t.ID, t.ID, len(strings.TrimSpace(t.ARPSessionToken)), fp)
+		return *t
+	}
+	return refreshed
+}
+
 func (s *V1Service) ListModels(ctx context.Context, extended bool) ([]map[string]any, error) {
 	items, err := s.models.Routes().ListLogical(ctx, true)
 	if err != nil {
@@ -2904,6 +2950,7 @@ func (s *V1Service) generateAdobeImage(ctx context.Context, eventID string, mode
 	// signatures stop the wave. Auth/quota also fail over (see runPoolWithFailover).
 	var imageURL string
 	data, err := s.runPoolWithFailoverPolicy(ctx, eventID, "adobe", active, "image", func(token model.TokenAccount) ([]byte, error) {
+		token = s.ensureAdobeIMSMatchesEgress(ctx, token)
 		var blobIDs []string
 		for _, ref := range refs {
 			id, upErr := s.adobe.UploadImage(ctx, token.ID, token.Value, ref, "image/png", "")
@@ -2961,6 +3008,7 @@ func (s *V1Service) generateAdobeVideo(ctx context.Context, eventID string, mode
 	// attempt's meta (the upstream presigned URL).
 	var videoURL string
 	data, err := s.runPoolWithFailoverPolicy(ctx, eventID, "adobe", active, "video", func(token model.TokenAccount) ([]byte, error) {
+		token = s.ensureAdobeIMSMatchesEgress(ctx, token)
 		inputs := adobe.VideoInputs{GenerateAudio: in.GenerateAudio}
 		for _, ref := range refs {
 			id, upErr := s.adobe.UploadImage(ctx, token.ID, token.Value, ref, "image/png", engine)

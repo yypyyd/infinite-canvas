@@ -70,8 +70,36 @@ func (s *V1Service) matchingRoutes(ctx context.Context, logicalID string, req mo
 	if len(routes) > 0 && len(enabled) == 0 {
 		return nil, ErrProviderDisabled
 	}
-	enabled = filterPreferredProviderRoutes(enabled, PreferredProviderFromContext(ctx))
+	preferred := PreferredProviderFromContext(ctx)
+	if preferredProviderDisabled(routes, enabled, preferred) {
+		// The preferred pool matched capabilities but is switched off. Without
+		// this check, filtering would empty the list and look like a missing
+		// route or account pin failure (admin capability tests hit that path).
+		return nil, ErrProviderDisabled
+	}
+	enabled = filterPreferredProviderRoutes(enabled, preferred)
 	return orderRoutes(ctx, s.settingsReader(), enabled)
+}
+
+// preferredProviderDisabled reports when a preferred pool was capability-matched
+// but removed by providers_enabled (or deferred). An unknown preferred provider
+// that never matched capabilities is not treated as disabled.
+func preferredProviderDisabled(capabilityRoutes, enabledRoutes []model.ModelRoute, preferred string) bool {
+	preferred = normalizePool(preferred)
+	if preferred == "" {
+		return false
+	}
+	had := false
+	for _, route := range capabilityRoutes {
+		if normalizePool(route.Provider) == preferred {
+			had = true
+			break
+		}
+	}
+	if !had {
+		return false
+	}
+	return len(filterPreferredProviderRoutes(enabledRoutes, preferred)) == 0
 }
 
 // settingsReader avoids a typed-nil interface when no settings store is wired.

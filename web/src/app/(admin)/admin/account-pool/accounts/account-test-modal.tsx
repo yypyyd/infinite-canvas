@@ -15,7 +15,28 @@ export function AccountTestModal({ account, models, onClose }: { account: Gatewa
     const token = useGatewayToken();
     const mounted = useRef(true);
     const allowed = useMemo(() => new Set(account.routes.filter((route) => route.enabled).map((route) => route.model_id)), [account.routes]);
-    const available = useMemo(() => models.filter((item) => item.enabled && allowed.has(item.id) && item.routes.some((route) => route.provider === account.provider && route.enabled)), [account.provider, allowed, models]);
+    // Hide models whose route for this account's provider is off in providers_enabled,
+    // so admins do not pick a silent false option that only fails at test time.
+    const available = useMemo(
+        () =>
+            models.filter(
+                (item) =>
+                    item.enabled &&
+                    allowed.has(item.id) &&
+                    item.routes.some((route) => route.provider === account.provider && route.enabled && route.provider_enabled !== false),
+            ),
+        [account.provider, allowed, models],
+    );
+    const providerDisabledModels = useMemo(
+        () =>
+            models.filter(
+                (item) =>
+                    item.enabled &&
+                    allowed.has(item.id) &&
+                    item.routes.some((route) => route.provider === account.provider && route.enabled && route.provider_enabled === false),
+            ),
+        [account.provider, allowed, models],
+    );
     const [modelId, setModelId] = useState(available[0]?.id || "");
     const [prompt, setPrompt] = useState("a cute cat sitting on a desk, studio lighting");
     const [busy, setBusy] = useState(false);
@@ -104,7 +125,11 @@ export function AccountTestModal({ account, models, onClose }: { account: Gatewa
     return (
         <Modal open title={`能力测试 · ${account.label || account.email || account.id}`} okText="开始测试" cancelText="关闭" onOk={() => void runTest()} confirmLoading={busy} onCancel={onClose} width={640} destroyOnHidden>
             <Space direction="vertical" style={{ width: "100%" }}>
-                {available.length ? null : <Alert type="info" showIcon message="该账号没有可测试的已启用模型路由" />}
+                {available.length ? null : providerDisabledModels.length ? (
+                    <Alert type="warning" showIcon message="该账号所属平台已在系统设置中停用，请先在账号池设置中启用对应平台后再测试" />
+                ) : (
+                    <Alert type="info" showIcon message="该账号没有可测试的已启用模型路由" />
+                )}
                 <Select value={modelId || undefined} onChange={setModelId} placeholder="选择模型" options={available.map((item) => ({ value: item.id, label: `${item.id} · ${kindLabels[item.kind] || item.kind}` }))} style={{ width: "100%" }} />
                 <Input.TextArea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={3} maxLength={2000} />
                 {status ? <Typography.Text type="secondary">{status}</Typography.Text> : null}

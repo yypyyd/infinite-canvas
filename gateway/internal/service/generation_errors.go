@@ -64,6 +64,8 @@ func publicGenerationError(cause error) error {
 		return ErrContentRejected
 	case errors.Is(cause, ErrNoProviderAccount):
 		return ErrNoProviderAccount
+	case errors.Is(cause, ErrProviderDisabled):
+		return ErrProviderDisabled
 	case errors.Is(cause, ErrConcurrencyBackendUnavailable):
 		return ErrConcurrencyBackendUnavailable
 	case errors.Is(cause, ErrUserConcurrencyFull):
@@ -109,7 +111,7 @@ func safeStoredGenerationError(raw string) string {
 	for _, safe := range []error{
 		ErrGenerationOutcomeUnknown, ErrGenerationAbandoned,
 		ErrUnknownModel, ErrIdempotencyConflict, ErrInsufficientFunds, ErrUnsupportedParams,
-		ErrBannedPrompt, ErrContentRejected, ErrNoProviderAccount,
+		ErrBannedPrompt, ErrContentRejected, ErrNoProviderAccount, ErrProviderDisabled,
 		ErrProviderAuth, ErrProviderQuota, ErrProviderTemporary, ErrProviderExecution,
 		ErrAdobeUpstreamBusy, ErrAdobeTrialExhausted,
 		ErrProviderUnsupported,

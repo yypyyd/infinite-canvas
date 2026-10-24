@@ -233,7 +233,7 @@ func (s *V1Service) revalidateDispatchAccount(ctx context.Context, pool, account
 			return model.TokenAccount{}, err
 		}
 		if !enabled {
-			return model.TokenAccount{}, ErrNoProviderAccount
+			return model.TokenAccount{}, ErrProviderDisabled
 		}
 	}
 	if !routed {

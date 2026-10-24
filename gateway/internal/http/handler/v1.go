@@ -128,10 +128,10 @@ func adminTestError(c *gin.Context, err error) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"detail": "Adobe 上游服务暂时繁忙，请稍后重试", "code": "adobe_upstream_busy"})
 	case errors.Is(err, service.ErrProviderTemporary):
 		c.JSON(http.StatusServiceUnavailable, gin.H{"detail": "上游服务暂时不可用，请稍后重试"})
-	case errors.Is(err, service.ErrNoProviderAccount):
-		c.JSON(http.StatusServiceUnavailable, gin.H{"detail": "所选账号不能执行该模型"})
 	case errors.Is(err, service.ErrProviderDisabled):
-		c.JSON(http.StatusServiceUnavailable, gin.H{"detail": "该模型的所有平台均已在系统设置中停用"})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"detail": "该账号所属平台已在系统设置中停用，请在账号池设置中重新启用", "code": "provider_disabled"})
+	case errors.Is(err, service.ErrNoProviderAccount):
+		c.JSON(http.StatusServiceUnavailable, gin.H{"detail": "所选账号不能执行该模型（无匹配路由、绑定未启用或未授权）", "code": "no_provider_account"})
 	default:
 		c.JSON(http.StatusBadGateway, gin.H{"detail": "账号能力测试失败"})
 	}

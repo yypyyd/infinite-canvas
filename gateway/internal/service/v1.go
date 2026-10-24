@@ -738,6 +738,10 @@ func (s *V1Service) PrepareAdminTest(ctx context.Context, in AdminTestRequest) (
 	if in.Model == "" || in.Prompt == "" || in.AccountID == "" {
 		return nil, fmt.Errorf("%w: model, prompt and account_id are required", ErrUnsupportedParams)
 	}
+	ctx, err := s.withPinnedAccountProvider(ctx, in.AccountID)
+	if err != nil {
+		return nil, err
+	}
 	modelItem, err := s.models.Get(ctx, in.Model)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -3741,6 +3745,38 @@ func principalCredits(principal *APIPrincipal) float64 {
 // an admin 账号生图测试. The pinned account is taken from the pool's full list
 // (bypassing active/dead/limited filters) so a limited or disabled account can
 // still be probed. Returns nil when the account isn't in this pool.
+// withPinnedAccountProvider scopes admin capability tests to the selected
+// account's provider pool. That surfaces providers_enabled=false as
+// ErrProviderDisabled instead of a misleading pin/account mismatch after other
+// pools remain schedulable for the same logical model.
+func (s *V1Service) withPinnedAccountProvider(ctx context.Context, accountID string) (context.Context, error) {
+	accountID = strings.TrimSpace(accountID)
+	if accountID == "" || s.tokens == nil {
+		return ctx, nil
+	}
+	identities, err := s.tokens.ListIdentityByIDs(ctx, []string{accountID})
+	if err != nil {
+		return ctx, err
+	}
+	if len(identities) == 0 {
+		return ctx, ErrNoProviderAccount
+	}
+	pool := normalizePool(identities[0].Pool)
+	if pool == "" || isDeferredAccountProvider(pool) {
+		return ctx, ErrNoProviderAccount
+	}
+	if s.settings != nil {
+		enabled, enableErr := providerEnabled(ctx, s.settings, pool)
+		if enableErr != nil {
+			return ctx, enableErr
+		}
+		if !enabled {
+			return ctx, ErrProviderDisabled
+		}
+	}
+	return WithPreferredProvider(ctx, pool), nil
+}
+
 func pinTestAccount(items, active []model.TokenAccount, accountID string) []model.TokenAccount {
 	id := strings.TrimSpace(accountID)
 	if id == "" {

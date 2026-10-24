@@ -87,3 +87,18 @@ func TestAdobeTrialExhaustionExplainsModelLimit(t *testing.T) {
 		t.Fatal("daily trial limit must explain automatic renewal")
 	}
 }
+
+func TestAdminProviderDisabledExplainsSettingsSwitch(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	adminTestError(ctx, service.ErrProviderDisabled)
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status=%d", recorder.Code)
+	}
+	body := recorder.Body.String()
+	if !strings.Contains(body, "provider_disabled") || !strings.Contains(body, "系统设置") {
+		t.Fatalf("body=%s", body)
+	}
+}
+

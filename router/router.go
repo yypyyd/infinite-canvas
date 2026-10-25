@@ -111,6 +111,12 @@ func New() *gin.Engine {
 	commerce.GET("/video-projects/:id/versions/:version", func(c *gin.Context) {
 		handler.CommerceVideoProjectVersion(c.Writer, c.Request, c.Param("id"), c.Param("version"))
 	})
+	commerce.GET("/video-render-jobs", gin.WrapF(handler.CommerceVideoRenderJobs))
+	commerce.GET("/video-render-jobs/:id", func(c *gin.Context) { handler.CommerceVideoRenderJob(c.Writer, c.Request, c.Param("id")) })
+	commerce.POST("/video-render-jobs/:id/cancel", func(c *gin.Context) { handler.CancelCommerceVideoRenderJob(c.Writer, c.Request, c.Param("id")) })
+	commerce.POST("/video-render-jobs/:id/review", func(c *gin.Context) { handler.ReviewCommerceVideoRenderJob(c.Writer, c.Request, c.Param("id")) })
+	commerce.GET("/video-render-jobs/:id/download", func(c *gin.Context) { handler.DownloadCommerceVideoRenderJob(c.Writer, c.Request, c.Param("id")) })
+	commerce.POST("/video-projects/:id/render", func(c *gin.Context) { handler.CreateCommerceVideoRenderJob(c.Writer, c.Request, c.Param("id")) })
 	commerce.GET("/audit-logs", gin.WrapF(handler.CommerceAuditLogs))
 	api.GET("/settings", gin.WrapF(handler.Settings))
 	api.GET("/model-status", gin.WrapF(handler.ModelStatus))

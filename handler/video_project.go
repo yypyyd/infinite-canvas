@@ -58,3 +58,46 @@ func CreateCommerceVideoProjectVersion(w http.ResponseWriter, r *http.Request, i
 		return service.CreateVideoProjectVersion(user, id, input.ExpectedVersion)
 	})
 }
+
+func CommerceVideoRenderJobs(w http.ResponseWriter, r *http.Request) {
+	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return service.ListVideoRenderJobs(user, parseQuery(r)) })
+}
+
+func CreateCommerceVideoRenderJob(w http.ResponseWriter, r *http.Request, projectID string) {
+	var input model.CreateVideoRenderJobInput
+	if !decodeCommerceJSON(w, r, &input) {
+		return
+	}
+	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return service.CreateVideoRenderJob(user, projectID, input) })
+}
+
+func CommerceVideoRenderJob(w http.ResponseWriter, r *http.Request, id string) {
+	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return service.GetVideoRenderJob(user, id) })
+}
+
+func CancelCommerceVideoRenderJob(w http.ResponseWriter, r *http.Request, id string) {
+	withCommerceUser(w, r, func(user model.AuthUser) (any, error) {
+		if err := service.CancelVideoRenderJob(user, id); err != nil {
+			return nil, err
+		}
+		return map[string]any{"ok": true}, nil
+	})
+}
+
+func ReviewCommerceVideoRenderJob(w http.ResponseWriter, r *http.Request, id string) {
+	var input model.ReviewVideoRenderJobInput
+	if !decodeCommerceJSON(w, r, &input) {
+		return
+	}
+	withCommerceUser(w, r, func(user model.AuthUser) (any, error) { return service.ReviewVideoRenderJob(user, id, input) })
+}
+
+func DownloadCommerceVideoRenderJob(w http.ResponseWriter, r *http.Request, id string) {
+	withCommerceUser(w, r, func(user model.AuthUser) (any, error) {
+		url, err := service.VideoRenderResultURL(user, id)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"url": url}, nil
+	})
+}

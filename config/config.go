@@ -30,6 +30,9 @@ type Config struct {
 	BatchWorkerToken             string `env:"BATCH_WORKER_TOKEN"`
 	BatchWorkerConcurrency       int    `env:"BATCH_WORKER_CONCURRENCY" envDefault:"4"`
 	BatchWorkerTenantConcurrency int    `env:"BATCH_WORKER_TENANT_CONCURRENCY" envDefault:"2"`
+	VideoWorkerConcurrency       int    `env:"VIDEO_WORKER_CONCURRENCY" envDefault:"1"`
+	VideoWorkerTenantConcurrency int    `env:"VIDEO_WORKER_TENANT_CONCURRENCY" envDefault:"1"`
+	FFmpegPath                   string `env:"FFMPEG_PATH" envDefault:"ffmpeg"`
 }
 
 var Cfg Config

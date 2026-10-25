@@ -32,6 +32,15 @@ services:
       - ./data:/app/data
     command: ["/app/batch-worker"]
     restart: unless-stopped
+  video-worker:
+    image: ${INFINITE_CANVAS_IMAGE:-infinite-canvas:local}
+    profiles: ["worker"]
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    command: ["/app/video-worker"]
+    restart: unless-stopped
   # 可选：幻图与内置账号池共用的 PostgreSQL，使用 `--profile postgres` 启用，
   # 并在 .env 设置 STORAGE_DRIVER=postgres、DATABASE_DSN=postgres://huantu:<POSTGRES_PASSWORD>@postgres:5432/huantu?sslmode=disable。
   # 不启用时（默认 SQLite），镜像内会自动为账号池启动嵌入式 PostgreSQL，无需额外服务。

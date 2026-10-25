@@ -1,3 +1,5 @@
++ [新增] Release 2 视频渲染：`video_render_jobs` 生命周期（queued→materializing→rendering→archiving→pending_review→completed）、独立 `video-worker`（FFmpeg）、预扣/结算/返还算力、审核与 MP4 下载；冻结版本接口不再伪造渲染成功。
++ [新增] 视频工程编辑器 FE：新建入口、镜头时间线上移/下移、字幕/BGM 表单、安全区预览、预检/冻结/提交渲染与任务列表。
 # CHANGELOG
 
 ## Unreleased

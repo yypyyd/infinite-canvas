@@ -39,7 +39,8 @@ RUN go build -o /server . \
  && go build -o /batch-worker ./cmd/batch-worker \
  && go build -o /ops-backup ./cmd/ops-backup \
  && go build -o /gateway-import ./cmd/gateway-import \
- && go build -o /gateway-init-bucket ./gateway/cmd/init-bucket
+ && go build -o /gateway-init-bucket ./gateway/cmd/init-bucket \
+ && go build -o /video-worker ./cmd/video-worker
 
 # 运行镜像：Next.js 对外监听 3000，Go 只在容器内部监听 8080。
 FROM node:22-bookworm-slim
@@ -50,6 +51,7 @@ COPY CHANGELOG.md /app/CHANGELOG.md
 COPY LICENSE NOTICE.md THIRD_PARTY_NOTICES.md /app/
 COPY --from=api-build /server /app/server
 COPY --from=api-build /batch-worker /app/batch-worker
+COPY --from=api-build /video-worker /app/video-worker
 COPY --from=api-build /ops-backup /app/ops-backup
 COPY --from=api-build /gateway-import /app/gateway-import
 COPY --from=api-build /gateway-init-bucket /app/gateway-init-bucket
@@ -64,7 +66,7 @@ ENV PROMPT_DATA_DIR=/app/data/prompts
 # postgresql 提供内置账号池的嵌入式数据库：幻图使用 SQLite 且未配置 POOL_POSTGRES_DSN 时，
 # 入口脚本在容器内启动它（仅 Unix socket，数据在 /app/data/pool-postgres）。
 # 去掉 PostgreSQL 的 LLVM JIT（约 130MB），入口脚本以 jit=off 启动嵌入式库。
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates default-mysql-client postgresql postgresql-client \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates default-mysql-client postgresql postgresql-client ffmpeg \
  && rm -f /usr/lib/postgresql/*/lib/llvmjit* && rm -rf /usr/lib/postgresql/*/lib/bitcode \
  && dpkg -r --force-depends libllvm14 libz3-4 \
  && rm -rf /var/lib/apt/lists/*

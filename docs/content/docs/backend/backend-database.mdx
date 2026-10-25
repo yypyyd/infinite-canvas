@@ -130,7 +130,7 @@ Agent 的长期记忆表。记忆同时绑定企业、用户和可选画布项�
 
 ### video_projects / video_project_versions
 
-视频工程基础表按企业隔离。`video_projects` 保存名称、描述、商品/SKU 关联、可变草稿 Timeline JSON、草稿乐观 `version` 和当前冻结版本号 `current_version`；Timeline JSON 包含有序镜头素材与时长、转场、字幕、BGM 引用和音量、输出规格，只持久化企业文件 `storageKey`。保存草稿使用 `organization_id + id + version` 条件更新，草稿文件以 `video_project_draft` 引用域保护。`video_project_versions` 保存不可变 Timeline 与输出规格快照，以企业、工程、版本联合唯一；发布事务创建新快照并同时递增工程的 `current_version` 和乐观 `version`，版本文件以 `video_project_version` 引用域保护。历史版本只有列表和详情读取入口，不提供更新或删除。Release 1 不存在视频渲染任务表，也不创建无法消费的排队任务。
+视频工程基础表按企业隔离。`video_projects` 保存名称、描述、商品/SKU 关联、可变草稿 Timeline JSON、草稿乐观 `version` 和当前冻结版本号 `current_version`；Timeline JSON 包含有序镜头素材与时长、转场、字幕、BGM 引用和音量、输出规格，只持久化企业文件 `storageKey`。保存草稿使用 `organization_id + id + version` 条件更新，草稿文件以 `video_project_draft` 引用域保护。`video_project_versions` 保存不可变 Timeline 与输出规格快照，以企业、工程、版本联合唯一；发布事务创建新快照并同时递增工程的 `current_version` 和乐观 `version`，版本文件以 `video_project_version` 引用域保护。历史版本只有列表和详情读取入口，不提供更新或删除。Release 2 增加 `video_render_jobs`：按企业+request_id 幂等创建，保存冻结版本快照引用、线性阶段（queued/materializing/rendering/archiving/pending_review/completed|failed|cancelled）、算力预扣/结算字段、租约与结果 `storageKey`；冻结版本接口本身仍不创建渲染任务。
 
 任务项支持 `queued`、`running`、`completed`、`failed`、`cancelled` 状态、不可伪造的 `lease_token`、`lease_expires_at`、尝试次数、结果地址和错误信息；完成项还保存 `pending`、`approved`、`rejected` 审核状态、批注、审核人、审核时间和主图标记。同一任务内每个商品最多一个主图；失败项或已驳回项重新生成时递增 `run_number`，清空旧结果和审核信息并解除旧文件引用，审核、重试和主图选择都提交当前生产轮次以拒绝旧页面覆盖新结果。
 

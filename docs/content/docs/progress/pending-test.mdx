@@ -13,6 +13,14 @@ description: 当前版本已实现但仍需人工或自动化验证的变更项
 - 生成任务：新任务写入 `channelId`（如 `builtin-provider-chatgpt`）；用旧 `channelName=内置账号池` 的任务仍能重绑到当前扁平 provider。
 - 广场 / 可用模型：`GET /api/admin/model-overview` 的 `supplies` + `providerCapabilities` 与 `GET /api/model-status` 一致可读，不单独依赖 gateway models 列表。
 
+
+## Release 2 视频渲染 / 编辑器
+
+- 新建工程 → 上传 3+ 镜头 → 字幕落在安全区 → 确认 BGM 版权 → 预检通过 → 冻结版本 → 提交渲染；`video-worker` 走 materializing/rendering/archiving，成功后 `pending_review`，审核通过可下载 MP4。
+- 验证算力预扣与失败返还只发生一次；取消排队任务释放预扣；租约过期可被其他 worker 接管；冻结版本接口本身不创建假渲染任务。
+- 验证横/竖/方图画幅输出分辨率符合契约；临时上游文件不进入成片下载链接。
+
+
 ## 模型广场可用性状态
 
 - Phase 1 统一供应路由：后台「供应源 · 号池平台」表格开关与抽屉「启用供应」只改一处；关闭 chatgpt/adobe 等任一平台后，`GET /api/admin/model-overview` 的 `supplies[].enabled`、模型 Tab 可用性、广场状态与能力测试可选模型应一致为停用；再打开后 gateway `providers_enabled` 与站点 BuiltinProviders 同步为开。外部渠道启用仍只写 Channels，并出现在同一 `supplies` 列表。回归旧 `/admin/channels`、`/admin/account-pool/*` 硬跳转。

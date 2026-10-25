@@ -845,3 +845,14 @@ func UserWorkspaceCounts(organizationID string) (int64, int64, error) {
 	err = db.Model(&model.UserAsset{}).Where("organization_id = ? AND deleted_at = ''", organizationID).Count(&assets).Error
 	return projects, assets, err
 }
+
+// SetUserFileReferences replaces durable file references for a domain/object outside an open transaction.
+func SetUserFileReferences(organizationID, domain, objectID, referencePrefix string, storageKeys []string, timestamp string) error {
+	db, err := DB()
+	if err != nil {
+		return err
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		return replaceUserFileReferences(tx, organizationID, domain, objectID, referencePrefix, storageKeys, false, timestamp)
+	})
+}

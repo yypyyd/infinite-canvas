@@ -24,6 +24,7 @@ export const commerceQueryKeys = {
     items: (organizationId: string, jobId: string, filters: CommerceListFilters) => ["commerce", organizationId, "job-items", jobId, filters] as const,
     videoProjects: (organizationId: string, filters: CommerceListFilters) => ["commerce", organizationId, "video-projects", filters] as const,
     videoProject: (organizationId: string, id: string) => ["commerce", organizationId, "video-project", id] as const,
+    videoRenderJobs: (organizationId: string, filters: CommerceListFilters) => ["commerce", organizationId, "video-render-jobs", filters] as const,
 };
 
 export const userCommerceQueryKeys = {

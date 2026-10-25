@@ -161,8 +161,8 @@ func buildModelOverview(settings model.Settings, routes []gateway.RouteDetail, r
 	overview := ModelOverview{
 		Pool: PoolSourceOverview{Running: gateway.Current() != nil || poolChannel != nil || len(providerChannels) > 0, Enabled: poolEnabled,
 			Priority: poolPriority, Weight: poolWeight, DefaultPriority: DefaultProviderPriorityChatGPT, RoutesKnown: routesKnown},
-		Channels: []ChannelSourceOverview{},
-		Models:   []ModelOverviewItem{},
+		Channels:             []ChannelSourceOverview{},
+		Models:               []ModelOverviewItem{},
 		Supplies:             ListSupplyRoutes(private),
 		ProviderCapabilities: ListProviderModelCapabilities(private),
 	}

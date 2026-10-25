@@ -11,7 +11,7 @@ import (
 func TestPoolModelToChannelModelForProviderScopesResolutions(t *testing.T) {
 	item := gateway.PoolModel{
 		ID: "gpt-image-2", Modality: "image",
-		Operations: []string{"generation", "edit"},
+		Operations:      []string{"generation", "edit"},
 		ResolutionTiers: []string{"1K", "2K", "4K"},
 		Routes: []gateway.PoolRoute{
 			{Provider: "chatgpt", Operations: []string{"generation", "edit"}, ResolutionTiers: []string{"1K"}},

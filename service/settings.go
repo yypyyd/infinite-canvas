@@ -553,8 +553,8 @@ func clampPublicModelsToPrimaryProvider(items []model.ModelDefinition, channels 
 	type decl struct {
 		priority int
 		modality string
-		tiers   []string
-		ops     []string
+		tiers    []string
+		ops      []string
 	}
 	best := map[string]decl{}
 	for _, channel := range channels {
@@ -573,8 +573,8 @@ func clampPublicModelsToPrimaryProvider(items []model.ModelDefinition, channels 
 			best[id] = decl{
 				priority: channel.Priority,
 				modality: normalizePricingToken(cm.Modality),
-				tiers:   append([]string(nil), cm.ResolutionTiers...),
-				ops:     append([]string(nil), cm.Operations...),
+				tiers:    append([]string(nil), cm.ResolutionTiers...),
+				ops:      append([]string(nil), cm.Operations...),
 			}
 		}
 	}

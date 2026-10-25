@@ -27,7 +27,7 @@ import (
 const (
 	submitURL       = "https://firefly-3p.ff.adobe.io/v2/3p-images/generate-async"
 	image5SubmitURL = "https://image-v5.ff.adobe.io/v1/images/generate-async"
-	videoSubmitURL  = "https://firefly-3p.ff.adobe.io/v2/3p-video/generate-async"
+	videoSubmitURL  = "https://firefly-3p.ff.adobe.io/v2/3p-videos/generate-async"
 	storageBase     = "https://firefly-3p.ff.adobe.io/v2/storage"
 	creditsURL      = "https://firefly.adobe.io/v1/credits/balance"
 	creditsAPIKey   = "SunbreakWebUI1"

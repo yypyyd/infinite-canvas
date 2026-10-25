@@ -453,9 +453,9 @@ func (s *V1Service) dispatchVideoRoutes(ctx context.Context, eventID string, log
 		switch route.Provider {
 		case "grok":
 			data, url, lastErr = s.generateGrokVideo(routeCtx, eventID, item, in, ratio, resolution, seconds, download)
-
+		case "adobe":
+			data, url, lastErr = s.generateAdobeVideo(routeCtx, eventID, item, in, ratio, resolution, seconds, download)
 		default:
-			// Adobe video routes were removed from the closed catalog (GPT Image 2 only).
 			lastErr = ErrProviderUnsupported
 		}
 		return data, url, lastErr

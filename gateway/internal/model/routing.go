@@ -289,6 +289,10 @@ func CanonicalRoutingCatalog() []CanonicalModelDefinition {
 			// Adobe free Firefly supply only exposes GPT Image 2 at 1K/2K.
 			route("image.gpt-image-2.adobe", "gpt-image-2", "adobe", "firefly-gpt-image-2", "", imageProfile(adobeWideRatios, []string{"1K", "2K"}, 6)),
 		}},
+		// Adobe free Firefly also exposes Kling 4.0 at 720p / 8s (Auto + widescreen ratios).
+		{Model: LogicalModel{ID: "kling-4.0", Kind: "video", Name: "Kling 4.0", Enabled: true}, Routes: []ModelRoute{
+			route("video.kling-4.0.adobe", "kling-4.0", "adobe", "firefly-kling-4", "", videoProfile([]string{"auto", "21:9", "16:9", "1:1", "9:16"}, []string{"720p"}, []string{"8s"}, 1, 0, 0, 0, true, "frame")),
+		}},
 		{Model: LogicalModel{ID: "seedream-5.0-pro", Kind: "image", Name: "Seedream 5.0 Pro", Enabled: true}, Routes: []ModelRoute{
 			route("image.seedream-5.0-pro.byteplus", "seedream-5.0-pro", "byteplus", "lumina-seedream-5.0-pro", "7657401949175693322", imageProfile(commonImageRatios, []string{"1K", "2K"}, 10)),
 		}},

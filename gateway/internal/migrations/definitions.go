@@ -2045,4 +2045,62 @@ SET enabled = TRUE,
     updated_at = NOW()
 WHERE id = 'gpt-image-2';
 `,
+	"000041_adobe_kling40_free_catalog.sql": `-- Adobe free Firefly also exposes Kling 4.0 at 720p / 8s.
+-- Re-open a single adobe video route alongside gpt-image-2; leave prior
+-- kling-3/o3/seedance/firefly-video tombstones disabled.
+INSERT INTO logical_models (id, kind, name, enabled, weight, generation_count, created_at, updated_at)
+VALUES
+ ('kling-4.0', 'video', 'Kling 4.0', TRUE, 0, 0, NOW(), NOW())
+ON CONFLICT (id) DO UPDATE SET
+    kind = EXCLUDED.kind,
+    name = EXCLUDED.name,
+    enabled = TRUE,
+    updated_at = NOW();
+
+INSERT INTO model_routes (
+    id, logical_model_id, provider, runtime_model, upstream_model, enabled,
+    priority, weight, quota_bucket_key, quota_costs, capabilities, created_at, updated_at
+) VALUES
+ (
+  'video.kling-4.0.adobe', 'kling-4.0', 'adobe', 'firefly-kling-4', '', TRUE,
+  NULL, NULL, 'adobe.credits', '{"mode":"unknown","unit":"credits"}'::jsonb,
+  '[{"operations":["generation"],"ratios":["auto","21:9","16:9","1:1","9:16"],"resolutions":["720p"],"durations":["8s"],"max_reference_images":1,"supports_audio_output":true,"reference_mode":"frame"}]'::jsonb,
+  NOW(), NOW()
+ )
+ON CONFLICT (id) DO UPDATE SET
+    logical_model_id = EXCLUDED.logical_model_id,
+    provider = EXCLUDED.provider,
+    runtime_model = EXCLUDED.runtime_model,
+    upstream_model = EXCLUDED.upstream_model,
+    enabled = TRUE,
+    priority = EXCLUDED.priority,
+    weight = EXCLUDED.weight,
+    quota_bucket_key = EXCLUDED.quota_bucket_key,
+    quota_costs = EXCLUDED.quota_costs,
+    capabilities = EXCLUDED.capabilities,
+    updated_at = NOW();
+
+-- Bind every Adobe pool account to the new Kling 4.0 route (same as bindAccountRoutes).
+INSERT INTO account_model_routes (id, account_id, model_route_id, enabled, entitled, quota_bucket_key)
+SELECT a.id || ':' || r.id, a.id, r.id, TRUE, TRUE, r.quota_bucket_key
+FROM provider_accounts a
+JOIN model_routes r ON r.provider = a.pool
+WHERE a.pool = 'adobe'
+  AND r.id = 'video.kling-4.0.adobe'
+ON CONFLICT (account_id, model_route_id) DO UPDATE SET
+    enabled = TRUE,
+    entitled = TRUE,
+    quota_bucket_key = EXCLUDED.quota_bucket_key,
+    cooldown_until = NULL,
+    updated_at = NOW();
+
+-- Keep GPT Image 2 adobe route live alongside Kling 4.0.
+UPDATE model_routes
+SET enabled = TRUE, updated_at = NOW()
+WHERE id IN ('image.gpt-image-2.adobe', 'video.kling-4.0.adobe');
+
+UPDATE logical_models
+SET enabled = TRUE, updated_at = NOW()
+WHERE id IN ('gpt-image-2', 'kling-4.0');
+`,
 }

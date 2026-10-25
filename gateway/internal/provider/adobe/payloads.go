@@ -240,6 +240,113 @@ func cloneMap(in map[string]any) map[string]any {
 	return out
 }
 
-// Adobe video / nano-banana engine payloads were removed with the closed
-// catalog cut to GPT Image 2 only. Image payloads above remain the sole Adobe
-// generation path.
+// VideoInputs carries uploaded blob IDs and the Firefly generateAudio flag for
+// partner video models (currently Kling 4.0 only).
+type VideoInputs struct {
+	ImageBlobIDs  []string
+	VideoBlobIDs  []string
+	AudioBlobIDs  []string
+	GenerateAudio bool
+}
+
+// BuildVideoPayload builds the firefly-3p generate-async body for the supported
+// Adobe video engines. Only Kling 4.0 (kling-v4) is restored; other partner
+// video stacks stay out of the closed catalog.
+func BuildVideoPayload(engine, prompt, aspectRatio string, durationSeconds int, resolution, referenceMode, upstreamModel string, in VideoInputs) map[string]any {
+	_ = referenceMode
+	_ = upstreamModel
+	seedVal := int(time.Now().Unix()) % 999999
+	engine = defaultString(engine, "kling-v4")
+	resolution = defaultString(resolution, "720p")
+	aspectRatio = defaultString(aspectRatio, "16:9")
+	if durationSeconds <= 0 {
+		durationSeconds = 8
+	}
+
+	switch engine {
+	case "kling-v4":
+		isPro := strings.EqualFold(resolution, "1080p")
+		isImage := len(in.ImageBlobIDs) > 0
+		isVideo := len(in.VideoBlobIDs) > 0
+		tier := "standard"
+		if isPro {
+			tier = "pro"
+		}
+		workflow := "t2v"
+		module := "text2video"
+		if isVideo {
+			workflow = "v2v"
+			module = "video2video"
+		} else if isImage {
+			workflow = "i2v"
+			module = "image2video"
+		}
+		// Firefly Kling 4.0 versions mirror the v3 naming: kling_v4_{tier}_{workflow}.
+		modelVersion := "kling_v4_" + tier + "_" + workflow
+		if isVideo {
+			if isImage {
+				modelVersion = "kling_v4_" + tier + "_v2v_reference"
+			} else {
+				modelVersion = "kling_v4_" + tier + "_v2v_edit"
+			}
+		}
+		payload := map[string]any{
+			"modelId":            "kling",
+			"modelVersion":       modelVersion,
+			"size":               videoSize(aspectRatio, resolution),
+			"duration":           durationSeconds,
+			"seeds":              []int{seedVal},
+			"prompt":             prompt,
+			"negativePrompt":     "",
+			"generateAudio":      in.GenerateAudio,
+			"generationSettings": map[string]any{"aspectRatio": aspectRatio},
+			"generationMetadata": map[string]any{"module": module, "submodule": "ff-video-generate"},
+			"output":             map[string]any{"storeInputs": true},
+			"referenceBlobs":     []any{},
+		}
+		if isVideo {
+			refs := []any{map[string]any{"id": in.VideoBlobIDs[0], "usage": "source"}}
+			if isImage {
+				refs = append(refs, map[string]any{"id": in.ImageBlobIDs[0], "usage": "style"})
+			}
+			payload["referenceBlobs"] = refs
+		} else if isImage {
+			payload["referenceBlobs"] = []any{map[string]any{"id": in.ImageBlobIDs[0], "usage": "frame", "order": 1}}
+		}
+		return payload
+	default:
+		// Unknown engines fall through to Kling 4.0 t2v so a misconfigured route
+		// still produces a recognizable payload rather than an empty body.
+		return BuildVideoPayload("kling-v4", prompt, aspectRatio, durationSeconds, resolution, referenceMode, upstreamModel, in)
+	}
+}
+
+// videoSize maps Firefly Kling aspect labels onto width/height for the free
+// 720p tier (and 1080p for points if a route ever re-opens it).
+func videoSize(aspectRatio, resolution string) map[string]any {
+	ratio := strings.TrimSpace(aspectRatio)
+	if ratio == "" || strings.EqualFold(ratio, "auto") {
+		ratio = "16:9"
+	}
+	table720 := map[string][2]int{
+		"21:9": {1280, 548},
+		"16:9": {1280, 720},
+		"1:1":  {720, 720},
+		"9:16": {720, 1280},
+	}
+	table1080 := map[string][2]int{
+		"21:9": {1920, 822},
+		"16:9": {1920, 1080},
+		"1:1":  {1080, 1080},
+		"9:16": {1080, 1920},
+	}
+	table := table720
+	if strings.EqualFold(resolution, "1080p") {
+		table = table1080
+	}
+	size, ok := table[ratio]
+	if !ok {
+		size = table["16:9"]
+	}
+	return map[string]any{"width": size[0], "height": size[1]}
+}

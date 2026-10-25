@@ -2002,4 +2002,47 @@ SET capabilities = '[{"operations":["generation","edit"],"ratios":["1:1","5:4","
     updated_at = NOW()
 WHERE id = 'image.gpt-image-2.adobe';
 `,
+	"000040_adobe_gpt_image2_only_catalog.sql": `-- Adobe Firefly supply catalog: only GPT Image 2 remains canonical.
+-- Runtime free filtering (adobeAccountSupportsModel) already limited ordinary
+-- accounts to gpt-image-2; admin 本平台模型 still listed every adobe route from
+-- the closed catalog. Remove non-gpt-image-2 adobe routes from the catalog in
+-- code and tombstone them here (dispatch history references model_routes).
+UPDATE account_model_routes
+SET enabled = FALSE,
+    entitled = FALSE,
+    cooldown_until = NULL,
+    updated_at = NOW()
+WHERE model_route_id IN (
+    SELECT id FROM model_routes
+    WHERE provider = 'adobe'
+      AND id <> 'image.gpt-image-2.adobe'
+);
+
+UPDATE model_routes
+SET enabled = FALSE,
+    updated_at = NOW()
+WHERE provider = 'adobe'
+  AND id <> 'image.gpt-image-2.adobe';
+
+UPDATE logical_models
+SET enabled = FALSE,
+    updated_at = NOW()
+WHERE id IN (
+    'kling-3',
+    'kling-o3',
+    'seedance-2.0',
+    'seedance-2.0-fast',
+    'firefly-video'
+);
+
+UPDATE model_routes
+SET enabled = TRUE,
+    updated_at = NOW()
+WHERE id = 'image.gpt-image-2.adobe';
+
+UPDATE logical_models
+SET enabled = TRUE,
+    updated_at = NOW()
+WHERE id = 'gpt-image-2';
+`,
 }

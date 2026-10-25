@@ -3827,11 +3827,10 @@ func pinTestAccount(items, active []model.TokenAccount, accountID string) []mode
 
 // Ordinary (free / ~10-credit) Adobe accounts only run GPT Image 2 for images.
 // That free GPT Image 2 allowance is low/medium (1K/2K detailLevel) only; paid
-// points accounts are scheduled separately. Video entitlement remains
-// model-specific: standard Veo 3.1, Luma Ray, and native Firefly Video work on
-// ordinary accounts; Lite/Kling/Runway/Seedance need a points account.
-// Admin-pinned tests bypass the normal active filters but still call this helper
-// only while constructing the non-pinned scheduler pool.
+// points accounts are scheduled separately. The closed Adobe catalog now only
+// ships image.gpt-image-2.adobe; video helpers below remain for pinned tests /
+// legacy rows. Admin-pinned tests bypass the normal active filters but still
+// call this helper only while constructing the non-pinned scheduler pool.
 func adobeAccountSupportsModel(item model.TokenAccount, modelID, kind string) bool {
 	id := strings.ToLower(strings.TrimSpace(modelID))
 	if strings.EqualFold(strings.TrimSpace(kind), "image") {

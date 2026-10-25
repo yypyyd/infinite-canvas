@@ -19,7 +19,7 @@ func imageRerouteSafe(err error) bool {
 	return errors.Is(err, ErrNoProviderAccount) || errors.Is(err, ErrProviderAuth) ||
 		errors.Is(err, ErrProviderQuota) || errors.Is(err, ErrConcurrencyFull) ||
 		errors.Is(err, ErrConcurrencyBackendUnavailable) || errors.Is(err, ErrAdobeUpstreamBusy) ||
-		errors.Is(err, ErrAdobeTrialExhausted) || errors.Is(err, ErrProviderUnsupported)
+		errors.Is(err, ErrAdobeTrialExhausted) || errors.Is(err, ErrAdobeGenerationSession) || errors.Is(err, ErrProviderUnsupported)
 }
 
 // AbandonImageRequest is called when the caller gives up on an image task. A

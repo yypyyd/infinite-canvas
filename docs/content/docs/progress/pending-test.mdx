@@ -5,6 +5,18 @@ description: 当前版本已实现但仍需人工或自动化验证的变更项
 
 # 待测试
 
+## 测试文件清理
+
+- 已移除项目 Go/前端自动化测试、Adobe 独立验收命令、测试构建产物及临时探针，并移除 CI 和前端脚本中的测试入口。格式、类型、静态检查和构建配置保留。
+- 下方自动化通过记录属于删除前的历史结果，不代表当前仍有对应测试文件；人工功能验收清单继续保留。此次仅核对文件与引用清理，未执行测试或构建。
+
+## Adobe GPT Image 2 纯协议修复
+
+- GPT Image 2 生成前通过 Go/TLS 获取服务端新会话，Node.js 22+ 仅执行 SDK 加密计算，无本地或远程浏览器依赖，不再复用旧 ARP 或随机拼接 `sid/ftr`。SDK 脚本缓存一小时，加密子进程最多四个并发、单次限时 12 秒；交互挑战、Node 缺失和 SDK 变化明确失败。
+- 删除测试文件前，已用服务器上的原始 Cookie、项目真实客户端完成文生图（1024×1024 PNG）和单参考图编辑（16:9，1376×768 PNG），两次都下载并完整解码，网关测试与主程序构建通过。独立验收命令和测试产物现已移除，后续从账号池和画布实际功能复验。
+- 仅明确提交 408 时刷新一次会话；网络结果不明、已受理任务、内容审核或下载阶段不因此重新提交。免费试用耗尽明确提示在官网核对，不再承诺每日重置。
+- 待上线验证：账号池页面/画布生成、批量并发、配置代理出口、多实例、4K 质量档和多参考图、上下游断连后的恢复及失败退款。线上镜像尚未部署；见[实现与验收说明](../backend/adobe-image2-protocol)。
+
 ## Phase 4 · P0 发布验收（2026-10-25 / v0.2.40）
 
 本轮把 P0 收成可跑集合，覆盖：生成主路径、扣费/返还（Begin/FinishGenerationTask）、号池健康与会话、视频渲染预扣/结算。自动化路径已在本地与即将上线的 CI 全量跑通；下列「人工/生产浸泡」不得伪造成功。
@@ -24,7 +36,7 @@ description: 当前版本已实现但仍需人工或自动化验证的变更项
 
 ### 仍需人工 / 生产浸泡（未伪造成功）
 
-- **Adobe 真号池会话**：导入 → `adobe_session.phase` health_check→ready；sticky extract 换 egress 后 remint 日志（`adobe_session event=remint_ok`），生成不再伪装 `timeout_error`。需真实 Adobe 账号与住宅代理。
+- **Adobe 真号池会话**：验证导入、登录状态和 sticky extract 的 IMS 刷新；`ready` / `remint_ok` 仅为会话管理信号，不证明 ARP 刷新或出图成功。真实 GPT Image 2 生成与 408 原因仍需单独验收。
 - **能力钳制 UI**：仅 ChatGPT / 仅 Adobe / 两者同开时，公共目录与图片设置对 `gpt-image-2` 的 1K vs 2K/4K 展示；`model-overview.supplies` + `providerCapabilities` 与 `/api/model-status` 线上一致。
 - **交互/批量/Agent 真上游生图**：流水只允许成功一笔 `ai_consume`，失败 `ai_consume`+`ai_refund`；协议恢复与刷新不重复扣费（自动化已覆盖模拟上游，生产渠道仍需抽检）。
 - **视频工程端到端**：新建工程 → 3+ 镜头 → 字幕安全区 → BGM → 预检 → 冻结 → 提交；`video-worker` 走 materializing/rendering/archiving → `pending_review` → 审核下 MP4；失败/取消释放预扣；租约过期可被其他 worker 接管。需本机/生产 FFmpeg worker 与对象存储。
@@ -46,7 +58,7 @@ description: 当前版本已实现但仍需人工或自动化验证的变更项
 
 ## Phase 2 号池会话 / 能力声明
 
-- Adobe：导入账号后 admin 账号详情出现 `adobe_session.phase`（health_check→ready）；开启 sticky extract 后换 egress 再生成，应触发 remint 日志（`adobe_session event=remint_ok`）且不再伪装 timeout_error。
+- Adobe：导入账号后检查 `adobe_session.phase` 和 sticky extract 的 IMS 刷新日志；另行验证真实生成，不能以 `ready` 或 `remint_ok` 作为消除 `timeout_error` 的证据。
 - 能力声明：仅启用 ChatGPT 供应时，公共目录 / 图片设置对 `gpt-image-2` 只展示 1K；仅启用 Adobe 时允许 2K/4K；ChatGPT+Adobe 同时启用时按主供应（ChatGPT 优先）钳到 1K。
 - 生成任务：新任务写入 `channelId`（如 `builtin-provider-chatgpt`）；用旧 `channelName=内置账号池` 的任务仍能重绑到当前扁平 provider。
 - 广场 / 可用模型：`GET /api/admin/model-overview` 的 `supplies` + `providerCapabilities` 与 `GET /api/model-status` 一致可读，不单独依赖 gateway models 列表。
@@ -162,7 +174,7 @@ description: 当前版本已实现但仍需人工或自动化验证的变更项
 - 运行恢复与停止：刷新清空旧对话，但从服务端发现本项目未结束运行并重建控制入口；工具回执防止重复插入、重新扣费。验证生成中刷新、等待回答刷新、工具保存后回传前断线、90 秒租约接管、删除运行中会话先取消、取消失败保留入口、离开后重新进入续接，以及两个浏览器并发接管；等待租约或读取参考媒体期间停止，返回后不得继续修改画布。持续心跳的视频超过 15 分钟不应被误判超时，失联任务仍会回收；离开页面不承诺后续画布工具无人值守执行。
 - 预算与记忆：每次付费任务在扣费事务内检查 Run 状态和算力硬上限，手动重试也检查工具/媒体/时间预算。验证并发扣费不能突破上限、重复请求不多扣、取消后不发新付费调用、已有媒体任务仍按真实结果归档或退款。记忆只在已确认、有效租约与合法回执事务内修改，拒绝/过期/重放均不污染记忆；设置中可分页查看、编辑、遗忘本画布及账户记忆，跨企业/账号不可读写。
 - 局部撤销：本轮逐工具保存受影响节点与连线的补丁，逆序撤销；排列后修改文字仍保留文字，生成后新增无关节点与连线仍保留。验证相关节点再次移动、改写或新增连线时提示冲突且不产生半次撤销，生成占位节点上的手动连线也不能被误当成工具连线删除；重复撤销、保存失败重试、刷新后的补丁恢复均正确，生成费用不返还。
-- 新回归文件：`repository/agent_safety_test.go` 覆盖事务回滚、租约、幂等、并发预算和所有者隔离；`service/agent_canvas_test.go` 覆盖观察裁剪、分页、参数继承和计划分类；`canvas-agent-undo.test.mjs` 覆盖局部撤销冲突与配置入边。需先运行这些用例，再用真实图片/视频渠道和 MySQL/PostgreSQL 验证事务及恢复边界。
+- 删除前的回归曾覆盖事务回滚、租约、幂等、并发预算、所有者隔离、观察裁剪、分页、参数继承、计划分类及局部撤销。测试文件现已移除，需通过真实图片/视频渠道和 MySQL/PostgreSQL 实际流程验证事务及恢复边界。
 
 ## 其他待测试变更
 

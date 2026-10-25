@@ -7,10 +7,16 @@ description: 当前项目后续值得处理的事项
 
 本文档用来记录当前项目后续比较值得处理的事项。
 
+项目测试源文件、独立验收工具和相关 CI 测试入口已按要求移除；以下历史自动化结果不再对应当前可运行的测试套件。后续验收使用实际功能流程。
+
+## Adobe GPT Image 2 纯协议生成
+
+- 生成前的真实会话获取已实现，原始 Cookie 文生图与参考图编辑已通过服务器实际客户端验收，移入[待测试清单](./pending-test)。后续完成线上镜像部署、页面/批量/多实例和上游 SDK 更新适配验证；继续保持无浏览器依赖。
+
 
 ## Phase 2 · 已完成（会话基础设施）
 
-- Adobe 会话生命周期：`import → health_check → sticky_bind → ready / remint / fail_rotate / dead`，结构化日志 + admin `adobe_session` 字段；sticky egress / ARP sid / IMS remint 留在 gateway 账号层。
+- Adobe 登录会话状态与结构化日志已实现，sticky egress / IMS remint 留在 gateway 账号层；GPT Image 2 的生成会话现在由 provider 通过 HTTP 获取，文生图与参考图编辑已实际验收，生产页面和并发验收见待测试清单。
 - Provider 能力声明：号池渠道按路由声明 resolution/modality；overview 暴露 `providerCapabilities`；公共目录按主 provider 钳制，避免 GPT 1K 并集泄漏。
 - 生成路径：只经 `SelectModelChannel` + `runtimeChannelsFor`；任务快照持久化 `channelId`，legacy 号池名可回落重绑。
 

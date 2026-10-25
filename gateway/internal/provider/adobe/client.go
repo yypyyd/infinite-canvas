@@ -41,9 +41,8 @@ var (
 	ErrAuth           = errors.New("adobe auth failed")
 	ErrEntitlement    = errors.New("adobe model entitlement missing")
 	ErrQuotaExhausted = errors.New("adobe quota exhausted")
-	// Image 2's renewable trial allowance is separate from Firefly credits.
-	// Exhaustion does not revoke the account's model entitlement.
-	ErrTrialExhausted    = fmt.Errorf("%w: Image 2 daily trial generations exhausted", ErrQuotaExhausted)
+	// Trial exhaustion does not revoke login; its reset policy belongs to Adobe.
+	ErrTrialExhausted    = fmt.Errorf("%w: Image 2 trial generations exhausted", ErrQuotaExhausted)
 	ErrTemporaryUpstream = errors.New("adobe upstream temporary error")
 	ErrSystemUnderLoad   = fmt.Errorf("%w: timeout_error / system under load", ErrTemporaryUpstream)
 	ErrDeadUpstream      = errors.New("adobe upstream fatal error")
@@ -374,6 +373,12 @@ func (c *Client) GenerateImage(ctx context.Context, sessionKey, token, arpSessio
 	if err != nil {
 		return nil, nil, err
 	}
+	if isGPTImage2(modelID) {
+		arpSessionToken, err = generationSession(ctx, submitSess)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
 	pollSess, err := c.newDirectTLSClient()
 	if err != nil {
 		return nil, nil, err
@@ -399,6 +404,13 @@ generationAttempts:
 		}
 		for _, payload := range candidates {
 			respBody, pollURL, submitErr := c.submitImage(ctx, submitSess, sessionKey, token, arpSessionToken, prompt, endpoint, payload)
+			if isGPTImage2(modelID) && retryGenerationSession(submitErr) {
+				arpSessionToken, err = generationSession(ctx, submitSess)
+				if err != nil {
+					return nil, nil, err
+				}
+				respBody, pollURL, submitErr = c.submitImage(ctx, submitSess, sessionKey, token, arpSessionToken, prompt, endpoint, payload)
+			}
 			if submitErr == nil {
 				meta, data, pollErr := c.pollImage(ctx, pollSess, downloadSess, token, pollURL, downloadResult)
 				if isRetryableGeneratedImageRejection(pollErr) {

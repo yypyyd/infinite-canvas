@@ -14,7 +14,8 @@ import (
 )
 
 var ErrAdobeUpstreamBusy = fmt.Errorf("%w: Adobe 上游服务暂时繁忙，请稍后重试", ErrProviderTemporary)
-var ErrAdobeTrialExhausted = fmt.Errorf("%w: Adobe GPT Image 2 今日免费试用次数已用完，请等待每日额度重置后重试", ErrProviderQuota)
+var ErrAdobeTrialExhausted = fmt.Errorf("%w: Adobe GPT Image 2 免费试用次数已用完，请在 Adobe 官网确认剩余额度或升级计划", ErrProviderQuota)
+var ErrAdobeGenerationSession = fmt.Errorf("%w: Adobe 生成会话刷新失败，请检查服务端 Node.js 或稍后重试", ErrProviderTemporary)
 
 // publicGenerationError collapses provider-specific failures into stable,
 // credential-free API categories. Provider errors routinely contain reflected
@@ -42,6 +43,8 @@ func publicGenerationError(cause error) error {
 		return ErrAdobeTrialExhausted
 	case errors.Is(cause, ErrAdobeUpstreamBusy), errors.Is(cause, adobe.ErrSystemUnderLoad):
 		return ErrAdobeUpstreamBusy
+	case errors.Is(cause, ErrAdobeGenerationSession), errors.Is(cause, adobe.ErrGenerationSession):
+		return ErrAdobeGenerationSession
 	case errors.Is(cause, ErrGenerationOutcomeUnknown):
 		return ErrGenerationOutcomeUnknown
 	case errors.Is(cause, ErrIdempotencyConflict):
@@ -113,7 +116,7 @@ func safeStoredGenerationError(raw string) string {
 		ErrUnknownModel, ErrIdempotencyConflict, ErrInsufficientFunds, ErrUnsupportedParams,
 		ErrBannedPrompt, ErrContentRejected, ErrNoProviderAccount, ErrProviderDisabled,
 		ErrProviderAuth, ErrProviderQuota, ErrProviderTemporary, ErrProviderExecution,
-		ErrAdobeUpstreamBusy, ErrAdobeTrialExhausted,
+		ErrAdobeUpstreamBusy, ErrAdobeTrialExhausted, ErrAdobeGenerationSession,
 		ErrProviderUnsupported,
 		ErrConcurrencyBackendUnavailable, ErrConcurrencyFull, ErrUserConcurrencyFull,
 		ErrReferenceTooLarge, ErrReferenceVideoTooLarge, ErrReferenceAudioTooLarge,

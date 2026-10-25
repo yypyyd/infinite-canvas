@@ -1,0 +1,469 @@
+[
+  {
+    "key": "api_type",
+    "value": "js"
+  },
+  {
+    "key": "f",
+    "value": ""
+  },
+  {
+    "key": "n",
+    "value": ""
+  },
+  {
+    "key": "wh",
+    "value": "c9f1158ef0c5ae0c0e74d87cdbf43178|79169737225f825ee428975a81c22b8f"
+  },
+  {
+    "key": "enhanced_fp",
+    "value": [
+      {
+        "key": "webgl_extensions",
+        "value": "ANGLE_instanced_arrays;EXT_blend_minmax;EXT_clip_control;EXT_color_buffer_half_float;EXT_depth_clamp;EXT_disjoint_timer_query;EXT_float_blend;EXT_frag_depth;EXT_polygon_offset_clamp;EXT_shader_texture_lod;EXT_texture_compression_bptc;EXT_texture_compression_rgtc;EXT_texture_filter_anisotropic;EXT_texture_mirror_clamp_to_edge;EXT_sRGB;KHR_parallel_shader_compile;OES_element_index_uint;OES_fbo_render_mipmap;OES_standard_derivatives;OES_texture_float;OES_texture_float_linear;OES_texture_half_float;OES_texture_half_float_linear;OES_vertex_array_object;WEBGL_blend_func_extended;WEBGL_color_buffer_float;WEBGL_compressed_texture_s3tc;WEBGL_compressed_texture_s3tc_srgb;WEBGL_debug_renderer_info;WEBGL_debug_shaders;WEBGL_depth_texture;WEBGL_draw_buffers;WEBGL_lose_context;WEBGL_multi_draw;WEBGL_polygon_mode"
+      },
+      {
+        "key": "webgl_extensions_hash",
+        "value": "7300c23f4e6fa34e534fc99c1b628588"
+      },
+      {
+        "key": "webgl_renderer",
+        "value": "WebKit WebGL"
+      },
+      {
+        "key": "webgl_vendor",
+        "value": "WebKit"
+      },
+      {
+        "key": "webgl_version",
+        "value": "WebGL 1.0 (OpenGL ES 2.0 Chromium)"
+      },
+      {
+        "key": "webgl_shading_language_version",
+        "value": "WebGL GLSL ES 1.0 (OpenGL ES GLSL ES 1.0 Chromium)"
+      },
+      {
+        "key": "webgl_aliased_line_width_range",
+        "value": "[1, 1]"
+      },
+      {
+        "key": "webgl_aliased_point_size_range",
+        "value": "[1, 1024]"
+      },
+      {
+        "key": "webgl_antialiasing",
+        "value": "yes"
+      },
+      {
+        "key": "webgl_bits",
+        "value": "8,8,24,8,8,0"
+      },
+      {
+        "key": "webgl_max_params",
+        "value": "16,32,16384,1024,16384,16,16384,30,16,16,4095"
+      },
+      {
+        "key": "webgl_max_viewport_dims",
+        "value": "[32767, 32767]"
+      },
+      {
+        "key": "webgl_unmasked_vendor",
+        "value": "Google Inc. (Intel)"
+      },
+      {
+        "key": "webgl_unmasked_renderer",
+        "value": "ANGLE (Intel, Intel(R) UHD Graphics 630 (0x00003E92) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+      },
+      {
+        "key": "webgl_vsf_params",
+        "value": "23,127,127,23,127,127,23,127,127"
+      },
+      {
+        "key": "webgl_vsi_params",
+        "value": "0,31,30,0,31,30,0,31,30"
+      },
+      {
+        "key": "webgl_fsf_params",
+        "value": "23,127,127,23,127,127,23,127,127"
+      },
+      {
+        "key": "webgl_fsi_params",
+        "value": "0,31,30,0,31,30,0,31,30"
+      },
+      {
+        "key": "webgl_hash_webgl",
+        "value": "62bf004c4ce4c547ccfa69569ed941f3"
+      },
+      {
+        "key": "user_agent_data_brands",
+        "value": "Not=A?Brand,Google Chrome,Chromium"
+      },
+      {
+        "key": "user_agent_data_mobile",
+        "value": false
+      },
+      {
+        "key": "navigator_connection_downlink",
+        "value": 10
+      },
+      {
+        "key": "navigator_connection_downlink_max",
+        "value": null
+      },
+      {
+        "key": "network_info_rtt",
+        "value": 150
+      },
+      {
+        "key": "network_info_save_data",
+        "value": false
+      },
+      {
+        "key": "network_info_rtt_type",
+        "value": "73062b"
+      },
+      {
+        "key": "screen_pixel_depth",
+        "value": 24
+      },
+      {
+        "key": "navigator_device_memory",
+        "value": 8
+      },
+      {
+        "key": "navigator_languages",
+        "value": "en-US,en"
+      },
+      {
+        "key": "window_inner_width",
+        "value": 1280
+      },
+      {
+        "key": "window_inner_height",
+        "value": 900
+      },
+      {
+        "key": "window_outer_width",
+        "value": 1280
+      },
+      {
+        "key": "window_outer_height",
+        "value": 960
+      },
+      {
+        "key": "3f38662",
+        "value": 1
+      },
+      {
+        "key": "browser_detection_firefox",
+        "value": false
+      },
+      {
+        "key": "browser_detection_brave",
+        "value": false
+      },
+      {
+        "key": "9f41a2c",
+        "value": false
+      },
+      {
+        "key": "5c273b3",
+        "value": false
+      },
+      {
+        "key": "ce4046e",
+        "value": false
+      },
+      {
+        "key": "f58835f",
+        "value": "6681f2144d3d1ceb383fe87f7aad9600"
+      },
+      {
+        "key": "browser_object_checks",
+        "value": "554838a8451ac36cb977e719e9d6623c"
+      },
+      {
+        "key": "29s83ih9",
+        "value": "b326b5062b2f0e69046810717534cb09\u2062"
+      },
+      {
+        "key": "audio_codecs",
+        "value": "{\"ogg\":\"probably\",\"mp3\":\"probably\",\"wav\":\"probably\",\"m4a\":\"maybe\",\"aac\":\"probably\"}"
+      },
+      {
+        "key": "audio_codecs_extended_hash",
+        "value": "805036349642e2569ec299baed02315b"
+      },
+      {
+        "key": "video_codecs",
+        "value": "{\"ogg\":\"\",\"h264\":\"probably\",\"webm\":\"probably\",\"mpeg4v\":\"\",\"mpeg4a\":\"\",\"theora\":\"\"}"
+      },
+      {
+        "key": "video_codecs_extended_hash",
+        "value": "5648501a58d24ea22ce3773cc234e563"
+      },
+      {
+        "key": "media_query_dark_mode",
+        "value": false
+      },
+      {
+        "key": "f9bf2db",
+        "value": "{\"pc\":\"no-preference\",\"ah\":\"hover\",\"ap\":\"coarse\",\"p\":\"fine\",\"h\":\"hover\",\"u\":\"fast\",\"prm\":\"no-preference\",\"prt\":\"no-preference\",\"s\":\"enabled\",\"fc\":\"none\"}"
+      },
+      {
+        "key": "headless_browser_phantom",
+        "value": false
+      },
+      {
+        "key": "headless_browser_selenium",
+        "value": false
+      },
+      {
+        "key": "headless_browser_nightmare_js",
+        "value": false
+      },
+      {
+        "key": "862f2c1",
+        "value": 4
+      },
+      {
+        "key": "document__referrer",
+        "value": ""
+      },
+      {
+        "key": "window__ancestor_origins",
+        "value": []
+      },
+      {
+        "key": "window__tree_index",
+        "value": []
+      },
+      {
+        "key": "window__tree_structure",
+        "value": "[]"
+      },
+      {
+        "key": "window__location_href",
+        "value": "https://firefly.adobe.com/generate/image"
+      },
+      {
+        "key": "client_config__sitedata_location_href",
+        "value": "https://firefly.adobe.com/generate/image"
+      },
+      {
+        "key": "client_config__language",
+        "value": null
+      },
+      {
+        "key": "client_config__surl",
+        "value": "https://arks-client.adobe.com"
+      },
+      {
+        "key": "c8480e29a",
+        "value": "b780b937b0231c0dbe688af9cbd5fdc1\u2062"
+      },
+      {
+        "key": "client_config__triggered_inline",
+        "value": false
+      },
+      {
+        "key": "mobile_sdk__is_sdk",
+        "value": false
+      },
+      {
+        "key": "z87b89t5",
+        "value": null
+      },
+      {
+        "key": "audio_fingerprint",
+        "value": "124.04347776696522"
+      },
+      {
+        "key": "navigator_battery_charging",
+        "value": true
+      },
+      {
+        "key": "7541c2s",
+        "value": "29e0da22243c6ac8df6f6500bd1f93b4"
+      },
+      {
+        "key": "1f220c9",
+        "value": "4265a56c672d7e6aa6193578832fbe69"
+      },
+      {
+        "key": "a9e2b4c",
+        "value": []
+      },
+      {
+        "key": "math_fingerprint",
+        "value": "e00752d866abf7fdf93bd4111bcfeb7b"
+      },
+      {
+        "key": "supported_math_functions",
+        "value": "58fd7fe702f115c08ed939723f4dcc5d"
+      },
+      {
+        "key": "3f76dd27",
+        "value": "landscape-primary"
+      },
+      {
+        "key": "5dd48ca0",
+        "value": 5
+      },
+      {
+        "key": "4b4b269e68",
+        "value": ""
+      },
+      {
+        "key": "6a62b2a558",
+        "value": ""
+      },
+      {
+        "key": "is_keyless",
+        "value": false
+      },
+      {
+        "key": "client_config__wait_for_settings",
+        "value": false
+      },
+      {
+        "key": "c2d2015",
+        "value": "29d13b1af8803cb86c2697345d7ea9eb"
+      },
+      {
+        "key": "43f2d94",
+        "value": []
+      },
+      {
+        "key": "20c15922",
+        "value": true
+      },
+      {
+        "key": "4f59ca8",
+        "value": null
+      },
+      {
+        "key": "3ea7194",
+        "value": {
+          "supported": true,
+          "formats": [
+            "HDR10",
+            "HLG"
+          ],
+          "isHDR": false
+        }
+      },
+      {
+        "key": "05d3d24",
+        "value": "40e14a53f514b3d6792e2d8072aa5c37"
+      },
+      {
+        "key": "speech_default_voice",
+        "value": "Microsoft David - English (United States) || en-US"
+      },
+      {
+        "key": "speech_voices_hash",
+        "value": "e9db3afbe0fa54bf2a03a91024d87128"
+      },
+      {
+        "key": "83eb055",
+        "value": "d41d8cd98f00b204e9800998ecf8427e"
+      },
+      {
+        "key": "ecb474c",
+        "value": "x86"
+      },
+      {
+        "key": "93835f9",
+        "value": "64"
+      },
+      {
+        "key": "9318abc",
+        "value": ""
+      },
+      {
+        "key": "45b6f33",
+        "value": "10.0.0"
+      },
+      {
+        "key": "804b033",
+        "value": "Not=A?Brand;99.0.0.0,Google Chrome;146.0.0.0,Chromium;146.0.0.0"
+      },
+      {
+        "key": "b88d7d5",
+        "value": "Desktop"
+      },
+      {
+        "key": "81ebcd9",
+        "value": false
+      },
+      {
+        "key": "4ca87df3d1",
+        "value": "Ow=="
+      },
+      {
+        "key": "867e25e5d4",
+        "value": "Ow=="
+      },
+      {
+        "key": "d4a306884c",
+        "value": "Ow=="
+      },
+      {
+        "key": "vsadsa",
+        "value": 1
+      },
+      {
+        "key": "basfas",
+        "value": [
+          0,
+          0
+        ]
+      },
+      {
+        "key": "lfasdgs",
+        "value": ""
+      }
+    ]
+  },
+  {
+    "key": "fe",
+    "value": [
+      "DNT:unknown",
+      "L:en-US",
+      "D:24",
+      "PR:1",
+      "S:1920,1080",
+      "AS:1920,1032",
+      "TO:0",
+      "SS:true",
+      "LS:true",
+      "IDB:true",
+      "B:false",
+      "ODB:false",
+      "CPUC:unknown",
+      "PK:Win32",
+      "CFP:-1870454096",
+      "FR:false",
+      "FOS:false",
+      "FB:false",
+      "JSF:Arial,Arial Black,Arial Narrow,Book Antiqua,Bookman Old Style,Calibri,Cambria,Cambria Math,Century,Century Gothic,Comic Sans MS,Consolas,Courier,Courier New,Garamond,Georgia,Helvetica,Impact,Lucida Console,Lucida Handwriting,Lucida Sans Unicode,Microsoft Sans Serif,Monotype Corsiva,MS Gothic,MS PGothic,MS Reference Sans Serif,MS Sans Serif,MS Serif,Palatino Linotype,Segoe Print,Segoe Script,Segoe UI,Segoe UI Light,Segoe UI Semibold,Segoe UI Symbol,Tahoma,Times,Times New Roman,Trebuchet MS,Verdana,Wingdings,Wingdings 2,Wingdings 3",
+      "P:Chrome PDF Viewer,Chromium PDF Viewer,Microsoft Edge PDF Viewer,PDF Viewer,WebKit built-in PDF",
+      "T:10,false,false",
+      "H:20",
+      "SWF:false"
+    ]
+  },
+  {
+    "key": "ife_hash",
+    "value": ""
+  },
+  {
+    "key": "jsbd",
+    "value": "{\"HL\":1,\"NCE\":true,\"DT\":\"Adobe Firefly\",\"NWD\":\"false\",\"DMTO\":1,\"DOTO\":1}"
+  },
+  {
+    "key": "c",
+    "value": "Copyright (c) 2026 Arkose Labs. All Rights Reserved."
+  }
+]

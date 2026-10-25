@@ -28,6 +28,7 @@
 - [接口响应约定](/docs/backend/api-response)
 - [系统配置数据结构](/docs/backend/system-settings)
 - [自定义渠道协议与 VividAI 切换](/docs/backend/custom-protocols)
+- [Adobe GPT Image 2 纯协议排障](/docs/backend/adobe-image2-protocol)
 - [后端数据库说明](/docs/backend/backend-database)
 - [画布数据结构](/docs/backend/canvas-data-structure)
 

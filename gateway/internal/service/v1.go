@@ -2913,7 +2913,12 @@ func (s *V1Service) generateAdobeImage(ctx context.Context, eventID string, mode
 			}
 			blobIDs = append(blobIDs, id)
 		}
-		submitARP := adobe.SubmissionARPSessionToken(token.ARPSessionToken)
+		// GPT Image 2 obtains a fresh generation session inside the provider.
+		// Other models retain their existing submission behavior.
+		submitARP := token.ARPSessionToken
+		if modelItem.ID != "firefly-gpt-image-2" && modelItem.ID != "firefly-gpt-image" {
+			submitARP = adobe.SubmissionARPSessionToken(submitARP)
+		}
 		d, meta, genErr := s.adobe.GenerateImage(ctx, token.ID, token.Value, submitARP, modelItem.ID, in.Prompt, aspectRatio, resolution, blobIDs, false)
 		if genErr == nil {
 			imageURL = strings.TrimSpace(stringValue(meta["image_url"]))

@@ -462,6 +462,12 @@ func (s *V1Service) tryAccount(ctx context.Context, eventID, pool string, token 
 		}
 		isAuth, isQuota, isTemp, isDead := classify(err)
 		if isQuota {
+			// Free Adobe GPT Image 2 only allows a handful of trial gens; once
+			// taste_exhausted fires, disable the credential so it is not reused.
+			if errors.Is(err, adobe.ErrTrialExhausted) {
+				s.markAdobeFreeTrialExhausted(ctx, pool, token)
+				return nil, true, false, err
+			}
 			if shouldMarkAccountQuota(err) {
 				s.markTokenFailure(ctx, pool, token, kind, false, true)
 			}
@@ -719,6 +725,20 @@ func (s *V1Service) markTokenUpstreamFailure(ctx context.Context, pool string, t
 		"upstream_fails": gorm.Expr("upstream_fails + 1"),
 	})
 	recordBookkeepingError("record upstream failure", updateErr)
+}
+
+// markAdobeFreeTrialExhausted disables a free Adobe account after GPT Image 2
+// trial generations are exhausted (typically three free gens). Failover continues
+// to the next account; the credential stays disabled until an admin revives it.
+func (s *V1Service) markAdobeFreeTrialExhausted(ctx context.Context, pool string, token model.TokenAccount) {
+	_, updateErr := s.tokens.Update(ctx, pool, token.ID, map[string]any{
+		"last_used_at":  time.Now(),
+		"fail_total":    gorm.Expr("fail_total + 1"),
+		"fails":         gorm.Expr("fails + 1"),
+		"status":        "disabled",
+		"image_limited": true,
+	})
+	recordBookkeepingError("disable adobe free trial account", updateErr)
 }
 
 // markTokenDead disables an account and marks it dead on a fatal upstream error

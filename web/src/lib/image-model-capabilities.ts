@@ -32,7 +32,12 @@ export function isGptImageFamily(model?: string) {
  * GPT image family is hard-capped to 1K; other models keep catalog/channel tiers.
  */
 export function resolveImageResolutionTiers(model: string | undefined, catalogTiers?: string[]): string[] | undefined {
-    if (isGptImageFamily(model)) return ["1k"];
+    // GPT Image family: prefer the primary provider catalog (Adobe free = 1K/2K,
+    // ChatGPT = 1K). Without catalog tiers, keep the ChatGPT-safe 1K default.
+    if (isGptImageFamily(model)) {
+        if (!catalogTiers?.length) return ["1k"];
+        return Array.from(new Set(catalogTiers.map(normalizeImageResolutionTier).filter(Boolean)));
+    }
     if (!catalogTiers?.length) return catalogTiers;
     return Array.from(new Set(catalogTiers.map(normalizeImageResolutionTier).filter(Boolean)));
 }

@@ -580,9 +580,9 @@ func dispatchFailureClass(err error) (state, class string) {
 	case errors.Is(err, byteplus.ErrTaskSubmissionUnknown), errors.Is(err, chatgpt.ErrTaskSubmissionUnknown):
 		return "unknown", "temporary"
 	case errors.Is(err, adobe.ErrTrialExhausted):
-		// A daily model allowance can recover without reimporting credentials.
-		// Record the verdict without disabling the route or zeroing Firefly credits.
-		return "failed", "model_quota"
+		// Free GPT Image 2 trial is exhausted; the account is disabled in
+		// markAdobeFreeTrialExhausted. Record as quota for dispatch_attempts.
+		return "failed", "quota"
 	case errors.Is(err, adobe.ErrEntitlement):
 		return "failed", "entitlement"
 	case errors.Is(err, adobe.ErrAuth), errors.Is(err, byteplus.ErrAuth), errors.Is(err, chatgpt.ErrAuth), errors.Is(err, grok.ErrAuth):

@@ -2891,6 +2891,10 @@ func (s *V1Service) generateAdobeImage(ctx context.Context, eventID string, mode
 	if err != nil {
 		return nil, "", err
 	}
+	resolution, err = adobeFreeImageResolution(resolution, in.Quality)
+	if err != nil {
+		return nil, "", err
+	}
 	if len(active) == 0 {
 		return nil, "", ErrNoProviderAccount
 	}
@@ -3530,6 +3534,30 @@ func resolveImageSize(item *model.ModelConfig, in V1ImageRequest) (string, strin
 	return parseImageSize(in.Size, in.AspectRatio, in.Resolution)
 }
 
+// adobeFreeImageResolution maps OpenAI quality onto Adobe GPT Image 2 detail
+// tiers and enforces the free-account ceiling (1K/2K = low/medium only).
+func adobeFreeImageResolution(resolution, quality string) (string, error) {
+	r := strings.ToUpper(strings.TrimSpace(resolution))
+	switch strings.ToLower(strings.TrimSpace(quality)) {
+	case "low":
+		r = "1K"
+	case "medium":
+		r = "2K"
+	case "high":
+		return "", fmt.Errorf("%w: adobe free GPT Image 2 supports low/medium (1K/2K) only", ErrUnsupportedParams)
+	}
+	if r == "" {
+		r = "2K"
+	}
+	if r == "4K" {
+		return "", fmt.Errorf("%w: adobe free GPT Image 2 supports low/medium (1K/2K) only", ErrUnsupportedParams)
+	}
+	if r != "1K" && r != "2K" {
+		r = "2K"
+	}
+	return r, nil
+}
+
 // imageResolutionDefaulted reports whether the client left the resolution to
 // the server (no resolution and no pixel size, or size "auto"). Each route then
 // uses its own default (see routeImageResolution) instead of one model-wide
@@ -3797,17 +3825,24 @@ func pinTestAccount(items, active []model.TokenAccount, accountID string) []mode
 	return nil
 }
 
-// Ordinary 10-credit Adobe accounts can execute the retained partner image
-// models (GPT Image 2 and Nano Banana 2). Video entitlement
-// is model-specific: standard Veo 3.1, Luma Ray, and native Firefly Video work
-// on ordinary accounts; Lite/Kling/Runway/Seedance return user_not_entitled.
+// Ordinary (free / ~10-credit) Adobe accounts only run GPT Image 2 for images.
+// That free GPT Image 2 allowance is low/medium (1K/2K detailLevel) only; paid
+// points accounts are scheduled separately. Video entitlement remains
+// model-specific: standard Veo 3.1, Luma Ray, and native Firefly Video work on
+// ordinary accounts; Lite/Kling/Runway/Seedance need a points account.
 // Admin-pinned tests bypass the normal active filters but still call this helper
 // only while constructing the non-pinned scheduler pool.
 func adobeAccountSupportsModel(item model.TokenAccount, modelID, kind string) bool {
+	id := strings.ToLower(strings.TrimSpace(modelID))
 	if strings.EqualFold(strings.TrimSpace(kind), "image") {
-		return true
+		switch id {
+		case "firefly-gpt-image-2", "firefly-gpt-image", "gpt-image-2":
+			return true
+		default:
+			return false
+		}
 	}
-	switch strings.ToLower(strings.TrimSpace(modelID)) {
+	switch id {
 	case "firefly-video", "gemini-veo31", "firefly-veo31", "firefly-ray":
 		return true
 	}

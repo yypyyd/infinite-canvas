@@ -354,7 +354,7 @@ var migrationSources = map[string]string{
 		"\n" +
 		" ('image.gpt-image-2.chatgpt','gpt-image-2','chatgpt','gpt-image-2','gpt-image-2',100,'chatgpt.image','[{\"operations\":[\"generation\",\"edit\"],\"ratios\":[\"1:1\",\"16:9\",\"9:16\",\"4:3\",\"3:4\"],\"resolutions\":[\"1K\"],\"max_reference_images\":6,\"reference_mode\":\"asset\"}]'),\n" +
 		" ('image.gpt-image-2.byteplus','gpt-image-2','byteplus','lumina-gpt-image-2','6824519374061285743',90,'byteplus.computing_points','[{\"operations\":[\"generation\",\"edit\"],\"ratios\":[\"1:1\",\"16:9\",\"9:16\",\"4:3\",\"3:4\"],\"resolutions\":[\"1K\",\"2K\",\"4K\"],\"max_reference_images\":14,\"reference_mode\":\"asset\"}]'),\n" +
-		" ('image.gpt-image-2.adobe','gpt-image-2','adobe','firefly-gpt-image-2','',80,'adobe.image','[{\"operations\":[\"generation\",\"edit\"],\"ratios\":[\"1:1\",\"5:4\",\"9:16\",\"21:9\",\"16:9\",\"4:3\",\"3:2\",\"4:5\",\"3:4\",\"2:3\"],\"resolutions\":[\"1K\",\"2K\",\"4K\"],\"max_reference_images\":6,\"reference_mode\":\"asset\"}]'),\n" +
+		" ('image.gpt-image-2.adobe','gpt-image-2','adobe','firefly-gpt-image-2','',80,'adobe.image','[{\"operations\":[\"generation\",\"edit\"],\"ratios\":[\"1:1\",\"5:4\",\"9:16\",\"21:9\",\"16:9\",\"4:3\",\"3:2\",\"4:5\",\"3:4\",\"2:3\"],\"resolutions\":[\"1K\",\"2K\"],\"max_reference_images\":6,\"reference_mode\":\"asset\"}]'),\n" +
 		" ('image.seedream-5.0-pro.byteplus','seedream-5.0-pro','byteplus','lumina-seedream-5.0-pro','7657401949175693322',100,'byteplus.computing_points','[{\"operations\":[\"generation\",\"edit\"],\"ratios\":[\"1:1\",\"16:9\",\"9:16\",\"4:3\",\"3:4\"],\"resolutions\":[\"1K\",\"2K\"],\"max_reference_images\":10,\"reference_mode\":\"asset\"}]'),\n" +
 		" ('image.seedream-5.0-lite.byteplus','seedream-5.0-lite','byteplus','lumina-seedream-5.0-lite','7604761017696141358',100,'byteplus.computing_points','[{\"operations\":[\"generation\",\"edit\"],\"ratios\":[\"1:1\",\"16:9\",\"9:16\",\"4:3\",\"3:4\"],\"resolutions\":[\"2K\"],\"max_reference_images\":10,\"reference_mode\":\"asset\"}]'),\n" +
 		" ('image.nano-banana-2.byteplus','nano-banana-2','byteplus','lumina-nano-banana-2','8162745039814627354',100,'byteplus.computing_points','[{\"operations\":[\"generation\",\"edit\"],\"ratios\":[\"1:1\",\"16:9\",\"9:16\",\"4:3\",\"3:4\"],\"resolutions\":[\"1K\",\"2K\",\"4K\"],\"max_reference_images\":14,\"reference_mode\":\"asset\"}]'),\n" +
@@ -1994,4 +1994,13 @@ UPDATE logical_models
 SET enabled = FALSE, updated_at = NOW()
 WHERE id IN ('gpt-5-5-mini', 'gpt-5-5-thinking');
 `,
+	"000039_adobe_free_gpt_image2_resolutions.sql": `-- Adobe free accounts only expose GPT Image 2 at low/medium
+-- detail (1K/2K). Drop 4K from the adobe gpt-image-2 route so preflight and
+-- catalog clamp match the free Firefly trial.
+UPDATE model_routes
+SET capabilities = '[{"operations":["generation","edit"],"ratios":["1:1","5:4","9:16","21:9","16:9","4:3","3:2","4:5","3:4","2:3"],"resolutions":["1K","2K"],"max_reference_images":6,"reference_mode":"asset"}]'::jsonb,
+    updated_at = NOW()
+WHERE id = 'image.gpt-image-2.adobe';
+`,
+
 }

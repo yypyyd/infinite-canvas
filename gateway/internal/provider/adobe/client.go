@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/url"
 	"strings"
 	"sync"
@@ -488,6 +489,7 @@ func (c *Client) GenerateVideo(ctx context.Context, sessionKey, token, arpSessio
 	var lastSubmitErr error
 	for _, ver := range candidates {
 		payload["modelVersion"] = ver
+		log.Printf("adobe video modelVersion try account=%s version=%s", sessionKey, ver)
 		respBody, pollURL, lastSubmitErr = c.submitVideo(ctx, submitSess, sessionKey, token, arpSessionToken, videoSubmitURL, payload)
 		if retryGenerationSession(lastSubmitErr) {
 			arpSessionToken, err = generationSession(ctx, submitSess)

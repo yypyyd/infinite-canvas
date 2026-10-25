@@ -273,12 +273,27 @@ func BuildVideoPayload(engine, prompt, aspectRatio string, durationSeconds int, 
 		} else if isImage {
 			module = "image2video"
 		}
-		// Firefly frontend (index-BEhim_lY.js): only Kling 4.0 modelVersions are
-		// kling_v4_omni_ref_tir2v and kling_v4_omni_ref_v2v_create (firefly_3p:external).
-		// Probe may fall back to historical kling_v3_standard_t2v / kling_v3.
-		modelVersion := "kling_v4_omni_ref_tir2v"
+		// Prefer historical Firefly builders (n3/t3 in index-BEhim_lY.js / pre-3032f0a):
+		// kling_v3_{standard|pro}_{t2v|i2v}. Kling 4.0 UI ids (kling_v4_omni_ref_*)
+		// are tried next by KlingVideoModelVersionCandidates.
+		isPro := strings.EqualFold(resolution, "1080p")
+		tier := "standard"
+		if isPro {
+			tier = "pro"
+		}
+		workflow := "t2v"
 		if isVideo {
-			modelVersion = "kling_v4_omni_ref_v2v_create"
+			workflow = "v2v"
+		} else if isImage {
+			workflow = "i2v"
+		}
+		modelVersion := "kling_v3_" + tier + "_" + workflow
+		if isVideo {
+			if isImage {
+				modelVersion = "kling_v3_omni_v2v_create"
+			} else {
+				modelVersion = "kling_v3_omni_v2v_edit"
+			}
 		}
 		payload := map[string]any{
 			"modelId":            "kling",
@@ -338,9 +353,13 @@ func KlingVideoModelVersionCandidates(preferred, resolution string, hasImage, ha
 		out = append(out, s)
 	}
 	add(preferred)
-	// Firefly frontend (2026-10): ONLY Kling 4.0 modelVersions present are
-	// kling_v4_omni_ref_tir2v and kling_v4_omni_ref_v2v_create. No
-	// kling_v4_standard_t2v exists in the UI bundle.
+	// Historical Kling v3 / o3 (exact formula from payloads.go before 3032f0a).
+	add("kling_v3_" + tier + "_" + workflow)
+	add("kling_o3_" + tier + "_" + workflow)
+	// Consolidated versions Firefly uses when useConsolidatedVersion=true.
+	add("kling_v3")
+	add("kling_v3_omni")
+	// Firefly frontend Kling 4.0 (firefly_3p:external) — may require Omni Ref inputs.
 	if hasVideo {
 		add("kling_v4_omni_ref_v2v_create")
 		add("kling_v4_omni_ref_tir2v")
@@ -348,12 +367,6 @@ func KlingVideoModelVersionCandidates(preferred, resolution string, hasImage, ha
 		add("kling_v4_omni_ref_tir2v")
 		add("kling_v4_omni_ref_v2v_create")
 	}
-	// Historical Kling v3 / o3 (exact formula from payloads.go before 3032f0a).
-	add("kling_v3_" + tier + "_" + workflow)
-	add("kling_o3_" + tier + "_" + workflow)
-	// Consolidated versions Firefly uses when useConsolidatedVersion=true.
-	add("kling_v3")
-	add("kling_v3_omni")
 	if hasVideo {
 		add("kling_v3_omni_v2v_edit")
 		add("kling_v3_omni_v2v_create")

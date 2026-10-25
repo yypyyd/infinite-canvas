@@ -27,14 +27,9 @@ import (
 const (
 	submitURL       = "https://firefly-3p.ff.adobe.io/v2/3p-images/generate-async"
 	image5SubmitURL = "https://image-v5.ff.adobe.io/v1/images/generate-async"
-	videoSubmitURL  = "https://firefly-3p.ff.adobe.io/v2/3p-videos/generate-async"
-	// Firefly-native video model (project id "firefly-video"): distinct host,
-	// submit path and storage host from the 3p (veo/luma) video flow.
-	fireflyVideoSubmitURL   = "https://video-v1.ff.adobe.io/v2/videos/generate"
-	fireflyVideoStorageBase = "https://video-v1.ff.adobe.io/v2/storage"
-	storageBase             = "https://firefly-3p.ff.adobe.io/v2/storage"
-	creditsURL              = "https://firefly.adobe.io/v1/credits/balance"
-	creditsAPIKey           = "SunbreakWebUI1"
+	storageBase     = "https://firefly-3p.ff.adobe.io/v2/storage"
+	creditsURL      = "https://firefly.adobe.io/v1/credits/balance"
+	creditsAPIKey   = "SunbreakWebUI1"
 )
 
 var (
@@ -306,11 +301,8 @@ func (c *Client) uploadMediaOnce(ctx context.Context, sessionKey, token string, 
 		return nil, err, false
 	}
 
-	base := storageBase
-	if engine == "firefly-video" {
-		base = fireflyVideoStorageBase
-	}
-	endpoint := base + "/" + kind
+	_ = engine // retained for call-site compatibility; image storage is shared
+	endpoint := storageBase + "/" + kind
 	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(content))
 	if err != nil {
 		return nil, err, false
@@ -445,41 +437,6 @@ generationAttempts:
 		return nil, nil, lastErr
 	}
 	return nil, nil, fmt.Errorf("adobe submit failed: %s", clip(lastBody, 300))
-}
-
-// GenerateVideo renders the clip and (when downloadResult) downloads the MP4.
-// With downloadResult=false it returns nil bytes and the upstream presigned URL
-// in meta["video_url"] — used by the async /v1/videos job, which proxies that URL
-// on /content instead of persisting the file.
-func (c *Client) GenerateVideo(ctx context.Context, sessionKey, token, arpSessionToken, engine, prompt, aspectRatio string, durationSeconds int, resolution, referenceMode, upstreamModel string, inputs VideoInputs, downloadResult bool) ([]byte, map[string]any, error) {
-	submitSess, err := c.newSubmitTLSClient(sessionKey)
-	if err != nil {
-		return nil, nil, err
-	}
-	pollSess, err := c.newDirectTLSClient()
-	if err != nil {
-		return nil, nil, err
-	}
-	downloadSess, err := c.newDirectTLSClient()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	payload := BuildVideoPayload(engine, prompt, aspectRatio, durationSeconds, resolution, referenceMode, upstreamModel, inputs)
-	endpoint := videoSubmitURL
-	if engine == "firefly-video" {
-		endpoint = fireflyVideoSubmitURL
-	}
-	respBody, pollURL, err := c.submitVideo(ctx, submitSess, sessionKey, token, arpSessionToken, endpoint, payload)
-	if err != nil {
-		return nil, nil, err
-	}
-	_ = respBody
-	meta, data, pollErr := c.pollVideo(ctx, pollSess, downloadSess, token, pollURL, downloadResult)
-	if pollErr != nil {
-		return nil, nil, pollErr
-	}
-	return data, meta, nil
 }
 
 func (c *Client) FetchAccountProfile(ctx context.Context, sessionKey, token string) (map[string]any, error) {
@@ -843,204 +800,6 @@ func (c *Client) pollImage(ctx context.Context, sess, downloadSess *tlsSession, 
 	}
 }
 
-func (c *Client) submitVideo(ctx context.Context, sess *tlsSession, sessionKey, token, arpSessionToken, endpoint string, payload map[string]any) ([]byte, string, error) {
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return nil, "", err
-	}
-	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return nil, "", err
-	}
-	req = req.WithContext(ctx)
-	req.Header = http.Header{
-		"authorization":      {"Bearer " + strings.TrimSpace(token)},
-		"x-api-key":          {c.apiKey},
-		"content-type":       {"application/json"},
-		"accept":             {"*/*"},
-		"origin":             {"https://firefly.adobe.com"},
-		"referer":            {"https://firefly.adobe.com/"},
-		"accept-language":    {"en-US,en;q=0.9"},
-		"sec-ch-ua":          {sess.fp.secCHUA},
-		"sec-ch-ua-mobile":   {"?0"},
-		"sec-ch-ua-platform": {sess.fp.platform},
-		// firefly.adobe.com and *.ff.adobe.io have different registrable
-		// domains, so Chrome classifies this CORS request as cross-site.
-		"sec-fetch-site": {"cross-site"},
-		"sec-fetch-mode": {"cors"},
-		"sec-fetch-dest": {"empty"},
-		"user-agent":     {sess.fp.userAgent},
-		http.HeaderOrderKey: {
-			"authorization",
-			"x-api-key",
-			"content-type",
-			"accept",
-			"origin",
-			"referer",
-			"accept-language",
-			"sec-ch-ua",
-			"sec-ch-ua-mobile",
-			"sec-ch-ua-platform",
-			"sec-fetch-site",
-			"sec-fetch-mode",
-			"sec-fetch-dest",
-			"user-agent",
-			"x-arp-session-id",
-			"x-nonce",
-		},
-	}
-	if arpSessionToken = strings.TrimSpace(arpSessionToken); arpSessionToken != "" {
-		req.Header.Set("x-arp-session-id", arpSessionToken)
-	}
-	// The working video submit (HAR) carries x-nonce just like the image submit.
-	if prompt, _ := payload["prompt"].(string); prompt != "" {
-		if nonce := buildSubmitNonce(token, prompt); nonce != "" {
-			req.Header.Set("x-nonce", nonce)
-		}
-	}
-
-	resp, err := sess.client.Do(req)
-	if err != nil {
-		return nil, "", fmt.Errorf("%w: %v", ErrTemporaryUpstream, err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, "", err
-	}
-	logUpstreamResponse("submit "+endpoint, sessionKey, len(strings.TrimSpace(arpSessionToken)), resp.StatusCode, respBody)
-	if resp.StatusCode == 401 || resp.StatusCode == 403 {
-		if strings.EqualFold(resp.Header.Get("x-access-error"), "taste_exhausted") {
-			return respBody, "", ErrQuotaExhausted
-		}
-		// Surface Adobe's response body — "adobe auth failed" alone hides whether
-		// it's a bad token, a missing scope, or a WAF/fingerprint block.
-		return respBody, "", accessError(resp.StatusCode, resp.Header.Get("x-access-error"), respBody)
-	}
-	if rejectErr := contentRejectionError(resp.StatusCode, string(respBody)); rejectErr != nil {
-		return respBody, "", rejectErr
-	}
-	if b := string(respBody); strings.Contains(b, "system under load") || strings.Contains(b, "timeout_error") {
-		return respBody, "", ErrSystemUnderLoad
-	}
-	if resp.StatusCode == 408 || resp.StatusCode == 429 || resp.StatusCode == 451 || resp.StatusCode >= 500 {
-		// Keep the status and clipped body while preserving errors.Is semantics.
-		// Partner-model discovery can report DEGRADED versions whose submit path
-		// fails with the same broad status family as malformed model payloads; the
-		// response detail is required to tell those cases apart safely.
-		return respBody, "", fmt.Errorf("%w (submit %d: %s)", ErrDeadUpstream, resp.StatusCode, clip(respBody, 300))
-	}
-	if resp.StatusCode != 200 {
-		return respBody, "", fmt.Errorf("video submit rejected: %d %s", resp.StatusCode, clip(respBody, 300))
-	}
-
-	var payloadResp map[string]any
-	if err := json.Unmarshal(respBody, &payloadResp); err != nil {
-		return respBody, "", err
-	}
-	if override := strings.TrimSpace(resp.Header.Get("x-override-status-link")); override != "" {
-		return respBody, normalizeVideoPollURL(override), nil
-	}
-	if links, ok := payloadResp["links"].(map[string]any); ok {
-		if result, ok := links["result"].(map[string]any); ok {
-			if href := strings.TrimSpace(stringValue(result["href"])); href != "" {
-				return respBody, normalizeVideoPollURL(href), nil
-			}
-		}
-		if href := strings.TrimSpace(stringValue(links["result"])); href != "" {
-			return respBody, normalizeVideoPollURL(href), nil
-		}
-	}
-	return respBody, "", errors.New("video submit ok but no poll url")
-}
-
-func (c *Client) pollVideo(ctx context.Context, sess, downloadSess *tlsSession, token, pollURL string, downloadResult bool) (map[string]any, []byte, error) {
-	for {
-		if err := ctx.Err(); err != nil {
-			return nil, nil, fmt.Errorf("adobe video generation timed out: %w", err)
-		}
-
-		req, err := http.NewRequest(http.MethodGet, pollURL, nil)
-		if err != nil {
-			return nil, nil, err
-		}
-		req = req.WithContext(ctx)
-		req.Header = http.Header{
-			"authorization": {"Bearer " + strings.TrimSpace(token)},
-			"accept":        {"*/*"},
-			"origin":        {"https://firefly.adobe.com"},
-			"referer":       {"https://firefly.adobe.com/"},
-			"user-agent":    {sess.fp.userAgent},
-			http.HeaderOrderKey: {
-				"authorization",
-				"accept",
-				"origin",
-				"referer",
-				"user-agent",
-			},
-		}
-
-		resp, err := sess.client.Do(req)
-		if err != nil {
-			return nil, nil, fmt.Errorf("%w: %v", ErrTemporaryUpstream, err)
-		}
-		body, readErr := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if readErr != nil {
-			return nil, nil, readErr
-		}
-		logUpstreamResponse("poll", "", 0, resp.StatusCode, body)
-		if resp.StatusCode == 401 || resp.StatusCode == 403 {
-			return nil, nil, accessError(resp.StatusCode, resp.Header.Get("x-access-error"), body)
-		}
-		if b := string(body); strings.Contains(b, "system under load") || strings.Contains(b, "timeout_error") {
-			return nil, nil, ErrSystemUnderLoad
-		}
-		if rejectErr := contentRejectionError(resp.StatusCode, string(body)); rejectErr != nil {
-			return nil, nil, rejectErr
-		}
-		if resp.StatusCode == 429 || resp.StatusCode == 451 || resp.StatusCode >= 500 {
-			return nil, nil, fmt.Errorf("%w (poll %d: %s)", ErrDeadUpstream, resp.StatusCode, clip(body, 300))
-		}
-		if resp.StatusCode != 200 {
-			return nil, nil, fmt.Errorf("adobe video poll failed: %d %s", resp.StatusCode, clip(body, 300))
-		}
-
-		var payload map[string]any
-		if err := json.Unmarshal(body, &payload); err != nil {
-			return nil, nil, err
-		}
-		if outputs, ok := payload["outputs"].([]any); ok && len(outputs) > 0 {
-			if first, ok := outputs[0].(map[string]any); ok {
-				if video, ok := first["video"].(map[string]any); ok {
-					if raw := strings.TrimSpace(stringValue(video["presignedUrl"])); raw != "" {
-						payload["video_url"] = raw
-						if !downloadResult {
-							return payload, nil, nil
-						}
-						data, err := c.download(ctx, downloadSess, raw)
-						if err != nil {
-							return nil, nil, err
-						}
-						return payload, data, nil
-					}
-				}
-			}
-		}
-
-		status := strings.ToUpper(strings.TrimSpace(stringValue(payload["status"])))
-		if status == "FAILED" || status == "CANCELLED" || status == "ERROR" {
-			return nil, nil, fmt.Errorf("adobe video job failed: %s", clip(body, 300))
-		}
-		time.Sleep(3 * time.Second)
-	}
-}
-
-// download fetches the generated artifact from Adobe's presigned S3 URL. The
-// asset is already produced at this point, so a transient network hiccup
-// (connection EOF/reset mid-body, S3 accelerate 5xx) must not fail the whole
-// generation — retry with backoff before giving up.
 const downloadTimeout = 3 * time.Minute
 
 func (c *Client) download(parent context.Context, sess *tlsSession, url string) ([]byte, error) {
@@ -1289,36 +1048,6 @@ func ExtractAccountID(token string) string {
 		userID = strings.TrimSpace(stringValue(claims["sub"]))
 	}
 	return userID
-}
-
-func normalizeVideoPollURL(raw string) string {
-	if strings.TrimSpace(raw) == "" {
-		return raw
-	}
-	parsed, err := url.Parse(raw)
-	if err != nil {
-		return raw
-	}
-	host := parsed.Hostname()
-	if !strings.HasPrefix(host, "firefly-epo") {
-		return raw
-	}
-	parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
-	if len(parts) == 0 {
-		return raw
-	}
-	jobID := strings.TrimSpace(parts[len(parts)-1])
-	hostSuffix := strings.TrimPrefix(host, "firefly-epo")
-	hostSuffix = strings.SplitN(hostSuffix, ".", 2)[0]
-	if len(hostSuffix) != 4 {
-		return raw
-	}
-	for _, ch := range hostSuffix {
-		if ch < '0' || ch > '9' {
-			return raw
-		}
-	}
-	return "https://bks-epo" + hostSuffix + ".adobe.io/v2/jobs/result/" + jobID + "?host=" + parsed.Host + "/"
 }
 
 func clip(v []byte, n int) string {

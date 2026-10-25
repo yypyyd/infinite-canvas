@@ -2944,74 +2944,6 @@ func (s *V1Service) generateAdobeImage(ctx context.Context, eventID string, mode
 	return data, imageURL, err
 }
 
-func (s *V1Service) generateAdobeVideo(ctx context.Context, eventID string, modelItem *model.ModelConfig, in V1VideoRequest, aspectRatio, resolution string, durationSeconds int, downloadResult bool) ([]byte, string, error) {
-	if s.adobe == nil {
-		return nil, "", errors.New("adobe client not configured")
-	}
-	s.applyGlobalProxy(ctx)
-
-	active, err := s.loadActivePool(ctx, "adobe", "video", modelItem.ID, in.AccountID)
-	if err != nil {
-		return nil, "", err
-	}
-	if len(active) == 0 {
-		return nil, "", ErrNoProviderAccount
-	}
-
-	refs, err := decodeReferenceImages(in.ReferenceImages, max(1, modelItem.MaxReferenceImages))
-	if err != nil {
-		return nil, "", err
-	}
-
-	engine, upstreamModel := resolveAdobeVideoEngine(modelItem.ID)
-	referenceMode := defaultString(strings.TrimSpace(modelItem.ReferenceMode), "frame")
-
-	// Fail over to unused accounts on auth/quota/temporary errors without
-	// penalizing the credential. videoURL is captured from the successful
-	// attempt's meta (the upstream presigned URL).
-	var videoURL string
-	data, err := s.runPoolWithFailoverPolicy(ctx, eventID, "adobe", active, "video", func(token model.TokenAccount) ([]byte, error) {
-		token = s.ensureAdobeIMSMatchesEgress(ctx, token)
-		inputs := adobe.VideoInputs{GenerateAudio: in.GenerateAudio}
-		for _, ref := range refs {
-			id, upErr := s.adobe.UploadImage(ctx, token.ID, token.Value, ref, "image/png", engine)
-			if upErr != nil {
-				return nil, upErr
-			}
-			inputs.ImageBlobIDs = append(inputs.ImageBlobIDs, id)
-		}
-		for _, ref := range in.ReferenceVideos {
-			id, upErr := s.adobe.UploadMedia(ctx, token.ID, token.Value, ref.Data, ref.ContentType, engine, "video")
-			if upErr != nil {
-				return nil, upErr
-			}
-			inputs.VideoBlobIDs = append(inputs.VideoBlobIDs, id)
-		}
-		for _, ref := range in.ReferenceAudios {
-			id, upErr := s.adobe.UploadMedia(ctx, token.ID, token.Value, ref.Data, ref.ContentType, engine, "audio")
-			if upErr != nil {
-				return nil, upErr
-			}
-			inputs.AudioBlobIDs = append(inputs.AudioBlobIDs, id)
-		}
-		submitARP := adobe.SubmissionARPSessionToken(token.ARPSessionToken)
-		bytes, meta, genErr := s.adobe.GenerateVideo(ctx, token.ID, token.Value, submitARP, engine, in.Prompt, aspectRatio, durationSeconds, resolution, referenceMode, upstreamModel, inputs, false)
-		if genErr == nil {
-			videoURL = strings.TrimSpace(stringValue(meta["video_url"]))
-			if downloadResult {
-				bytes, _, genErr = downloadPublicArtifact(ctx, videoURL, staticAssetHosts("adobe"), "", netguard.MediaVideo, netguard.MaxVideoBytes)
-				if genErr != nil {
-					genErr = fmt.Errorf("%w: invalid video artifact", adobe.ErrTemporaryUpstream)
-				}
-			}
-		}
-		return bytes, genErr
-	}, adobeErrClass, func(id string) (model.TokenAccount, bool) {
-		return s.refreshAdobeToken(ctx, id)
-	}, true, strings.TrimSpace(in.AccountID) == "")
-	return data, videoURL, err
-}
-
 func upstreamImageQuality(quality, _ string) string {
 	switch normalized := strings.ToLower(strings.TrimSpace(quality)); normalized {
 	case "low", "medium", "high":
@@ -3722,35 +3654,6 @@ func parseDurationSeconds(raw string) int {
 	return n
 }
 
-func resolveAdobeVideoEngine(modelID string) (string, string) {
-	switch strings.ToLower(strings.TrimSpace(modelID)) {
-	case "gemini-veo31", "firefly-veo31":
-		// Use the fast tier — it's the only Veo 3.1 version this account is
-		// entitled to (standard "3.1-generate" returns 403 user_not_entitled).
-		// "firefly-veo31" is the legacy id, kept for back-compat with historical
-		// rows/logs; the model is branded "gemini-veo31" now.
-		return "veo31-fast", ""
-	case "gemini-veo31-lite":
-		return "veo31-lite", ""
-	case "firefly-kling-3":
-		return "kling-v3", ""
-	case "firefly-kling-o3":
-		return "kling-o3", ""
-	case "firefly-runway-4.5":
-		return "runway45", ""
-	case "firefly-seedance-2":
-		return "seedance20", ""
-	case "firefly-seedance-2-fast":
-		return "seedance20-fast", ""
-	case "firefly-ray":
-		return "luma", ""
-	case "firefly-video":
-		return "firefly-video", ""
-	default:
-		return "sora2", ""
-	}
-}
-
 func absFloat(v float64) float64 {
 	if v < 0 {
 		return -v
@@ -3827,26 +3730,22 @@ func pinTestAccount(items, active []model.TokenAccount, accountID string) []mode
 
 // Ordinary (free / ~10-credit) Adobe accounts only run GPT Image 2 for images.
 // That free GPT Image 2 allowance is low/medium (1K/2K detailLevel) only; paid
-// points accounts are scheduled separately. The closed Adobe catalog now only
-// ships image.gpt-image-2.adobe; video helpers below remain for pinned tests /
-// legacy rows. Admin-pinned tests bypass the normal active filters but still
-// call this helper only while constructing the non-pinned scheduler pool.
+// points accounts are scheduled separately. The closed Adobe catalog ships only
+// image.gpt-image-2.adobe — no Adobe video routes remain. Admin-pinned tests
+// bypass the normal active filters but still call this helper only while
+// constructing the non-pinned scheduler pool.
 func adobeAccountSupportsModel(item model.TokenAccount, modelID, kind string) bool {
+	_ = item
 	id := strings.ToLower(strings.TrimSpace(modelID))
-	if strings.EqualFold(strings.TrimSpace(kind), "image") {
-		switch id {
-		case "firefly-gpt-image-2", "firefly-gpt-image", "gpt-image-2":
-			return true
-		default:
-			return false
-		}
+	if !strings.EqualFold(strings.TrimSpace(kind), "image") {
+		return false
 	}
 	switch id {
-	case "firefly-video", "gemini-veo31", "firefly-veo31", "firefly-ray":
+	case "firefly-gpt-image-2", "firefly-gpt-image", "gpt-image-2":
 		return true
+	default:
+		return false
 	}
-	total, ok := jsonMapInt(item.Meta, "cached_quota_total")
-	return ok && total >= 10000
 }
 
 func adobePointsAccount(item model.TokenAccount) bool {

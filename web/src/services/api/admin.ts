@@ -641,12 +641,20 @@ export type AdminSupplyRoute = {
     protocol?: string;
 };
 
+export type AdminProviderCapability = {
+    provider: string;
+    channel?: string;
+    models: { id: string; modality: string; operations?: string[]; resolutionTiers?: string[]; aspectRatios?: string[]; durations?: number[]; maxReferenceImages?: number; referenceMode?: string }[];
+};
+
 export type AdminModelOverview = {
     models: AdminModelOverviewItem[];
     pool: { running: boolean; enabled: boolean; priority: number; weight: number; defaultPriority: number; routesKnown: boolean };
     channels: { id: string; name: string; protocol: string; enabled: boolean; priority: number; weight: number; models: number }[];
     /** Unified route table: pool providers + external channels. */
     supplies?: AdminSupplyRoute[];
+    /** Route-scoped capability declarations (models + resolution/modality). Phase 2. */
+    providerCapabilities?: AdminProviderCapability[];
 };
 
 export type AdminModelSourcePatch = {

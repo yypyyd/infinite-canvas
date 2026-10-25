@@ -1,6 +1,8 @@
 package service
 
 import (
+	"strings"
+
 	"github.com/yypyyd/infinite-canvas/model"
 	"github.com/yypyyd/infinite-canvas/repository"
 )
@@ -30,15 +32,24 @@ func channelSelectionsFor(request PricingRequest) ([]ModelChannelSelection, Pric
 	return modelChannelSelectionsForRequest(channels, request), request, nil
 }
 
-// runtimeChannelByName finds a usable runtime channel (including the pool) by name.
+// runtimeChannelByName finds a usable runtime channel by name or id
+// (including flat builtin providers and the legacy pool name).
 func runtimeChannelByName(name string) (model.ModelChannel, bool, error) {
+	name = strings.TrimSpace(name)
 	channels, err := loadRuntimeChannels()
 	if err != nil {
 		return model.ModelChannel{}, false, err
 	}
 	for _, channel := range channels {
-		if channel.Name == name && channel.BaseURL != "" && channel.APIKey != "" {
+		if (channel.Name == name || channel.ID == name) && channel.BaseURL != "" && channel.APIKey != "" {
 			return channel, true, nil
+		}
+	}
+	if name == BuiltinPoolChannelName || name == BuiltinPoolChannelID {
+		for _, channel := range channels {
+			if IsBuiltinProviderChannel(channel) && channel.BaseURL != "" && channel.APIKey != "" {
+				return channel, true, nil
+			}
 		}
 	}
 	return model.ModelChannel{}, false, nil

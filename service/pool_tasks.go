@@ -68,11 +68,18 @@ func poolImageWaiterActive(requestID string) bool {
 
 // IsBuiltinPoolTask reports whether a task is (last) routed to the pool.
 func IsBuiltinPoolTask(task model.GenerationTask) bool {
-	if task.ChannelName == BuiltinPoolChannelName {
+	if task.ChannelName == BuiltinPoolChannelName || task.ChannelID == BuiltinPoolChannelID {
 		return true
 	}
-	channel, err := generationTaskChannel(task.ChannelName)
-	return err == nil && isBuiltinPoolChannel(channel)
+	if strings.HasPrefix(strings.TrimSpace(task.ChannelID), BuiltinProviderChannelPrefix) {
+		return true
+	}
+	ref := strings.TrimSpace(task.ChannelID)
+	if ref == "" {
+		ref = task.ChannelName
+	}
+	channel, err := generationTaskChannel(ref)
+	return err == nil && (isBuiltinPoolChannel(channel) || IsBuiltinProviderChannel(channel))
 }
 
 func generationTaskAge(task model.GenerationTask) time.Duration {

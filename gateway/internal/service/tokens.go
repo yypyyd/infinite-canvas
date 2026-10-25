@@ -705,6 +705,7 @@ func (s *TokenService) ImportAdobeCookie(ctx context.Context, cookie, arpSession
 			return nil, nil, err
 		}
 	}
+	s.recordAdobeSessionImport(ctx, tokenID)
 	go s.checkPendingAdobe(tokenID, cookie)
 	return item, profile, nil
 }
@@ -728,6 +729,7 @@ func (s *TokenService) checkPendingAdobe(tokenID, cookie string) {
 
 	if s.adobe == nil {
 		s.finishPending(ctx, "adobe", tokenID, "disabled", true, nil)
+		s.recordAdobeSessionHealthCheckResult(ctx, tokenID, false, "adobe_client_missing", 0)
 		return
 	}
 	result, err := s.adobe.ExchangeCookie(ctx, tokenID, cookie)
@@ -738,6 +740,7 @@ func (s *TokenService) checkPendingAdobe(tokenID, cookie string) {
 			"last_error":           safeGenerationErrorText(err),
 			"consecutive_failures": 1,
 		})
+		s.recordAdobeSessionHealthCheckResult(ctx, tokenID, false, safeGenerationErrorText(err), 0)
 		return
 	}
 	// Seed the real access token, then activate so the pool can schedule it.
@@ -782,6 +785,11 @@ func (s *TokenService) checkPendingAdobe(tokenID, cookie string) {
 		"consecutive_failures": 0,
 		"next_retry_at":        time.Now().Add(54000 * time.Second),
 	})
+	arpLen := 0
+	if item, getErr := s.tokens.Get(ctx, "adobe", tokenID); getErr == nil && item != nil {
+		arpLen = len(strings.TrimSpace(item.ARPSessionToken))
+	}
+	s.recordAdobeSessionHealthCheckResult(ctx, tokenID, true, "", arpLen)
 }
 
 // checkPendingChatGPT probes a freshly imported ChatGPT token's quota off-thread

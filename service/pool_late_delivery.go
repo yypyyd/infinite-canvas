@@ -25,7 +25,8 @@ func checkLateDeliveredPoolImages(ctx context.Context, now time.Time) {
 		return
 	}
 	stamp := now.Format(timestampLayout)
-	tasks, err := repository.ListLateDeliveryCandidates(BuiltinPoolChannelName, "image", now.Add(-poolLateDeliveryWindow).Format(timestampLayout), stamp, poolLateDeliveryBatch)
+	names := append(BuiltinPoolTaskChannelNames(), BuiltinPoolTaskChannelIDs()...)
+	tasks, err := repository.ListLateDeliveryCandidatesForChannels(names, "image", now.Add(-poolLateDeliveryWindow).Format(timestampLayout), stamp, poolLateDeliveryBatch)
 	if err != nil {
 		logWorkerError("generation_task", "late_delivery_list_failed", err)
 		return

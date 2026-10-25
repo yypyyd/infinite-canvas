@@ -49,6 +49,7 @@ type GenerationTask struct {
 	Model            string                      `json:"model" gorm:"index"`
 	UpstreamModel    string                      `json:"upstreamModel"`
 	ChannelName      string                      `json:"channelName" gorm:"index"`
+	ChannelID        string                      `json:"channelId,omitempty" gorm:"size:191;index"`
 	Path             string                      `json:"path"`
 	Modality         string                      `json:"modality" gorm:"index"`
 	Operation        string                      `json:"operation"`

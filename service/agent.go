@@ -1222,7 +1222,7 @@ func requestAgentCompletion(ctx context.Context, run model.AgentRun, userGroup, 
 	}
 	task, err := BeginGenerationTask(GenerationTaskInput{
 		UserID: run.UserID, OrganizationID: run.OrganizationID, RequestID: requestID,
-		Model: run.Model, UpstreamModel: selection.Model.UpstreamModel, ChannelName: selection.Channel.Name,
+		Model: run.Model, UpstreamModel: selection.Model.UpstreamModel, ChannelName: selection.Channel.Name, ChannelID: selection.Channel.ID,
 		Path: "/chat/completions", Modality: pricingRequest.Modality, Operation: pricingRequest.Operation,
 		Quantity: pricingRequest.Quantity, Credits: pricingResult.Credits, PricingSnapshot: pricingResult.Snapshot,
 	})

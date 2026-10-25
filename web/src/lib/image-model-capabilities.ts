@@ -21,7 +21,7 @@ export function supportsImageQuality(model: string) {
     return GPT_IMAGE_QUALITY_MODELS.includes(model.trim().toLowerCase());
 }
 
-/** GPT image family is ChatGPT-safe at 1K; catalog often unions Adobe/BytePlus 2K/4K. */
+/** GPT image family is ChatGPT-safe at 1K. Server catalog now clamps via primary provider declarations; keep as UI safety net. */
 export function isGptImageFamily(model?: string) {
     const id = model?.trim().toLowerCase() || "";
     return id === "gpt-image" || id.startsWith("gpt-image-");

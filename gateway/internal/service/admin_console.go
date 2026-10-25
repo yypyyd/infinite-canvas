@@ -576,7 +576,7 @@ func assembleAccountRow(account model.TokenAccount, bindings []model.AccountMode
 	if label == "" {
 		label = account.ID
 	}
-	return map[string]any{
+	row := map[string]any{
 		"id": account.ID, "provider": account.Pool, "label": label, "email": account.AccountEmail,
 		"status": account.Status, "weight": account.Weight, "max_concurrency": account.Concurrency,
 		"active_jobs": activeJobs, "health": health, "routes": routeRows, "quota_buckets": quotaRows,
@@ -587,6 +587,17 @@ func assembleAccountRow(account model.TokenAccount, bindings []model.AccountMode
 		"last_used_at": account.LastUsedAt, "created_at": account.CreatedAt,
 		"session_expires_at": sessionExpiresAt, "session_state": sessionState,
 	}
+	if account.Pool == "adobe" {
+		snap := adobeSessionSnapshot(account)
+		row["adobe_session"] = snap
+		row["session_phase"] = snap.Phase
+		if snap.Phase == AdobeSessionPhaseDead || snap.Phase == AdobeSessionPhaseFailRotate {
+			if health == "healthy" {
+				row["health"] = "degraded"
+			}
+		}
+	}
+	return row
 }
 
 func bytePlusSessionStatus(account model.TokenAccount, now time.Time) (string, string) {

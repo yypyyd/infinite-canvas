@@ -138,6 +138,8 @@ func (s *RefreshProfileService) RefreshNow(ctx context.Context, id string) error
 	if _, err := s.tokens.Update(ctx, "adobe", id, tokenPatch); err != nil {
 		return err
 	}
+	markAdobeSessionMeta(ctx, s.tokens, id, AdobeSessionPhaseRemint, "", nil)
+	adobeSessionLog("refresh_now", id, map[string]any{"arp_len": len(strings.TrimSpace(arpSessionToken))})
 
 	interval := profile.IntervalSeconds
 	if interval <= 0 {

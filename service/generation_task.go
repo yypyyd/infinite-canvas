@@ -22,6 +22,7 @@ type GenerationTaskInput struct {
 	Model           string
 	UpstreamModel   string
 	ChannelName     string
+	ChannelID       string
 	Path            string
 	Modality        string
 	Operation       string
@@ -182,6 +183,7 @@ func BeginGenerationTask(input GenerationTaskInput) (model.GenerationTask, error
 		Model:           input.Model,
 		UpstreamModel:   input.UpstreamModel,
 		ChannelName:     input.ChannelName,
+		ChannelID:       input.ChannelID,
 		Path:            input.Path,
 		Modality:        input.Modality,
 		Operation:       input.Operation,
@@ -261,12 +263,21 @@ func generationTaskCreditExtra(modelName string, path string, snapshot model.Pri
 }
 
 // UpdateGenerationTaskChannel records a failover channel before the next upstream request starts.
+// Prefer persisting channel id (provider/channel); name remains for legacy rows/UI.
 func UpdateGenerationTaskChannel(task *model.GenerationTask, channelName string, upstreamModel string) error {
+	return UpdateGenerationTaskChannelRef(task, "", channelName, upstreamModel)
+}
+
+// UpdateGenerationTaskChannelRef persists both channel id and display name.
+func UpdateGenerationTaskChannelRef(task *model.GenerationTask, channelID, channelName, upstreamModel string) error {
 	updatedAt := now()
 	err := retryGenerationTaskWrite(func() error {
-		return repository.UpdateRunningGenerationTaskChannel(task.ID, channelName, upstreamModel, updatedAt)
+		return repository.UpdateRunningGenerationTaskChannelRef(task.ID, channelID, channelName, upstreamModel, updatedAt)
 	})
 	if err == nil {
+		if channelID != "" {
+			task.ChannelID = channelID
+		}
 		task.ChannelName = channelName
 		task.UpstreamModel = upstreamModel
 		task.UpdatedAt = updatedAt

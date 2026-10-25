@@ -118,7 +118,7 @@ func proxyAIGetRequest(w http.ResponseWriter, r *http.Request, path string) {
 			Fail(w, "生成任务与视频不匹配")
 			return
 		}
-		selection, err = service.SelectModelChannelByName(pricingRequest, task.ChannelName)
+		selection, err = service.SelectModelChannelForTask(pricingRequest, task.ChannelID, task.ChannelName)
 		generationTask = &task
 	} else if user, ok := service.UserFromContext(r.Context()); ok {
 		id := strings.TrimSuffix(strings.TrimPrefix(path, "/videos/"), "/content")
@@ -126,7 +126,7 @@ func proxyAIGetRequest(w http.ResponseWriter, r *http.Request, path string) {
 			FailError(w, taskErr)
 			return
 		} else if exists {
-			selection, err = service.SelectModelChannelByName(pricingRequest, task.ChannelName)
+			selection, err = service.SelectModelChannelForTask(pricingRequest, task.ChannelID, task.ChannelName)
 			generationTask = &task
 		}
 	}
@@ -298,6 +298,7 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		Model:           requestMeta.ModelName,
 		UpstreamModel:   selection.Model.UpstreamModel,
 		ChannelName:     selection.Channel.Name,
+		ChannelID:       selection.Channel.ID,
 		Path:            path,
 		Modality:        pricingRequest.Modality,
 		Operation:       pricingRequest.Operation,
@@ -345,7 +346,7 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 				nextSelection, selectErr := service.SelectModelChannelExcluding(pricingRequest, excludedChannels)
 				if selectErr == nil && !service.IsManagedMediaChannel(nextSelection.Channel) {
 					if nextRequest, buildErr := buildAIUpstreamRequest(r, path, body, contentType, nextSelection, task.RequestID); buildErr == nil {
-						if updateErr := service.UpdateGenerationTaskChannel(&task, nextSelection.Channel.Name, nextSelection.Model.UpstreamModel); updateErr == nil {
+						if updateErr := service.UpdateGenerationTaskChannelRef(&task, nextSelection.Channel.ID, nextSelection.Channel.Name, nextSelection.Model.UpstreamModel); updateErr == nil {
 							log.Printf("AI proxy reroute after pool failure: model=%s path=%s from=%s to=%s", requestMeta.ModelName, path, selection.Channel.Name, nextSelection.Channel.Name)
 							selection = nextSelection
 							request = nextRequest
@@ -353,7 +354,7 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 						}
 					}
 				} else if selectErr == nil {
-					if updateErr := service.UpdateGenerationTaskChannel(&task, nextSelection.Channel.Name, nextSelection.Model.UpstreamModel); updateErr == nil {
+					if updateErr := service.UpdateGenerationTaskChannelRef(&task, nextSelection.Channel.ID, nextSelection.Channel.Name, nextSelection.Model.UpstreamModel); updateErr == nil {
 						proxyManagedMediaGeneration(w, r, body, contentType, requestMeta, user, nextSelection, &task, finishTask)
 						return
 					}
@@ -398,7 +399,7 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 			nextSelection, selectErr := service.SelectModelChannelExcluding(pricingRequest, excludedChannels)
 			if selectErr == nil {
 				if service.IsManagedMediaChannel(nextSelection.Channel) {
-					if updateErr := service.UpdateGenerationTaskChannel(&task, nextSelection.Channel.Name, nextSelection.Model.UpstreamModel); updateErr == nil {
+					if updateErr := service.UpdateGenerationTaskChannelRef(&task, nextSelection.Channel.ID, nextSelection.Channel.Name, nextSelection.Model.UpstreamModel); updateErr == nil {
 						if response != nil {
 							_ = response.Body.Close()
 						}
@@ -406,7 +407,7 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 						return
 					}
 				} else if nextRequest, buildErr := buildAIUpstreamRequest(r, path, body, contentType, nextSelection, task.RequestID); buildErr == nil {
-					if updateErr := service.UpdateGenerationTaskChannel(&task, nextSelection.Channel.Name, nextSelection.Model.UpstreamModel); updateErr != nil {
+					if updateErr := service.UpdateGenerationTaskChannelRef(&task, nextSelection.Channel.ID, nextSelection.Channel.Name, nextSelection.Model.UpstreamModel); updateErr != nil {
 						log.Printf("AI proxy update failover channel failed: task=%s channel=%s err=%v", task.ID, nextSelection.Channel.Name, updateErr)
 					} else {
 						if response != nil {

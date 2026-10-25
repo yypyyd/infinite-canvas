@@ -92,7 +92,8 @@ func BuildPoolUsage(ctx context.Context, days int) (PoolUsageReport, error) {
 	if err != nil {
 		return report, err
 	}
-	tasks, err := repository.ListGenerationTasksByChannelSince(BuiltinPoolChannelName, report.Since, poolUsageTaskLimit)
+	names := append(BuiltinPoolTaskChannelNames(), BuiltinPoolTaskChannelIDs()...)
+	tasks, err := repository.ListGenerationTasksByChannelsSince(names, report.Since, poolUsageTaskLimit)
 	if err != nil {
 		return report, err
 	}

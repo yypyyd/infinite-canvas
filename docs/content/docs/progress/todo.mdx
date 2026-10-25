@@ -8,14 +8,20 @@ description: 当前项目后续值得处理的事项
 本文档用来记录当前项目后续比较值得处理的事项。
 
 
-## Phase 2 衔接 · 会话基础设施（handoff）
+## Phase 2 · 已完成（会话基础设施）
 
-Phase 1 已把「走哪条供应」收束到站点 `BuiltinProviders` + `Channels` 的统一 `supplies` 路由表，并让 admin 启停同步 gateway `providers_enabled`。下一阶段会话基础设施建议优先触碰：
+- Adobe 会话生命周期：`import → health_check → sticky_bind → ready / remint / fail_rotate / dead`，结构化日志 + admin `adobe_session` 字段；sticky egress / ARP sid / IMS remint 留在 gateway 账号层。
+- Provider 能力声明：号池渠道按路由声明 resolution/modality；overview 暴露 `providerCapabilities`；公共目录按主 provider 钳制，避免 GPT 1K 并集泄漏。
+- 生成路径：只经 `SelectModelChannel` + `runtimeChannelsFor`；任务快照持久化 `channelId`，legacy 号池名可回落重绑。
 
-- 生成任务 / Agent 上游会话：继续只经 `SelectModelChannel` + `runtimeChannelsFor`（已含扁平号池 provider），避免再读独立 pool 选路；会话粘滞（sticky egress / ARP sid）仍留在 gateway 账号层，不要上抬到供应表。
-- 能力测试与 plaza：已读 `buildModelOverview` / `supplies`；会话侧若缓存「可用模型」列表，应订阅 overview/status 而非 gateway models  alone。
-- 遗留：`ModelSourceOverview.kind=pool`（单虚池）与 `BuiltinPool` 全局别名仍可出现在旧数据；Phase 2 可在会话/任务快照里只持久化 `provider`/`channel` id，去掉对 legacy pool channel name 的依赖。
-- 不要在本阶段冻结视频编辑器或 Release-2 Worker；那些仍按原计划单独推进。
+## Phase 3 衔接 · 计费单路径（handoff）
+
+下一阶段把预估 / 扣费 / 返还 / `PricingSnapshot` 收成一条计费路径，避免 handler / batch / agent / protocol 多入口口径漂移：
+
+- 统一入口：交互生成、批量、Agent 媒体工具都走同一 `BeginGenerationTask` + pricing snapshot 写入；禁止旁路扣费。
+- 返还与失败：`FinishGenerationTask` 失败返还是唯一退款点；池晚到货 / 维护结算不得二次扣费。
+- 口径：resolutionTier / quantity / billingMode（按次/按秒）以 snapshot 为准，UI 预估与实扣对账。
+- 视频编辑器 FE 与 Release-2 Worker（FFmpeg/DAG/计费）并行推进，不要再冻结。
 
 ## P0 · 稳定发布
 

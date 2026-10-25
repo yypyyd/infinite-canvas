@@ -6,6 +6,13 @@ description: 当前版本已实现但仍需人工或自动化验证的变更项
 # 待测试
 
 
+## Phase 2 号池会话 / 能力声明
+
+- Adobe：导入账号后 admin 账号详情出现 `adobe_session.phase`（health_check→ready）；开启 sticky extract 后换 egress 再生成，应触发 remint 日志（`adobe_session event=remint_ok`）且不再伪装 timeout_error。
+- 能力声明：仅启用 ChatGPT 供应时，公共目录 / 图片设置对 `gpt-image-2` 只展示 1K；仅启用 Adobe 时允许 2K/4K；ChatGPT+Adobe 同时启用时按主供应（ChatGPT 优先）钳到 1K。
+- 生成任务：新任务写入 `channelId`（如 `builtin-provider-chatgpt`）；用旧 `channelName=内置账号池` 的任务仍能重绑到当前扁平 provider。
+- 广场 / 可用模型：`GET /api/admin/model-overview` 的 `supplies` + `providerCapabilities` 与 `GET /api/model-status` 一致可读，不单独依赖 gateway models 列表。
+
 ## 模型广场可用性状态
 
 - Phase 1 统一供应路由：后台「供应源 · 号池平台」表格开关与抽屉「启用供应」只改一处；关闭 chatgpt/adobe 等任一平台后，`GET /api/admin/model-overview` 的 `supplies[].enabled`、模型 Tab 可用性、广场状态与能力测试可选模型应一致为停用；再打开后 gateway `providers_enabled` 与站点 BuiltinProviders 同步为开。外部渠道启用仍只写 Channels，并出现在同一 `supplies` 列表。回归旧 `/admin/channels`、`/admin/account-pool/*` 硬跳转。

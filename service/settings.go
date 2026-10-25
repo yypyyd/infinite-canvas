@@ -195,6 +195,7 @@ func normalizePublicSettingWithChannels(setting model.PublicSetting, channels []
 	setting.ModelChannel.Models = normalizeModelDefinitions(appendBuiltinPoolDefinitions(setting.ModelChannel.Models, channels), setting.ModelChannel.AvailableModels, setting.ModelChannel.ModelAspectRatios, enabledModels)
 	setting.ModelChannel.Models = applyImageCountLimits(setting.ModelChannel.Models, channels, builtinPoolModels())
 	setting.ModelChannel.Models = mergeEnabledChannelCapabilities(setting.ModelChannel.Models, channels)
+	setting.ModelChannel.Models = clampPublicModelsToPrimaryProvider(setting.ModelChannel.Models, channels)
 	setting.ModelChannel.PricingRules = normalizePricingRules(setting.ModelChannel.PricingRules)
 	setting.ModelChannel.GroupRatios = normalizeGroupRatios(setting.ModelChannel.GroupRatios)
 	setting.ModelChannel.ModelAspectRatios = normalizeModelAspectRatios(modelAspectRatiosFromDefinitions(setting.ModelChannel.Models, setting.ModelChannel.ModelAspectRatios))
@@ -542,6 +543,57 @@ func mergeResolutionTiers(public []string, channels []string, unrestricted bool)
 		return normalizeStringList(public, normalizeResolutionTier)
 	}
 	return normalizeStringList(append(append([]string{}, public...), channels...), normalizeResolutionTier)
+}
+
+// clampPublicModelsToPrimaryProvider rewrites public resolution/modality using
+// the highest-priority enabled builtin provider declaration for each model.
+// That stops ChatGPT-safe gpt-image* (1K) from advertising Adobe/BytePlus 2K/4K
+// just because mergeEnabledChannelCapabilities unions every route.
+func clampPublicModelsToPrimaryProvider(items []model.ModelDefinition, channels []model.ModelChannel) []model.ModelDefinition {
+	type decl struct {
+		priority int
+		modality string
+		tiers   []string
+		ops     []string
+	}
+	best := map[string]decl{}
+	for _, channel := range channels {
+		if !channel.Enabled || !IsBuiltinProviderChannel(channel) {
+			continue
+		}
+		for _, cm := range channel.Models {
+			id := strings.TrimSpace(cm.Model)
+			if id == "" {
+				continue
+			}
+			cur, ok := best[id]
+			if ok && channel.Priority <= cur.priority {
+				continue
+			}
+			best[id] = decl{
+				priority: channel.Priority,
+				modality: normalizePricingToken(cm.Modality),
+				tiers:   append([]string(nil), cm.ResolutionTiers...),
+				ops:     append([]string(nil), cm.Operations...),
+			}
+		}
+	}
+	for i := range items {
+		d, ok := best[items[i].ID]
+		if !ok {
+			continue
+		}
+		if d.modality != "" {
+			items[i].Modality = d.modality
+		}
+		if len(d.tiers) > 0 {
+			items[i].ResolutionTiers = normalizeStringList(d.tiers, normalizeResolutionTier)
+		}
+		if len(d.ops) > 0 {
+			items[i].Operations = normalizeModelOperations(d.ops, items[i].ID, items[i].Modality)
+		}
+	}
+	return items
 }
 
 func defaultModelResolutionTiers(modality string) []string {
@@ -1212,9 +1264,19 @@ func SelectModelChannelByName(request PricingRequest, channelName string) (Model
 	if err != nil {
 		return ModelChannelSelection{}, err
 	}
+	channelName = strings.TrimSpace(channelName)
 	for _, selection := range selections {
 		if selection.Channel.Name == channelName || selection.Channel.ID == channelName {
 			return selection, nil
+		}
+	}
+	// Legacy tasks persisted the single virtual pool name; rebind to the best
+	// current builtin provider that still serves the request.
+	if channelName == BuiltinPoolChannelName || channelName == BuiltinPoolChannelID {
+		for _, selection := range selections {
+			if IsBuiltinProviderChannel(selection.Channel) {
+				return selection, nil
+			}
 		}
 	}
 	return ModelChannelSelection{}, safeMessageError{message: "原生成渠道已不可用"}
@@ -1222,6 +1284,17 @@ func SelectModelChannelByName(request PricingRequest, channelName string) (Model
 
 // SelectFixedModelChannel forces one channel/provider (no weighted pick).
 func SelectFixedModelChannel(request PricingRequest, channelName string) (ModelChannelSelection, error) {
+	return SelectModelChannelByName(request, channelName)
+}
+
+// SelectModelChannelForTask rebinds a persisted generation task to a live channel.
+// Prefers channel id (provider/channel); falls back to legacy channel name / pool name.
+func SelectModelChannelForTask(request PricingRequest, channelID, channelName string) (ModelChannelSelection, error) {
+	if id := strings.TrimSpace(channelID); id != "" {
+		if selection, err := SelectModelChannelByName(request, id); err == nil {
+			return selection, nil
+		}
+	}
 	return SelectModelChannelByName(request, channelName)
 }
 
@@ -1255,9 +1328,10 @@ func modelChannelSelectionsExcluding(selections []ModelChannelSelection, exclude
 	}
 	result := make([]ModelChannelSelection, 0, len(selections))
 	for _, selection := range selections {
-		if !excluded[selection.Channel.Name] {
-			result = append(result, selection)
+		if excluded[selection.Channel.Name] || excluded[selection.Channel.ID] {
+			continue
 		}
+		result = append(result, selection)
 	}
 	return result
 }

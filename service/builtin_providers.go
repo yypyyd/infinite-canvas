@@ -272,7 +272,7 @@ func builtinProviderChannels(private model.PrivateSetting) []model.ModelChannel 
 		}
 		overrides := builtinProviderModelOverrides(src)
 		for _, item := range poolModels {
-			cm := poolModelToChannelModel(item)
+			cm := poolModelToChannelModelForProvider(item, provider)
 			if override, ok := overrides[cm.Model]; ok {
 				cm.Disabled = cm.Disabled || override.Disabled
 				cm.Priority = cloneIntPtr(override.Priority)
@@ -314,4 +314,23 @@ func poolModelToChannelModel(item gateway.PoolModel) model.ChannelModel {
 		MaxReferenceAudios: item.MaxReferenceAudios, MaxReferenceMedia: item.MaxReferenceMedia,
 		SupportsAudioOutput: item.SupportsAudioOutput, ReferenceMode: referenceMode,
 	}
+}
+
+// BuiltinPoolTaskChannelNames lists channel names that identify built-in pool
+// traffic in generation_task rows (legacy virtual pool + flat providers).
+func BuiltinPoolTaskChannelNames() []string {
+	names := []string{BuiltinPoolChannelName}
+	for _, provider := range BuiltinProviderOrder {
+		names = append(names, BuiltinProviderChannelName(provider))
+	}
+	return names
+}
+
+// BuiltinPoolTaskChannelIDs lists channel ids that identify built-in pool traffic.
+func BuiltinPoolTaskChannelIDs() []string {
+	ids := []string{BuiltinPoolChannelID}
+	for _, provider := range BuiltinProviderOrder {
+		ids = append(ids, BuiltinProviderChannelID(provider))
+	}
+	return ids
 }

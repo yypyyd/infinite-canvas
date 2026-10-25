@@ -133,7 +133,7 @@ func (executor StandardBatchProductionExecutor) Execute(ctx context.Context, inp
 	task, err := beginOrResumeBatchGeneration(GenerationTaskInput{
 		UserID: input.Job.CreatedBy, OrganizationID: input.Job.OrganizationID,
 		RequestID: requestID, BatchJobID: input.Job.ID, BatchItemID: input.Item.ID, Model: modelName,
-		UpstreamModel: selection.Model.UpstreamModel, ChannelName: selection.Channel.Name,
+		UpstreamModel: selection.Model.UpstreamModel, ChannelName: selection.Channel.Name, ChannelID: selection.Channel.ID,
 		Path: path, Modality: "image", Operation: operation, ResolutionTier: input.Item.ResolutionTier, Quantity: 1, Credits: credits, PricingSnapshot: input.Item.PricingSnapshot,
 	})
 	if err != nil {
@@ -150,7 +150,7 @@ func (executor StandardBatchProductionExecutor) Execute(ctx context.Context, inp
 		return BatchProductionResult{}, permanentBatchProductionError(model.BatchProductionErrorUpstreamPermanent, err)
 	}
 	if task.ChannelName != selection.Channel.Name || task.UpstreamModel != selection.Model.UpstreamModel {
-		if err := UpdateGenerationTaskChannel(&task, selection.Channel.Name, selection.Model.UpstreamModel); err != nil {
+		if err := UpdateGenerationTaskChannelRef(&task, selection.Channel.ID, selection.Channel.Name, selection.Model.UpstreamModel); err != nil {
 			return pendingResult, transientBatchProductionError(model.BatchProductionErrorInternal, err)
 		}
 	}

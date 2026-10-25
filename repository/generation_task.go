@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/yypyyd/infinite-canvas/model"
@@ -381,15 +382,23 @@ func CompleteGenerationTask(task model.GenerationTask) error {
 
 // UpdateRunningGenerationTaskChannel records the channel currently handling a running task.
 func UpdateRunningGenerationTaskChannel(taskID string, channelName string, upstreamModel string, updatedAt string) error {
+	return UpdateRunningGenerationTaskChannelRef(taskID, "", channelName, upstreamModel, updatedAt)
+}
+
+func UpdateRunningGenerationTaskChannelRef(taskID, channelID, channelName, upstreamModel, updatedAt string) error {
 	db, err := DB()
 	if err != nil {
 		return err
 	}
-	result := db.Model(&model.GenerationTask{}).Where("id = ? AND status = ?", taskID, model.GenerationTaskStatusRunning).Updates(map[string]any{
+	patch := map[string]any{
 		"channel_name":   channelName,
 		"upstream_model": upstreamModel,
 		"updated_at":     updatedAt,
-	})
+	}
+	if strings.TrimSpace(channelID) != "" {
+		patch["channel_id"] = channelID
+	}
+	result := db.Model(&model.GenerationTask{}).Where("id = ? AND status = ?", taskID, model.GenerationTaskStatusRunning).Updates(patch)
 	if result.Error != nil {
 		return result.Error
 	}
@@ -724,26 +733,45 @@ func ListDashboardTaskRowsSince(since string) ([]DashboardTaskRow, error) {
 // ListGenerationTasksByChannelSince returns tasks of one channel created at or
 // after since (RFC3339), newest first, capped by limit.
 func ListGenerationTasksByChannelSince(channelName, since string, limit int) ([]model.GenerationTask, error) {
+	return ListGenerationTasksByChannelsSince([]string{channelName}, since, limit)
+}
+
+func ListGenerationTasksByChannelsSince(channelNames []string, since string, limit int) ([]model.GenerationTask, error) {
 	db, err := DB()
 	if err != nil {
 		return nil, err
 	}
 	var items []model.GenerationTask
-	err = db.Select("id", "request_id", "model", "modality", "channel_name", "credits", "credit_source", "status", "upstream_task_id", "created_at").
-		Where("channel_name = ? AND created_at >= ?", channelName, since).Order("created_at desc").Limit(limit).Find(&items).Error
+	tx := db.Select("id", "request_id", "model", "modality", "channel_name", "channel_id", "credits", "credit_source", "status", "upstream_task_id", "created_at").
+		Where("created_at >= ?", since)
+	if len(channelNames) == 1 {
+		tx = tx.Where("channel_name = ? OR channel_id = ?", channelNames[0], channelNames[0])
+	} else if len(channelNames) > 1 {
+		tx = tx.Where("channel_name IN ? OR channel_id IN ?", channelNames, channelNames)
+	}
+	err = tx.Order("created_at desc").Limit(limit).Find(&items).Error
 	return items, err
 }
 
 // ListLateDeliveryCandidates lists failed tasks of one channel and modality
 // that failed at or after since and are due for a late-result check.
 func ListLateDeliveryCandidates(channelName, modality, since, timestamp string, limit int) ([]model.GenerationTask, error) {
+	return ListLateDeliveryCandidatesForChannels([]string{channelName}, modality, since, timestamp, limit)
+}
+
+func ListLateDeliveryCandidatesForChannels(channelNames []string, modality, since, timestamp string, limit int) ([]model.GenerationTask, error) {
 	db, err := DB()
 	if err != nil {
 		return nil, err
 	}
 	var tasks []model.GenerationTask
-	err = db.Where("status = ? AND channel_name = ? AND modality = ? AND updated_at >= ?", model.GenerationTaskStatusFailed, channelName, modality, since).
-		Where("reconcile_after <= ? AND reconcile_lease_expires_at <= ?", timestamp, timestamp).
+	tx := db.Where("status = ? AND modality = ? AND updated_at >= ?", model.GenerationTaskStatusFailed, modality, since)
+	if len(channelNames) == 1 {
+		tx = tx.Where("channel_name = ? OR channel_id = ?", channelNames[0], channelNames[0])
+	} else if len(channelNames) > 1 {
+		tx = tx.Where("channel_name IN ? OR channel_id IN ?", channelNames, channelNames)
+	}
+	err = tx.Where("reconcile_after <= ? AND reconcile_lease_expires_at <= ?", timestamp, timestamp).
 		Order("updated_at asc").Limit(limit).Find(&tasks).Error
 	return tasks, err
 }

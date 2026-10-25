@@ -20,6 +20,9 @@ type ModelOverview struct {
 	// Supplies is the unified route table (号池 providers + 外部渠道) that
 	// admin toggles, overview availability and plaza status all read from.
 	Supplies []SupplyRoute `json:"supplies"`
+	// ProviderCapabilities are per-builtin-provider model declarations
+	// (resolution/modality) so clamp/UI does not rely on accidental unions.
+	ProviderCapabilities []ProviderModelCapability `json:"providerCapabilities,omitempty"`
 }
 
 // PoolSourceOverview is the built-in pool as one source.
@@ -160,7 +163,8 @@ func buildModelOverview(settings model.Settings, routes []gateway.RouteDetail, r
 			Priority: poolPriority, Weight: poolWeight, DefaultPriority: DefaultProviderPriorityChatGPT, RoutesKnown: routesKnown},
 		Channels: []ChannelSourceOverview{},
 		Models:   []ModelOverviewItem{},
-		Supplies: ListSupplyRoutes(private),
+		Supplies:             ListSupplyRoutes(private),
+		ProviderCapabilities: ListProviderModelCapabilities(private),
 	}
 	items := map[string]*ModelOverviewItem{}
 	order := []string{}

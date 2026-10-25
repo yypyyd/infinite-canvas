@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { useCopyText } from "@/hooks/use-copy-text";
 import { hasUserSpecPricing, requestCreditQuote, userSpecPricingRatio, type UserSpecPricingIndex } from "@/constant/credits";
+import { resolveImageResolutionTiers } from "@/lib/image-model-capabilities";
 import { videoOutputSize } from "@/lib/video-format";
 import type { AdminManagedModel, AdminPricingRule } from "@/services/api/admin";
 import { fetchModelStatus, type ModelStatusItem } from "@/services/api/model-status";
@@ -102,7 +103,7 @@ export default function ModelSquarePage() {
     const selectedModel = models.find((model) => model.id === selectedModelId) || null;
     const selectedOperations = selectedModel ? modelOperations(selectedModel) : [];
     const activeOperation = selectedOperations.includes(selectedOperation) ? selectedOperation : selectedOperations[0];
-    const selectedRules = selectedModel ? enabledPricingRules(modelChannel?.pricingRules || [], selectedModel.id, activeOperation) : [];
+    const selectedRules = selectedModel ? enabledPricingRules(modelChannel?.pricingRules || [], selectedModel, activeOperation) : [];
     const pricingContext = { specPricing, currentGroupRatio, groupRatios: modelChannel?.groupRatios, userGroup };
     const hasFilters = modality !== "all" || operation !== "all";
 
@@ -250,7 +251,7 @@ export default function ModelSquarePage() {
                                             key={model.id}
                                             model={model}
                                             status={modelStatusById[model.id]}
-                                            rules={enabledPricingRules(modelChannel.pricingRules || [], model.id)}
+                                            rules={enabledPricingRules(modelChannel.pricingRules || [], model)}
                                             pricing={pricingContext}
                                             onDetails={() => chooseModel(model)}
                                             onCopy={() => copyText(model.id, "模型 ID 已复制")}
@@ -580,8 +581,20 @@ function Capability({ label, values, fallback }: { label: string; values: Array<
     );
 }
 
-function enabledPricingRules(rules: AdminPricingRule[], modelId: string, operation?: ModelOperation) {
-    return rules.filter((rule) => rule.enabled && rule.model === modelId && (!operation || rule.operation === operation));
+function enabledPricingRules(rules: AdminPricingRule[], model: Pick<MarketplaceModel, "id" | "modality" | "resolutionTiers"> | string, operation?: ModelOperation) {
+    const modelId = typeof model === "string" ? model : model.id;
+    const catalogTiers = typeof model === "string" ? undefined : model.resolutionTiers;
+    const modality = typeof model === "string" ? undefined : model.modality;
+    const allowedTiers = new Set(
+        (modality === "image" ? resolveImageResolutionTiers(modelId, catalogTiers) : catalogTiers)?.map((tier) => tier.trim().toLowerCase()).filter(Boolean) || [],
+    );
+    return rules.filter((rule) => {
+        if (!rule.enabled || rule.model !== modelId) return false;
+        if (operation && rule.operation !== operation) return false;
+        if (!allowedTiers.size) return true;
+        const tier = (rule.resolutionTier || "").trim().toLowerCase();
+        return !tier || allowedTiers.has(tier);
+    });
 }
 
 const modelStatusTone: Record<string, { dot: string; text: string }> = {

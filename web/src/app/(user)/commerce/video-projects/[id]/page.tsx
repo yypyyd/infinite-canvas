@@ -66,6 +66,32 @@ function SafeAreaPreview({ timeline }: { timeline: VideoTimeline }) {
     );
 }
 
+
+const PREFLIGHT_CODE_MESSAGES: Record<string, string> = {
+    SHOT_COUNT: "镜头数需 3–100",
+    TOTAL_DURATION: "总时长需 15–60 秒",
+    SHOT_ID: "镜头编号不能为空且不能重复",
+    SHOT_DURATION: "镜头时长或裁切方式无效",
+    TRANSITION: "镜头转场无效",
+    TRANSITION_DURATION: "转场时长不能超过镜头时长",
+    SHOT_SOURCE: "镜头素材无效",
+    SHOT_RANGE: "镜头开始时间和裁切起点不能为负数",
+    SUBTITLE_RANGE: "字幕文本、时间或安全区位置无效",
+    BGM_RIGHTS: "背景音乐必须引用企业音频并确认使用权",
+    BGM_VOLUME: "背景音乐音量必须在 0 到 100 之间",
+    OUTPUT_SPEC: "输出规格必须为支持的 1080p、30fps 工程契约",
+    FILE_MISSING: "工程素材不存在或不属于当前企业",
+    BGM_MIME: "背景音乐必须是音频文件",
+    SHOT_MIME: "镜头素材类型与声明不一致",
+};
+
+function preflightIssueMessage(issue: { code?: string; message?: string }) {
+    const mapped = issue.code ? PREFLIGHT_CODE_MESSAGES[issue.code] : "";
+    const message = (issue.message || "").trim();
+    if (message && !/^\[[A-Z0-9_]+\]/.test(message)) return message;
+    return mapped || message || issue.code || "预检未通过";
+}
+
 export default function VideoProjectEditorPage() {
     const { message } = App.useApp();
     const params = useParams<{ id: string }>();
@@ -495,7 +521,7 @@ export default function VideoProjectEditorPage() {
                                     </div>
                                     {preflight.issues.map((issue) => (
                                         <div key={issue.code + issue.message} className={issue.severity === "error" ? "text-red-600" : "text-amber-600"}>
-                                            [{issue.code}] {issue.message}
+                                            {preflightIssueMessage(issue)}
                                         </div>
                                     ))}
                                 </div>

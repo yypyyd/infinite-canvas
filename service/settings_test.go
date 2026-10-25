@@ -227,3 +227,42 @@ func channelModels(names ...string) []model.ChannelModel {
 	}
 	return result
 }
+
+
+func TestFilterPricingRulesToModelCapabilitiesDropsUnsupportedTiers(t *testing.T) {
+	rules := []model.PricingRule{
+		{Model: "gpt-image-2", Modality: "image", Operation: "generation", Unit: "image", ResolutionTier: "1k", BillingMode: "fixed", Credits: 2, Enabled: true},
+		{Model: "gpt-image-2", Modality: "image", Operation: "generation", Unit: "image", ResolutionTier: "2k", BillingMode: "fixed", Credits: 4, Enabled: true},
+		{Model: "gpt-image-2", Modality: "image", Operation: "generation", Unit: "image", ResolutionTier: "4k", BillingMode: "fixed", Credits: 6, Enabled: true},
+		{Model: "other", Modality: "image", Operation: "generation", Unit: "image", ResolutionTier: "2k", BillingMode: "fixed", Credits: 3, Enabled: true},
+	}
+	models := []model.ModelDefinition{
+		{ID: "gpt-image-2", Modality: "image", ResolutionTiers: []string{"1k"}, Enabled: true},
+		{ID: "other", Modality: "image", ResolutionTiers: []string{"1k", "2k", "4k"}, Enabled: true},
+	}
+	got := filterPricingRulesToModelCapabilities(rules, models)
+	if len(got) != 2 || got[0].ResolutionTier != "1k" || got[0].Model != "gpt-image-2" || got[1].Model != "other" {
+		t.Fatalf("filtered = %#v", got)
+	}
+}
+
+func TestAvailableModelsDropsManagedModelsWithoutChannelRoute(t *testing.T) {
+	stubPoolModels(t, nil)
+	public := restrictPublicModelsToEnabledChannels(model.PublicSetting{ModelChannel: model.PublicModelChannelSetting{
+		Models: []model.ModelDefinition{
+			{ID: "gpt-image-2", Modality: "image", Enabled: true},
+			{ID: "firefly-video", Modality: "video", Enabled: true},
+			{ID: "grok-imagine-video", Modality: "video", Enabled: true},
+		},
+		AvailableModels:   []string{"gpt-image-2", "firefly-video", "grok-imagine-video"},
+		DefaultVideoModel: "firefly-video",
+	}}, []model.ModelChannel{
+		{Enabled: true, Models: channelModels("gpt-image-2", "grok-imagine-video")},
+	})
+	if want := []string{"gpt-image-2", "grok-imagine-video"}; !reflect.DeepEqual(public.ModelChannel.AvailableModels, want) {
+		t.Fatalf("available = %#v, want %#v", public.ModelChannel.AvailableModels, want)
+	}
+	if public.ModelChannel.DefaultVideoModel != "grok-imagine-video" {
+		t.Fatalf("default video = %q, want grok-imagine-video", public.ModelChannel.DefaultVideoModel)
+	}
+}

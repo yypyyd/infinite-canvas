@@ -188,7 +188,11 @@ export default function AdminSettingsPage() {
     const [isSaving, setIsSaving] = useState(false);
     const rawPublicModels = Form.useWatch(["public", "modelChannel", "availableModels"], { form, preserve: true }) || [];
     const managedModels = Form.useWatch(["public", "modelChannel", "models"], { form, preserve: true }) || [];
-    const publicModels = enabledManagedModelIds(managedModels).length ? enabledManagedModelIds(managedModels) : rawPublicModels;
+    const managedIds = enabledManagedModelIds(managedModels);
+    const availableSet = new Set(rawPublicModels);
+    // Defaults / pickers only list models that are both catalog-enabled and in
+    // public availableModels (channel-backed); disabled routes like firefly-video drop out.
+    const publicModels = managedIds.length ? managedIds.filter((id) => availableSet.size === 0 || availableSet.has(id)) : rawPublicModels;
     const activeTab: SettingsTabKey = activeSection === "payment" || activeSection === "referral" || activeSection === "storage" || activeSection === "monitoring" || activeSection === "email" || activeSection === "sync" ? "private" : "public";
     const activeMode = editorMode[activeTab];
     const activeJsonText = jsonText[activeTab];

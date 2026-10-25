@@ -51,9 +51,34 @@ type ModelChannelSelection struct {
 
 func PublicSettings() (model.PublicSetting, error) {
 	settings, err := repository.GetSettings()
-	public := normalizeSettings(settings).Public
+	normalized := normalizeSettings(settings)
+	public := normalized.Public
+	// Public selectable lists only keep models that still have an enabled
+	// channel/route. Catalog-enabled but route-disabled models (e.g. firefly-video
+	// with its Adobe route off) stay in admin overview, but drop out of plaza
+	// availableModels and user default/generation pickers.
+	public = restrictPublicModelsToEnabledChannels(public, runtimeChannelsFor(normalized.Private))
+	public.ModelChannel.PricingRules = filterPricingRulesToModelCapabilities(public.ModelChannel.PricingRules, public.ModelChannel.Models)
 	public.Announcements.Items = publishedAnnouncements(public.Announcements)
 	return public, err
+}
+
+func restrictPublicModelsToEnabledChannels(public model.PublicSetting, channels []model.ModelChannel) model.PublicSetting {
+	enabled := enabledChannelModels(channels)
+	if len(enabled) == 0 {
+		return public
+	}
+	managed := enabledManagedModelIDs(public.ModelChannel.Models)
+	if len(managed) == 0 {
+		public.ModelChannel.AvailableModels = enabled
+	} else {
+		public.ModelChannel.AvailableModels = intersectModelNames(managed, enabled)
+	}
+	public.ModelChannel.DefaultTextModel = repairDefaultModel(public.ModelChannel.DefaultTextModel, public.ModelChannel.AvailableModels, isTextModelName)
+	public.ModelChannel.DefaultImageModel = repairDefaultModel(public.ModelChannel.DefaultImageModel, public.ModelChannel.AvailableModels, isImageModelName)
+	public.ModelChannel.DefaultVideoModel = repairDefaultModel(public.ModelChannel.DefaultVideoModel, public.ModelChannel.AvailableModels, isVideoModelName)
+	public.ModelChannel.DefaultModel = repairDefaultModel(public.ModelChannel.DefaultModel, public.ModelChannel.AvailableModels, isTextModelName)
+	return public
 }
 
 func PublicAPIModels() ([]model.PublicAPIModel, error) {
@@ -1372,6 +1397,66 @@ func uniqueModelNames(models []string) []string {
 		}
 		seen[name] = true
 		result = append(result, name)
+	}
+	return result
+}
+
+func intersectModelNames(left, right []string) []string {
+	allowed := map[string]bool{}
+	for _, item := range right {
+		name := strings.TrimSpace(item)
+		if name != "" {
+			allowed[name] = true
+		}
+	}
+	result := []string{}
+	seen := map[string]bool{}
+	for _, item := range left {
+		name := strings.TrimSpace(item)
+		if name == "" || !allowed[name] || seen[name] {
+			continue
+		}
+		seen[name] = true
+		result = append(result, name)
+	}
+	return result
+}
+
+// filterPricingRulesToModelCapabilities keeps only price tiers the public model
+// can actually serve after provider capability / primary-provider clamp. Image
+// and video rules with a resolutionTier outside the model catalog tiers are
+// hidden from plaza and public quotes; rules without a tier stay.
+func filterPricingRulesToModelCapabilities(rules []model.PricingRule, models []model.ModelDefinition) []model.PricingRule {
+	if len(rules) == 0 {
+		return rules
+	}
+	tiersByModel := map[string]map[string]bool{}
+	for _, item := range models {
+		id := strings.TrimSpace(item.ID)
+		if id == "" {
+			continue
+		}
+		allowed := map[string]bool{}
+		for _, tier := range item.ResolutionTiers {
+			tier = normalizeResolutionTier(tier)
+			if tier != "" {
+				allowed[tier] = true
+			}
+		}
+		tiersByModel[id] = allowed
+	}
+	result := make([]model.PricingRule, 0, len(rules))
+	for _, rule := range rules {
+		allowed, ok := tiersByModel[strings.TrimSpace(rule.Model)]
+		if !ok || len(allowed) == 0 {
+			result = append(result, rule)
+			continue
+		}
+		tier := normalizeResolutionTier(rule.ResolutionTier)
+		if tier == "" || allowed[tier] {
+			result = append(result, rule)
+			continue
+		}
 	}
 	return result
 }

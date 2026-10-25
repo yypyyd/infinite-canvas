@@ -103,7 +103,7 @@ curl -X POST "https://huantu.xyz/api/v1/images/generations" \
 - `POST /api/commerce/production/image/preflight`：规范化商品/SKU 范围与模板选择，返回任务项数、问题定位和提示词预览；服务端创建任务时会重新验证。
 - `POST /api/commerce/batch-jobs`：兼容旧单模板请求，同时接受 `productScopes + templateSelections`；`requestId` 同内容重放返回原任务，不同内容返回冲突。
 - `GET /api/commerce/batch-jobs/:id`：返回父任务、冻结模板选择与聚合进度；运行中前端可每 5 秒轮询。
-- `/api/commerce/video-projects` 及 `/:id/preflight`、`/:id/versions`：保存草稿、执行预检、冻结不可变版本。Release 1 没有 render 接口，不返回视频排队任务或 MP4。
+- `/api/commerce/video-projects` 及 `/:id/preflight`、`/:id/versions`、渲染相关接口：保存草稿、预检、冻结不可变版本；Release 2 由独立 `video-worker`（FFmpeg）渲染 MP4，经审核后可下载成片。
 
 图片父任务可能返回 `pending_review` 和 `partial_success`；前者表示所有执行项完成并等待审核，后者表示成功与失败并存。持久化文件字段仍为 `storageKey`，签名 URL 不进入响应模型或数据库。
 

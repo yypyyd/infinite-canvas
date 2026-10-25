@@ -127,7 +127,10 @@ function resolveEffectiveConfig(config: AiConfig, modelChannel: AdminPublicSetti
 }
 
 function enabledManagedModels(modelChannel: AdminPublicSettings["modelChannel"]) {
-    return (modelChannel.models || []).filter((item) => item.enabled !== false && item.id).sort((a, b) => (a.sort || 0) - (b.sort || 0));
+    const available = new Set(modelChannel.availableModels || []);
+    return (modelChannel.models || [])
+        .filter((item) => item.enabled !== false && item.id && (available.size === 0 || available.has(item.id)))
+        .sort((a, b) => (a.sort || 0) - (b.sort || 0));
 }
 
 function modelsByManagedCapability(models: AdminPublicSettings["modelChannel"]["models"], capability: ModelCapability) {

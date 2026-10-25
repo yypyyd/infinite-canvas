@@ -321,7 +321,6 @@ func BuildVideoPayload(engine, prompt, aspectRatio string, durationSeconds int, 
 	}
 }
 
-
 // KlingVideoModelVersionCandidates returns Firefly 3P modelVersion slugs to try
 // for Kling video. Adobe's 422 lists supported (modelId, modelVersion) pairs;
 // kling_v4_* was guessed from v3 naming and is rejected. Prefer an explicit

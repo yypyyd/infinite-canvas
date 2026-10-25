@@ -449,6 +449,13 @@ func (c *Client) GenerateVideo(ctx context.Context, sessionKey, token, arpSessio
 	if err != nil {
 		return nil, nil, err
 	}
+	// Kling 4.0 (and other firefly-3p video) needs the same Arkose-backed
+	// generation session as GPT Image 2. A local sid-only ARP is masked by
+	// Adobe as timeout_error / "system under load".
+	arpSessionToken, err = generationSession(ctx, submitSess)
+	if err != nil {
+		return nil, nil, err
+	}
 	pollSess, err := c.newDirectTLSClient()
 	if err != nil {
 		return nil, nil, err
@@ -460,6 +467,13 @@ func (c *Client) GenerateVideo(ctx context.Context, sessionKey, token, arpSessio
 
 	payload := BuildVideoPayload(engine, prompt, aspectRatio, durationSeconds, resolution, referenceMode, upstreamModel, inputs)
 	respBody, pollURL, err := c.submitVideo(ctx, submitSess, sessionKey, token, arpSessionToken, videoSubmitURL, payload)
+	if retryGenerationSession(err) {
+		arpSessionToken, err = generationSession(ctx, submitSess)
+		if err != nil {
+			return nil, nil, err
+		}
+		respBody, pollURL, err = c.submitVideo(ctx, submitSess, sessionKey, token, arpSessionToken, videoSubmitURL, payload)
+	}
 	if err != nil {
 		return nil, nil, err
 	}

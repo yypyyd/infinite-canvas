@@ -2991,7 +2991,10 @@ func (s *V1Service) generateAdobeVideo(ctx context.Context, eventID string, mode
 			}
 			inputs.AudioBlobIDs = append(inputs.AudioBlobIDs, id)
 		}
-		submitARP := adobe.SubmissionARPSessionToken(token.ARPSessionToken)
+		// Kling/video obtains a fresh Arkose generation session inside the
+		// provider (same as GPT Image 2). Do not replace with a local sid-only
+		// SubmissionARPSessionToken - that is what Adobe masks as system under load.
+		submitARP := token.ARPSessionToken
 		bytes, meta, genErr := s.adobe.GenerateVideo(ctx, token.ID, token.Value, submitARP, engine, in.Prompt, aspectRatio, durationSeconds, resolution, referenceMode, upstreamModel, inputs, false)
 		if genErr == nil {
 			videoURL = strings.TrimSpace(stringValue(meta["video_url"]))

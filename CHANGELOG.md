@@ -3,6 +3,9 @@
 # CHANGELOG
 
 ## Unreleased
+
+## v0.2.40 - 2026-10-25
++ [文档] Phase 4：整理 P0 待测为可跑集合（生成扣费/返还、晚到货、Hold/Settle、号池会话与能力、视频渲染估费）；本地全量 `go test ./...`、web 36 项与类型检查通过，人工/生产浸泡项仍列于待测试清单。
 + [优化] Phase 3 计费单路径：交互 / 批量条目 / Agent / 协议生成统一经 `BeginGenerationTask` 扣费、`FinishGenerationTask` 失败返还；晚到货仅 `ai_late_recharge` 补扣先前返还，不对成功任务二次扣费。
 + [优化] 批量任务与视频渲染共用 `HoldCredits` / `SettleHeldCredits` / `ReleaseHeldCredits` 预扣信封；视频渲染估费走 `EstimateVideoRenderPricing`（`PricingResolver` + `PricingSnapshot`）。
 + [文档] 新增后端「计费生命周期」说明主路径与配置侧门（`pool_pricing` 等）；`pool_pricing` 明确为配置侧门、不写扣费流水。

@@ -21,19 +21,15 @@ description: 当前项目后续值得处理的事项
 - Hold/Settle：批量任务与视频渲染共用 `HoldCredits` / `SettleHeldCredits` / `ReleaseHeldCredits`；视频渲染估费 `EstimateVideoRenderPricing` 写入 `PricingSnapshot`。
 - 配置侧门：`pool_pricing` 缺口/草稿、价目与优惠只喂 `PricingResolver`，不写流水。文档见[计费生命周期](/docs/backend/billing-lifecycle)。
 
-## Phase 4 衔接 · P0 pending-test + 打版本（handoff）
+## Phase 4 · 已完成（P0 自动化 + v0.2.40）
 
-下一阶段以发布质量收口，不再扩计费路径：
+- 已跑通并记录于[待测试清单](./pending-test)：生成扣费/返还、晚到货幂等补扣、Hold/Settle、视频渲染估费与 FFmpeg 参数、号池能力/Adobe session 单测、前端 36 项；`go test ./...` / `go vet` / web types 本地通过，版本切至 **v0.2.40**（2026-10-25）。
+- **残余（人工/生产）**：真 Adobe sticky remint、能力钳制 UI、真上游交互/批量/Agent 抽检、视频工程端到端 + video-worker、MySQL/PostgreSQL 与多实例租约、七牛与部署冒烟。不阻塞本版本代码完成判定。
 
-- 跑完[待测试清单](./pending-test)中 **P0** 项：生成（交互/批量/Agent）、扣费与返还（含晚到货）、号池健康与会话、视频渲染预扣/失败返还。
-- 真实环境抽检 MySQL/PostgreSQL 与多实例租约；确认 Actions 绿。
-- 通过后切正式版本号（本 Phase 只写 CHANGELOG Unreleased，不擅自 bump）。
+## P0 · 稳定发布（残余浸泡）
 
-
-## P0 · 稳定发布
-
-- 完成[待测试清单](./pending-test)中的全部 P0 人工与真实环境验收，并确认新增自动化回归在 CI、MySQL/PostgreSQL 和多实例环境首次通过。
-- 本轮画布冲突副本、工作区增量同步、生成任务并发补偿、发布检查串联和连线裁剪已实现，按[待测试清单](./pending-test)完成双标签页、大画布、多实例和 Actions 实际验收。
+- 完成[待测试清单](./pending-test)中 Phase 4「仍需人工 / 生产浸泡」项；MySQL/PostgreSQL 与多实例租约首次在真实环境确认。
+- 本轮画布冲突副本、工作区增量同步、生成任务并发补偿、发布检查串联和连线裁剪已实现，按清单完成双标签页、大画布、多实例和 Actions 实际验收。
 
 ## P1 · 生产闭环
 

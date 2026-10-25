@@ -5,6 +5,35 @@ description: 当前版本已实现但仍需人工或自动化验证的变更项
 
 # 待测试
 
+## Phase 4 · P0 发布验收（2026-10-25 / v0.2.40）
+
+本轮把 P0 收成可跑集合，覆盖：生成主路径、扣费/返还（Begin/FinishGenerationTask）、号池健康与会话、视频渲染预扣/结算。自动化路径已在本地与即将上线的 CI 全量跑通；下列「人工/生产浸泡」不得伪造成功。
+
+### 自动化已通过（本地 `go test ./...` + `web` 36 项 + gofmt/vet blob 级干净）
+
+| 范围 | 覆盖用例（节选） | 结论 |
+| --- | --- | --- |
+| 生成扣费/返还 | `router.TestImageGenerationHTTPBillingAndIdempotency`（成功只扣一次、幂等拒绝、余额不足回滚、上游失败同请求返还、企业共享扣/退、专属规格倍率） | 通过 |
+| Begin/Finish 路径约定 | `service.TestGenerationBillingPathNames`、`TestEstimateGenerationPricingRequiresRule` | 通过 |
+| 晚到货补扣 | `service.TestLateDeliveryAfterRefundChargesOnce`、`TestConcurrentLateRecoveryRechargesOnce`、`TestLateDeliveryWithInsufficientBalanceGoesNegative`、`TestLateDeliveryIgnoresPoolFailures` | 通过 |
+| Hold/Settle | `repository.TestHoldSettleReleaseCreditsPersonal` | 通过 |
+| 视频渲染估费/快照 | `service.TestEstimateVideoRenderPricingPersistsSnapshot`、`TestEstimateVideoRenderCreditsFloor`、`TestBuildVideoRenderFFmpegArgsBasic`；`repository.TestVideoRenderRequestHashStable` | 通过 |
+| 号池/能力/选路 | `service` ProviderCapabilities / SupplyRoutes；`gateway/.../adobe_session`、`capability_routing_*` | 通过 |
+| 前端单测 | `bun test src`（计费报价、画布 Agent 撤销/落位、账号导入、连线裁剪等 36） | 通过 |
+| 全量后端 | `go vet ./...`、`go test ./...`（含 repository / router / service / gateway） | 通过 |
+
+### 仍需人工 / 生产浸泡（未伪造成功）
+
+- **Adobe 真号池会话**：导入 → `adobe_session.phase` health_check→ready；sticky extract 换 egress 后 remint 日志（`adobe_session event=remint_ok`），生成不再伪装 `timeout_error`。需真实 Adobe 账号与住宅代理。
+- **能力钳制 UI**：仅 ChatGPT / 仅 Adobe / 两者同开时，公共目录与图片设置对 `gpt-image-2` 的 1K vs 2K/4K 展示；`model-overview.supplies` + `providerCapabilities` 与 `/api/model-status` 线上一致。
+- **交互/批量/Agent 真上游生图**：流水只允许成功一笔 `ai_consume`，失败 `ai_consume`+`ai_refund`；协议恢复与刷新不重复扣费（自动化已覆盖模拟上游，生产渠道仍需抽检）。
+- **视频工程端到端**：新建工程 → 3+ 镜头 → 字幕安全区 → BGM → 预检 → 冻结 → 提交；`video-worker` 走 materializing/rendering/archiving → `pending_review` → 审核下 MP4；失败/取消释放预扣；租约过期可被其他 worker 接管。需本机/生产 FFmpeg worker 与对象存储。
+- **多实例与 MySQL/PostgreSQL**：生成补偿租约、晚到货并发补扣、批量 Worker 与 video-worker 租约接管；当前自动化默认 SQLite。
+- **七牛 / 生产部署冒烟**：推送 `main` 后 Quality→镜像→3050 健康检查；媒体签名与归档可读。
+
+下方保留历史待测条目，作回归清单；P0 发布以本节「自动化已通过」+ CI 绿为准，人工项为残余风险。
+
+
 
 
 ## Phase 3 计费单路径

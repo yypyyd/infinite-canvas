@@ -750,49 +750,70 @@ function ResultImageCard({
     onDownload: (image: GeneratedImage, index: number) => void;
     onSaveAsset: (image: GeneratedImage, index: number) => void;
 }) {
+    const previewSrc = resolveImageVariantUrl(image.storageKey, image.dataUrl, "preview");
+    const [imageReady, setImageReady] = useState(false);
+
+    useEffect(() => {
+        setImageReady(false);
+    }, [previewSrc]);
+
     return (
         <div className="overflow-hidden rounded-lg border border-neutral-200 bg-background dark:border-neutral-800">
-            <Image
-                src={resolveImageVariantUrl(image.storageKey, image.dataUrl, "preview")}
-                preview={{ src: image.dataUrl }}
-                placeholder={
-                    <div className="grid aspect-square place-items-center bg-neutral-100 text-neutral-400 dark:bg-neutral-900">
-                        <LoaderCircle className="size-5 animate-spin" />
+            <div className="relative aspect-square bg-neutral-100 dark:bg-neutral-900">
+                {!imageReady ? (
+                    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-neutral-50 text-sm text-neutral-500 dark:bg-neutral-900 dark:text-neutral-400">
+                        <div
+                            className="pointer-events-none absolute inset-0 opacity-60"
+                            style={{
+                                backgroundImage: "radial-gradient(circle, rgba(115,115,115,0.35) 1.4px, transparent 1.6px)",
+                                backgroundSize: "16px 16px",
+                            }}
+                        />
+                        <LoaderCircle className="relative size-6 animate-spin" />
+                        <span className="relative">加载中</span>
                     </div>
-                }
-                alt={`生成结果 ${index + 1}`}
-                loading="lazy"
-                decoding="async"
-                className="aspect-square object-cover"
-            />
-            <div className="space-y-2 border-t border-neutral-200 px-3 py-2.5 dark:border-neutral-800">
-                <div className="flex min-w-0 gap-x-2 gap-y-1 text-xs text-neutral-500 dark:text-neutral-400">
-                    <span>
-                        {image.width}x{image.height}
-                    </span>
-                    <span>{formatBytes(image.bytes)}</span>
-                    <span>{formatDuration(image.durationMs)}</span>
-                </div>
-                <div className={`grid min-w-0 gap-2 ${canEdit ? "grid-cols-3" : "grid-cols-2"}`}>
-                    <Tooltip title="添加到素材">
-                        <Button className={RESULT_ACTION_BUTTON_CLASS} size="small" icon={<FolderPlus className="size-3.5" />} onClick={() => void onSaveAsset(image, index)}>
-                            添加到素材
-                        </Button>
-                    </Tooltip>
-                    {canEdit ? (
-                        <Tooltip title="加入参考图">
-                            <Button className={RESULT_ACTION_BUTTON_CLASS} size="small" icon={<PenLine className="size-3.5" />} onClick={() => void onEdit(image, index)}>
-                                加入参考图
+                ) : null}
+                <Image
+                    src={previewSrc}
+                    preview={imageReady ? { src: image.dataUrl } : false}
+                    alt={`生成结果 ${index + 1}`}
+                    loading="lazy"
+                    decoding="async"
+                    onLoad={() => setImageReady(true)}
+                    onError={() => setImageReady(true)}
+                    className={`aspect-square object-cover transition-opacity ${imageReady ? "opacity-100" : "opacity-0"}`}
+                />
+            </div>
+            {imageReady ? (
+                <div className="space-y-2 border-t border-neutral-200 px-3 py-2.5 dark:border-neutral-800">
+                    <div className="flex min-w-0 gap-x-2 gap-y-1 text-xs text-neutral-500 dark:text-neutral-400">
+                        <span>
+                            {image.width}x{image.height}
+                        </span>
+                        <span>{formatBytes(image.bytes)}</span>
+                        <span>{formatDuration(image.durationMs)}</span>
+                    </div>
+                    <div className={`grid min-w-0 gap-2 ${canEdit ? "grid-cols-3" : "grid-cols-2"}`}>
+                        <Tooltip title="添加到素材">
+                            <Button className={RESULT_ACTION_BUTTON_CLASS} size="small" icon={<FolderPlus className="size-3.5" />} onClick={() => void onSaveAsset(image, index)}>
+                                添加到素材
                             </Button>
                         </Tooltip>
-                    ) : null}
-                    <Tooltip title="下载">
-                        <Button className={RESULT_ACTION_BUTTON_CLASS} size="small" icon={<Download className="size-3.5" />} onClick={() => onDownload(image, index)}>
-                            下载
-                        </Button>
-                    </Tooltip>
+                        {canEdit ? (
+                            <Tooltip title="加入参考图">
+                                <Button className={RESULT_ACTION_BUTTON_CLASS} size="small" icon={<PenLine className="size-3.5" />} onClick={() => void onEdit(image, index)}>
+                                    加入参考图
+                                </Button>
+                            </Tooltip>
+                        ) : null}
+                        <Tooltip title="下载">
+                            <Button className={RESULT_ACTION_BUTTON_CLASS} size="small" icon={<Download className="size-3.5" />} onClick={() => onDownload(image, index)}>
+                                下载
+                            </Button>
+                        </Tooltip>
+                    </div>
                 </div>
-            </div>
+            ) : null}
         </div>
     );
 }

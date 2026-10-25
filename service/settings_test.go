@@ -228,7 +228,6 @@ func channelModels(names ...string) []model.ChannelModel {
 	return result
 }
 
-
 func TestFilterPricingRulesToModelCapabilitiesDropsUnsupportedTiers(t *testing.T) {
 	rules := []model.PricingRule{
 		{Model: "gpt-image-2", Modality: "image", Operation: "generation", Unit: "image", ResolutionTier: "1k", BillingMode: "fixed", Credits: 2, Enabled: true},

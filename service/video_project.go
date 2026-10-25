@@ -220,7 +220,7 @@ func validateVideoTimeline(organizationID string, timeline model.VideoTimeline, 
 	shotIDs := map[string]bool{}
 	duration := 0
 	if strict && (len(timeline.Shots) < 3 || len(timeline.Shots) > 100) {
-		issues = append(issues, model.ProductionPreflightIssue{Severity: "error", Code: "SHOT_COUNT", Message: "镜头数需 3–100"})
+		issues = append(issues, model.ProductionPreflightIssue{Severity: "error", Code: "SHOT_COUNT", Message: "镜头数需 3-100"})
 	}
 	for _, shot := range timeline.Shots {
 		if shot.ID == "" || shotIDs[shot.ID] {
@@ -271,7 +271,7 @@ func validateVideoTimeline(organizationID string, timeline model.VideoTimeline, 
 		issues = append(issues, model.ProductionPreflightIssue{Severity: "error", Code: "OUTPUT_SPEC", Message: "输出规格必须为支持的 1080p、30fps 工程契约"})
 	}
 	if strict && (duration < 15000 || duration > 60000) {
-		issues = append(issues, model.ProductionPreflightIssue{Severity: "error", Code: "TOTAL_DURATION", Message: "总时长需 15–60 秒"})
+		issues = append(issues, model.ProductionPreflightIssue{Severity: "error", Code: "TOTAL_DURATION", Message: "总时长需 15-60 秒"})
 	}
 	for _, key := range storageKeys {
 		file, ok, err := repository.GetUserFile(organizationID, key)

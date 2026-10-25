@@ -66,10 +66,9 @@ function SafeAreaPreview({ timeline }: { timeline: VideoTimeline }) {
     );
 }
 
-
 const PREFLIGHT_CODE_MESSAGES: Record<string, string> = {
-    SHOT_COUNT: "镜头数需 3–100",
-    TOTAL_DURATION: "总时长需 15–60 秒",
+    SHOT_COUNT: "镜头数需 3-100",
+    TOTAL_DURATION: "总时长需 15-60 秒",
     SHOT_ID: "镜头编号不能为空且不能重复",
     SHOT_DURATION: "镜头时长或裁切方式无效",
     TRANSITION: "镜头转场无效",

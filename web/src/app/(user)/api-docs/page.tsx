@@ -585,9 +585,7 @@ function enabledPricingRules(rules: AdminPricingRule[], model: Pick<MarketplaceM
     const modelId = typeof model === "string" ? model : model.id;
     const catalogTiers = typeof model === "string" ? undefined : model.resolutionTiers;
     const modality = typeof model === "string" ? undefined : model.modality;
-    const allowedTiers = new Set(
-        (modality === "image" ? resolveImageResolutionTiers(modelId, catalogTiers) : catalogTiers)?.map((tier) => tier.trim().toLowerCase()).filter(Boolean) || [],
-    );
+    const allowedTiers = new Set((modality === "image" ? resolveImageResolutionTiers(modelId, catalogTiers) : catalogTiers)?.map((tier) => tier.trim().toLowerCase()).filter(Boolean) || []);
     return rules.filter((rule) => {
         if (!rule.enabled || rule.model !== modelId) return false;
         if (operation && rule.operation !== operation) return false;

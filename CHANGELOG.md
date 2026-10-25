@@ -1,6 +1,7 @@
 # CHANGELOG
 
 ## Unreleased
++ [优化] Phase 1 统一供应路由表：号池平台（BuiltinProviders）与外部渠道（ModelChannel）共用 `supplies` 概念路由表；管理台「供应源」启用开关、能力测试/广场可用性与选路均以站点 BuiltinProviders/Channels 为单一真相，provider 启停经 `/api/admin/model-sources` 写入后同步 gateway `providers_enabled`。概览来源 kind 对扁平号池使用 `provider`（保留 legacy `pool`）；旧 `/admin/account-pool/*` 与 `/admin/channels` 继续硬跳转。
 + [修复] 号池平台「本平台模型」启用开关关闭后立刻弹回：抽屉持有打开时的旧 row 快照，PATCH 路由成功并 reload 后 UI 仍读旧 enabled；现抽屉内改用实时 gateway 行数据渲染开关，失败时不再误触发刷新。
 + [优化] 管理后台信息架构：原「模型管理」重塑为「供应源」，拆成「号池平台」（内置 chatgpt/adobe/byteplus/grok：启用/优先级/权重/代理提取 API/健康/账号，并可下钻账号/能力测试/导入）与「外部渠道」（LecAPI 等：baseUrl/Key/读模型/启用/优先级，独立表单）；账号池日志与号池设置并入号池平台页签；违禁词迁入「系统设置 → 内容安全」；移除空的「运维工具」菜单。旧 /admin/account-pool/* 与 /admin/channels 路由保留跳转。
 + [修复] Adobe 开启 sticky extract 后仍报「上游服务暂时繁忙」：IMS 换票原先可能在直连出口完成，而 generate-async/uploads 走住宅粘性出口，3P 网关按会话错配伪装成 timeout_error；现 RefreshNow 换票前绑定当前 extract/proxy，生成前按 egress fingerprint 自动 remint，admin refresh-quota 也会先在粘性出口换票；上游失败日志补充 account/sticky_key/arp_len。

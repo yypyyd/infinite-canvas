@@ -7,6 +7,16 @@ description: 当前项目后续值得处理的事项
 
 本文档用来记录当前项目后续比较值得处理的事项。
 
+
+## Phase 2 衔接 · 会话基础设施（handoff）
+
+Phase 1 已把「走哪条供应」收束到站点 `BuiltinProviders` + `Channels` 的统一 `supplies` 路由表，并让 admin 启停同步 gateway `providers_enabled`。下一阶段会话基础设施建议优先触碰：
+
+- 生成任务 / Agent 上游会话：继续只经 `SelectModelChannel` + `runtimeChannelsFor`（已含扁平号池 provider），避免再读独立 pool 选路；会话粘滞（sticky egress / ARP sid）仍留在 gateway 账号层，不要上抬到供应表。
+- 能力测试与 plaza：已读 `buildModelOverview` / `supplies`；会话侧若缓存「可用模型」列表，应订阅 overview/status 而非 gateway models  alone。
+- 遗留：`ModelSourceOverview.kind=pool`（单虚池）与 `BuiltinPool` 全局别名仍可出现在旧数据；Phase 2 可在会话/任务快照里只持久化 `provider`/`channel` id，去掉对 legacy pool channel name 的依赖。
+- 不要在本阶段冻结视频编辑器或 Release-2 Worker；那些仍按原计划单独推进。
+
 ## P0 · 稳定发布
 
 - 完成[待测试清单](./pending-test)中的全部 P0 人工与真实环境验收，并确认新增自动化回归在 CI、MySQL/PostgreSQL 和多实例环境首次通过。

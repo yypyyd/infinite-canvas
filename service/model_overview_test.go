@@ -50,7 +50,7 @@ func TestModelOverviewOrdersSourcesPoolFirstByDefault(t *testing.T) {
 		t.Fatalf("pool = %+v", overview.Pool)
 	}
 	item := overviewModel(t, overview, "gpt-image-2")
-	if len(item.Sources) < 3 || item.Sources[0].Kind != "pool" || item.Sources[0].Rank != 1 {
+	if len(item.Sources) < 3 || !IsProviderSourceKind(item.Sources[0].Kind) || item.Sources[0].Rank != 1 {
 		t.Fatalf("sources = %+v", item.Sources)
 	}
 	if !item.Available {
@@ -101,7 +101,7 @@ func TestModelOverviewHonoursPoolSourceSettings(t *testing.T) {
 	}
 	var poolRanked bool
 	for _, src := range img.Sources[1:] {
-		if src.Kind == "pool" {
+		if IsProviderSourceKind(src.Kind) {
 			poolRanked = true
 			break
 		}
@@ -113,7 +113,7 @@ func TestModelOverviewHonoursPoolSourceSettings(t *testing.T) {
 	for _, item := range overview.Models {
 		if item.ID == "kling-3" {
 			for _, src := range item.Sources {
-				if src.Kind == "pool" && src.Active {
+				if IsProviderSourceKind(src.Kind) && src.Active {
 					t.Fatalf("kling pool should not be active: %+v", src)
 				}
 			}

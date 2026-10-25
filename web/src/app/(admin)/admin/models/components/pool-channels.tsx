@@ -86,12 +86,12 @@ type DrawerProps = {
 };
 
 type PoolForm = {
+    /** Unified supply enable: site BuiltinProviders + gateway providers_enabled. */
     enabled: boolean;
     poolPriority: number;
     poolWeight: number;
     sitePriority: number;
     siteWeight: number;
-    siteEnabled: boolean;
     proxy: string;
     extractApi: string;
     mapping: string;
@@ -124,13 +124,13 @@ export function PoolChannelDrawer({ token, row, pool: _pool, builtinProvider, le
         if (!row) return;
         const sitePriority = builtinProvider?.priority ?? defaultPriorities[row.provider] ?? 200;
         const siteWeight = builtinProvider?.weight ?? 1;
+        const siteOn = builtinProvider?.enabled == null ? true : Boolean(builtinProvider.enabled);
         form.setFieldsValue({
-            enabled: row.enabled,
+            enabled: siteOn && row.enabled,
             poolPriority: row.poolPriority,
             poolWeight: row.poolWeight,
             sitePriority,
             siteWeight,
-            siteEnabled: builtinProvider?.enabled == null ? true : Boolean(builtinProvider.enabled),
             proxy: row.proxy,
             extractApi: row.extractApi,
             mapping: aliasesToMapping(providerMappings.length ? providerMappings : usingLegacyFallback ? legacyAliases : []),
@@ -180,11 +180,12 @@ export function PoolChannelDrawer({ token, row, pool: _pool, builtinProvider, le
             const prevEnabled = builtinProvider?.enabled == null ? true : Boolean(builtinProvider.enabled);
             const prevPriority = builtinProvider?.priority ?? defaultPriorities[row.provider] ?? 200;
             const prevWeight = builtinProvider?.weight ?? 1;
-            if (prevEnabled !== values.siteEnabled || prevPriority !== values.sitePriority || prevWeight !== values.siteWeight) {
+            // One enable bit drives site route table; server syncs gateway providers_enabled.
+            if (prevEnabled !== values.enabled || prevPriority !== values.sitePriority || prevWeight !== values.siteWeight) {
                 await patchAdminModelSource(token, {
                     kind: "provider",
                     provider: row.provider,
-                    enabled: values.siteEnabled,
+                    enabled: values.enabled,
                     priority: values.sitePriority,
                     weight: values.siteWeight,
                 });
@@ -252,11 +253,6 @@ export function PoolChannelDrawer({ token, row, pool: _pool, builtinProvider, le
                             <Typography.Title level={5}>本平台（站点）</Typography.Title>
                             <Row gutter={16}>
                                 <Col xs={8}>
-                                    <Form.Item name="siteEnabled" label="启用渠道" valuePropName="checked">
-                                        <Switch />
-                                    </Form.Item>
-                                </Col>
-                                <Col xs={8}>
                                     <Form.Item name="sitePriority" label="站点优先级" tooltip={`与兼容 API 渠道比较；默认 ${defaultPriorities[row.provider] ?? 200}。`}>
                                         <InputNumber min={0} max={1000} className="!w-full" />
                                     </Form.Item>
@@ -270,7 +266,7 @@ export function PoolChannelDrawer({ token, row, pool: _pool, builtinProvider, le
                             <Typography.Title level={5}>池内调度（网关）</Typography.Title>
                             <Row gutter={16}>
                                 <Col xs={8}>
-                                    <Form.Item name="enabled" label="启用平台账号调度" valuePropName="checked">
+                                    <Form.Item name="enabled" label="启用供应" valuePropName="checked">
                                         <Switch />
                                     </Form.Item>
                                 </Col>
@@ -315,17 +311,8 @@ export function PoolChannelDrawer({ token, row, pool: _pool, builtinProvider, le
                             />
                         </div>
                         <div hidden={tab !== "mappings"}>
-                            {!row.enabled ? (
-                                <Alert
-                                    type="warning"
-                                    showIcon
-                                    className="!mb-4"
-                                    message="平台账号调度已关闭"
-                                    description="基础配置里的「启用平台账号调度」关闭时，模型映射仍可看到绑定账号数，但模型 Tab 会因「平台已关闭」显示不可用。请先打开该开关并保存。"
-                                />
-                            ) : null}
-                            {builtinProvider?.enabled === false ? (
-                                <Alert type="warning" showIcon className="!mb-4" message="站点渠道已停用" description="基础配置里的「启用渠道」关闭时，本平台不会作为调度来源，模型 Tab 会显示不可用。请打开「启用渠道」并保存。" />
+                            {!row.enabled || builtinProvider?.enabled === false ? (
+                                <Alert type="warning" showIcon className="!mb-4" message="供应已停用" description="「启用供应」关闭后，本平台不参与站点选路，账号调度同步关闭；模型 Tab 会显示不可用。打开开关后保存即可恢复。" />
                             ) : null}
                             {usingLegacyFallback ? (
                                 <Alert

@@ -594,7 +594,7 @@ export type AdminPoolRouteOverview = {
 };
 
 export type AdminModelSourceOverview = {
-    kind: "channel" | "pool";
+    kind: "channel" | "provider" | "pool";
     channelId?: string;
     provider?: string;
     channelName: string;
@@ -629,13 +629,26 @@ export type AdminModelOverviewItem = {
     pricingGaps: AdminPoolPricingGap[];
 };
 
+export type AdminSupplyRoute = {
+    kind: "provider" | "channel";
+    id: string;
+    name: string;
+    provider?: string;
+    enabled: boolean;
+    priority: number;
+    weight: number;
+    modelCount: number;
+    protocol?: string;
+};
+
 export type AdminModelOverview = {
     models: AdminModelOverviewItem[];
     pool: { running: boolean; enabled: boolean; priority: number; weight: number; defaultPriority: number; routesKnown: boolean };
     channels: { id: string; name: string; protocol: string; enabled: boolean; priority: number; weight: number; models: number }[];
+    /** Unified route table: pool providers + external channels. */
+    supplies?: AdminSupplyRoute[];
 };
 
-/** null clears an override; an absent field is left unchanged. */
 export type AdminModelSourcePatch = {
     kind: "channel" | "pool" | "provider" | "pool-route";
     channelId?: string;

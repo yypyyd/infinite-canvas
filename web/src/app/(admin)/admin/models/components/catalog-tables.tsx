@@ -32,7 +32,7 @@ const operationLabels: Record<string, string> = { generation: "生成", edit: "�
 /** Channels serving a model; pool sources expand to their providers. */
 export function servingChannels(item: AdminModelOverviewItem) {
     return item.sources.flatMap((source) =>
-        source.kind === "pool"
+        source.kind === "pool" || source.kind === "provider"
             ? (source.routes || []).map((route) => ({ name: `号池·${providerLabels[route.provider] || route.provider}`, off: !source.active || !route.enabled || !route.providerEnabled || !route.available }))
             : [{ name: source.channelName, off: !source.active }],
     );

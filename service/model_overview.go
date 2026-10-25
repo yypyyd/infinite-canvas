@@ -17,6 +17,9 @@ type ModelOverview struct {
 	Models   []ModelOverviewItem     `json:"models"`
 	Pool     PoolSourceOverview      `json:"pool"`
 	Channels []ChannelSourceOverview `json:"channels"`
+	// Supplies is the unified route table (号池 providers + 外部渠道) that
+	// admin toggles, overview availability and plaza status all read from.
+	Supplies []SupplyRoute `json:"supplies"`
 }
 
 // PoolSourceOverview is the built-in pool as one source.
@@ -59,7 +62,7 @@ type ModelOverviewItem struct {
 
 // ModelSourceOverview is one source of a model in effective order.
 type ModelSourceOverview struct {
-	Kind             string              `json:"kind"` // channel | pool
+	Kind             string              `json:"kind"` // channel | provider | pool(legacy)
 	ChannelID        string              `json:"channelId,omitempty"`
 	ChannelName      string              `json:"channelName"`
 	UpstreamModel    string              `json:"upstreamModel"`
@@ -157,6 +160,7 @@ func buildModelOverview(settings model.Settings, routes []gateway.RouteDetail, r
 			Priority: poolPriority, Weight: poolWeight, DefaultPriority: DefaultProviderPriorityChatGPT, RoutesKnown: routesKnown},
 		Channels: []ChannelSourceOverview{},
 		Models:   []ModelOverviewItem{},
+		Supplies: ListSupplyRoutes(private),
 	}
 	items := map[string]*ModelOverviewItem{}
 	order := []string{}
@@ -273,7 +277,11 @@ func buildModelOverview(settings model.Settings, routes []gateway.RouteDetail, r
 		target := targets[name]
 		override, hasOverride := poolOverrides[name]
 		emitOne := func(channelID, channelName string, channelPriority, channelWeight int, channelEnabled bool, filterProvider string) {
-			source := ModelSourceOverview{Kind: "pool", ChannelID: channelID, ChannelName: channelName, UpstreamModel: target,
+			sourceKind := "pool"
+			if filterProvider != "" {
+				sourceKind = "provider"
+			}
+			source := ModelSourceOverview{Kind: sourceKind, ChannelID: channelID, ChannelName: channelName, UpstreamModel: target,
 				Enabled: channelEnabled && poolEnabled && !(hasOverride && override.Disabled), ChannelPriority: channelPriority, ChannelWeight: channelWeight, Reasons: []string{}}
 			if name != target {
 				source.AliasTarget = target

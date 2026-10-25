@@ -52,6 +52,35 @@ type ModelSourcePatch struct {
 	Weight         OptionalInt `json:"weight"`
 }
 
+// syncGatewayProviderEnabled is replaceable in tests.
+var syncGatewayProviderEnabled = func(patch ModelSourcePatch) error {
+	if patch.Enabled == nil {
+		return nil
+	}
+	flags := map[string]bool{}
+	if patch.Kind == "pool" {
+		for _, provider := range BuiltinProviderOrder {
+			flags[provider] = *patch.Enabled
+		}
+	} else {
+		provider := normalizeBuiltinProvider(patch.Provider)
+		if provider == "" {
+			provider = BuiltinProviderOf(model.ModelChannel{ID: patch.ChannelID})
+		}
+		if provider == "" {
+			return nil
+		}
+		flags[provider] = *patch.Enabled
+	}
+	m := gateway.Current()
+	if m == nil {
+		return nil // pool not running; site settings still apply on next boot
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return m.SetProvidersEnabled(ctx, flags)
+}
+
 // updatePoolRoute is replaceable in tests.
 var updatePoolRoute = func(logicalModelID, routeID string, update gateway.RouteUpdate) error {
 	m := gateway.Current()
@@ -110,7 +139,17 @@ func PatchModelSource(patch ModelSourcePatch) error {
 		return safeMessageError{message: "未知的来源类型"}
 	}
 	_, err = SaveSettings(settings)
-	return err
+	if err != nil {
+		return err
+	}
+	// Keep gateway providers_enabled aligned with site BuiltinProviders.Enabled so
+	// admin supply toggles, capability tests and plaza capacity share one enable bit.
+	if patch.Enabled != nil && patch.Model == "" && (patch.Kind == "provider" || patch.Kind == "pool") {
+		if syncErr := syncGatewayProviderEnabled(patch); syncErr != nil {
+			return syncErr
+		}
+	}
+	return nil
 }
 
 func patchChannelSource(private *model.PrivateSetting, patch ModelSourcePatch) error {

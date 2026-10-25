@@ -19,6 +19,7 @@ import {
     type AdminPoolModelAlias,
     type AdminPricingRule,
     type AdminSettings,
+    patchAdminModelSource,
 } from "@/services/api/admin";
 import { gatewayApi } from "@/services/api/gateway";
 import { useUserStore } from "@/stores/use-user-store";
@@ -389,9 +390,10 @@ export default function AdminModelsPage() {
         rememberModels(channelModelNames(source.models));
     };
     const togglePoolProvider = async (provider: string, enabled: boolean) => {
-        if (!token || !poolChannels.settings) return;
+        if (!token) return;
         try {
-            await gatewayApi.saveSettings(token, { providers_enabled: { ...poolChannels.settings.providers_enabled, [provider]: enabled } });
+            // Primary: site BuiltinProviders (unified route table). Server also syncs gateway providers_enabled.
+            await patchAdminModelSource(token, { kind: "provider", provider, enabled });
             message.success("已保存并生效");
         } catch (error) {
             message.error(error instanceof Error ? error.message : "保存失败");
@@ -592,7 +594,7 @@ export default function AdminModelsPage() {
                     <Typography.Title level={3} className="!mb-1 !mt-0">
                         供应源
                     </Typography.Title>
-                    <Typography.Text type="secondary">号池平台与外部渠道分开管理；模型页决定对外开放哪些模型，定价页为每个规格设置价格。账号、能力测试与导入在号池平台抽屉中维护。</Typography.Text>
+                    <Typography.Text type="secondary">号池平台与外部渠道共用统一供应路由表（supplies）；启用开关写入站点选路并同步网关调度。模型页决定对外开放哪些模型，定价页为每个规格设置价格。账号、能力测试与导入在号池平台抽屉中维护。</Typography.Text>
                 </div>
                 <Button icon={<ReloadOutlined />} loading={isLoading} disabled={isSaving} onClick={reloadAll}>
                     刷新
@@ -679,12 +681,20 @@ export default function AdminModelsPage() {
                                 {
                                     title: "启用",
                                     width: 80,
-                                    render: (_, row) => <Switch size="small" checked={row.enabled && overview?.pool.enabled !== false} disabled={isSaving} onChange={(enabled) => void togglePoolProvider(row.provider, enabled)} />,
+                                    render: (_, row) => {
+                                        const supply = overview?.supplies?.find((item) => item.provider === row.provider || item.id === `builtin-provider-${row.provider}`);
+                                        const on = supply ? supply.enabled : row.enabled && overview?.pool.enabled !== false;
+                                        return <Switch size="small" checked={on} disabled={isSaving} onChange={(enabled) => void togglePoolProvider(row.provider, enabled)} />;
+                                    },
                                 },
                                 {
                                     title: "健康",
                                     width: 100,
-                                    render: (_, row) => <ChannelHealthBadge health={row.health} enabled={row.enabled && overview?.pool.enabled !== false} />,
+                                    render: (_, row) => {
+                                        const supply = overview?.supplies?.find((item) => item.provider === row.provider || item.id === `builtin-provider-${row.provider}`);
+                                        const on = supply ? supply.enabled : row.enabled && overview?.pool.enabled !== false;
+                                        return <ChannelHealthBadge health={row.health} enabled={on} />;
+                                    },
                                 },
                                 {
                                     title: "账号",

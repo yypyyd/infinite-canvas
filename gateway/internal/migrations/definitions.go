@@ -2002,5 +2002,4 @@ SET capabilities = '[{"operations":["generation","edit"],"ratios":["1:1","5:4","
     updated_at = NOW()
 WHERE id = 'image.gpt-image-2.adobe';
 `,
-
 }

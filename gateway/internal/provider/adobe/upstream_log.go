@@ -11,7 +11,7 @@ import (
 // which made outages impossible to tell apart from request/schema bugs. These
 // helpers log the HTTP status and a short, credential-free body excerpt.
 
-const upstreamLogBodyLimit = 300
+const upstreamLogBodyLimit = 2500
 
 var upstreamSecretPatterns = []struct {
 	re   *regexp.Regexp

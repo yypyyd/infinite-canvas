@@ -444,6 +444,15 @@ generationAttempts:
 // GenerateVideo submits a firefly-3p video job and polls until the clip is ready.
 // With downloadResult=false it returns nil bytes and the upstream presigned URL
 // in meta["video_url"] — used by the async /v1/videos job.
+
+func isUnsupportedVideoModel(err error, body []byte) bool {
+	if err == nil {
+		return false
+	}
+	b := string(body)
+	return strings.Contains(b, "validation_error") && strings.Contains(b, "not supported")
+}
+
 func (c *Client) GenerateVideo(ctx context.Context, sessionKey, token, arpSessionToken, engine, prompt, aspectRatio string, durationSeconds int, resolution, referenceMode, upstreamModel string, inputs VideoInputs, downloadResult bool) ([]byte, map[string]any, error) {
 	submitSess, err := c.newSubmitTLSClient(sessionKey)
 	if err != nil {
@@ -466,16 +475,38 @@ func (c *Client) GenerateVideo(ctx context.Context, sessionKey, token, arpSessio
 	}
 
 	payload := BuildVideoPayload(engine, prompt, aspectRatio, durationSeconds, resolution, referenceMode, upstreamModel, inputs)
-	respBody, pollURL, err := c.submitVideo(ctx, submitSess, sessionKey, token, arpSessionToken, videoSubmitURL, payload)
-	if retryGenerationSession(err) {
-		arpSessionToken, err = generationSession(ctx, submitSess)
-		if err != nil {
-			return nil, nil, err
-		}
-		respBody, pollURL, err = c.submitVideo(ctx, submitSess, sessionKey, token, arpSessionToken, videoSubmitURL, payload)
+	hasImage := len(inputs.ImageBlobIDs) > 0
+	hasVideo := len(inputs.VideoBlobIDs) > 0
+	preferred, _ := payload["modelVersion"].(string)
+	if strings.TrimSpace(upstreamModel) != "" {
+		preferred = strings.TrimSpace(upstreamModel)
+		payload["modelVersion"] = preferred
 	}
-	if err != nil {
-		return nil, nil, err
+	candidates := KlingVideoModelVersionCandidates(preferred, resolution, hasImage, hasVideo)
+	var respBody []byte
+	var pollURL string
+	var lastSubmitErr error
+	for _, ver := range candidates {
+		payload["modelVersion"] = ver
+		respBody, pollURL, lastSubmitErr = c.submitVideo(ctx, submitSess, sessionKey, token, arpSessionToken, videoSubmitURL, payload)
+		if retryGenerationSession(lastSubmitErr) {
+			arpSessionToken, err = generationSession(ctx, submitSess)
+			if err != nil {
+				return nil, nil, err
+			}
+			respBody, pollURL, lastSubmitErr = c.submitVideo(ctx, submitSess, sessionKey, token, arpSessionToken, videoSubmitURL, payload)
+		}
+		if lastSubmitErr == nil {
+			break
+		}
+		// Wrong modelVersion yields 422 validation_error; try the next slug.
+		if isUnsupportedVideoModel(lastSubmitErr, respBody) {
+			continue
+		}
+		break
+	}
+	if lastSubmitErr != nil {
+		return nil, nil, lastSubmitErr
 	}
 	_ = respBody
 	meta, data, pollErr := c.pollVideo(ctx, pollSess, downloadSess, token, pollURL, downloadResult)

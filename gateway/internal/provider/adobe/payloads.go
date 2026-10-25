@@ -321,6 +321,55 @@ func BuildVideoPayload(engine, prompt, aspectRatio string, durationSeconds int, 
 	}
 }
 
+
+// KlingVideoModelVersionCandidates returns Firefly 3P modelVersion slugs to try
+// for Kling video. Adobe's 422 lists supported (modelId, modelVersion) pairs;
+// kling_v4_* was guessed from v3 naming and is rejected. Prefer an explicit
+// upstream override, then plausible Kling 4 / legacy v3 slugs.
+func KlingVideoModelVersionCandidates(preferred, resolution string, hasImage, hasVideo bool) []string {
+	isPro := strings.EqualFold(resolution, "1080p")
+	tier := "standard"
+	if isPro {
+		tier = "pro"
+	}
+	workflow := "t2v"
+	if hasVideo {
+		workflow = "v2v"
+	} else if hasImage {
+		workflow = "i2v"
+	}
+	out := []string{}
+	seen := map[string]bool{}
+	add := func(s string) {
+		s = strings.TrimSpace(s)
+		if s == "" || seen[s] {
+			return
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	add(preferred)
+	// Kling 4.0 guesses (Firefly UI name; 3P slug unknown until capture).
+	add("kling_v4_" + tier + "_" + workflow)
+	add("kling_4_" + tier + "_" + workflow)
+	add("kling_v4_" + workflow)
+	add("kling4_" + tier + "_" + workflow)
+	add("kling_v4_" + tier)
+	add("4.0-" + tier + "-" + workflow)
+	add("kling-4.0-" + tier + "-" + workflow)
+	// Legacy v3 slugs that previously worked on the same endpoint.
+	add("kling_v3_" + tier + "_" + workflow)
+	add("kling_v3_standard_t2v")
+	add("kling_v3_pro_t2v")
+	if hasVideo {
+		add("kling_v4_" + tier + "_v2v_edit")
+		add("kling_v4_" + tier + "_v2v_reference")
+		add("kling_v3_omni_v2v_edit")
+		add("kling_v3_omni_v2v_create")
+	}
+	return out
+}
+
 // videoSize maps Firefly Kling aspect labels onto width/height for the free
 // 720p tier (and 1080p for points if a route ever re-opens it).
 func videoSize(aspectRatio, resolution string) map[string]any {

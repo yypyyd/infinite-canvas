@@ -28,6 +28,7 @@ description: 当前版本已实现但仍需人工或自动化验证的变更项
 - **能力钳制 UI**：仅 ChatGPT / 仅 Adobe / 两者同开时，公共目录与图片设置对 `gpt-image-2` 的 1K vs 2K/4K 展示；`model-overview.supplies` + `providerCapabilities` 与 `/api/model-status` 线上一致。
 - **交互/批量/Agent 真上游生图**：流水只允许成功一笔 `ai_consume`，失败 `ai_consume`+`ai_refund`；协议恢复与刷新不重复扣费（自动化已覆盖模拟上游，生产渠道仍需抽检）。
 - **视频工程端到端**：新建工程 → 3+ 镜头 → 字幕安全区 → BGM → 预检 → 冻结 → 提交；`video-worker` 走 materializing/rendering/archiving → `pending_review` → 审核下 MP4；失败/取消释放预扣；租约过期可被其他 worker 接管。需本机/生产 FFmpeg worker 与对象存储。
+- **生产 video-worker 常驻**：deploy-production.sh 部署后 docker ps 应见 infinite-canvas-video-worker；冻结+提交的渲染任务应从 queued 进入 materializing/rendering，不应永久停留在 phase=queued attempt=0。
 - **多实例与 MySQL/PostgreSQL**：生成补偿租约、晚到货并发补扣、批量 Worker 与 video-worker 租约接管；当前自动化默认 SQLite。
 - **七牛 / 生产部署冒烟**：推送 `main` 后 Quality→镜像→3050 健康检查；媒体签名与归档可读。
 

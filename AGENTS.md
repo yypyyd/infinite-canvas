@@ -98,3 +98,9 @@
 - 初始化服务端用户偏好监听时必须先记录当前配置快照；公开模型配置、加载状态和部署后页面刷新不得被误判为用户修改并把默认值覆盖回服务端。
 - 普通异步视频任务必须由服务端主动查询原渠道并归档结果，不得依赖浏览器持续轮询；只有作品成功归档、后续仍可交付时才能记成功并保留扣费，失败或最长等待窗口内仍不可交付时按创建时固化的扣费来源幂等退款，退款前必须由任务终态和账本共同防止重复返还；独立批量 Worker 管理的生成任务不得被普通任务超时扫描提前结束。
 - Docker 静态资源路径目前仍是待办项，文档中不要过度承诺生产部署已经完全验证。
+
+## 生产部署与 Worker
+
+- 生产通过 GitHub Actions docker-image.yml → scripts/deploy-production.sh 部署到服务器；该脚本在 API 健康后启动 sibling 容器 infinite-canvas-video-worker（/app/video-worker）与 infinite-canvas-batch-worker（/app/batch-worker），共用同一镜像、.env 与 /app/data。
+- Docker Compose 的 worker profile 仅用于本地；不要以为生产 compose up 了就会跑 video-worker。
+- 入口 docker-entrypoint.sh 只启动 Go API + Next.js，不会自动拉起 claim worker。

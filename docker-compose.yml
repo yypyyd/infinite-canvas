@@ -23,6 +23,10 @@ services:
         condition: service_healthy
         required: false
     restart: unless-stopped
+  # Local/dev only: `docker compose --profile worker up`.
+  # Production (scripts/deploy-production.sh via Actions) starts
+  # /app/video-worker and /app/batch-worker as sibling containers
+  # with the same image, .env, and /app/data volume as the API.
   batch-worker:
     image: ${INFINITE_CANVAS_IMAGE:-infinite-canvas:local}
     profiles: ["worker"]

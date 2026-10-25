@@ -4,6 +4,7 @@
 
 ## Unreleased
 
++ [修复] 生产部署启动 `video-worker` / `batch-worker` sibling 容器（`deploy-production.sh`）：镜像内早已构建 `/app/video-worker`，但 Actions 部署此前只起 API，渲染任务永久停在 `queued`；现与 API 共用同一镜像/`.env`/`/app/data`。
 + [修复] 视频工程冻结版本：幂等保存不再抬升草稿 version；前端冻结改用保存响应中的 version，避免「视频工程已变化，请刷新后重试」卡死（草稿 version 空涨、冻结永远失败）。
 + [修复] 模型广场价格只展示模型实际可用分辨率档（与 `providerCapabilities` / 主供应钳制交集）；如 gpt-image-2 仅 1K 时不再列出 2K/4K 算力价。
 + [修复] 企业中心侧栏与视频工程文案对齐 Release-2：冻结版本 + video-worker 成片渲染 + 审核下载已可用。

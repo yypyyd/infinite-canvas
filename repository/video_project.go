@@ -63,6 +63,15 @@ func SaveVideoProject(item model.VideoProject, expectedVersion int64, storageKey
 			if saved.Version != expectedVersion {
 				return ErrCommerceVersionConflict
 			}
+			// Idempotent save: identical draft content must not bump optimistic version.
+			// Freeze/preflight always persist first; bumping on no-ops makes freeze fail
+			// with a stale client expectedVersion.
+			if saved.Name == item.Name && saved.Description == item.Description && saved.ProductID == item.ProductID && saved.SKUID == item.SKUID && saved.DraftTimelineJSON == item.DraftTimelineJSON {
+				draftTimeline := item.DraftTimeline
+				item = saved
+				item.DraftTimeline = draftTimeline
+				return nil
+			}
 			item.CreatedAt, item.CreatedBy, item.CurrentVersion = saved.CreatedAt, saved.CreatedBy, saved.CurrentVersion
 			result := tx.Model(&model.VideoProject{}).Where("organization_id = ? AND id = ? AND version = ?", item.OrganizationID, item.ID, expectedVersion).Updates(map[string]any{"name": item.Name, "description": item.Description, "product_id": item.ProductID, "sku_id": item.SKUID, "draft_timeline_json": item.DraftTimelineJSON, "status": item.Status, "version": item.Version, "updated_at": item.UpdatedAt})
 			if result.Error != nil {

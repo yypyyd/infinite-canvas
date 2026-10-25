@@ -21,6 +21,7 @@ import {
     reviewVideoRenderJob,
     saveVideoProject,
     type VideoPreflight,
+    type VideoProject,
     type VideoTimeline,
     type VideoTimelineShot,
     type VideoTimelineSubtitle,
@@ -134,8 +135,8 @@ export default function VideoProjectEditorPage() {
         return timeline.shots.reduce((max, shot) => Math.max(max, shot.startMs + shot.durationMs), 0);
     }, [timeline]);
 
-    async function persist(nextTimeline = timeline) {
-        if (!projectQuery.data || !nextTimeline) return;
+    async function persist(nextTimeline = timeline): Promise<VideoProject | undefined> {
+        if (!projectQuery.data || !nextTimeline) return undefined;
         setSaving(true);
         try {
             const saved = await saveVideoProject(projectId, {
@@ -146,11 +147,13 @@ export default function VideoProjectEditorPage() {
                 timeline: nextTimeline,
                 expectedVersion: projectQuery.data.version,
             });
-            await queryClient.invalidateQueries({ queryKey: commerceQueryKeys.videoProject(organizationId, projectId) });
+            queryClient.setQueryData(commerceQueryKeys.videoProject(organizationId, projectId), saved);
             setTimeline(saved.draftTimeline);
             message.success("草稿已保存");
+            return saved;
         } catch (error) {
             message.error(error instanceof Error ? error.message : "保存失败");
+            throw error;
         } finally {
             setSaving(false);
         }
@@ -201,8 +204,10 @@ export default function VideoProjectEditorPage() {
     const freeze = useMutation({
         mutationFn: async () => {
             if (!projectQuery.data) throw new Error("工程未加载");
-            await persist();
-            return freezeVideoProjectVersion(projectId, projectQuery.data.version);
+            const saved = await persist();
+            if (!saved) throw new Error("工程未加载");
+            // Use post-save version: persist may bump (real edits) or keep (no-op).
+            return freezeVideoProjectVersion(projectId, saved.version);
         },
         onSuccess: async () => {
             message.success("版本已冻结");

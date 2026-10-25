@@ -84,6 +84,11 @@ start_worker() {
   if ! docker run -d \
     --name "$name" \
     --restart unless-stopped \
+    --health-cmd "grep -qx '${binary##*/}' /proc/1/comm" \
+    --health-interval 10s \
+    --health-timeout 3s \
+    --health-start-period 5s \
+    --health-retries 3 \
     --env-file "$ENV_FILE" \
     -v "$DATA_DIR:/app/data" \
     "$IMAGE" \
@@ -91,6 +96,20 @@ start_worker() {
     echo "failed to start worker $name" >&2
     return 1
   fi
+  # Workers have no HTTP listener. Check their own PID 1 instead of inheriting
+  # the API health probe, and do not report a deployment success after a crash.
+  for _ in $(seq 1 20); do
+    if [[ "$(docker inspect -f '{{.State.Running}}' "$name")" != "true" ]]; then
+      echo "worker exited during startup: $name" >&2
+      return 1
+    fi
+    if [[ "$(docker inspect -f '{{.State.Health.Status}}' "$name")" == "healthy" ]]; then
+      return 0
+    fi
+    sleep 2
+  done
+  echo "worker health check failed: $name" >&2
+  return 1
 }
 
 if ! docker run -d \

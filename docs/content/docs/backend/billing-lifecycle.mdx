@@ -1,0 +1,45 @@
+---
+title: 计费生命周期
+description: 生成扣费 / 返还与视频渲染预扣的单路径约定
+---
+
+# 计费生命周期
+
+Phase 3 把预估、扣费、返还和 `PricingSnapshot` 收成一条主路径，避免交互生成、批量、Agent、协议恢复与视频渲染各自发明第二套钱。
+
+## 生成主路径（唯一扣费 / 返还）
+
+适用于：交互生成（`handler/ai`）、批量条目、Agent 媒体工具、受管协议恢复。
+
+1. **Estimate** — `PricingResolver.Resolve` / `EstimateGenerationPricing`，按模型规格 + 单位（按次 / 按秒等）算出算力，并写入 `PricingSnapshot`。
+2. **Begin** — `BeginGenerationTask` 是**唯一**写入 `ai_consume` 扣费的入口（底层 `CreateGenerationTaskWithCharge` / `CreateBatchGenerationTaskWithCharge`）。
+3. **Finish** — `FinishGenerationTask` 是**唯一**失败返还点：
+   - 成功 → `CompleteGenerationTask`（不再扣费）
+   - 失败 → `FailGenerationTaskAndRefund`（幂等，只退一次）
+
+禁止在 handler / worker / protocol 旁路直接改用户或企业算力。
+
+### 晚到货（不是二次扣费）
+
+号池图片在已失败并返还后若仍送达，走 `DeliverLateAndRecharge`（`ai_late_recharge`）。这是对**先前返还**的补扣，状态门闩为 `failed → success`，并发只成功一次。成功任务上不会再出现第二笔 `ai_consume`。
+
+## Hold / Settle 信封（批量任务与视频渲染）
+
+批量生产任务与视频渲染任务先预扣（hold），再结算或释放：
+
+- `HoldCredits` — 增加 `reserved_credits`
+- `SettleHeldCredits` — 从预扣转入实扣，并释放剩余
+- `ReleaseHeldCredits` — 取消时只退预扣
+
+批量**条目**仍走上面的 Begin / Finish；任务级预扣只包住合计。视频渲染用 `EstimateVideoRenderPricing`（同一 `PricingResolver` + snapshot）估费，再走同一套 hold / settle。
+
+## 配置侧门（不算扣费路径）
+
+- `pool_pricing` 缺口列表与草稿规则
+- 管理后台定价规则、用户组倍率、账号专属优惠
+
+它们只配置 `PricingResolver`，自己不写 `CreditLog` 消费 / 返还。
+
+## 对账口径
+
+`PricingSnapshot` 固化 `model / modality / operation / unit / resolutionTier / quantity / billingMode / effectiveRatio / source / credits`。UI 预估与实扣、失败返还都必须对照任务上的 snapshot，而不是重新读当前价目表。

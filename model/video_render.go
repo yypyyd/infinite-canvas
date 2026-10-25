@@ -41,6 +41,7 @@ type VideoRenderJob struct {
 	OutputSpecJSON   string                  `json:"-" gorm:"type:text"`
 	DurationMs       int                     `json:"durationMs"`
 	EstimatedCredits int                     `json:"estimatedCredits"`
+	PricingSnapshot  PricingSnapshot         `json:"-" gorm:"serializer:json;type:text"`
 	ReservedCredits  int                     `json:"reservedCredits"`
 	SettledCredits   int                     `json:"settledCredits"`
 	ReleasedCredits  int                     `json:"releasedCredits"`

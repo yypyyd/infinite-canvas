@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"time"
 
 	"github.com/yypyyd/infinite-canvas/model"
 	"gorm.io/gorm"
@@ -202,54 +201,16 @@ func CreateExpandedBatchProductionJob(job model.BatchProductionJob, scopes []mod
 
 func reserveBatchProductionCredits(tx *gorm.DB, organization *model.Organization, job *model.BatchProductionJob) error {
 	job.ReservedCredits, job.SettledCredits, job.ActualCredits = job.EstimatedCredits, 0, 0
-	if organization.CreditMode == model.OrganizationCreditModeShared {
-		job.CreditSource = model.CreditSourceOrganization
-		budgetMonth := batchCreditBudgetMonth(job.CreatedAt)
-		if organization.CreditBudgetMonth != budgetMonth {
-			if err := tx.Model(&model.Organization{}).Where("id = ?", organization.ID).Updates(map[string]any{"monthly_credits_used": 0, "credit_budget_month": budgetMonth}).Error; err != nil {
-				return err
-			}
-			organization.MonthlyCreditsUsed, organization.CreditBudgetMonth = 0, budgetMonth
-		}
-		if organization.Credits-organization.ReservedCredits < job.EstimatedCredits {
-			return ErrInsufficientOrganizationCredits
-		}
-		if organization.MonthlyCreditBudget > 0 && organization.MonthlyCreditsUsed+organization.ReservedCredits+job.EstimatedCredits > organization.MonthlyCreditBudget {
-			return ErrOrganizationCreditBudgetExceeded
-		}
-		result := tx.Model(&model.Organization{}).Where("id = ? AND credits - reserved_credits >= ? AND (monthly_credit_budget = 0 OR monthly_credits_used + reserved_credits + ? <= monthly_credit_budget)", organization.ID, job.EstimatedCredits, job.EstimatedCredits).Updates(map[string]any{"reserved_credits": gorm.Expr("reserved_credits + ?", job.EstimatedCredits), "updated_at": job.UpdatedAt})
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected != 1 {
-			return ErrOrganizationCreditBudgetExceeded
-		}
-		organization.ReservedCredits += job.EstimatedCredits
-		return nil
-	}
-	job.CreditSource = model.CreditSourcePersonal
-	var user model.User
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", job.CreatedBy).First(&user).Error; err != nil {
+	source, err := HoldCredits(tx, organization, job.CreatedBy, job.EstimatedCredits, job.UpdatedAt)
+	if err != nil {
 		return err
 	}
-	if user.Credits-user.ReservedCredits < job.EstimatedCredits {
-		return ErrInsufficientUserCredits
-	}
-	result := tx.Model(&model.User{}).Where("id = ? AND credits - reserved_credits >= ?", user.ID, job.EstimatedCredits).Updates(map[string]any{"reserved_credits": gorm.Expr("reserved_credits + ?", job.EstimatedCredits), "updated_at": job.UpdatedAt})
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected != 1 {
-		return ErrInsufficientUserCredits
-	}
+	job.CreditSource = source
 	return nil
 }
 
 func batchCreditBudgetMonth(timestamp string) string {
-	if len(timestamp) >= 7 {
-		return timestamp[:7]
-	}
-	return time.Now().UTC().Format("2006-01")
+	return creditBudgetMonth(timestamp)
 }
 
 func GetBatchProductionJob(organizationID, id string) (model.BatchProductionJob, []model.BatchProductionTemplateSelection, bool, error) {

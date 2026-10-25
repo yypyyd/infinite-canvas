@@ -153,6 +153,9 @@ func AcknowledgeGenerationTaskRecoveries(organizationID, userID string, requestI
 	return repository.ClearGenerationTaskRecoveryResults(organizationID, userID, unique, now())
 }
 
+// BeginGenerationTask is the sole debit entry for interactive, batch-item, agent,
+// and protocol generation. Callers must supply Credits + PricingSnapshot from
+// PricingResolver (EstimateGenerationPricing). Do not charge CreditLog elsewhere.
 func BeginGenerationTask(input GenerationTaskInput) (model.GenerationTask, error) {
 	nowText := now()
 	creditSource := model.CreditSourcePersonal
@@ -230,6 +233,10 @@ func BeginGenerationTask(input GenerationTaskInput) (model.GenerationTask, error
 	return task, err
 }
 
+// FinishGenerationTask is the sole refund point for generation tasks. Failed
+// status refunds exactly once via FailGenerationTaskAndRefund. Success completes
+// without a second debit. Late pool delivery after refund uses AILateRecharge
+// (DeliverLateAndRecharge), never a duplicate Finish refund.
 func FinishGenerationTask(task model.GenerationTask, status model.GenerationTaskStatus, errMessage string) error {
 	if task.ID == "" {
 		return nil

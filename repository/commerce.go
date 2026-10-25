@@ -1574,47 +1574,10 @@ func releaseBatchProductionCredits(tx *gorm.DB, job *model.BatchProductionJob, t
 	if outstanding == 0 {
 		return nil
 	}
-	if job.CreditSource == model.CreditSourceOrganization {
-		var organization model.Organization
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&organization, "id = ?", job.OrganizationID).Error; err != nil {
-			return err
-		}
-		if organization.ReservedCredits < outstanding {
-			return ErrBatchProductionStateConflict
-		}
-		result := tx.Model(&model.Organization{}).
-			Where("id = ? AND reserved_credits >= ?", organization.ID, outstanding).
-			Updates(map[string]any{
-				"reserved_credits": gorm.Expr("reserved_credits - ?", outstanding),
-				"updated_at":       timestamp,
-			})
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected != 1 {
-			return ErrBatchProductionStateConflict
-		}
-	} else if job.CreditSource == model.CreditSourcePersonal {
-		var user model.User
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, "id = ?", job.CreatedBy).Error; err != nil {
-			return err
-		}
-		if user.ReservedCredits < outstanding {
-			return ErrBatchProductionStateConflict
-		}
-		result := tx.Model(&model.User{}).
-			Where("id = ? AND reserved_credits >= ?", user.ID, outstanding).
-			Updates(map[string]any{
-				"reserved_credits": gorm.Expr("reserved_credits - ?", outstanding),
-				"updated_at":       timestamp,
-			})
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected != 1 {
-			return ErrBatchProductionStateConflict
-		}
-	} else {
+	if job.CreditSource != model.CreditSourceOrganization && job.CreditSource != model.CreditSourcePersonal {
+		return ErrBatchProductionStateConflict
+	}
+	if err := ReleaseHeldCredits(tx, job.CreditSource, job.OrganizationID, job.CreatedBy, outstanding, timestamp); err != nil {
 		return ErrBatchProductionStateConflict
 	}
 	result := tx.Model(&model.BatchProductionJob{}).

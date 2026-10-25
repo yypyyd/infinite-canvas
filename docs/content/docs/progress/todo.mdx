@@ -14,14 +14,21 @@ description: 当前项目后续值得处理的事项
 - Provider 能力声明：号池渠道按路由声明 resolution/modality；overview 暴露 `providerCapabilities`；公共目录按主 provider 钳制，避免 GPT 1K 并集泄漏。
 - 生成路径：只经 `SelectModelChannel` + `runtimeChannelsFor`；任务快照持久化 `channelId`，legacy 号池名可回落重绑。
 
-## Phase 3 衔接 · 计费单路径（handoff）
+## Phase 3 · 已完成（计费单路径）
 
-下一阶段把预估 / 扣费 / 返还 / `PricingSnapshot` 收成一条计费路径，避免 handler / batch / agent / protocol 多入口口径漂移：
+- 生成主路径：交互 / 批量条目 / Agent / 协议 → `EstimateGenerationPricing`（或等价 `PricingResolver`）→ `BeginGenerationTask` 扣费 → `FinishGenerationTask` 成功完成或失败返还；禁止旁路 `CreditLog` 扣费。
+- 晚到货：`DeliverLateAndRecharge`（`ai_late_recharge`）只补扣已返还任务，`failed → success` 幂等，不对成功任务二次扣费。
+- Hold/Settle：批量任务与视频渲染共用 `HoldCredits` / `SettleHeldCredits` / `ReleaseHeldCredits`；视频渲染估费 `EstimateVideoRenderPricing` 写入 `PricingSnapshot`。
+- 配置侧门：`pool_pricing` 缺口/草稿、价目与优惠只喂 `PricingResolver`，不写流水。文档见[计费生命周期](/docs/backend/billing-lifecycle)。
 
-- 统一入口：交互生成、批量、Agent 媒体工具都走同一 `BeginGenerationTask` + pricing snapshot 写入；禁止旁路扣费。
-- 返还与失败：`FinishGenerationTask` 失败返还是唯一退款点；池晚到货 / 维护结算不得二次扣费。
-- 口径：resolutionTier / quantity / billingMode（按次/按秒）以 snapshot 为准，UI 预估与实扣对账。
-- 视频编辑器 FE 与 Release-2 Worker（FFmpeg/线性 DAG/计费/审核/下载）已落地；按待测试清单做真实 FFmpeg/多实例验收。
+## Phase 4 衔接 · P0 pending-test + 打版本（handoff）
+
+下一阶段以发布质量收口，不再扩计费路径：
+
+- 跑完[待测试清单](./pending-test)中 **P0** 项：生成（交互/批量/Agent）、扣费与返还（含晚到货）、号池健康与会话、视频渲染预扣/失败返还。
+- 真实环境抽检 MySQL/PostgreSQL 与多实例租约；确认 Actions 绿。
+- 通过后切正式版本号（本 Phase 只写 CHANGELOG Unreleased，不擅自 bump）。
+
 
 ## P0 · 稳定发布
 

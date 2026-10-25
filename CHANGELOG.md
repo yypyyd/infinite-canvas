@@ -3,10 +3,13 @@
 # CHANGELOG
 
 ## Unreleased
++ [优化] Phase 3 计费单路径：交互 / 批量条目 / Agent / 协议生成统一经 `BeginGenerationTask` 扣费、`FinishGenerationTask` 失败返还；晚到货仅 `ai_late_recharge` 补扣先前返还，不对成功任务二次扣费。
++ [优化] 批量任务与视频渲染共用 `HoldCredits` / `SettleHeldCredits` / `ReleaseHeldCredits` 预扣信封；视频渲染估费走 `EstimateVideoRenderPricing`（`PricingResolver` + `PricingSnapshot`）。
++ [文档] 新增后端「计费生命周期」说明主路径与配置侧门（`pool_pricing` 等）；`pool_pricing` 明确为配置侧门、不写扣费流水。
+
 + [优化] Phase 2 号池会话基础设施：Adobe 账号生命周期显式化（import → health_check → sticky_bind → ready / fail_rotate / remint / dead），结构化 `adobe_session` 日志与 admin `adobe_session`/`session_phase` 健康字段；IMS remint 与 sticky egress fingerprint 收束到 `adobe_session.go`。
 + [优化] 内置 provider 能力声明一等公民：每个号池 provider 渠道模型按路由声明 resolution/modality（不再把 ChatGPT 1K 与 Adobe/BytePlus 2K/4K 并集塞进同一渠道模型）；`providerCapabilities` 挂到 model-overview；公共目录按最高优先级启用 provider 钳制分辨率，堵住 GPT 1K 类并集泄漏。
 + [优化] 生成任务快照持久化 `channelId`（provider/channel id），重绑优先 id、兼容 legacy 号池名；选路排除与 runtime 查找同时认 id/name，去掉对单一 `BuiltinPoolChannelName` 的硬依赖（旧行仍可回落）。
-+ [文档] Phase 3 handoff：计费单路径（预估 / 扣费 / 返还 / 快照）收束，避免多入口口径漂移。
 
 + [优化] Phase 1 统一供应路由表：号池平台（BuiltinProviders）与外部渠道（ModelChannel）共用 `supplies` 概念路由表；管理台「供应源」启用开关、能力测试/广场可用性与选路均以站点 BuiltinProviders/Channels 为单一真相，provider 启停经 `/api/admin/model-sources` 写入后同步 gateway `providers_enabled`。概览来源 kind 对扁平号池使用 `provider`（保留 legacy `pool`）；旧 `/admin/account-pool/*` 与 `/admin/channels` 继续硬跳转。
 + [修复] 号池平台「本平台模型」启用开关关闭后立刻弹回：抽屉持有打开时的旧 row 快照，PATCH 路由成功并 reload 后 UI 仍读旧 enabled；现抽屉内改用实时 gateway 行数据渲染开关，失败时不再误触发刷新。

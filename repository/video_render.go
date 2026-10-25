@@ -93,46 +93,11 @@ func CreateVideoRenderJob(job model.VideoRenderJob) (model.VideoRenderJob, error
 
 func reserveVideoRenderCredits(tx *gorm.DB, organization *model.Organization, job *model.VideoRenderJob) error {
 	job.ReservedCredits, job.SettledCredits, job.ActualCredits, job.ReleasedCredits = job.EstimatedCredits, 0, 0, 0
-	if organization.CreditMode == model.OrganizationCreditModeShared {
-		job.CreditSource = model.CreditSourceOrganization
-		budgetMonth := batchCreditBudgetMonth(job.CreatedAt)
-		if organization.CreditBudgetMonth != budgetMonth {
-			if err := tx.Model(&model.Organization{}).Where("id = ?", organization.ID).Updates(map[string]any{"monthly_credits_used": 0, "credit_budget_month": budgetMonth}).Error; err != nil {
-				return err
-			}
-			organization.MonthlyCreditsUsed, organization.CreditBudgetMonth = 0, budgetMonth
-		}
-		if organization.Credits-organization.ReservedCredits < job.EstimatedCredits {
-			return ErrInsufficientOrganizationCredits
-		}
-		if organization.MonthlyCreditBudget > 0 && organization.MonthlyCreditsUsed+organization.ReservedCredits+job.EstimatedCredits > organization.MonthlyCreditBudget {
-			return ErrOrganizationCreditBudgetExceeded
-		}
-		result := tx.Model(&model.Organization{}).Where("id = ? AND credits - reserved_credits >= ? AND (monthly_credit_budget = 0 OR monthly_credits_used + reserved_credits + ? <= monthly_credit_budget)", organization.ID, job.EstimatedCredits, job.EstimatedCredits).Updates(map[string]any{"reserved_credits": gorm.Expr("reserved_credits + ?", job.EstimatedCredits), "updated_at": job.UpdatedAt})
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected != 1 {
-			return ErrOrganizationCreditBudgetExceeded
-		}
-		organization.ReservedCredits += job.EstimatedCredits
-		return nil
-	}
-	job.CreditSource = model.CreditSourcePersonal
-	var user model.User
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", job.CreatedBy).First(&user).Error; err != nil {
+	source, err := HoldCredits(tx, organization, job.CreatedBy, job.EstimatedCredits, job.UpdatedAt)
+	if err != nil {
 		return err
 	}
-	if user.Credits-user.ReservedCredits < job.EstimatedCredits {
-		return ErrInsufficientUserCredits
-	}
-	result := tx.Model(&model.User{}).Where("id = ? AND credits - reserved_credits >= ?", user.ID, job.EstimatedCredits).Updates(map[string]any{"reserved_credits": gorm.Expr("reserved_credits + ?", job.EstimatedCredits), "updated_at": job.UpdatedAt})
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected != 1 {
-		return ErrInsufficientUserCredits
-	}
+	job.CreditSource = source
 	return nil
 }
 
@@ -144,22 +109,8 @@ func releaseVideoRenderCredits(tx *gorm.DB, job *model.VideoRenderJob, timestamp
 	if outstanding == 0 {
 		return nil
 	}
-	if job.CreditSource == model.CreditSourceOrganization {
-		result := tx.Model(&model.Organization{}).Where("id = ? AND reserved_credits >= ?", job.OrganizationID, outstanding).Updates(map[string]any{"reserved_credits": gorm.Expr("reserved_credits - ?", outstanding), "updated_at": timestamp})
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected != 1 {
-			return ErrVideoRenderStateConflict
-		}
-	} else {
-		result := tx.Model(&model.User{}).Where("id = ? AND reserved_credits >= ?", job.CreatedBy, outstanding).Updates(map[string]any{"reserved_credits": gorm.Expr("reserved_credits - ?", outstanding), "updated_at": timestamp})
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected != 1 {
-			return ErrVideoRenderStateConflict
-		}
+	if err := ReleaseHeldCredits(tx, job.CreditSource, job.OrganizationID, job.CreatedBy, outstanding, timestamp); err != nil {
+		return ErrVideoRenderStateConflict
 	}
 	job.ReleasedCredits += outstanding
 	return tx.Model(&model.VideoRenderJob{}).Where("organization_id = ? AND id = ?", job.OrganizationID, job.ID).Update("released_credits", job.ReleasedCredits).Error
@@ -173,32 +124,8 @@ func settleVideoRenderCredits(tx *gorm.DB, job *model.VideoRenderJob, actual int
 	if release < 0 {
 		return ErrVideoRenderStateConflict
 	}
-	if job.CreditSource == model.CreditSourceOrganization {
-		updates := map[string]any{
-			"credits":              gorm.Expr("credits - ?", actual),
-			"reserved_credits":     gorm.Expr("reserved_credits - ?", actual+release),
-			"monthly_credits_used": gorm.Expr("monthly_credits_used + ?", actual),
-			"updated_at":           timestamp,
-		}
-		result := tx.Model(&model.Organization{}).Where("id = ? AND credits >= ? AND reserved_credits >= ?", job.OrganizationID, actual, actual+release).Updates(updates)
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected != 1 {
-			return ErrVideoRenderStateConflict
-		}
-	} else {
-		result := tx.Model(&model.User{}).Where("id = ? AND credits >= ? AND reserved_credits >= ?", job.CreatedBy, actual, actual+release).Updates(map[string]any{
-			"credits":          gorm.Expr("credits - ?", actual),
-			"reserved_credits": gorm.Expr("reserved_credits - ?", actual+release),
-			"updated_at":       timestamp,
-		})
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected != 1 {
-			return ErrVideoRenderStateConflict
-		}
+	if err := SettleHeldCredits(tx, job.CreditSource, job.OrganizationID, job.CreatedBy, actual, release, timestamp); err != nil {
+		return ErrVideoRenderStateConflict
 	}
 	job.SettledCredits, job.ReleasedCredits, job.ActualCredits = actual, job.ReleasedCredits+release, actual
 	return nil

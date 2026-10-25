@@ -18,30 +18,52 @@ const (
 	videoRenderLeaseTTL         = 10 * time.Minute
 )
 
+// EstimateVideoRenderCredits is the legacy int-only helper. Prefer
+// EstimateVideoRenderPricing so callers persist a PricingSnapshot.
 func EstimateVideoRenderCredits(durationMs int, output model.VideoOutputSpec) int {
+	result, _ := EstimateVideoRenderPricing("", "default", durationMs, output)
+	return result.Credits
+}
+
+// EstimateVideoRenderPricing resolves commerce-video-render through the same
+// PricingResolver path used by interactive / batch / agent generation so
+// model-spec rules, per-second / per-request units, and user discounts stay
+// consistent. When no rule exists it falls back to 1 credit per output second
+// and records source=default in the snapshot.
+func EstimateVideoRenderPricing(userID, userGroup string, durationMs int, output model.VideoOutputSpec) (PricingResult, error) {
 	seconds := int(math.Ceil(float64(durationMs) / 1000.0))
 	if seconds < 1 {
 		seconds = 1
 	}
 	tier := "1080p"
 	unit, quantity := VideoBillingUnitAndQuantity(videoRenderModelID, tier, tier, seconds)
-	settings, err := repository.GetSettings()
-	if err != nil {
-		return seconds * videoRenderDefaultCreditsPS
-	}
-	rules := normalizePublicSetting(settings.Public).ModelChannel.PricingRules
-	rule, ok := selectPricingRule(rules, normalizePricingRequest(PricingRequest{
+	request := normalizePricingRequest(PricingRequest{
 		Model: videoRenderModelID, Modality: "video", Operation: "generation", Unit: unit, ResolutionTier: tier, Quantity: quantity,
-	}))
-	if !ok {
-		return seconds * videoRenderDefaultCreditsPS
-	}
-	credits := calculateRuleCredits(rule, quantity, 1)
-	if credits < 1 {
-		credits = seconds * videoRenderDefaultCreditsPS
-	}
+	})
 	_ = output
-	return credits
+	resolver, err := NewPricingResolver(userID, userGroup)
+	if err != nil {
+		fallback := videoRenderFallbackPricing(request, seconds)
+		return fallback, nil
+	}
+	result, err := resolver.Resolve(request)
+	if err != nil {
+		return videoRenderFallbackPricing(request, seconds), nil
+	}
+	if result.Credits < 1 {
+		return videoRenderFallbackPricing(request, seconds), nil
+	}
+	return result, nil
+}
+
+func videoRenderFallbackPricing(request PricingRequest, seconds int) PricingResult {
+	credits := seconds * videoRenderDefaultCreditsPS
+	snapshot := model.PricingSnapshot{
+		Model: request.Model, Modality: request.Modality, Operation: request.Operation, Unit: request.Unit,
+		ResolutionTier: request.ResolutionTier, Quantity: request.Quantity, BillingMode: "ratio",
+		RuleCredits: videoRenderDefaultCreditsPS, EffectiveRatio: 1, Source: string(PricingSourceDefault), Credits: credits,
+	}
+	return PricingResult{Credits: credits, EffectiveRatio: 1, Source: PricingSourceDefault, Snapshot: snapshot}
 }
 
 func ListVideoRenderJobs(user model.AuthUser, q model.Query) (model.VideoRenderJobList, error) {
@@ -118,7 +140,10 @@ func CreateVideoRenderJob(user model.AuthUser, projectID string, input model.Cre
 	if err != nil {
 		return model.VideoRenderJob{}, err
 	}
-	estimated := EstimateVideoRenderCredits(preflight.DurationMs, version.OutputSpec)
+	pricing, err := EstimateVideoRenderPricing(user.ID, user.Group, preflight.DurationMs, version.OutputSpec)
+	if err != nil {
+		return model.VideoRenderJob{}, err
+	}
 	timestamp := now()
 	job := model.VideoRenderJob{
 		ID:               newID("video-render"),
@@ -134,7 +159,8 @@ func CreateVideoRenderJob(user model.AuthUser, projectID string, input model.Cre
 		TimelineJSON:     string(timelineJSON),
 		OutputSpecJSON:   string(outputJSON),
 		DurationMs:       preflight.DurationMs,
-		EstimatedCredits: estimated,
+		EstimatedCredits: pricing.Credits,
+		PricingSnapshot:  pricing.Snapshot,
 		ReviewStatus:     model.VideoRenderReviewPending,
 		CreatedBy:        user.ID,
 		CreatedAt:        timestamp,

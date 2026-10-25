@@ -9,6 +9,8 @@ import (
 )
 
 // PoolPricingGap is one billable spec of a pool model without a usable rule.
+// pool_pricing is a config side-door for admin drafts/gaps only; it never debits
+// or refunds credits. Live charges still go through PricingResolver + BeginGenerationTask.
 type PoolPricingGap struct {
 	Model          string `json:"model"`
 	Modality       string `json:"modality"`

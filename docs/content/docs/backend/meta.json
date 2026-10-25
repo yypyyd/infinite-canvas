@@ -6,6 +6,7 @@
     "local-development",
     "api-response",
     "system-settings",
+    "billing-lifecycle",
     "custom-protocols",
     "backend-database",
     "canvas-data-structure"

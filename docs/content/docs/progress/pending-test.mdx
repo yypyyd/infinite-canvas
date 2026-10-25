@@ -6,6 +6,14 @@ description: 当前版本已实现但仍需人工或自动化验证的变更项
 # 待测试
 
 
+
+## Phase 3 计费单路径
+
+- 交互 / 批量 / Agent 生图失败只出现一笔 `ai_consume` + 一笔 `ai_refund`；成功只有一笔 `ai_consume`，刷新/重试/协议恢复不重复扣费。
+- 号池晚到货：先失败返还，再送达时只一笔 `ai_late_recharge`，余额净值等于一次成功扣费；并发恢复不得补扣两次。
+- 视频渲染：提交预扣 `reserved_credits`，失败/取消释放预扣，成功结算实扣；`PricingSnapshot` 与估费一致；不得走冻结版本接口伪造成功。
+- 管理台 `pool_pricing` 缺口/草稿仍可创建，但草稿规则不可被 `PricingResolver` 扣费。
+
 ## Phase 2 号池会话 / 能力声明
 
 - Adobe：导入账号后 admin 账号详情出现 `adobe_session.phase`（health_check→ready）；开启 sticky extract 后换 egress 再生成，应触发 remint 日志（`adobe_session event=remint_ok`）且不再伪装 timeout_error。

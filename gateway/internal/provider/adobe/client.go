@@ -476,14 +476,13 @@ func (c *Client) GenerateVideo(ctx context.Context, sessionKey, token, arpSessio
 	}
 
 	payload := BuildVideoPayload(engine, prompt, aspectRatio, durationSeconds, resolution, referenceMode, upstreamModel, inputs)
-	hasImage := len(inputs.ImageBlobIDs) > 0
 	hasVideo := len(inputs.VideoBlobIDs) > 0
 	preferred, _ := payload["modelVersion"].(string)
 	if strings.TrimSpace(upstreamModel) != "" {
 		preferred = strings.TrimSpace(upstreamModel)
 		payload["modelVersion"] = preferred
 	}
-	candidates := KlingVideoModelVersionCandidates(preferred, resolution, hasImage, hasVideo)
+	candidates := KlingVideoModelVersionCandidates(preferred, hasVideo)
 	var respBody []byte
 	var pollURL string
 	var lastSubmitErr error

@@ -265,6 +265,7 @@ func BuildVideoPayload(engine, prompt, aspectRatio string, durationSeconds int, 
 
 	switch engine {
 	case "kling-v4":
+		aspectRatio = klingAspectRatio(aspectRatio)
 		isImage := len(in.ImageBlobIDs) > 0
 		isVideo := len(in.VideoBlobIDs) > 0
 		module := "text2video"
@@ -273,27 +274,11 @@ func BuildVideoPayload(engine, prompt, aspectRatio string, durationSeconds int, 
 		} else if isImage {
 			module = "image2video"
 		}
-		// Prefer historical Firefly builders (n3/t3 in index-BEhim_lY.js / pre-3032f0a):
-		// kling_v3_{standard|pro}_{t2v|i2v}. Kling 4.0 UI ids (kling_v4_omni_ref_*)
-		// are tried next by KlingVideoModelVersionCandidates.
-		isPro := strings.EqualFold(resolution, "1080p")
-		tier := "standard"
-		if isPro {
-			tier = "pro"
-		}
-		workflow := "t2v"
+		// The Firefly model-version keys are hyphenated. The underscored
+		// firefly_3p:external:* identifiers are BKS routing IDs, not versions.
+		modelVersion := "kling-v4-omni-ref"
 		if isVideo {
-			workflow = "v2v"
-		} else if isImage {
-			workflow = "i2v"
-		}
-		modelVersion := "kling_v3_" + tier + "_" + workflow
-		if isVideo {
-			if isImage {
-				modelVersion = "kling_v3_omni_v2v_create"
-			} else {
-				modelVersion = "kling_v3_omni_v2v_edit"
-			}
+			modelVersion = "kling-v4-omni-ref-v2v-create"
 		}
 		payload := map[string]any{
 			"modelId":            "kling",
@@ -327,21 +312,9 @@ func BuildVideoPayload(engine, prompt, aspectRatio string, durationSeconds int, 
 }
 
 // KlingVideoModelVersionCandidates returns Firefly 3P modelVersion slugs.
-// Order: preferred override, then Firefly frontend-discovered Kling 4.0 ids
-// (index-BEhim_lY.js / firefly_3p:external:*), then historical v3/o3 formulas
-// that previously worked in this codebase (pre-3032f0a).
-func KlingVideoModelVersionCandidates(preferred, resolution string, hasImage, hasVideo bool) []string {
-	isPro := strings.EqualFold(resolution, "1080p")
-	tier := "standard"
-	if isPro {
-		tier = "pro"
-	}
-	workflow := "t2v"
-	if hasVideo {
-		workflow = "v2v"
-	} else if hasImage {
-		workflow = "i2v"
-	}
+// Firefly's UI modelVersion is distinct from its firefly_3p:external BKS id.
+// Keep the route on Kling 4.0 rather than silently falling back to Kling 3.
+func KlingVideoModelVersionCandidates(preferred string, hasVideo bool) []string {
 	out := []string{}
 	seen := map[string]bool{}
 	add := func(s string) {
@@ -353,39 +326,23 @@ func KlingVideoModelVersionCandidates(preferred, resolution string, hasImage, ha
 		out = append(out, s)
 	}
 	add(preferred)
-	// Historical Kling v3 / o3 (exact formula from payloads.go before 3032f0a).
-	add("kling_v3_" + tier + "_" + workflow)
-	add("kling_o3_" + tier + "_" + workflow)
-	// Consolidated versions Firefly uses when useConsolidatedVersion=true.
-	add("kling_v3")
-	add("kling_v3_omni")
-	// Firefly frontend Kling 4.0 (firefly_3p:external) — may require Omni Ref inputs.
 	if hasVideo {
-		add("kling_v4_omni_ref_v2v_create")
-		add("kling_v4_omni_ref_tir2v")
+		add("kling-v4-omni-ref-v2v-create")
 	} else {
-		add("kling_v4_omni_ref_tir2v")
-		add("kling_v4_omni_ref_v2v_create")
-	}
-	if hasVideo {
-		add("kling_v3_omni_v2v_edit")
-		add("kling_v3_omni_v2v_create")
-		add("kling_v3_" + tier + "_v2v_edit")
-		add("kling_v3_" + tier + "_v2v_reference")
-		add("kling_o3_" + tier + "_v2v_edit")
-		add("kling_o3_" + tier + "_v2v_reference")
-	} else if hasImage {
-		add("kling_v3_" + tier + "_i2v")
-		add("kling_o3_" + tier + "_i2v")
-		add("kling_v3_ti2v")
-		add("kling_o3_tir2v")
-	} else {
-		add("kling_v3_standard_t2v")
-		add("kling_o3_standard_t2v")
-		add("kling_v3_ti2v")
-		add("kling_o3_tir2v")
+		add("kling-v4-omni-ref")
 	}
 	return out
+}
+
+func klingAspectRatio(aspectRatio string) string {
+	switch strings.ToLower(strings.TrimSpace(aspectRatio)) {
+	case "", "auto":
+		return "16:9"
+	case "16:9", "1:1", "9:16":
+		return strings.TrimSpace(aspectRatio)
+	default:
+		return "16:9"
+	}
 }
 
 func videoSize(aspectRatio, resolution string) map[string]any {

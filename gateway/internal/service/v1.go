@@ -2749,6 +2749,9 @@ func (s *V1Service) prepareVideo(ctx context.Context, principal *APIPrincipal, i
 	if aspectRatio == "" {
 		aspectRatio = "16:9"
 	}
+	if modelItem.ID == "kling-4.0" && strings.EqualFold(aspectRatio, "auto") {
+		aspectRatio = "16:9"
+	}
 	resolution := strings.TrimSpace(in.Resolution)
 	if resolution == "" {
 		resolution = "720p"

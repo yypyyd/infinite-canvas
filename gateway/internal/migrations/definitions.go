@@ -2103,4 +2103,10 @@ UPDATE logical_models
 SET enabled = TRUE, updated_at = NOW()
 WHERE id IN ('gpt-image-2', 'kling-4.0');
 `,
+	"000042_adobe_kling40_supported_ratios.sql": `-- The 3P video API rejects Auto and 21:9 for Kling 4.0.
+UPDATE model_routes
+SET capabilities = '[{"operations":["generation"],"ratios":["16:9","1:1","9:16"],"resolutions":["720p"],"durations":["8s"],"max_reference_images":1,"supports_audio_output":true,"reference_mode":"frame"}]'::jsonb,
+    updated_at = NOW()
+WHERE id = 'video.kling-4.0.adobe';
+`,
 }

@@ -10,6 +10,8 @@
 
 + [修复] Adobe GPT Image 2 在生成时通过 HTTP 获取新会话，移除对注册端旧 ARP 的依赖；保持无浏览器运行，原始 Cookie 文生图与参考图编辑已实际验收，并完善会话失败及试用额度提示。
 
++ [修复] Adobe Kling 4.0 使用 Firefly 前端真实的连字符模型版本，过滤 3P 视频接口不接受的 `auto` / `21:9` 比例，并将 `auto` 归一到 16:9，避免生成请求落入 `provider request failed`。
+
 + [修复] 生产部署启动 `video-worker` / `batch-worker` sibling 容器（`deploy-production.sh`）：镜像内早已构建 `/app/video-worker`，但 Actions 部署此前只起 API，渲染任务永久停在 `queued`；现与 API 共用同一镜像/`.env`/`/app/data`。
 + [修复] 视频工程冻结版本：幂等保存不再抬升草稿 version；前端冻结改用保存响应中的 version，避免「视频工程已变化，请刷新后重试」卡死（草稿 version 空涨、冻结永远失败）。
 + [修复] 模型广场价格只展示模型实际可用分辨率档（与 `providerCapabilities` / 主供应钳制交集）；如 gpt-image-2 仅 1K 时不再列出 2K/4K 算力价。

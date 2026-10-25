@@ -265,30 +265,20 @@ func BuildVideoPayload(engine, prompt, aspectRatio string, durationSeconds int, 
 
 	switch engine {
 	case "kling-v4":
-		isPro := strings.EqualFold(resolution, "1080p")
 		isImage := len(in.ImageBlobIDs) > 0
 		isVideo := len(in.VideoBlobIDs) > 0
-		tier := "standard"
-		if isPro {
-			tier = "pro"
-		}
-		workflow := "t2v"
 		module := "text2video"
 		if isVideo {
-			workflow = "v2v"
 			module = "video2video"
 		} else if isImage {
-			workflow = "i2v"
 			module = "image2video"
 		}
-		// Firefly Kling 4.0 versions mirror the v3 naming: kling_v4_{tier}_{workflow}.
-		modelVersion := "kling_v4_" + tier + "_" + workflow
+		// Firefly frontend (index-BEhim_lY.js): only Kling 4.0 modelVersions are
+		// kling_v4_omni_ref_tir2v and kling_v4_omni_ref_v2v_create (firefly_3p:external).
+		// Probe may fall back to historical kling_v3_standard_t2v / kling_v3.
+		modelVersion := "kling_v4_omni_ref_tir2v"
 		if isVideo {
-			if isImage {
-				modelVersion = "kling_v4_" + tier + "_v2v_reference"
-			} else {
-				modelVersion = "kling_v4_" + tier + "_v2v_edit"
-			}
+			modelVersion = "kling_v4_omni_ref_v2v_create"
 		}
 		payload := map[string]any{
 			"modelId":            "kling",
@@ -321,10 +311,10 @@ func BuildVideoPayload(engine, prompt, aspectRatio string, durationSeconds int, 
 	}
 }
 
-// KlingVideoModelVersionCandidates returns Firefly 3P modelVersion slugs to try
-// for Kling video. Adobe's 422 lists supported (modelId, modelVersion) pairs;
-// kling_v4_* was guessed from v3 naming and is rejected. Prefer an explicit
-// upstream override, then plausible Kling 4 / legacy v3 slugs.
+// KlingVideoModelVersionCandidates returns Firefly 3P modelVersion slugs.
+// Order: preferred override, then Firefly frontend-discovered Kling 4.0 ids
+// (index-BEhim_lY.js / firefly_3p:external:*), then historical v3/o3 formulas
+// that previously worked in this codebase (pre-3032f0a).
 func KlingVideoModelVersionCandidates(preferred, resolution string, hasImage, hasVideo bool) []string {
 	isPro := strings.EqualFold(resolution, "1080p")
 	tier := "standard"
@@ -348,29 +338,43 @@ func KlingVideoModelVersionCandidates(preferred, resolution string, hasImage, ha
 		out = append(out, s)
 	}
 	add(preferred)
-	// Kling 4.0 guesses (Firefly UI name; 3P slug unknown until capture).
-	add("kling_v4_" + tier + "_" + workflow)
-	add("kling_4_" + tier + "_" + workflow)
-	add("kling_v4_" + workflow)
-	add("kling4_" + tier + "_" + workflow)
-	add("kling_v4_" + tier)
-	add("4.0-" + tier + "-" + workflow)
-	add("kling-4.0-" + tier + "-" + workflow)
-	// Legacy v3 slugs that previously worked on the same endpoint.
-	add("kling_v3_" + tier + "_" + workflow)
-	add("kling_v3_standard_t2v")
-	add("kling_v3_pro_t2v")
+	// Firefly frontend (2026-10): ONLY Kling 4.0 modelVersions present are
+	// kling_v4_omni_ref_tir2v and kling_v4_omni_ref_v2v_create. No
+	// kling_v4_standard_t2v exists in the UI bundle.
 	if hasVideo {
-		add("kling_v4_" + tier + "_v2v_edit")
-		add("kling_v4_" + tier + "_v2v_reference")
+		add("kling_v4_omni_ref_v2v_create")
+		add("kling_v4_omni_ref_tir2v")
+	} else {
+		add("kling_v4_omni_ref_tir2v")
+		add("kling_v4_omni_ref_v2v_create")
+	}
+	// Historical Kling v3 / o3 (exact formula from payloads.go before 3032f0a).
+	add("kling_v3_" + tier + "_" + workflow)
+	add("kling_o3_" + tier + "_" + workflow)
+	// Consolidated versions Firefly uses when useConsolidatedVersion=true.
+	add("kling_v3")
+	add("kling_v3_omni")
+	if hasVideo {
 		add("kling_v3_omni_v2v_edit")
 		add("kling_v3_omni_v2v_create")
+		add("kling_v3_" + tier + "_v2v_edit")
+		add("kling_v3_" + tier + "_v2v_reference")
+		add("kling_o3_" + tier + "_v2v_edit")
+		add("kling_o3_" + tier + "_v2v_reference")
+	} else if hasImage {
+		add("kling_v3_" + tier + "_i2v")
+		add("kling_o3_" + tier + "_i2v")
+		add("kling_v3_ti2v")
+		add("kling_o3_tir2v")
+	} else {
+		add("kling_v3_standard_t2v")
+		add("kling_o3_standard_t2v")
+		add("kling_v3_ti2v")
+		add("kling_o3_tir2v")
 	}
 	return out
 }
 
-// videoSize maps Firefly Kling aspect labels onto width/height for the free
-// 720p tier (and 1080p for points if a route ever re-opens it).
 func videoSize(aspectRatio, resolution string) map[string]any {
 	ratio := strings.TrimSpace(aspectRatio)
 	if ratio == "" || strings.EqualFold(ratio, "auto") {

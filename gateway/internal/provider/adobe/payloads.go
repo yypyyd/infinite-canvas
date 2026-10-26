@@ -143,8 +143,11 @@ func buildGPTImagePayloads(spec modelSpec, prompt, ratio, resolution, quality st
 		size = gptImage2Size["1:1"]
 	}
 	if strings.EqualFold(strings.TrimSpace(resolution), "2K") {
-		size[0] *= 2
-		size[1] *= 2
+		// 2K is a 2048-pixel long edge, not twice the 1K preset's edges.
+		// Doubling portrait/wide presets exceeds the free tier's accepted size.
+		longEdge := max(size[0], size[1])
+		size[0] = (size[0]*2048/longEdge + 8) / 16 * 16
+		size[1] = (size[1]*2048/longEdge + 8) / 16 * 16
 	}
 	base := map[string]any{
 		"modelId":              spec.UpstreamModelID,

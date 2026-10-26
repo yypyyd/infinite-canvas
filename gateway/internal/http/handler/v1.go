@@ -38,6 +38,7 @@ func (h *V1Handler) AdminTest(c *gin.Context) {
 		Prompt     string `json:"prompt"`
 		Ratio      string `json:"ratio"`
 		Resolution string `json:"resolution"`
+		Quality    string `json:"quality"`
 		Duration   string `json:"duration"`
 		AccountID  string `json:"account_id"`
 	}
@@ -47,6 +48,7 @@ func (h *V1Handler) AdminTest(c *gin.Context) {
 	result, err := h.v1.PrepareAdminTest(c.Request.Context(), service.AdminTestRequest{
 		Model: body.Model, Prompt: body.Prompt, AspectRatio: body.Ratio,
 		Resolution: body.Resolution, Duration: body.Duration, AccountID: body.AccountID,
+		Quality: body.Quality,
 	})
 	if err != nil {
 		adminTestError(c, err)

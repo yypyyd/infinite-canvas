@@ -468,6 +468,7 @@ export type AdminPublicModelChannelSettings = {
 };
 
 export type AdminManagedModel = {
+    qualityLevels?: string[];
     /** 每次请求最多生成的图片数；仅由内置账号池提供的模型为 1。 */
     maxImageCount?: number;
     /** 文本模型是否支持工具调用；false 时画布 Agent 不使用该模型。 */

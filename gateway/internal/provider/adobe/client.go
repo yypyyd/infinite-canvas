@@ -364,7 +364,7 @@ func defaultMediaContentType(kind string) string {
 
 const generatedImageSafetyMaxAttempts = 3
 
-func (c *Client) GenerateImage(ctx context.Context, sessionKey, token, arpSessionToken, modelID, prompt, aspectRatio, resolution string, blobIDs []string, downloadResult bool) ([]byte, map[string]any, error) {
+func (c *Client) GenerateImage(ctx context.Context, sessionKey, token, arpSessionToken, modelID, prompt, aspectRatio, resolution, quality string, blobIDs []string, downloadResult bool) ([]byte, map[string]any, error) {
 	submitSess, err := c.newSubmitTLSClient(sessionKey)
 	if err != nil {
 		return nil, nil, err
@@ -396,7 +396,7 @@ generationAttempts:
 			endpoint = image5SubmitURL
 			candidates = []map[string]any{buildImage5Payload(prompt, aspectRatio, resolution, blobIDs)}
 		} else {
-			candidates = BuildImagePayloadCandidates(modelID, prompt, aspectRatio, resolution, blobIDs)
+			candidates = BuildImagePayloadCandidates(modelID, prompt, aspectRatio, resolution, quality, blobIDs)
 		}
 		for _, payload := range candidates {
 			respBody, pollURL, submitErr := c.submitImage(ctx, submitSess, sessionKey, token, arpSessionToken, prompt, endpoint, payload)

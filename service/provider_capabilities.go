@@ -91,6 +91,9 @@ func ClampResolutionTiersToDeclarations(private model.PrivateSetting, modelID st
 func poolModelToChannelModelForProvider(item gateway.PoolModel, provider string) model.ChannelModel {
 	cm := poolModelToChannelModel(item)
 	provider = normalizeBuiltinProvider(provider)
+	if provider == "adobe" && item.ID == "gpt-image-2" {
+		cm.QualityLevels = []string{"low", "medium"}
+	}
 	if provider == "" || len(item.Routes) == 0 {
 		return cm
 	}

@@ -347,6 +347,7 @@ Agent 的长期记忆表。记忆同时绑定企业、用户和可选画布项�
 | `upstreamModel` | string | 当前渠道使用的真实上游模型名 |
 | `operations` | string[] | 当前渠道支持的操作列表 |
 | `resolutionTiers` | string[] | 当前渠道支持的分辨率档列表，图片使用 `1k/2k/4k`，视频使用 `480p/720p/1080p`；无分辨率概念的模型为空 |
+| `qualityLevels` | string[] | 可选的独立图片质量档，内置 Adobe GPT Image 2 声明 `low/medium`；公开模型与平台映射继承，不能当作分辨率 |
 
 `promptSync` 字段：
 

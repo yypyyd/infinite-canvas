@@ -6,7 +6,7 @@ import { ConfigProvider, Switch } from "antd";
 import type { PricingRule } from "@/constant/credits";
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import { normalizeImageCount } from "@/lib/image-utils";
-import { clampImageSizeToResolutionTiers, resolveImageResolutionTiers } from "@/lib/image-model-capabilities";
+import { clampImageSizeToResolutionTiers, imageQualityLevels, resolveImageResolutionTiers } from "@/lib/image-model-capabilities";
 import { type AiConfig, modelImageCountLimit, useConfigStore } from "@/stores/use-config-store";
 
 const qualityOptions = [
@@ -93,6 +93,8 @@ export function ImageSettingsPanel({
 }: ImageSettingsPanelProps) {
     const [snapDimensionToStep, setSnapDimensionToStep] = useState(true);
     const managedModels = useConfigStore((state) => state.publicSettings?.modelChannel.models);
+    const activeQualityLevels = managedModels?.find((item) => item.id === (model || config.model))?.qualityLevels ?? imageQualityLevels(model || config.model);
+    const activeQualityOptions = qualityOptions.filter((item) => item.value === "auto" || activeQualityLevels.includes(item.value));
     const maxCount = modelImageCountLimit(managedModels, model || config.model, maxCountProp);
     const quickCount = Math.min(quickCountProp, maxCount);
     const quality = config.quality || "auto";
@@ -116,6 +118,9 @@ export function ImageSettingsPanel({
         const nextSize = clampImageSizeToResolutionTiers(activeSize, activeResolutionTiers);
         if (nextSize !== activeSize) onConfigChange("size", nextSize);
     }, [activeResolutionTiers, activeSize, onConfigChange]);
+    useEffect(() => {
+        if (quality !== "auto" && !activeQualityLevels.includes(quality)) onConfigChange("quality", "auto");
+    }, [quality, activeQualityLevels, onConfigChange]);
 
     const selectedAspect = aspectOptions.find((item) => (item.size || item.value) === activeSize || item.value === activeSize);
     const dimensions = readSizeDimensions(activeSize, selectedAspect || aspectOptions[0]);
@@ -146,7 +151,7 @@ export function ImageSettingsPanel({
                     <div className="space-y-2.5">
                         <SettingTitle color={theme.node.muted}>质量</SettingTitle>
                         <div className="grid grid-cols-4 gap-2.5">
-                            {qualityOptions.map((item) => (
+                            {activeQualityOptions.map((item) => (
                                 <OptionPill key={item.value} selected={quality === item.value} theme={theme} onClick={() => onConfigChange("quality", item.value)}>
                                     {item.label}
                                 </OptionPill>

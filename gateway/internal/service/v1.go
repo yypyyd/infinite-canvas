@@ -721,6 +721,7 @@ func (s *V1Service) PrepareAdminChatTest(ctx context.Context, modelName, prompt,
 // account id is mandatory: a test must never silently fall back to another
 // account in the provider pool.
 type AdminTestRequest struct {
+	Quality     string
 	Model       string
 	Prompt      string
 	AspectRatio string
@@ -766,7 +767,7 @@ func (s *V1Service) PrepareAdminTest(ctx context.Context, in AdminTestRequest) (
 	case "image":
 		result, err := s.prepareImageExecution(ctx, nil, V1ImageRequest{
 			Model: in.Model, Prompt: in.Prompt, AspectRatio: in.AspectRatio,
-			Resolution: in.Resolution, AccountID: in.AccountID,
+			Resolution: in.Resolution, Quality: in.Quality, AccountID: in.AccountID,
 		}, "admin")
 		if err != nil {
 			return nil, err
@@ -2926,7 +2927,7 @@ func (s *V1Service) generateAdobeImage(ctx context.Context, eventID string, mode
 		if modelItem.ID != "firefly-gpt-image-2" && modelItem.ID != "firefly-gpt-image" {
 			submitARP = adobe.SubmissionARPSessionToken(submitARP)
 		}
-		d, meta, genErr := s.adobe.GenerateImage(ctx, token.ID, token.Value, submitARP, modelItem.ID, in.Prompt, aspectRatio, resolution, blobIDs, false)
+		d, meta, genErr := s.adobe.GenerateImage(ctx, token.ID, token.Value, submitARP, modelItem.ID, in.Prompt, aspectRatio, resolution, in.Quality, blobIDs, false)
 		if genErr == nil {
 			imageURL = strings.TrimSpace(stringValue(meta["image_url"]))
 
@@ -3546,26 +3547,19 @@ func resolveImageSize(item *model.ModelConfig, in V1ImageRequest) (string, strin
 	return parseImageSize(in.Size, in.AspectRatio, in.Resolution)
 }
 
-// adobeFreeImageResolution maps OpenAI quality onto Adobe GPT Image 2 detail
-// tiers and enforces the free-account ceiling (1K/2K = low/medium only).
+// Pixel resolution and free-taste quality are independent dimensions.
 func adobeFreeImageResolution(resolution, quality string) (string, error) {
 	r := strings.ToUpper(strings.TrimSpace(resolution))
 	switch strings.ToLower(strings.TrimSpace(quality)) {
-	case "low":
-		r = "1K"
-	case "medium":
-		r = "2K"
-	case "high":
-		return "", fmt.Errorf("%w: adobe free GPT Image 2 supports low/medium (1K/2K) only", ErrUnsupportedParams)
+	case "", "auto", "low", "medium":
+	default:
+		return "", fmt.Errorf("%w: adobe free GPT Image 2 supports low/medium quality only", ErrUnsupportedParams)
 	}
 	if r == "" {
-		r = "2K"
-	}
-	if r == "4K" {
-		return "", fmt.Errorf("%w: adobe free GPT Image 2 supports low/medium (1K/2K) only", ErrUnsupportedParams)
+		r = "1K"
 	}
 	if r != "1K" && r != "2K" {
-		r = "2K"
+		return "", fmt.Errorf("%w: adobe GPT Image 2 supports 1K/2K resolution only", ErrUnsupportedParams)
 	}
 	return r, nil
 }
@@ -3589,6 +3583,9 @@ func imageResolutionDefaulted(in V1ImageRequest) bool {
 func routeImageResolution(route model.ModelRoute, req model.RouteRequirements, generic string, defaulted bool) string {
 	if !defaulted {
 		return generic
+	}
+	if route.Provider == "adobe" && route.LogicalModelID == "gpt-image-2" {
+		generic = "1K"
 	}
 	fallback := ""
 	for _, profile := range model.DecodeCapabilityProfiles(route.Capabilities) {

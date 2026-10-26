@@ -28,6 +28,7 @@ type ModelChannel struct {
 
 // ChannelModel stores one public model's upstream mapping and channel-specific capabilities.
 type ChannelModel struct {
+	QualityLevels       []string               `json:"qualityLevels,omitempty"`
 	Model               string                 `json:"model"`
 	UpstreamModel       string                 `json:"upstreamModel"`
 	Modality            string                 `json:"modality"`
@@ -78,7 +79,8 @@ type DiscoveredModel struct {
 
 // ModelDefinition stores public model management metadata.
 type ModelDefinition struct {
-	ID string `json:"id"`
+	QualityLevels []string `json:"qualityLevels,omitempty"`
+	ID            string   `json:"id"`
 	// MaxImageCount caps images per request; 0 means no extra limit. It is
 	// derived from the serving channels (the built-in pool renders one).
 	MaxImageCount       int      `json:"maxImageCount,omitempty"`
@@ -103,6 +105,7 @@ type ModelDefinition struct {
 
 // PublicAPIModel describes one non-text model exposed to API Key callers.
 type PublicAPIModel struct {
+	QualityLevels       []string `json:"qualityLevels,omitempty"`
 	ID                  string   `json:"id"`
 	Object              string   `json:"object"`
 	Created             int64    `json:"created"`

@@ -1,4 +1,6 @@
-export type ImageModelDefinition = { id: string; operations: string[]; maxReferenceImages?: number; resolutionTiers?: string[]; aspectRatios?: string[] };
+import { useConfigStore } from "@/stores/use-config-store";
+
+export type ImageModelDefinition = { id: string; operations: string[]; maxReferenceImages?: number; resolutionTiers?: string[]; aspectRatios?: string[]; qualityLevels?: string[] };
 
 const GPT_IMAGE_QUALITY_MODELS = ["gpt-image-2", "gpt-image-1.5", "gpt-image-1", "gpt-image-1-mini"];
 
@@ -18,7 +20,12 @@ export function supportsImageReferences(model: string, models?: ImageModelDefini
 }
 
 export function supportsImageQuality(model: string) {
-    return GPT_IMAGE_QUALITY_MODELS.includes(model.trim().toLowerCase());
+    return imageQualityLevels(model).length > 0;
+}
+
+export function imageQualityLevels(model: string): string[] {
+    const declared = useConfigStore.getState().publicSettings?.modelChannel.models.find((item) => item.id === model)?.qualityLevels;
+    return declared ?? (GPT_IMAGE_QUALITY_MODELS.includes(model.trim().toLowerCase()) ? ["low", "medium", "high"] : []);
 }
 
 /** GPT image family is ChatGPT-safe at 1K. Server catalog now clamps via primary provider declarations; keep as UI safety net. */
@@ -32,7 +39,7 @@ export function isGptImageFamily(model?: string) {
  * GPT image family is hard-capped to 1K; other models keep catalog/channel tiers.
  */
 export function resolveImageResolutionTiers(model: string | undefined, catalogTiers?: string[]): string[] | undefined {
-    // GPT Image family: prefer the primary provider catalog (Adobe free = 1K/2K,
+    // GPT Image family: prefer actual pixel tiers in the provider catalog (Adobe = 1K/2K,
     // ChatGPT = 1K). Without catalog tiers, keep the ChatGPT-safe 1K default.
     if (isGptImageFamily(model)) {
         if (!catalogTiers?.length) return ["1k"];
@@ -67,9 +74,10 @@ export function clampImageSizeToResolutionTiers(size: string, tiers?: string[] |
 
 export function clampImageConfigForModel(config: { size?: string; quality?: string }, model: string | undefined, catalogTiers?: string[]) {
     const tiers = resolveImageResolutionTiers(model, catalogTiers);
+    const quality = config.quality || "auto";
     return {
         size: clampImageSizeToResolutionTiers(config.size || "auto", tiers),
-        quality: supportsImageQuality(model || "") ? config.quality || "auto" : "auto",
+        quality: imageQualityLevels(model || "").includes(quality) ? quality : "auto",
         resolutionTiers: tiers,
     };
 }

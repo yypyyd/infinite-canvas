@@ -24,9 +24,8 @@ type modelSpec struct {
 	UpstreamModelVersion string
 }
 
-// GPT Image 2 keeps one canonical size per aspect ratio. Output quality is a
-// separate detailLevel (1/3/5), rather than a multiplier on these dimensions.
-// These values mirror Adobe Firefly's current gpt-image-2 model configuration.
+// Firefly's 1K presets. Resolution scales pixel dimensions; quality selects
+// detailLevel independently and must never be represented as a resolution.
 var gptImage2Size = map[string][2]int{
 	"21:9": {1584, 672}, "16:9": {1376, 768}, "5:4": {1152, 928},
 	"4:3": {1200, 896}, "3:2": {1264, 848}, "1:1": {1024, 1024},
@@ -97,17 +96,17 @@ func image5ResolutionLevel(resolution string) string {
 	}
 }
 
-func BuildImagePayloadCandidates(modelID, prompt, aspectRatio, outputResolution string, blobIDs []string) []map[string]any {
+func BuildImagePayloadCandidates(modelID, prompt, aspectRatio, outputResolution, quality string, blobIDs []string) []map[string]any {
 	spec := ResolveModelSpec(modelID)
 	ratio := defaultString(aspectRatio, "1:1")
-	resolution := defaultString(outputResolution, "2K")
+	resolution := defaultString(outputResolution, "1K")
 
 	switch spec.UpstreamModelID {
 	case "gpt-image":
 		if spec.UpstreamModelVersion == "1.5" {
 			return buildGPTImage15Payloads(spec, prompt, ratio, blobIDs)
 		}
-		return buildGPTImagePayloads(spec, prompt, ratio, resolution, blobIDs)
+		return buildGPTImagePayloads(spec, prompt, ratio, resolution, quality, blobIDs)
 	default:
 		return buildDefaultPayloads(spec, prompt, ratio, resolution, blobIDs)
 	}
@@ -138,15 +137,15 @@ func buildGPTImage15Payloads(spec modelSpec, prompt, ratio string, blobIDs []str
 	return []map[string]any{edited}
 }
 
-func buildGPTImagePayloads(spec modelSpec, prompt, ratio, resolution string, blobIDs []string) []map[string]any {
+func buildGPTImagePayloads(spec modelSpec, prompt, ratio, resolution, quality string, blobIDs []string) []map[string]any {
 	size := gptImage2Size[ratio]
 	if size == [2]int{} {
 		size = gptImage2Size["1:1"]
 	}
-	// Adobe moved GPT Image 2 dimensions from modelSpecificPayload.size to the
-	// top-level size object. The configured 1K/2K/4K tiers now select the
-	// provider's low/medium/high detail level while the canonical ratio size
-	// stays fixed.
+	if strings.EqualFold(strings.TrimSpace(resolution), "2K") {
+		size[0] *= 2
+		size[1] *= 2
+	}
 	base := map[string]any{
 		"modelId":              spec.UpstreamModelID,
 		"modelVersion":         spec.UpstreamModelVersion,
@@ -158,7 +157,7 @@ func buildGPTImagePayloads(spec modelSpec, prompt, ratio, resolution string, blo
 		"referenceBlobs":       []any{},
 		"generationMetadata":   map[string]any{"module": "text2image", "submodule": "ff-image-generate"},
 		"modelSpecificPayload": map[string]any{},
-		"generationSettings":   map[string]any{"detailLevel": gptImage2DetailLevel(resolution)},
+		"generationSettings":   map[string]any{"detailLevel": gptImage2DetailLevel(quality)},
 	}
 	if len(blobIDs) == 0 {
 		return []map[string]any{base}
@@ -168,11 +167,11 @@ func buildGPTImagePayloads(spec modelSpec, prompt, ratio, resolution string, blo
 	return []map[string]any{subject}
 }
 
-func gptImage2DetailLevel(resolution string) int {
-	switch strings.ToUpper(strings.TrimSpace(resolution)) {
-	case "1K":
+func gptImage2DetailLevel(quality string) int {
+	switch strings.ToLower(strings.TrimSpace(quality)) {
+	case "low":
 		return 1
-	case "4K":
+	case "high":
 		return 5
 	default:
 		return 3

@@ -105,6 +105,7 @@ func publicAPIModels(setting model.PublicModelChannelSetting) []model.PublicAPIM
 			Operations:          item.Operations,
 			AspectRatios:        item.AspectRatios,
 			ResolutionTiers:     item.ResolutionTiers,
+			QualityLevels:       item.QualityLevels,
 			Durations:           item.Durations,
 			MaxReferenceImages:  item.MaxReferenceImages,
 			MaxReferenceVideos:  item.MaxReferenceVideos,
@@ -580,6 +581,7 @@ func clampPublicModelsToPrimaryProvider(items []model.ModelDefinition, channels 
 		modality string
 		tiers    []string
 		ops      []string
+		quality  []string
 	}
 	best := map[string]decl{}
 	for _, channel := range channels {
@@ -600,6 +602,7 @@ func clampPublicModelsToPrimaryProvider(items []model.ModelDefinition, channels 
 				modality: normalizePricingToken(cm.Modality),
 				tiers:    append([]string(nil), cm.ResolutionTiers...),
 				ops:      append([]string(nil), cm.Operations...),
+				quality:  append([]string(nil), cm.QualityLevels...),
 			}
 		}
 	}
@@ -614,6 +617,7 @@ func clampPublicModelsToPrimaryProvider(items []model.ModelDefinition, channels 
 		if len(d.tiers) > 0 {
 			items[i].ResolutionTiers = normalizeStringList(d.tiers, normalizeResolutionTier)
 		}
+		items[i].QualityLevels = d.quality
 		if len(d.ops) > 0 {
 			items[i].Operations = normalizeModelOperations(d.ops, items[i].ID, items[i].Modality)
 		}

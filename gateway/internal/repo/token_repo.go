@@ -254,6 +254,31 @@ func (r *TokenRepository) RotateOreateSession(ctx context.Context, id, expectedV
 
 func (r *TokenRepository) Update(ctx context.Context, pool, id string, patch map[string]any) (*model.TokenAccount, error) {
 	patch["updated_at"] = time.Now()
+	if pool == "adobe" {
+		var item model.TokenAccount
+		err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := tx.Model(&model.TokenAccount{}).Where("pool = ? AND id = ?", pool, id).Updates(patch).Error; err != nil {
+				return err
+			}
+			// The UPDATE holds the row lock: inspect the incremented counter, not
+			// the caller's stale snapshot. Refresh/import cannot revive a spent trial.
+			if err := tx.First(&item, "pool = ? AND id = ?", pool, id).Error; err != nil {
+				return err
+			}
+			if item.AdobeTrialExhausted() {
+				if err := tx.Model(&item).Updates(map[string]any{
+					"status": "disabled", "dead": true, "image_limited": true, "video_limited": true,
+					"quota_recover_at": nil,
+					"meta":             gorm.Expr("COALESCE(meta, '{}'::jsonb) || ?::jsonb", `{"adobe_trial_exhausted":true,"cached_quota_remaining":0}`),
+				}).Error; err != nil {
+					return err
+				}
+				return tx.First(&item, "pool = ? AND id = ?", pool, id).Error
+			}
+			return nil
+		})
+		return &item, err
+	}
 	if err := r.db.WithContext(ctx).
 		Model(&model.TokenAccount{}).
 		Where("pool = ? AND id = ?", pool, id).
@@ -297,6 +322,10 @@ func (r *TokenRepository) UpdateMergingMeta(ctx context.Context, pool, id string
 	}
 	updates["meta"] = gorm.Expr("COALESCE(meta, '{}'::jsonb) || CAST(? AS jsonb)", string(raw))
 	updates["updated_at"] = time.Now()
+	if pool == "adobe" {
+		_, err = r.Update(ctx, pool, id, updates)
+		return err
+	}
 	return r.db.WithContext(ctx).
 		Model(&model.TokenAccount{}).
 		Where("pool = ? AND id = ?", pool, id).

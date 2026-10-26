@@ -14,7 +14,7 @@ import (
 )
 
 var ErrAdobeUpstreamBusy = fmt.Errorf("%w: Adobe 上游服务暂时繁忙，请稍后重试", ErrProviderTemporary)
-var ErrAdobeTrialExhausted = fmt.Errorf("%w: Adobe GPT Image 2 免费试用次数已用完，请在 Adobe 官网确认剩余额度或升级计划", ErrProviderQuota)
+var ErrAdobeTrialExhausted = fmt.Errorf("%w: Adobe 免费试用次数已用完，该账号已停止调度", ErrProviderQuota)
 var ErrAdobeGenerationSession = fmt.Errorf("%w: Adobe 生成会话刷新失败，请检查服务端 Node.js 或稍后重试", ErrProviderTemporary)
 
 // publicGenerationError collapses provider-specific failures into stable,

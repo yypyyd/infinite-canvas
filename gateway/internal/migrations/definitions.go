@@ -2117,4 +2117,14 @@ SET capabilities = (
 ), updated_at = NOW()
 WHERE id = 'video.kling-4.0.adobe';
 `,
+	"000044_adobe_free_trial_success_limit.sql": `-- Operator policy: free Adobe accounts retire after three successes.
+UPDATE provider_accounts
+SET status='disabled', dead=TRUE, image_limited=TRUE, video_limited=TRUE,
+    quota_recover_at=NULL,
+    meta=COALESCE(meta, '{}'::jsonb) || '{"adobe_trial_exhausted":true,"cached_quota_remaining":0}'::jsonb,
+    updated_at=NOW()
+WHERE pool='adobe' AND success_total >= 3
+  AND CASE WHEN meta->>'cached_quota_total' ~ '^[0-9]+([.][0-9]+)?$'
+      THEN (meta->>'cached_quota_total')::numeric ELSE 0 END < 10000;
+`,
 }

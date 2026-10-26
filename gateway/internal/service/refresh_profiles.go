@@ -51,6 +51,11 @@ func (s *RefreshProfileService) RefreshNow(ctx context.Context, id string) error
 	if profile.Pool != "adobe" || profile.Kind != "adobe_cookie" || s.adobe == nil {
 		return errors.New("unsupported refresh profile")
 	}
+	if account, err := s.tokens.Get(ctx, "adobe", id); err != nil {
+		return err
+	} else if account.AdobeTrialExhausted() {
+		return ErrAdobeTrialExhausted
+	}
 
 	// Bind the current residential extract/proxy before IMS exchange so the
 	// minted access token and later generate-async share one sticky egress.

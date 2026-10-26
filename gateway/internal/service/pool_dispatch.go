@@ -441,7 +441,7 @@ func (s *V1Service) tryAccount(ctx context.Context, eventID, pool string, token 
 			}
 		}
 		if err == nil {
-			_, updateErr := s.tokens.Update(ctx, pool, token.ID, map[string]any{
+			_, updateErr := s.tokens.Update(context.WithoutCancel(ctx), pool, token.ID, map[string]any{
 				"last_used_at":  time.Now(),
 				"success_total": gorm.Expr("success_total + 1"),
 				"fails":         0,
@@ -634,6 +634,11 @@ func shouldMarkAccountQuota(err error) bool {
 }
 
 func poolAccountConcurrency(pool string, item model.TokenAccount) int {
+	// Serialize each free account so concurrent requests cannot pass the
+	// last free slot before its successful completion updates the counter.
+	if item.AdobeFreeAccount() {
+		return 1
+	}
 	if item.Concurrency > 0 {
 		return min(item.Concurrency, 20)
 	}

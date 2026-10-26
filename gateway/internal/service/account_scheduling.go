@@ -140,6 +140,9 @@ func sortDemoteCooling(items []model.TokenAccount, cooling map[string]bool) {
 }
 
 func accountDispatchable(account model.TokenAccount, pool, kind, logicalID, pinnedID string, now time.Time) bool {
+	if account.AdobeTrialExhausted() {
+		return false
+	}
 	if !account.SchedulingStub && strings.TrimSpace(account.Value) == "" {
 		return false
 	}
@@ -224,6 +227,9 @@ func (s *V1Service) revalidateDispatchAccount(ctx context.Context, pool, account
 		return model.TokenAccount{}, err
 	}
 	plan, routed := dispatchPlanFromContext(ctx)
+	if account.AdobeTrialExhausted() {
+		return model.TokenAccount{}, ErrAdobeTrialExhausted
+	}
 	if !accountDispatchable(*account, pool, kind, routeDispatchModelID(plan.Route), poolPolicy(ctx).pinnedID, time.Now()) {
 		return model.TokenAccount{}, ErrNoProviderAccount
 	}

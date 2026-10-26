@@ -557,6 +557,9 @@ func assembleAccountRow(account model.TokenAccount, bindings []model.AccountMode
 		})
 	}
 	quotaState := accountQuotaState(account.Pool, buckets, now)
+	if account.AdobeTrialExhausted() {
+		quotaState = "empty"
+	}
 	health := "healthy"
 	if account.Dead || account.Status == "disabled" {
 		health = "unhealthy"

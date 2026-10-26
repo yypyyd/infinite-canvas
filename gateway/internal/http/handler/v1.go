@@ -118,7 +118,7 @@ func adminTestError(c *gin.Context, err error) {
 	case errors.Is(err, service.ErrContentRejected), errors.Is(err, service.ErrBannedPrompt):
 		c.JSON(http.StatusBadRequest, gin.H{"detail": "测试内容被拒绝"})
 	case errors.Is(err, service.ErrAdobeTrialExhausted):
-		c.JSON(http.StatusTooManyRequests, gin.H{"detail": "Adobe GPT Image 2 今日免费试用次数已用完，请等待每日额度重置后重试", "code": "adobe_trial_exhausted"})
+		c.JSON(http.StatusTooManyRequests, gin.H{"detail": "Adobe 免费试用次数已用完，该账号已停止调度", "code": "adobe_trial_exhausted"})
 	case errors.Is(err, service.ErrProviderQuota), errors.Is(err, service.ErrInsufficientFunds):
 		c.JSON(http.StatusTooManyRequests, gin.H{"detail": "所选账号额度不足"})
 	case errors.Is(err, service.ErrProviderAuth):
@@ -776,7 +776,7 @@ func v1ErrorResponse(err error, payload map[string]any) (int, any) {
 	case errors.Is(err, service.ErrProviderAuth):
 		return http.StatusServiceUnavailable, openaiErrorResponse("server_error", "", "Upstream provider authentication failed.")
 	case errors.Is(err, service.ErrAdobeTrialExhausted):
-		return http.StatusTooManyRequests, openaiErrorResponse("insufficient_quota", "adobe_trial_exhausted", "Today's complimentary GPT Image 2 generations are exhausted. Please retry after the daily allowance resets.")
+		return http.StatusTooManyRequests, openaiErrorResponse("insufficient_quota", "adobe_trial_exhausted", "This Adobe account's free trial generations are exhausted and it is no longer scheduled.")
 	case errors.Is(err, service.ErrProviderQuota):
 		return http.StatusTooManyRequests, openaiErrorResponse("insufficient_quota", "insufficient_quota", "Upstream provider quota is exhausted.")
 	case errors.Is(err, service.ErrAdobeUpstreamBusy):

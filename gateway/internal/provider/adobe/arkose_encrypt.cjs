@@ -60,9 +60,12 @@ process.stdin.on('end', async () => {
     profile.find(item => item.key === 'ife_hash').value = sandbox.__hash(features.join(', '), 38);
     const encrypted = await sandbox.__encrypt(profile, 'https://arks-client.adobe.com', publicKey);
     if (typeof encrypted?.data !== 'string' || encrypted.data.length < 100 || !encrypted.timestamp) throw Error('invalid SDK result');
-    process.stdout.write(JSON.stringify({ ...encrypted, sessionID, buildID: sandbox.__build, version: sandbox.__version }));
-    clearTimeout(watchdog);
-    process.exit(0);
+    // Go reads stdout through a pipe. Exiting before its asynchronous write
+    // completes truncates larger results at the pipe capacity (often 8192 bytes).
+    process.stdout.write(JSON.stringify({ ...encrypted, sessionID, buildID: sandbox.__build, version: sandbox.__version }), err => {
+      clearTimeout(watchdog);
+      process.exit(err ? 1 : 0);
+    });
   } catch {
     clearTimeout(watchdog);
     process.exit(1);

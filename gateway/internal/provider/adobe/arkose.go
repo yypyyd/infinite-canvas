@@ -97,7 +97,7 @@ func encryptArkose(ctx context.Context, source, userAgent string) (encryptedArko
 		return encrypted, fmt.Errorf("%w: SDK encryption failed; check Node.js and SDK version", ErrGenerationSession)
 	}
 	if json.Unmarshal(result, &encrypted) != nil || encrypted.Data == "" || encrypted.Timestamp <= 0 || encrypted.SessionID == "" || encrypted.BuildID == "" || encrypted.Version == "" {
-		return encrypted, ErrGenerationSession
+		return encrypted, fmt.Errorf("%w: invalid SDK output (bytes=%d valid_json=%t)", ErrGenerationSession, len(result), json.Valid(result))
 	}
 	return encrypted, nil
 }

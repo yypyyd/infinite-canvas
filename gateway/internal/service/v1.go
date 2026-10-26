@@ -3806,7 +3806,7 @@ func pinTestAccount(items, active []model.TokenAccount, accountID string) []mode
 }
 
 // Ordinary (free / ~10-credit) Adobe accounts run GPT Image 2 (1K/2K) and
-// Kling 4.0 (720p / 8s). Paid points accounts are scheduled separately for
+// Kling 4.0 (720p / 4–8s). Paid points accounts are scheduled separately for
 // images; for video they share the same closed Kling 4.0 route. Admin-pinned
 // tests bypass the normal active filters but still call this helper only while
 // constructing the non-pinned scheduler pool.

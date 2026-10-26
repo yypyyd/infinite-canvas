@@ -291,7 +291,7 @@ func CanonicalRoutingCatalog() []CanonicalModelDefinition {
 		}},
 		// Adobe's current video endpoint accepts only these aspect ratios.
 		{Model: LogicalModel{ID: "kling-4.0", Kind: "video", Name: "Kling 4.0", Enabled: true}, Routes: []ModelRoute{
-			route("video.kling-4.0.adobe", "kling-4.0", "adobe", "firefly-kling-4", "", videoProfile([]string{"16:9", "1:1", "9:16"}, []string{"720p"}, []string{"8s"}, 1, 0, 0, 0, true, "frame")),
+			route("video.kling-4.0.adobe", "kling-4.0", "adobe", "firefly-kling-4", "", videoProfile([]string{"16:9", "1:1", "9:16"}, []string{"720p"}, []string{"4s", "5s", "6s", "7s", "8s"}, 1, 0, 0, 0, true, "frame")),
 		}},
 		{Model: LogicalModel{ID: "seedream-5.0-pro", Kind: "image", Name: "Seedream 5.0 Pro", Enabled: true}, Routes: []ModelRoute{
 			route("image.seedream-5.0-pro.byteplus", "seedream-5.0-pro", "byteplus", "lumina-seedream-5.0-pro", "7657401949175693322", imageProfile(commonImageRatios, []string{"1K", "2K"}, 10)),

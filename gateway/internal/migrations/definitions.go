@@ -2109,4 +2109,12 @@ SET capabilities = '[{"operations":["generation"],"ratios":["16:9","1:1","9:16"]
     updated_at = NOW()
 WHERE id = 'video.kling-4.0.adobe';
 `,
+	"000043_adobe_kling40_durations.sql": `-- Extend only the existing Kling route's duration choices.
+UPDATE model_routes
+SET capabilities = (
+    SELECT jsonb_agg(jsonb_set(profile, '{durations}', '["4s","5s","6s","7s","8s"]'::jsonb) ORDER BY ordinal)
+    FROM jsonb_array_elements(capabilities) WITH ORDINALITY AS items(profile, ordinal)
+), updated_at = NOW()
+WHERE id = 'video.kling-4.0.adobe';
+`,
 }

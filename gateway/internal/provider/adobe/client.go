@@ -36,6 +36,7 @@ const (
 
 var (
 	ErrAuth           = errors.New("adobe auth failed")
+	ErrInvalidParams  = errors.New("adobe request parameters rejected")
 	ErrEntitlement    = errors.New("adobe model entitlement missing")
 	ErrQuotaExhausted = errors.New("adobe quota exhausted")
 	// Trial exhaustion does not revoke login; its reset policy belongs to Adobe.
@@ -595,6 +596,9 @@ func (c *Client) submitVideo(ctx context.Context, sess *tlsSession, sessionKey, 
 	}
 	if resp.StatusCode == 408 || resp.StatusCode == 429 || resp.StatusCode == 451 || resp.StatusCode >= 500 {
 		return respBody, "", fmt.Errorf("%w (submit %d: %s)", ErrDeadUpstream, resp.StatusCode, clip(respBody, 300))
+	}
+	if resp.StatusCode == 400 || resp.StatusCode == 422 {
+		return respBody, "", fmt.Errorf("%w: video submit %d: %s", ErrInvalidParams, resp.StatusCode, clip(respBody, 300))
 	}
 	if resp.StatusCode != 200 {
 		return respBody, "", fmt.Errorf("video submit rejected: %d %s", resp.StatusCode, clip(respBody, 300))

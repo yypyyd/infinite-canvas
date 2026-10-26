@@ -24,7 +24,9 @@ description: 当前版本已实现但仍需人工或自动化验证的变更项
 ## Adobe Kling 4.0 纯协议修复
 
 - Kling 4.0 使用 Firefly 前端的连字符 `modelVersion`（文生视频 `kling-v4-omni-ref`，视频编辑 `kling-v4-omni-ref-v2v-create`），不再把 `firefly_3p:external:*` BKS 路由标识误当成版本。
-- Adobe 3P 视频接口只接受 `16:9`、`1:1`、`9:16`；服务端把 Kling 的 `auto` 归一到 `16:9`，并从路由能力中移除会被上游拒绝的 `auto`、`21:9`。
+- Kling 4.0 按官方当前模型 schema 固定发送 `generateAudio: true`，以顶层 `resolution: "720p"` 指定分辨率，移除旧版 `size` 和 `negativePrompt` 字段。已从线上复现旧请求返回 `400 gateway_invalid_payload`，明确拒绝 `generate_audio: false`。
+- 当前项目路由开放 `16:9`、`1:1`、`9:16`，`auto` 归一到 `16:9`；官方 Kling 4 schema 实际还包含 `auto` 和 `21:9`，此前把它们描述为上游不支持并不准确，本轮不扩大项目能力范围。
+- 视频提交的 400/422 参数拒绝归入参数错误，不再仅显示 `provider request failed`；原始上游响应不返回给用户。
 - 上线验收：管理员能力测试与画布分别验证 Kling 4.0 文生视频、首帧视频，确认提交返回任务链接、轮询完成并可播放 MP4；失效账号继续跳过，临时 408/429 仍按账号池重试。
 
 ## Phase 4 · P0 发布验收（2026-10-25 / v0.2.40）

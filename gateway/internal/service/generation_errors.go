@@ -59,7 +59,7 @@ func publicGenerationError(cause error) error {
 		return ErrReferenceAudioTooLarge
 	case errors.Is(cause, ErrBannedPrompt):
 		return ErrBannedPrompt
-	case errors.Is(cause, ErrUnsupportedParams), errors.Is(cause, byteplus.ErrInvalidParams):
+	case errors.Is(cause, ErrUnsupportedParams), errors.Is(cause, byteplus.ErrInvalidParams), errors.Is(cause, adobe.ErrInvalidParams):
 		return ErrUnsupportedParams
 
 	case errors.Is(cause, ErrContentRejected), errors.Is(cause, byteplus.ErrRiskControl),

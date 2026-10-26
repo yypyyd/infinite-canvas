@@ -281,14 +281,14 @@ func BuildVideoPayload(engine, prompt, aspectRatio string, durationSeconds int, 
 			modelVersion = "kling-v4-omni-ref-v2v-create"
 		}
 		payload := map[string]any{
-			"modelId":            "kling",
-			"modelVersion":       modelVersion,
-			"size":               videoSize(aspectRatio, resolution),
-			"duration":           durationSeconds,
-			"seeds":              []int{seedVal},
-			"prompt":             prompt,
-			"negativePrompt":     "",
-			"generateAudio":      in.GenerateAudio,
+			"modelId":      "kling",
+			"modelVersion": modelVersion,
+			"resolution":   resolution,
+			"duration":     durationSeconds,
+			"seeds":        []int{seedVal},
+			"prompt":       prompt,
+			// Kling 4 requires audio; false is rejected by its request schema.
+			"generateAudio":      true,
 			"generationSettings": map[string]any{"aspectRatio": aspectRatio},
 			"generationMetadata": map[string]any{"module": module, "submodule": "ff-video-generate"},
 			"output":             map[string]any{"storeInputs": true},

@@ -441,11 +441,40 @@ func (s *V1Service) tryAccount(ctx context.Context, eventID, pool string, token 
 			}
 		}
 		if err == nil {
-			_, updateErr := s.tokens.Update(context.WithoutCancel(ctx), pool, token.ID, map[string]any{
+			patch := map[string]any{
 				"last_used_at":  time.Now(),
 				"success_total": gorm.Expr("success_total + 1"),
 				"fails":         0,
-			})
+			}
+			var updateErr error
+			quota, known := token.Meta["adobe_"+kind+"_quota"].(map[string]any)
+			if pool == "adobe" && known && quota["trial"] == true {
+				metaPatch := map[string]any{}
+				updated := map[string]any{}
+				for key, value := range quota {
+					updated[key] = value
+				}
+				remaining, _ := anyFloat(quota["remaining"])
+				total, _ := anyFloat(quota["total"])
+				remaining--
+				if remaining < 0 {
+					remaining = 0
+				}
+				updated["remaining"] = remaining
+				updated["used"] = total - remaining
+				updated["exhausted"] = remaining == 0
+				metaPatch["adobe_"+kind+"_quota"] = updated
+				if remaining == 0 {
+					patch[kind+"_limited"] = true
+					metaPatch["adobe_"+kind+"_trial_exhausted"] = true
+					if kind == "image" && token.VideoLimited || kind == "video" && token.ImageLimited {
+						patch["status"] = "quota"
+					}
+				}
+				updateErr = s.tokens.UpdateMergingMeta(context.WithoutCancel(ctx), pool, token.ID, metaPatch, patch)
+			} else {
+				_, updateErr = s.tokens.Update(context.WithoutCancel(ctx), pool, token.ID, patch)
+			}
 			recordBookkeepingError("record account success", updateErr)
 			return data, false, false, nil
 		}
@@ -462,10 +491,10 @@ func (s *V1Service) tryAccount(ctx context.Context, eventID, pool string, token 
 		}
 		isAuth, isQuota, isTemp, isDead := classify(err)
 		if isQuota {
-			// Free Adobe GPT Image 2 only allows a handful of trial gens; once
-			// taste_exhausted fires, disable the credential so it is not reused.
+			// Image and video free tastes are separate. Exhaustion only stops
+			// this kind; it does not invalidate the login or the other allowance.
 			if errors.Is(err, adobe.ErrTrialExhausted) {
-				s.markAdobeFreeTrialExhausted(ctx, pool, token)
+				s.markAdobeFreeTrialExhausted(ctx, pool, token, kind)
 				return nil, true, false, err
 			}
 			if shouldMarkAccountQuota(err) {
@@ -732,18 +761,19 @@ func (s *V1Service) markTokenUpstreamFailure(ctx context.Context, pool string, t
 	recordBookkeepingError("record upstream failure", updateErr)
 }
 
-// markAdobeFreeTrialExhausted disables a free Adobe account after GPT Image 2
-// trial generations are exhausted (typically three free gens). Failover continues
-// to the next account; the credential stays disabled until an admin revives it.
-func (s *V1Service) markAdobeFreeTrialExhausted(ctx context.Context, pool string, token model.TokenAccount) {
-	_, updateErr := s.tokens.Update(ctx, pool, token.ID, map[string]any{
-		"last_used_at":  time.Now(),
-		"fail_total":    gorm.Expr("fail_total + 1"),
-		"fails":         gorm.Expr("fails + 1"),
-		"status":        "disabled",
-		"image_limited": true,
-	})
-	recordBookkeepingError("disable adobe free trial account", updateErr)
+func (s *V1Service) markAdobeFreeTrialExhausted(ctx context.Context, pool string, token model.TokenAccount, kind string) {
+	patch := map[string]any{
+		"last_used_at":     time.Now(),
+		"fail_total":       gorm.Expr("fail_total + 1"),
+		"fails":            gorm.Expr("fails + 1"),
+		"quota_recover_at": nil,
+		kind + "_limited":  true,
+	}
+	if kind == "image" && token.VideoLimited || kind == "video" && token.ImageLimited {
+		patch["status"] = "quota"
+	}
+	err := s.tokens.UpdateMergingMeta(ctx, pool, token.ID, map[string]any{"adobe_" + kind + "_trial_exhausted": true}, patch)
+	recordBookkeepingError("mark adobe model trial exhausted", err)
 }
 
 // markTokenDead disables an account and marks it dead on a fatal upstream error

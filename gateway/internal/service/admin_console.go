@@ -591,6 +591,7 @@ func assembleAccountRow(account model.TokenAccount, bindings []model.AccountMode
 		"session_expires_at": sessionExpiresAt, "session_state": sessionState,
 	}
 	if account.Pool == "adobe" {
+		row["adobe_model_quotas"] = map[string]any{"image": account.Meta["adobe_image_quota"], "video": account.Meta["adobe_video_quota"]}
 		snap := adobeSessionSnapshot(account)
 		row["adobe_session"] = snap
 		row["session_phase"] = snap.Phase

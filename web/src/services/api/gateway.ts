@@ -55,6 +55,9 @@ export type GatewayAccount = {
     routes: GatewayAccountRoute[];
     quota_buckets: GatewayQuotaBucket[];
     quota_state: string;
+    image_limited?: boolean;
+    video_limited?: boolean;
+    adobe_model_quotas?: Partial<Record<"image" | "video", { remaining: number; total: number; checked_at?: string } | null>>;
     success_total: number;
     fail_total: number;
     consecutive_failures: number;

@@ -135,8 +135,8 @@ type TokenAccount struct {
 	QuotaRecoverAt        *time.Time
 	// Adobe quota is tracked separately for image vs video. An account only
 	// enters the shared "quota" waiting status when BOTH are limited; a single
-	// limit leaves the account usable for the other kind. Recovery time is shared
-	// (QuotaRecoverAt / CachedQuotaResetAfter) since Adobe resets both at once.
+	// limit leaves the account usable for the other kind. Free tastes do not
+	// renew at a guessed reset time; only a fresh model preflight can clear them.
 	ImageLimited       bool   `gorm:"not null;default:false"`
 	VideoLimited       bool   `gorm:"not null;default:false"`
 	AccountEmail       string `gorm:"size:255"`

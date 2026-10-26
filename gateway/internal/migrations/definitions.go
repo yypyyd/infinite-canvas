@@ -2127,4 +2127,12 @@ WHERE pool='adobe' AND success_total >= 3
   AND CASE WHEN meta->>'cached_quota_total' ~ '^[0-9]+([.][0-9]+)?$'
       THEN (meta->>'cached_quota_total')::numeric ELSE 0 END < 10000;
 `,
+	"000045_adobe_separate_model_tastes.sql": `-- Replace the former combined-success policy with per-model preflight.
+UPDATE provider_accounts
+SET status='active',dead=FALSE,image_limited=FALSE,video_limited=FALSE,quota_recover_at=NULL,
+    meta=(COALESCE(meta,'{}'::jsonb)-'adobe_trial_exhausted'-'cached_quota_remaining')
+         || '{"adobe_model_quota_recheck":true}'::jsonb,
+    updated_at=NOW()
+WHERE pool='adobe' AND meta->>'adobe_trial_exhausted'='true';
+`,
 }

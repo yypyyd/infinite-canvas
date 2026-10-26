@@ -1484,6 +1484,30 @@ func (s *TokenService) probeQuota(ctx context.Context, pool, id string) (map[str
 			patch["cached_quota_reset_after"] = resetAfter
 			item.CachedQuotaResetAfter = resetAfter
 		}
+		imageLimited, videoLimited := item.ImageLimited, item.VideoLimited
+		for _, kind := range []string{"image", "video"} {
+			quota, qerr := s.adobe.FetchModelQuota(ctx, item.ID, item.Value, kind)
+			if qerr != nil {
+				continue
+			}
+			quota["checked_at"] = time.Now().UTC().Format(time.RFC3339)
+			limited := quota["exhausted"] == true
+			metaPatch["adobe_"+kind+"_quota"] = quota
+			metaPatch["adobe_"+kind+"_trial_exhausted"] = quota["trial"] == true && limited
+			patch[kind+"_limited"] = limited
+			if kind == "image" {
+				imageLimited = limited
+			} else {
+				videoLimited = limited
+			}
+		}
+		if !item.Dead && (item.Status == "active" || item.Status == "quota") {
+			if imageLimited && videoLimited {
+				patch["status"] = "quota"
+			} else {
+				patch["status"] = "active"
+			}
+		}
 		_ = s.tokens.UpdateMergingMeta(ctx, item.Pool, item.ID, metaPatch, patch)
 		return map[string]any{
 			"supported":       true,

@@ -276,7 +276,20 @@ export function AccountsPanel({ fixedProvider = "", embedded = false }: Accounts
                     ...(fixedProvider ? [] : [{ title: "平台", dataIndex: "provider" as const, width: 128, fixed: "left" as const, render: (value: string) => providerLabels[value] || value }]),
                     { title: "账号", width: 240, render: (_: unknown, item: GatewayAccount) => <Typography.Text ellipsis={{ tooltip: item.id }}>{item.label || item.email || item.id}</Typography.Text> },
                     { title: "健康", dataIndex: "health", width: 108, render: (value: string) => <Tag color={healthColors[value] || "default"}>{healthLabels[value] || value}</Tag> },
-                    { title: "额度", dataIndex: "quota_state", width: 110, render: (value: string) => quotaStateLabels[value] || value || "—" },
+                    {
+                        title: "额度", dataIndex: "quota_state", width: 160,
+                        render: (value: string, item: GatewayAccount) => item.provider === "adobe" ? (
+                            <div className="flex flex-col text-xs leading-5">
+                                {(["image", "video"] as const).map((kind) => {
+                                    const quota = item.adobe_model_quotas?.[kind];
+                                    const limited = kind === "image" ? item.image_limited : item.video_limited;
+                                    return <span key={kind} title={quota?.checked_at ? `额度查询时间：${formatTime(quota.checked_at)}` : undefined}>
+                                        {kind === "image" ? "图片" : "视频"}：{limited ? "已用完" : quota ? `剩余 ${quota.remaining}/${quota.total}` : "待查询"}
+                                    </span>;
+                                })}
+                            </div>
+                        ) : quotaStateLabels[value] || value || "—",
+                    },
                     {
                         title: "权重",
                         width: 100,

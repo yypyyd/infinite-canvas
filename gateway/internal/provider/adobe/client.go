@@ -39,8 +39,8 @@ var (
 	ErrInvalidParams  = errors.New("adobe request parameters rejected")
 	ErrEntitlement    = errors.New("adobe model entitlement missing")
 	ErrQuotaExhausted = errors.New("adobe quota exhausted")
-	// A model's taste allowance is distinct from general Firefly credits and
-	// from the operator's separate three-success account retirement policy.
+	// Image and video have independent model tastes, distinct from general
+	// Firefly credits. Exhaustion never invalidates the other model allowance.
 	ErrTrialExhausted    = fmt.Errorf("%w: free Firefly trial generations exhausted", ErrQuotaExhausted)
 	ErrTemporaryUpstream = errors.New("adobe upstream temporary error")
 	ErrSystemUnderLoad   = fmt.Errorf("%w: timeout_error / system under load", ErrTemporaryUpstream)
@@ -370,6 +370,10 @@ func (c *Client) GenerateImage(ctx context.Context, sessionKey, token, arpSessio
 		return nil, nil, err
 	}
 	if isGPTImage2(modelID) {
+		payload := BuildImagePayloadCandidates(modelID, prompt, aspectRatio, resolution, quality, blobIDs)[0]
+		if err := c.checkGenerationPreflight(ctx, submitSess, token, "image", payload); err != nil {
+			return nil, nil, err
+		}
 		arpSessionToken, err = generationSession(ctx, submitSess)
 		if err != nil {
 			return nil, nil, err
@@ -464,7 +468,7 @@ func (c *Client) GenerateVideo(ctx context.Context, sessionKey, token, arpSessio
 	if strings.TrimSpace(upstreamModel) != "" {
 		payload["modelVersion"] = strings.TrimSpace(upstreamModel)
 	}
-	if err := c.checkVideoPreflight(ctx, submitSess, token, payload); err != nil {
+	if err := c.checkGenerationPreflight(ctx, submitSess, token, "video", payload); err != nil {
 		return nil, nil, err
 	}
 	// Kling 4.0 (and other firefly-3p video) needs the same Arkose-backed

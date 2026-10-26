@@ -200,6 +200,9 @@ func (s *V1Service) collectRouteAccounts(ctx context.Context, route model.ModelR
 			bucketKey = strings.TrimSpace(route.QuotaBucketKey)
 		}
 		bucketKey = dispatchQuotaBucket(plan, bucketKey)
+		if account.AdobeFreeAccount() {
+			bucketKey = ""
+		}
 		if authoritativeBucket, _, scoped := providerSnapshotScope(route.Provider); scoped && authoritativeBucket != bucketKey {
 			// The provider's available probe covers a different product surface
 			// (for example ChatGPT image_gen versus text chat). Ignore stale or
@@ -215,7 +218,7 @@ func (s *V1Service) collectRouteAccounts(ctx context.Context, route model.ModelR
 	}
 
 	// Quota snapshots are read in one query even when account-specific bindings
-	// point at different buckets (Adobe image/video intentionally share one).
+	// point at different buckets. Adobe free model tastes bypass shared credits.
 	// Only entitled candidates are included; unbound dispatchable rows are not.
 	snapshots, err := s.models.Quotas().GetMany(ctx, lookupIDs, bucketKeys)
 	if err != nil {
@@ -578,8 +581,7 @@ func dispatchFailureClass(err error) (state, class string) {
 	case errors.Is(err, byteplus.ErrTaskSubmissionUnknown), errors.Is(err, chatgpt.ErrTaskSubmissionUnknown):
 		return "unknown", "temporary"
 	case errors.Is(err, adobe.ErrTrialExhausted):
-		// Free GPT Image 2 trial is exhausted; the account is disabled in
-		// markAdobeFreeTrialExhausted. Record as quota for dispatch_attempts.
+		// Only the requested model's free taste is exhausted.
 		return "failed", "quota"
 	case errors.Is(err, adobe.ErrEntitlement):
 		return "failed", "entitlement"

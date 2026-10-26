@@ -265,7 +265,7 @@ func (s *V1Service) revalidateDispatchAccount(ctx context.Context, pool, account
 	if authoritative, _, scoped := providerSnapshotScope(pool); scoped && authoritative != bucketKey {
 		bucketKey = ""
 	}
-	if plan.QuotaTracked && bucketKey != "" {
+	if plan.QuotaTracked && bucketKey != "" && !account.AdobeFreeAccount() {
 		bucket, err := s.models.Quotas().Get(ctx, accountID, bucketKey)
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return model.TokenAccount{}, err

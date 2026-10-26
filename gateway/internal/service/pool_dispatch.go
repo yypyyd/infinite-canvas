@@ -360,7 +360,8 @@ func (s *V1Service) tryAccount(ctx context.Context, eventID, pool string, token 
 				bucketKey = strings.TrimSpace(binding.QuotaBucketKey)
 			}
 			bucketKey = dispatchQuotaBucket(plan, bucketKey)
-			if bucketKey != "" && plan.Cost > 0 {
+			// Free model tastes are independent of the shared Adobe credit bucket.
+			if bucketKey != "" && plan.Cost > 0 && !token.AdobeFreeAccount() {
 				unit := "credits"
 				if policy, ok := model.DecodeQuotaCostPolicy(plan.Route.QuotaCosts); ok && strings.TrimSpace(policy.Unit) != "" {
 					unit = strings.TrimSpace(policy.Unit)
@@ -414,7 +415,7 @@ func (s *V1Service) tryAccount(ctx context.Context, eventID, pool string, token 
 				case "unknown":
 					recordBookkeepingError("mark dispatch quota uncertain", s.models.Quotas().MarkUncertain(quotaCtx, reservation.ID))
 				default:
-					if failureClass == "quota" {
+					if failureClass == "quota" && !errors.Is(err, adobe.ErrTrialExhausted) {
 						// An explicit provider quota verdict is authoritative. Releasing the
 						// hold after a refreshed zero would add the request cost back and make
 						// the exhausted bucket immediately schedulable again.

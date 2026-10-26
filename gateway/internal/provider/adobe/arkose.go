@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/url"
 	"os"
 	"os/exec"
@@ -53,6 +54,7 @@ var arkoseSDKCache struct {
 func generationSession(ctx context.Context, sess *tlsSession) (string, error) {
 	source, err := loadArkoseSDK(ctx, sess)
 	if err != nil {
+		log.Printf("adobe generation session stage=sdk error=%v", err)
 		return "", err
 	}
 	select {
@@ -63,9 +65,14 @@ func generationSession(ctx context.Context, sess *tlsSession) (string, error) {
 	encrypted, err := encryptArkose(ctx, source, sess.fp.userAgent)
 	<-arkoseEncryptionSlots
 	if err != nil {
+		log.Printf("adobe generation session stage=encrypt error=%v", err)
 		return "", err
 	}
-	return requestArkoseSession(ctx, sess, encrypted)
+	token, err := requestArkoseSession(ctx, sess, encrypted)
+	if err != nil {
+		log.Printf("adobe generation session stage=handshake error=%v", err)
+	}
+	return token, err
 }
 
 func encryptArkose(ctx context.Context, source, userAgent string) (encryptedArkose, error) {
@@ -115,21 +122,24 @@ func requestArkoseSession(ctx context.Context, sess *tlsSession, encrypted encry
 	}
 	resp, err := sess.client.Do(req)
 	if err != nil {
-		return "", ErrGenerationSession
+		return "", fmt.Errorf("%w: handshake transport failed", ErrGenerationSession)
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil || resp.StatusCode != http.StatusOK {
-		return "", ErrGenerationSession
+		return "", fmt.Errorf("%w: handshake HTTP %d (read_failed=%t)", ErrGenerationSession, resp.StatusCode, err != nil)
 	}
 	var reply struct {
 		Token        string `json:"token"`
 		ChallengeURL string `json:"challenge_url"`
 		ProofOfWork  bool   `json:"pow"`
 	}
-	if json.Unmarshal(body, &reply) != nil || reply.ChallengeURL != "" || reply.ProofOfWork || !passiveArkoseToken(reply.Token) {
+	if json.Unmarshal(body, &reply) != nil {
+		return "", fmt.Errorf("%w: invalid handshake JSON", ErrGenerationSession)
+	}
+	if reply.ChallengeURL != "" || reply.ProofOfWork || !passiveArkoseToken(reply.Token) {
 		// Never treat an unfinished interactive challenge as a usable token.
-		return "", ErrGenerationSession
+		return "", fmt.Errorf("%w: handshake not completed (challenge=%t pow=%t)", ErrGenerationSession, reply.ChallengeURL != "", reply.ProofOfWork)
 	}
 	arp, err := json.Marshal(map[string]string{"sid": encrypted.SessionID, "ark": reply.Token})
 	if err != nil {
@@ -162,12 +172,12 @@ func loadArkoseSDK(ctx context.Context, sess *tlsSession) (string, error) {
 	req.Header = http.Header{"user-agent": {sess.fp.userAgent}, "referer": {"https://firefly.adobe.com/"}, "accept": {"*/*"}}
 	resp, err := sess.client.Do(req)
 	if err != nil {
-		return "", ErrGenerationSession
+		return "", fmt.Errorf("%w: SDK transport failed", ErrGenerationSession)
 	}
 	defer resp.Body.Close()
 	source, err := io.ReadAll(io.LimitReader(resp.Body, (2<<20)+1))
 	if err != nil || resp.StatusCode != http.StatusOK || len(source) > 2<<20 || !bytes.Contains(source, []byte(",Pn=n(4166),In=n(2389)")) {
-		return "", fmt.Errorf("%w: unsupported Arkose SDK response", ErrGenerationSession)
+		return "", fmt.Errorf("%w: unsupported SDK response (HTTP %d read_failed=%t bytes=%d marker=%t)", ErrGenerationSession, resp.StatusCode, err != nil, len(source), bytes.Contains(source, []byte(",Pn=n(4166),In=n(2389)")))
 	}
 	arkoseSDKCache.source = string(source)
 	arkoseSDKCache.expires = time.Now().Add(time.Hour)

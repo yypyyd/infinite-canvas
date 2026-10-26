@@ -11,6 +11,7 @@ BIND="${BIND:-127.0.0.1:3050:3000}"
 ENV_FILE="${ENV_FILE:-/opt/infinite-canvas/.env}"
 DATA_DIR="${DATA_DIR:-/opt/infinite-canvas/data}"
 BACKUP_ROOT="${BACKUP_ROOT:-/opt/infinite-canvas/deploy-backups}"
+BACKUP_DATA="${BACKUP_DATA:-0}"
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:3050/api/health/ready}"
 # Production always runs claim workers against the same image/env/data as the API.
 # Set START_BATCH_WORKER=0 to skip batch-worker; video-worker is required for render jobs.
@@ -37,15 +38,17 @@ fi
 echo "pull $IMAGE"
 docker pull "$IMAGE"
 
-stamp="$(date +%Y%m%d-%H%M%S)"
-mkdir -p "$BACKUP_ROOT/$stamp"
-if [[ -f "$DATA_DIR/infinite-canvas.db" ]]; then
-  cp -a "$DATA_DIR/infinite-canvas.db" "$BACKUP_ROOT/$stamp/"
-  if [[ -f "$DATA_DIR/infinite-canvas.db-wal" ]]; then
-    cp -a "$DATA_DIR/infinite-canvas.db-wal" "$BACKUP_ROOT/$stamp/"
+if [[ "$BACKUP_DATA" == "1" ]]; then
+  stamp="$(date +%Y%m%d-%H%M%S)"
+  mkdir -p "$BACKUP_ROOT/$stamp"
+  if [[ -f "$DATA_DIR/infinite-canvas.db" ]]; then
+    cp -a "$DATA_DIR/infinite-canvas.db" "$BACKUP_ROOT/$stamp/"
+    if [[ -f "$DATA_DIR/infinite-canvas.db-wal" ]]; then
+      cp -a "$DATA_DIR/infinite-canvas.db-wal" "$BACKUP_ROOT/$stamp/"
+    fi
   fi
+  ls -1dt "$BACKUP_ROOT"/*/ 2>/dev/null | tail -n +3 | xargs -r rm -rf
 fi
-ls -1dt "$BACKUP_ROOT"/*/ 2>/dev/null | tail -n +3 | xargs -r rm -rf
 
 live=""
 if docker inspect "$LIVE_NAME" >/dev/null 2>&1; then

@@ -39,8 +39,8 @@ var (
 	ErrInvalidParams  = errors.New("adobe request parameters rejected")
 	ErrEntitlement    = errors.New("adobe model entitlement missing")
 	ErrQuotaExhausted = errors.New("adobe quota exhausted")
-	// Trial exhaustion does not revoke login; its reset policy belongs to Adobe.
-	// Free Firefly taste covers GPT Image 2 and Kling 4.0 under the same ~3-gen cap.
+	// A model's taste allowance is distinct from general Firefly credits and
+	// from the operator's separate three-success account retirement policy.
 	ErrTrialExhausted    = fmt.Errorf("%w: free Firefly trial generations exhausted", ErrQuotaExhausted)
 	ErrTemporaryUpstream = errors.New("adobe upstream temporary error")
 	ErrSystemUnderLoad   = fmt.Errorf("%w: timeout_error / system under load", ErrTemporaryUpstream)
@@ -460,6 +460,13 @@ func (c *Client) GenerateVideo(ctx context.Context, sessionKey, token, arpSessio
 	if err != nil {
 		return nil, nil, err
 	}
+	payload := BuildVideoPayload(engine, prompt, aspectRatio, durationSeconds, resolution, referenceMode, upstreamModel, inputs)
+	if strings.TrimSpace(upstreamModel) != "" {
+		payload["modelVersion"] = strings.TrimSpace(upstreamModel)
+	}
+	if err := c.checkVideoPreflight(ctx, submitSess, token, payload); err != nil {
+		return nil, nil, err
+	}
 	// Kling 4.0 (and other firefly-3p video) needs the same Arkose-backed
 	// generation session as GPT Image 2. A local sid-only ARP is masked by
 	// Adobe as timeout_error / "system under load".
@@ -476,13 +483,8 @@ func (c *Client) GenerateVideo(ctx context.Context, sessionKey, token, arpSessio
 		return nil, nil, err
 	}
 
-	payload := BuildVideoPayload(engine, prompt, aspectRatio, durationSeconds, resolution, referenceMode, upstreamModel, inputs)
 	hasVideo := len(inputs.VideoBlobIDs) > 0
 	preferred, _ := payload["modelVersion"].(string)
-	if strings.TrimSpace(upstreamModel) != "" {
-		preferred = strings.TrimSpace(upstreamModel)
-		payload["modelVersion"] = preferred
-	}
 	candidates := KlingVideoModelVersionCandidates(preferred, hasVideo)
 	var respBody []byte
 	var pollURL string

@@ -41,6 +41,7 @@ export function resolveVideoPricingSettings(config: { size: string; vquality: st
 }
 
 export function normalizeVideoRatio(value: string) {
+    if (value?.trim().toLowerCase() === "auto") return "auto";
     if (/^\d+:\d+$/.test(value || "")) return value;
     const match = String(value || "").match(/^(\d+)x(\d+)$/);
     if (!match) return defaultVideoRatios[0];
@@ -59,6 +60,7 @@ export function normalizeVideoResolution(value: string) {
 }
 
 export function videoOutputSize(resolution: string, ratio: string) {
+    if (normalizeVideoRatio(ratio) === "auto") return "auto";
     const token = normalizeVideoResolution(resolution);
     const shortSide = token === "4k" ? 2160 : Math.max(1, Number(token.replace(/p$/i, "")) || 720);
     const [ratioWidth, ratioHeight] = normalizeVideoRatio(ratio).split(":").map(Number);
@@ -69,7 +71,7 @@ export function videoOutputSize(resolution: string, ratio: string) {
 
 export function videoRatioLabel(value: string) {
     const ratio = normalizeVideoRatio(value);
-    return ({ "16:9": "横屏", "9:16": "竖屏", "1:1": "方形", "4:3": "标准横屏", "3:4": "标准竖屏", "21:9": "宽银幕" } as Record<string, string>)[ratio] || ratio;
+    return ratio === "auto" ? "自动" : ratio;
 }
 
 function even(value: number) {

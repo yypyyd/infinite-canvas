@@ -54,7 +54,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                             >
                                 <SizePreview ratio={item} color={theme.node.text} />
                                 <span>{videoRatioLabel(item)}</span>
-                                <span className="text-[10px] leading-none opacity-55">{videoOutputSize(resolution, item)}</span>
+                                <span className="text-[10px] leading-none opacity-55">{item === "auto" ? "自动适配" : videoOutputSize(resolution, item)}</span>
                             </button>
                         ))}
                     </div>
@@ -121,6 +121,12 @@ function SettingGroup({ title, color, children }: { title: string; color: string
 }
 
 function SizePreview({ ratio, color }: { ratio: string; color: string }) {
+    if (normalizeVideoRatio(ratio) === "auto")
+        return (
+            <span className="text-xs" style={{ color }}>
+                Auto
+            </span>
+        );
     const [width, height] = normalizeVideoRatio(ratio).split(":").map(Number);
     const longSide = Math.max(width, height);
     const previewWidth = Math.max(10, Math.round((width / longSide) * 26));

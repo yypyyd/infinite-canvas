@@ -37,6 +37,7 @@ type PricingRequest struct {
 	Size            string
 	Resolution      string
 	Quantity        int
+	DurationSeconds int // Video length; independent of per-request billing quantity.
 	ReferenceImages int
 	ReferenceVideos int
 	ReferenceAudios int
@@ -577,11 +578,13 @@ func mergeResolutionTiers(public []string, channels []string, unrestricted bool)
 // just because mergeEnabledChannelCapabilities unions every route.
 func clampPublicModelsToPrimaryProvider(items []model.ModelDefinition, channels []model.ModelChannel) []model.ModelDefinition {
 	type decl struct {
-		priority int
-		modality string
-		tiers    []string
-		ops      []string
-		quality  []string
+		priority  int
+		modality  string
+		tiers     []string
+		ops       []string
+		quality   []string
+		ratios    []string
+		durations []int
 	}
 	best := map[string]decl{}
 	for _, channel := range channels {
@@ -598,11 +601,13 @@ func clampPublicModelsToPrimaryProvider(items []model.ModelDefinition, channels 
 				continue
 			}
 			best[id] = decl{
-				priority: channel.Priority,
-				modality: normalizePricingToken(cm.Modality),
-				tiers:    append([]string(nil), cm.ResolutionTiers...),
-				ops:      append([]string(nil), cm.Operations...),
-				quality:  append([]string(nil), cm.QualityLevels...),
+				priority:  channel.Priority,
+				modality:  normalizePricingToken(cm.Modality),
+				tiers:     append([]string(nil), cm.ResolutionTiers...),
+				ops:       append([]string(nil), cm.Operations...),
+				quality:   append([]string(nil), cm.QualityLevels...),
+				ratios:    append([]string(nil), cm.AspectRatios...),
+				durations: append([]int(nil), cm.Durations...),
 			}
 		}
 	}
@@ -618,6 +623,10 @@ func clampPublicModelsToPrimaryProvider(items []model.ModelDefinition, channels 
 			items[i].ResolutionTiers = normalizeStringList(d.tiers, normalizeResolutionTier)
 		}
 		items[i].QualityLevels = d.quality
+		if d.modality == "video" {
+			items[i].AspectRatios = normalizeStringList(d.ratios, normalizePricingToken)
+			items[i].Durations = normalizeDurations(d.durations)
+		}
 		if len(d.ops) > 0 {
 			items[i].Operations = normalizeModelOperations(d.ops, items[i].ID, items[i].Modality)
 		}
@@ -1988,7 +1997,11 @@ func channelModelSupportsRequest(item model.ChannelModel, request PricingRequest
 	if request.GenerateAudio && !item.SupportsAudioOutput {
 		return false
 	}
-	return request.Modality != "video" || request.Quantity < 1 || len(item.Durations) == 0 || containsInt(item.Durations, request.Quantity)
+	duration := request.DurationSeconds
+	if duration <= 0 && request.Unit == "second" {
+		duration = request.Quantity
+	}
+	return request.Modality != "video" || duration < 1 || len(item.Durations) == 0 || containsInt(item.Durations, duration)
 }
 
 func containsInt(items []int, value int) bool {

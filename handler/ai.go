@@ -1767,6 +1767,7 @@ func pricingRequestForAIPath(path string, request aiRequestMeta) service.Pricing
 	case "/videos":
 		pricing.Modality = "video"
 		pricing.Operation = "generation"
+		pricing.DurationSeconds = request.Duration
 		pricing.Unit, pricing.Quantity = service.VideoBillingUnitAndQuantity(request.ModelName, request.ResolutionTier, request.Resolution, request.Duration)
 	case "/chat/completions":
 		pricing.Modality = "text"

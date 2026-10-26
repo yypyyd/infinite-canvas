@@ -5,6 +5,10 @@ description: 当前版本已实现但仍需人工或自动化验证的变更项
 
 # 待测试
 
+## 模型广场平台映射状态
+
+- 模型概览与公开状态会收集每个内置平台的独立模型映射；例如 Adobe 的 `ad-gpt-image-2 → gpt-image-2` 应显示 Adobe 来源、真实路由与可用账号，不再因遗漏映射来源而显示“不可用”。
+
 ## 自动部署 Worker 检查
 
 - 部署脚本为 video-worker、batch-worker 设置各自进程检查，并等待检查通过后才报告部署成功，避免继承 API 的 HTTP 探针而误报 unhealthy。上线需确认两者使用目标提交的镜像、没有重启循环，API readiness 同时正常。

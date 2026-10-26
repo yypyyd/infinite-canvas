@@ -254,6 +254,16 @@ func buildModelOverview(settings model.Settings, routes []gateway.RouteDetail, r
 			}
 		}
 	}
+	// Provider-specific mappings only exist on their provider's virtual
+	// channel. Include every provider, not only poolChannel (the first one).
+	for _, pch := range providerChannels {
+		for _, cm := range pch.Models {
+			if _, ok := targets[cm.Model]; !ok {
+				poolNames = append(poolNames, cm.Model)
+				targets[cm.Model] = cm.UpstreamModel
+			}
+		}
+	}
 	for _, alias := range private.PoolModelAliases {
 		if _, ok := targets[alias.Name]; !ok && alias.Enabled {
 			poolNames = append(poolNames, alias.Name)
@@ -280,15 +290,15 @@ func buildModelOverview(settings model.Settings, routes []gateway.RouteDetail, r
 		}
 		target := targets[name]
 		override, hasOverride := poolOverrides[name]
-		emitOne := func(channelID, channelName string, channelPriority, channelWeight int, channelEnabled bool, filterProvider string) {
+		emitOne := func(sourceTarget, channelID, channelName string, channelPriority, channelWeight int, channelEnabled bool, filterProvider string) {
 			sourceKind := "pool"
 			if filterProvider != "" {
 				sourceKind = "provider"
 			}
-			source := ModelSourceOverview{Kind: sourceKind, ChannelID: channelID, ChannelName: channelName, UpstreamModel: target,
+			source := ModelSourceOverview{Kind: sourceKind, ChannelID: channelID, ChannelName: channelName, UpstreamModel: sourceTarget,
 				Enabled: channelEnabled && poolEnabled && !(hasOverride && override.Disabled), ChannelPriority: channelPriority, ChannelWeight: channelWeight, Reasons: []string{}}
-			if name != target {
-				source.AliasTarget = target
+			if name != sourceTarget {
+				source.AliasTarget = sourceTarget
 			}
 			if hasOverride {
 				source.PriorityOverride, source.WeightOverride = cloneIntPtr(override.Priority), cloneIntPtr(override.Weight)
@@ -299,7 +309,7 @@ func buildModelOverview(settings model.Settings, routes []gateway.RouteDetail, r
 				source.Capabilities = &capabilities
 			}
 			anyRoute := false
-			for _, route := range routesByLogical[target] {
+			for _, route := range routesByLogical[sourceTarget] {
 				if filterProvider != "" && normalizeBuiltinProvider(route.Provider) != filterProvider {
 					continue
 				}
@@ -320,8 +330,8 @@ func buildModelOverview(settings model.Settings, routes []gateway.RouteDetail, r
 			inUsable := source.Capabilities != nil
 			switch {
 			case routesKnown && len(source.Routes) == 0:
-				if len(routesByLogical[target]) == 0 {
-					source.Reasons = append(source.Reasons, "\u8d26\u53f7\u6c60\u4e2d\u4e0d\u5b58\u5728\u76ee\u6807\u6a21\u578b "+target)
+				if len(routesByLogical[sourceTarget]) == 0 {
+					source.Reasons = append(source.Reasons, "\u8d26\u53f7\u6c60\u4e2d\u4e0d\u5b58\u5728\u76ee\u6807\u6a21\u578b "+sourceTarget)
 				} else {
 					source.Reasons = append(source.Reasons, "\u8be5\u5e73\u53f0\u672a\u914d\u7f6e\u8be5\u6a21\u578b\u8def\u7531")
 				}
@@ -352,15 +362,21 @@ func buildModelOverview(settings model.Settings, routes []gateway.RouteDetail, r
 			for _, pch := range providerChannels {
 				provider := BuiltinProviderOf(pch)
 				hasModel := false
+				sourceTarget := target
 				for _, cm := range pch.Models {
 					if cm.Model == name {
 						hasModel = true
 						usable[name] = cm
+						sourceTarget = firstNonEmpty(cm.UpstreamModel, cm.Model)
 						break
 					}
 				}
+				// An alias is exposed only by the provider that defines it.
+				if !hasModel && name != target {
+					continue
+				}
 				providerRoutes := 0
-				for _, route := range routesByLogical[target] {
+				for _, route := range routesByLogical[sourceTarget] {
 					// Empty provider (legacy unified pool channel) matches every route.
 					if provider == "" || normalizeBuiltinProvider(route.Provider) == provider {
 						providerRoutes++
@@ -370,11 +386,11 @@ func buildModelOverview(settings model.Settings, routes []gateway.RouteDetail, r
 				if !hasModel && providerRoutes == 0 {
 					continue
 				}
-				emitOne(pch.ID, pch.Name, pch.Priority, pch.Weight, pch.Enabled, provider)
+				emitOne(sourceTarget, pch.ID, pch.Name, pch.Priority, pch.Weight, pch.Enabled, provider)
 			}
 			continue
 		}
-		emitOne(BuiltinPoolChannelID, BuiltinPoolChannelName, poolPriority, poolWeight, true, "")
+		emitOne(target, BuiltinPoolChannelID, BuiltinPoolChannelName, poolPriority, poolWeight, true, "")
 	}
 
 	// Pricing rules, gaps and availability.

@@ -321,7 +321,7 @@ Agent 的长期记忆表。记忆同时绑定企业、用户和可选画布项�
 | `protocolTemplates` | object[] | 自定义 HTTP 协议模板，不包含渠道密钥；请求、上传、恢复、状态与结果字段映射见[协议说明](./custom-protocols) |
 | `promptSync` | object | GitHub 远程提示词定时同步配置 |
 | `email` | object | SMTP 私有配置；密码读取时脱敏，不会出现在公开设置接口 |
-| `payment` | object | 易支付 V1 私有配置、可用支付方式和充值档位；商户密钥读取时脱敏 |
+| `payment` | object | 易支付 / ZPay 私有配置、可用支付方式和充值档位；商户密钥读取时脱敏 |
 | `referral` | object | 邀请返佣开关和返佣比例 |
 
 `channels` 每项字段：
@@ -358,7 +358,7 @@ Agent 的长期记忆表。记忆同时绑定企业、用户和可选画布项�
 
 后端请求模型时，先按对外模型名、操作和分辨率档筛选启用且能力相符的渠道，再按 `weight` 加权随机选择一个渠道；统一售价仍由公开 `pricingRules` 决定，渠道配置只影响路由和上游模型映射。
 
-`payment` 保存 `enabled`、`gatewayUrl`、`merchantId`、`merchantKey`、`siteName`、`productName`、`methods`、`packages` 和 `creditsPerYuan`。`methods` 支持 `alipay`、`wxpay`、`qqpay`；每个充值档位保存稳定 `id`、名称和人民币分值 `amountCents`，支付金额按原值进入账户余额。`creditsPerYuan` 是每 1 元人民币余额可兑换的个人算力点数，大于 `0` 时自动开放单向兑换，`0` 或未配置时关闭兑换。后台读取时只返回 `merchantKeyConfigured`，不返回商户密钥明文。
+`payment` 保存 `enabled`、`provider`、`gatewayUrl`、`channelId`、`merchantId`、`merchantKey`、`siteName`、`productName`、`methods`、`packages` 和 `creditsPerYuan`。`provider` 可选 `epay`（默认）或 `zpay`；ZPay 仅支持 `alipay`、`wxpay`，易支付还支持 `qqpay`。`channelId` 是 ZPay 可选渠道 ID。每个充值档位保存稳定 `id`、名称、实付金额 `amountCents` 和到账余额 `balanceCents`，两个金额都以人民币分为单位。`creditsPerYuan` 是每 1 元人民币余额可兑换的个人算力点数，大于 `0` 时自动开放单向兑换，`0` 或未配置时关闭兑换。后台读取时只返回 `merchantKeyConfigured`，不返回商户密钥明文。
 
 `referral` 保存 `enabled` 和 `commissionRate`（0–100 的整数百分比）。关闭或比例为 0 时不发放返佣；开启后只按被邀请用户首笔成功充值订单的实付金额计算并固化比例，后续订单不再返佣。
 
@@ -427,21 +427,22 @@ Agent 的长期记忆表。记忆同时绑定企业、用户和可选画布项�
 
 ### payment_orders
 
-易支付 V1 余额充值订单表。订单创建时固化用户、当前企业、充值档位、支付方式、实付金额和到账余额；支付成功后只增加人民币账户余额，不增加算力点。服务端同时校验回调签名、商户号、实付金额、支付方式和 `TRADE_SUCCESS` 状态，再在同一事务中把订单改为已支付、按到账余额增加 `users.balance_cents` 并写入 `balance_logs`。订单状态条件更新和第三方流水号唯一索引共同保证异步通知与页面返回重复到达时不会重复入账。
+易支付 / ZPay 余额充值订单表。订单创建时固化用户、当前企业、充值档位、支付平台、支付方式、实付金额和到账余额；支付成功后只增加人民币账户余额，不增加算力点。服务端同时校验回调签名、支付平台、商户号、实付金额、支付方式和 `TRADE_SUCCESS` 状态，ZPay 还须查单确认真实已付款，再在同一事务中把订单改为已支付、按到账余额增加 `users.balance_cents` 并写入 `balance_logs`。订单状态条件更新和第三方流水号唯一索引共同保证异步通知与页面返回重复到达时不会重复入账。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `id` | string | 主键 |
-| `order_no` | string | 商户订单号，唯一索引 |
+| `order_no` | string | 商户订单号，32 位数字字符串，唯一索引 |
 | `user_id` | string | 发起充值的用户 ID |
 | `organization_id` | string | 创建订单时所在企业 ID，仅用于来源记录 |
 | `package_id` | string | 创建时固化的充值档位标识 |
 | `package_name` | string | 创建时固化的档位名称 |
+| `provider` | string | 创建时固化的支付平台：`epay`（默认）或 `zpay` |
 | `method` | string | 支付方式：`alipay`、`wxpay`、`qqpay` |
-| `amount_cents` | number | 提交给易支付并用于回调金额核对的实付金额，单位分 |
+| `amount_cents` | number | 提交给支付平台并用于回调金额核对的实付金额，单位分 |
 | `balance_cents` | number | 支付成功后增加到账户人民币余额的金额，单位分 |
 | `status` | string | 状态：`pending`、`paid` |
-| `trade_no` | nullable string | 易支付平台流水号，非空时唯一 |
+| `trade_no` | nullable string | 支付平台流水号，非空时唯一 |
 | `paid_at` | string | 支付入账时间 |
 | `created_at` | string | 创建时间 |
 | `updated_at` | string | 更新时间 |

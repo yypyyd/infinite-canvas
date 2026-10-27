@@ -30,6 +30,7 @@ export type PaymentOrder = {
     orderNo: string;
     packageId: string;
     packageName: string;
+    provider: "epay" | "zpay";
     method: PaymentMethod;
     amountCents: number;
     balanceCents: number;

@@ -734,6 +734,7 @@ export type AdminStorageSetting = {
 };
 
 export type AdminPaymentMethod = "alipay" | "wxpay" | "qqpay";
+export type AdminPaymentProvider = "epay" | "zpay";
 
 export type AdminPaymentPackage = {
     id: string;
@@ -744,7 +745,9 @@ export type AdminPaymentPackage = {
 
 export type AdminPaymentSetting = {
     enabled: boolean;
+    provider: AdminPaymentProvider;
     gatewayUrl: string;
+    channelId: string;
     merchantId: string;
     merchantKey: string;
     merchantKeyConfigured: boolean;

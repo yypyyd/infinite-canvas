@@ -1,7 +1,9 @@
 "use client";
 
-import { Button, Card, Checkbox, Col, Flex, Form, Input, InputNumber, Row, Space, Switch, Table, Typography } from "antd";
+import { Button, Card, Checkbox, Col, Flex, Form, Input, InputNumber, Row, Select, Space, Switch, Table, Typography } from "antd";
 import { Coins, KeyRound, Plus, Trash2, WalletCards } from "lucide-react";
+
+import type { AdminPaymentProvider, AdminSettings } from "@/services/api/admin";
 
 const methodOptions = [
     { label: "支付宝", value: "alipay" },
@@ -10,7 +12,25 @@ const methodOptions = [
 ];
 
 export function PaymentSettingsEditor() {
+    const form = Form.useFormInstance<AdminSettings>();
+    const isZPay = Form.useWatch(["private", "payment", "provider"]) === "zpay";
     const keyConfigured = Form.useWatch(["private", "payment", "merchantKeyConfigured"]) === true;
+
+    const changeProvider = (provider: AdminPaymentProvider) => {
+        form.setFieldsValue({
+            private: {
+                payment: {
+                    provider,
+                    gatewayUrl: provider === "zpay" ? "https://zpayz.cn" : "https://www.ezfpy.cn",
+                    merchantId: "",
+                    merchantKey: "",
+                    merchantKeyConfigured: false,
+                    channelId: "",
+                    methods: ["alipay", "wxpay"],
+                },
+            },
+        });
+    };
 
     return (
         <Flex vertical gap={16}>
@@ -28,18 +48,41 @@ export function PaymentSettingsEditor() {
                     </Form.Item>
                 }
             >
-                <Form.Item name={["private", "payment", "methods"]} label="支付方式" extra="勾选后前台充值页会展示对应的支付方式">
-                    <Checkbox.Group options={methodOptions} />
-                </Form.Item>
                 <Row gutter={16}>
                     <Col xs={24} md={12}>
-                        <Form.Item name={["private", "payment", "gatewayUrl"]} label="网关地址">
-                            <Input placeholder="https://www.ezfpy.cn" />
+                        <Form.Item name={["private", "payment", "provider"]} label="支付平台" extra="切换平台后需重新填写商户信息">
+                            <Select
+                                options={[
+                                    { value: "epay", label: "易支付" },
+                                    { value: "zpay", label: "ZPay" },
+                                ]}
+                                onChange={changeProvider}
+                            />
+                        </Form.Item>
+                    </Col>
+                    <Col xs={24} md={12}>
+                        <Form.Item name={["private", "payment", "methods"]} label="支付方式" extra="勾选后前台充值页会展示对应的支付方式">
+                            <Checkbox.Group options={isZPay ? methodOptions.filter((item) => item.value !== "qqpay") : methodOptions} />
+                        </Form.Item>
+                    </Col>
+                    <Col xs={24} md={12}>
+                        <Form.Item
+                            name={["private", "payment", "gatewayUrl"]}
+                            label="网关地址"
+                            extra={
+                                isZPay ? (
+                                    <Typography.Link href="https://z-pay.cn/doc.html" target="_blank" rel="noreferrer">
+                                        ZPay 接口文档
+                                    </Typography.Link>
+                                ) : undefined
+                            }
+                        >
+                            <Input placeholder={isZPay ? "https://zpayz.cn" : "https://www.ezfpy.cn"} />
                         </Form.Item>
                     </Col>
                     <Col xs={24} md={12}>
                         <Form.Item name={["private", "payment", "merchantId"]} label="商户 ID">
-                            <Input autoComplete="off" placeholder="易支付平台商户 ID" />
+                            <Input autoComplete="off" placeholder={isZPay ? "ZPay 商户 ID（PID）" : "易支付商户 ID"} />
                         </Form.Item>
                     </Col>
                     <Col xs={24} md={12}>
@@ -52,13 +95,21 @@ export function PaymentSettingsEditor() {
                             <InputNumber className="!w-full" min={0} precision={0} addonBefore="¥1 =" addonAfter="点" />
                         </Form.Item>
                     </Col>
+                    {isZPay ? (
+                        <Col xs={24} md={12}>
+                            <Form.Item name={["private", "payment", "channelId"]} label="支付渠道 ID（可选）" extra="留空由 ZPay 分配；多个渠道用英文逗号分隔">
+                                <Input placeholder="例如：1234,5678" />
+                            </Form.Item>
+                        </Col>
+                    ) : (
+                        <Col xs={24} md={12}>
+                            <Form.Item name={["private", "payment", "siteName"]} label="网站名称" extra="支付收银台展示的网站名">
+                                <Input placeholder="幻图" />
+                            </Form.Item>
+                        </Col>
+                    )}
                     <Col xs={24} md={12}>
-                        <Form.Item name={["private", "payment", "siteName"]} label="网站名称" extra="支付收银台展示的网站名">
-                            <Input placeholder="幻图" />
-                        </Form.Item>
-                    </Col>
-                    <Col xs={24} md={12}>
-                        <Form.Item name={["private", "payment", "productName"]} label="商品名称" extra="支付收银台展示的商品名">
+                        <Form.Item name={["private", "payment", "productName"]} label="商品名称" extra="请填写实际售卖的服务名称，将与充值档位名称一起展示">
                             <Input placeholder="余额充值" />
                         </Form.Item>
                     </Col>
@@ -81,7 +132,7 @@ export function PaymentSettingsEditor() {
                             </Button>
                         }
                     >
-                        <Typography.Paragraph type="secondary">支付金额用于易支付下单，到账余额用于站内入账；到账余额大于支付金额时，前台档位会展示优惠标记。</Typography.Paragraph>
+                        <Typography.Paragraph type="secondary">支付金额用于支付平台下单，到账余额用于站内入账；到账余额大于支付金额时，前台档位会展示优惠标记。</Typography.Paragraph>
                         <Table
                             rowKey="key"
                             size="small"

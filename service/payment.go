@@ -1,17 +1,21 @@
 package service
 
 import (
+	"context"
 	"crypto/md5"
+	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
+	"math/big"
 	"net/url"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/yypyyd/infinite-canvas/config"
 	"github.com/yypyyd/infinite-canvas/model"
@@ -48,9 +52,14 @@ func CreatePaymentOrder(user model.AuthUser, packageID string, method model.Paym
 	if err != nil {
 		return model.PaymentSubmission{}, err
 	}
+	orderSuffix, err := rand.Int(rand.Reader, big.NewInt(1_000_000_000_000_000_000))
+	if err != nil {
+		return model.PaymentSubmission{}, err
+	}
 	timestamp := now()
 	order := model.PaymentOrder{
-		ID: newID("payment"), OrderNo: newID("pay"), UserID: user.ID, OrganizationID: user.OrganizationID,
+		ID: newID("payment"), OrderNo: time.Now().UTC().Format("20060102150405") + fmt.Sprintf("%018d", orderSuffix), UserID: user.ID, OrganizationID: user.OrganizationID,
+		Provider:  payment.Provider,
 		PackageID: selected.ID, PackageName: selected.Name, Method: method, AmountCents: selected.AmountCents, BalanceCents: selected.BalanceCents,
 		Status: model.PaymentOrderStatusPending, CreatedAt: timestamp, UpdatedAt: timestamp,
 	}
@@ -62,7 +71,13 @@ func CreatePaymentOrder(user model.AuthUser, packageID string, method model.Paym
 		"pid": payment.MerchantID, "type": string(method), "out_trade_no": order.OrderNo,
 		"notify_url": baseURL + "/api/payments/notify", "return_url": baseURL + "/api/payments/return",
 		"name": payment.ProductName + " - " + selected.Name, "money": formatPaymentAmount(selected.AmountCents),
-		"sitename": payment.SiteName,
+	}
+	if payment.Provider == model.PaymentProviderZPay {
+		if payment.ChannelID != "" {
+			params["cid"] = payment.ChannelID
+		}
+	} else {
+		params["sitename"] = payment.SiteName
 	}
 	params["sign"] = signPaymentParameters(params, payment.MerchantKey)
 	params["sign_type"] = "MD5"
@@ -122,7 +137,7 @@ func ExchangeBalanceForCredits(user model.AuthUser, amountCents int64) (model.Ba
 	return model.BalanceExchangeResult{ExchangeID: exchangeID, BalanceCents: updated.BalanceCents, PersonalCredits: updated.Credits, SpentBalanceCents: amountCents, ReceivedCredits: credits}, nil
 }
 
-func HandlePaymentNotification(values url.Values) (model.PaymentOrder, error) {
+func HandlePaymentNotification(ctx context.Context, values url.Values) (model.PaymentOrder, error) {
 	settings, err := repository.GetSettings()
 	if err != nil {
 		return model.PaymentOrder{}, err
@@ -144,9 +159,23 @@ func HandlePaymentNotification(values url.Values) (model.PaymentOrder, error) {
 	if err != nil {
 		return model.PaymentOrder{}, err
 	}
+	if order.Provider != payment.Provider {
+		return model.PaymentOrder{}, errors.New("payment provider does not match order")
+	}
 	amount, err := parsePaymentAmount(params["money"])
 	if err != nil || amount != order.AmountCents || order.BalanceCents <= 0 || params["type"] != string(order.Method) || strings.TrimSpace(params["trade_no"]) == "" {
 		return model.PaymentOrder{}, errors.New("payment notification does not match order")
+	}
+	if order.Status == model.PaymentOrderStatusPaid {
+		if order.TradeNo == nil || *order.TradeNo != params["trade_no"] {
+			return model.PaymentOrder{}, errors.New("payment trade number does not match order")
+		}
+		return order, nil
+	}
+	if order.Provider == model.PaymentProviderZPay {
+		if err := verifyZPayOrder(ctx, payment, order, params["trade_no"]); err != nil {
+			return model.PaymentOrder{}, err
+		}
 	}
 	extra, _ := json.Marshal(map[string]any{"amountCents": order.AmountCents, "balanceCents": order.BalanceCents, "method": order.Method})
 	paidAt := now()
@@ -176,7 +205,7 @@ func HandlePaymentNotification(values url.Values) (model.PaymentOrder, error) {
 func paymentParameters(values url.Values) map[string]string {
 	params := make(map[string]string, len(values))
 	for key := range values {
-		params[key] = strings.TrimSpace(values.Get(key))
+		params[key] = values.Get(key)
 	}
 	return params
 }

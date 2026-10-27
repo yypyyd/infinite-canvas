@@ -192,7 +192,9 @@ description: settings 表中 public 和 private 配置结构说明
   },
   "payment": {
     "enabled": true,
+    "provider": "epay",
     "gatewayUrl": "https://www.ezfpy.cn",
+    "channelId": "",
     "merchantId": "1000",
     "merchantKey": "<仅保存，不返回>",
     "merchantKeyConfigured": true,
@@ -214,7 +216,7 @@ description: settings 表中 public 和 private 配置结构说明
 | `storage` | object | 用户媒体文件存储与无引用旧文件保留策略 |
 | `promptSync` | object | GitHub 远程提示词定时同步配置 |
 | `email` | object | 注册验证码 SMTP 私有配置；密码不会出现在公开接口，后台读取时也只返回是否已配置 |
-| `payment` | object | 易支付 V1 私有配置、支付方式与充值档位；商户密钥不会出现在公开接口，后台读取时也只返回是否已配置 |
+| `payment` | object | 易支付 / ZPay 私有配置、支付方式与充值档位；商户密钥不会出现在公开接口，后台读取时也只返回是否已配置 |
 
 `storage.driver` 可选 `qiniu` 或 `local`。七牛模式使用后台私有配置中的 Access Key、Secret Key、Bucket、区域和 HTTPS 私有下载域名；Secret Key 读取时始终为空，提交空值表示沿用旧值。环境变量中的既有七牛配置仅作为未填写设置的默认值。`local` 模式把新文件写入 `localPath`，浏览器仍通过企业鉴权接口读取，不返回服务器绝对路径；生产部署必须将该目录挂载到持久化磁盘。切换驱动只影响新文件，文件表中的 `storage_driver` 负责继续读取和清理已有文件，不自动迁移对象。
 
@@ -313,17 +315,21 @@ AutoDL 渠道不在线抓取网页或模型列表。管理员先手动增加对�
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `enabled` | boolean | 是否开放站内在线充值；启用前必须配置商户信息、支付方式、充值档位和有效的 `PUBLIC_BASE_URL` |
-| `gatewayUrl` | string | 易支付 HTTPS 网关地址；标准支付请求提交到该地址下的 `submit.php` |
-| `merchantId` | string | 易支付商户 ID |
-| `merchantKey` | string | 易支付商户密钥；后台提交空值表示沿用旧值，读取设置时始终为空 |
+| `provider` | string | 当前支付平台：`epay`（默认）或 `zpay`；一次启用一个平台 |
+| `gatewayUrl` | string | HTTPS 网关地址；支付请求提交到 `submit.php`。ZPay 默认 `https://zpayz.cn` |
+| `channelId` | string | ZPay 可选支付渠道 ID；多个数字 ID 用英文逗号分隔，留空由平台分配 |
+| `merchantId` | string | 商户 ID；易支付要求正整数，ZPay 支持字母和数字 |
+| `merchantKey` | string | 商户密钥；平台、网关和商户 ID 不变时，提交空值沿用已保存密钥，读取设置时始终为空；切换商户信息需重新填写 |
 | `merchantKeyConfigured` | boolean | 后台只读状态，表示是否已有商户密钥 |
 | `siteName` | string | 提交给易支付的网站名称 |
 | `productName` | string | 支付商品名称前缀 |
-| `methods` | string[] | 开放的支付方式，可选 `alipay`、`wxpay`、`qqpay` |
+| `methods` | string[] | 易支付支持 `alipay`、`wxpay`、`qqpay`；ZPay 仅开放 `alipay`、`wxpay` |
 | `packages` | object[] | 充值档位；每项包含稳定 `id`、名称 `name`、易支付实付金额 `amountCents` 和站内到账余额 `balanceCents`，两个金额都以人民币分为单位且必须大于 `0` |
 | `creditsPerYuan` | number | 每 1 元人民币余额可兑换的个人算力点数；正整数时自动开放兑换，`0` 或未配置时隐藏兑换入口，不设单独开关 |
 
 支付回调由同源后端 `/api/payments/notify` 和 `/api/payments/return` 接收。服务端按照易支付 V1 规则验签，并使用订单固化的 `amountCents` 核对易支付实付金额；校验通过后按订单固化的 `balanceCents` 增加人民币账户余额，再把订单入账和 `payment_recharge` 资金流水写入同一事务。商户密钥只参与服务端签名与验签。账户余额保存在 `users.balance_cents` 并记录到 `balance_logs`，与算力点及 `credit_logs` 完全分开。
+
+ZPay 使用同一表单跳转流程，网关和签名字段以[官方接口文档](https://z-pay.cn/doc.html)为准；订单号为 32 位数字字符串。回调签名按原始参数值计算，不去除商品名称等字段的空白。ZPay 回调验签及金额核对通过后，服务端还会调用 `api.php?act=order`，核对已支付状态、商户号、商户订单号、平台流水号、支付方式和金额；查询超时、失败或字段不一致均不入账。查询仅在服务端进行，不跟随跳转，错误不包含商户密钥或带密钥的 URL。重复的已入账通知直接返回成功。订单固化支付平台，切换平台后不能使用新平台处理另一平台的订单。
 
 余额兑换只接受正整数元金额，并按 `兑换元数 × creditsPerYuan` 精确增加个人算力。兑换时扣减人民币余额和增加个人算力在同一事务中完成，兑换后不可撤销；系统不提供算力兑换回人民币余额的接口或入口。此功能只由 `creditsPerYuan` 控制，与 `enabled` 在线充值开关相互独立。
 

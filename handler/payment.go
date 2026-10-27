@@ -96,7 +96,7 @@ func ExchangeBalance(w http.ResponseWriter, r *http.Request) {
 
 func PaymentNotify(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	if _, err := service.HandlePaymentNotification(r.URL.Query()); err != nil {
+	if _, err := service.HandlePaymentNotification(r.Context(), r.URL.Query()); err != nil {
 		_, _ = w.Write([]byte("fail"))
 		return
 	}
@@ -106,7 +106,7 @@ func PaymentNotify(w http.ResponseWriter, r *http.Request) {
 func PaymentReturn(w http.ResponseWriter, r *http.Request) {
 	state := "pending"
 	orderNo := strings.TrimSpace(r.URL.Query().Get("out_trade_no"))
-	if order, err := service.HandlePaymentNotification(r.URL.Query()); err == nil {
+	if order, err := service.HandlePaymentNotification(r.Context(), r.URL.Query()); err == nil {
 		state = "success"
 		orderNo = order.OrderNo
 	}

@@ -1,5 +1,12 @@
 package model
 
+type PaymentProvider string
+
+const (
+	PaymentProviderEPay PaymentProvider = "epay"
+	PaymentProviderZPay PaymentProvider = "zpay"
+)
+
 type PaymentMethod string
 
 const (
@@ -24,7 +31,9 @@ type PaymentPackage struct {
 
 type PaymentSetting struct {
 	Enabled               bool             `json:"enabled"`
+	Provider              PaymentProvider  `json:"provider"`
 	GatewayURL            string           `json:"gatewayUrl"`
+	ChannelID             string           `json:"channelId"`
 	MerchantID            string           `json:"merchantId"`
 	MerchantKey           string           `json:"merchantKey"`
 	MerchantKeyConfigured bool             `json:"merchantKeyConfigured"`
@@ -49,6 +58,7 @@ type PaymentOrder struct {
 	OrganizationID string             `json:"organizationId" gorm:"index"`
 	PackageID      string             `json:"packageId"`
 	PackageName    string             `json:"packageName"`
+	Provider       PaymentProvider    `json:"provider" gorm:"not null;default:epay"`
 	Method         PaymentMethod      `json:"method"`
 	AmountCents    int64              `json:"amountCents"`
 	BalanceCents   int64              `json:"balanceCents"`

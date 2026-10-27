@@ -26,6 +26,8 @@ var adminModelHTTPClient = &http.Client{Timeout: 30 * time.Second}
 const modelChannelProtocolAutoDLComfyUI = "autodl_comfyui"
 
 var comfyUIWorkflowIDPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+var paymentMerchantIDPattern = regexp.MustCompile(`^[A-Za-z0-9]+$`)
+var paymentChannelIDPattern = regexp.MustCompile(`^[0-9]+(,[0-9]+)*$`)
 
 type PricingRequest struct {
 	Model           string
@@ -1114,7 +1116,11 @@ func normalizeReferralSetting(setting model.ReferralSetting) model.ReferralSetti
 }
 
 func normalizePaymentSetting(setting model.PaymentSetting) model.PaymentSetting {
+	if setting.Provider == "" {
+		setting.Provider = model.PaymentProviderEPay
+	}
 	setting.GatewayURL = strings.TrimRight(strings.TrimSpace(setting.GatewayURL), "/")
+	setting.ChannelID = strings.TrimSpace(setting.ChannelID)
 	setting.MerchantID = strings.TrimSpace(setting.MerchantID)
 	setting.MerchantKey = strings.TrimSpace(setting.MerchantKey)
 	setting.SiteName = strings.TrimSpace(setting.SiteName)
@@ -1124,6 +1130,9 @@ func normalizePaymentSetting(setting model.PaymentSetting) model.PaymentSetting 
 	}
 	if setting.GatewayURL == "" {
 		setting.GatewayURL = "https://www.ezfpy.cn"
+		if setting.Provider == model.PaymentProviderZPay {
+			setting.GatewayURL = "https://zpayz.cn"
+		}
 	}
 	if setting.SiteName == "" {
 		setting.SiteName = "幻图"
@@ -1137,6 +1146,9 @@ func normalizePaymentSetting(setting model.PaymentSetting) model.PaymentSetting 
 	methods := make([]model.PaymentMethod, 0, len(setting.Methods))
 	seenMethods := map[model.PaymentMethod]bool{}
 	for _, method := range setting.Methods {
+		if setting.Provider == model.PaymentProviderZPay && method == model.PaymentMethodQQPay {
+			continue
+		}
 		if (method == model.PaymentMethodAlipay || method == model.PaymentMethodWxpay || method == model.PaymentMethodQQPay) && !seenMethods[method] {
 			seenMethods[method] = true
 			methods = append(methods, method)
@@ -1159,22 +1171,34 @@ func normalizePaymentSetting(setting model.PaymentSetting) model.PaymentSetting 
 }
 
 func validatePaymentSetting(setting model.PaymentSetting) error {
+	if setting.Provider != model.PaymentProviderEPay && setting.Provider != model.PaymentProviderZPay {
+		return safeMessageError{message: "不支持所选支付平台"}
+	}
 	if !setting.Enabled {
 		return nil
 	}
 	if setting.MerchantID == "" || setting.MerchantKey == "" {
-		return safeMessageError{message: "启用在线支付前请填写易支付商户 ID 和商户密钥"}
+		return safeMessageError{message: "启用在线支付前请填写商户 ID 和商户密钥"}
 	}
 	if len(setting.Methods) == 0 || len(setting.Packages) == 0 {
 		return safeMessageError{message: "启用在线支付前请至少配置一种支付方式和一个充值档位"}
 	}
 	gateway, err := url.Parse(setting.GatewayURL)
-	if err != nil || gateway.Scheme != "https" || gateway.Host == "" || gateway.RawQuery != "" || gateway.Fragment != "" {
-		return safeMessageError{message: "易支付网关必须是有效的 HTTPS 地址"}
+	if err != nil || gateway.Scheme != "https" || gateway.Host == "" || gateway.User != nil || gateway.RawQuery != "" || gateway.Fragment != "" {
+		return safeMessageError{message: "支付网关必须是有效的 HTTPS 地址"}
 	}
-	merchantID, err := strconv.ParseInt(setting.MerchantID, 10, 64)
-	if err != nil || merchantID <= 0 {
-		return safeMessageError{message: "易支付商户 ID 必须是正整数"}
+	if setting.Provider == model.PaymentProviderZPay {
+		if !paymentMerchantIDPattern.MatchString(setting.MerchantID) {
+			return safeMessageError{message: "ZPay 商户 ID 只能包含字母和数字"}
+		}
+		if setting.ChannelID != "" && !paymentChannelIDPattern.MatchString(setting.ChannelID) {
+			return safeMessageError{message: "ZPay 支付渠道 ID 必须为数字，多个渠道用英文逗号分隔"}
+		}
+	} else {
+		merchantID, err := strconv.ParseInt(setting.MerchantID, 10, 64)
+		if err != nil || merchantID <= 0 {
+			return safeMessageError{message: "易支付商户 ID 必须是正整数"}
+		}
 	}
 	if _, err := paymentPublicBaseURL(); err != nil {
 		return err
@@ -1267,7 +1291,7 @@ func keepPrivateAPIKeys(settings *model.Settings, saved model.Settings) {
 		settings.Private.Email.SMTPPassword = saved.Private.Email.SMTPPassword
 	}
 	settings.Private.Email.PasswordConfigured = false
-	if settings.Private.Payment.MerchantKey == "" {
+	if settings.Private.Payment.MerchantKey == "" && settings.Private.Payment.Provider == saved.Private.Payment.Provider && settings.Private.Payment.GatewayURL == saved.Private.Payment.GatewayURL && settings.Private.Payment.MerchantID == saved.Private.Payment.MerchantID {
 		settings.Private.Payment.MerchantKey = saved.Private.Payment.MerchantKey
 	}
 	settings.Private.Payment.MerchantKeyConfigured = false

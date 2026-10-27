@@ -1,4 +1,4 @@
-import { Building2, FileText, ImagePlus, Images, LayoutGrid, Maximize2, Video } from "lucide-react";
+import { Building2, ExternalLink, FileText, ImagePlus, Images, LayoutGrid, Maximize2, Video } from "lucide-react";
 
 export const navigationTools = [
     {
@@ -35,6 +35,12 @@ export const navigationTools = [
         slug: "api-docs",
         label: "模型广场",
         icon: LayoutGrid,
+    },
+    {
+        slug: "newapi",
+        label: "New API",
+        icon: ExternalLink,
+        href: "https://newapi.xinghengcode.shop",
     },
 ] as const;
 

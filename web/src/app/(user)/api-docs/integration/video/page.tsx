@@ -36,6 +36,26 @@ export default function VideoIntegrationPage() {
                 },
                 {
                     text: (
+                        <Block method="POST" path="/videos" title="Kling 4.0：关键帧与参考图">
+                            关键帧与参考图分别提交，可以单独使用或同时传入，合计最多 10 张。关键帧按上传顺序对应首帧、中间帧、尾帧；只有一张时作为首帧。参考图独立编号，提示词可用 @image1、@image2 引用，无需设置 reference_mode。
+                            <Params
+                                rows={[
+                                    ["keyframes", "关键帧，multipart 重复此字段；JSON 为图片 base64 或 data URI 数组"],
+                                    ["input_reference", "人物、商品或场景参考，格式同上，独立于关键帧编号"],
+                                    ["规格", "720p，4–8 秒，16:9 / 1:1 / 9:16"],
+                                ]}
+                            />
+                        </Block>
+                    ),
+                    code: (
+                        <Sample
+                            title="两张关键帧 + 一张参考图"
+                            code={`curl "${endpoint}/videos" \\\n  -H "Authorization: Bearer YOUR_API_KEY" \\\n  -H "Idempotency-Key: YOUR_UNIQUE_REQUEST_ID" \\\n  -F "model=kling-4.0" \\\n  -F "prompt=参考 @image1 中的商品，按照关键帧控制起止画面" \\\n  -F "seconds=4" \\\n  -F "size=1280x720" \\\n  -F "keyframes=@./start.png" \\\n  -F "keyframes=@./end.png" \\\n  -F "input_reference=@./product.png"`}
+                        />
+                    ),
+                },
+                {
+                    text: (
                         <Block method="GET" path="/videos/{id}" title="查询状态">
                             每 2–3 秒查一次，必须带创建时的模型 ID。只有 completed 才能下载。
                         </Block>

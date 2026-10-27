@@ -461,12 +461,15 @@ function ModelDetails({
                     {model.modality !== "audio" ? <Capability label="宽高比" values={model.aspectRatios} fallback="未公布限制" /> : null}
                     {model.modality !== "audio" ? <Capability label="分辨率" values={model.resolutionTiers.map((item) => item.toUpperCase())} fallback="未公布限制" /> : null}
                     {model.modality === "video" ? <Capability label="视频时长" values={model.durations.map((item) => `${item} 秒`)} fallback="未公布限制" /> : null}
-                    {model.modality !== "audio" ? <Capability label="参考图" values={referenceCapabilityValues(model)} fallback="不支持" /> : null}
+                    {model.modality !== "audio" ? <Capability label={model.referenceMode === "mixed" ? "关键帧与参考图" : "参考图"} values={referenceCapabilityValues(model)} fallback="不支持" /> : null}
                     {model.modality === "video" ? <Capability label="参考视频" values={model.maxReferenceVideos ? [`最多 ${model.maxReferenceVideos} 个`] : []} fallback="不支持" /> : null}
                     {model.modality === "video" ? <Capability label="参考音频" values={model.maxReferenceAudios ? [`最多 ${model.maxReferenceAudios} 个`] : []} fallback="不支持" /> : null}
                     {model.modality === "video" ? <Capability label="参考素材合计" values={model.maxReferenceMedia ? [`最多 ${model.maxReferenceMedia} 个`] : []} fallback="不额外限制" /> : null}
                     {model.modality === "video" ? <Capability label="视频音频输出" values={model.supportsAudioOutput ? ["支持 generate_audio"] : []} fallback="不支持" /> : null}
                 </div>
+                {model.modality === "video" && model.referenceMode === "mixed" ? (
+                    <p className="mt-3 text-xs leading-6 text-muted-foreground">关键帧用 keyframes，按首帧、中间帧、尾帧排序；参考图用 input_reference，可用 @image1、@image2 引用。两类图片合计最多 {model.maxReferenceImages} 张，无需设置图片用途。</p>
+                ) : null}
             </section>
 
             <section className="mt-7 overflow-hidden rounded-xl border border-border">
@@ -673,7 +676,7 @@ function capabilityTags(model: MarketplaceModel) {
         ...modelOperations(model).map((item) => operationMeta[item]),
         ...model.resolutionTiers.map((item) => item.toUpperCase()),
         ...model.durations.map((item) => `${item} 秒`),
-        ...(model.maxReferenceImages ? [`${model.maxReferenceImages} 张参考图`] : []),
+        ...(model.maxReferenceImages ? [model.referenceMode === "mixed" ? `关键帧与参考图合计 ${model.maxReferenceImages} 张` : `${model.maxReferenceImages} 张参考图`] : []),
         ...(model.maxReferenceVideos ? [`${model.maxReferenceVideos} 个参考视频`] : []),
         ...(model.maxReferenceAudios ? [`${model.maxReferenceAudios} 个参考音频`] : []),
         ...(model.maxReferenceMedia ? [`参考素材合计 ${model.maxReferenceMedia} 个`] : []),
@@ -699,15 +702,18 @@ function buildSnippet(endpoint: string, model: MarketplaceModel, operation: Mode
         return `curl -X POST "${endpoint}/images/generations" \\\n  -H "Authorization: Bearer YOUR_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -H "Idempotency-Key: YOUR_UNIQUE_REQUEST_ID" \\\n  -d '${JSON.stringify(payload, null, 2)}'`;
     }
     if (model.modality === "video") {
+        const separateReferences = model.referenceMode === "mixed";
+        const prompt = separateReferences ? "参考 @image1 中的商品，按照关键帧控制起止画面，镜头缓慢推进" : "商品在柔和光影中缓慢旋转";
         const fields = [
             ...(model.durations[0] ? [`seconds=${model.durations[0]}`] : []),
             ...(ratio && resolution ? [`size=${videoOutputSize(resolution, ratio)}`] : []),
-            ...(model.maxReferenceImages ? ["input_reference=@./reference.png"] : []),
+            ...(separateReferences ? ["keyframes=@./start.png", "keyframes=@./end.png"] : []),
+            ...(model.maxReferenceImages ? [separateReferences ? "input_reference=@./product.png" : "input_reference=@./reference.png"] : []),
             ...(model.maxReferenceVideos ? ["reference_videos=@./reference.mp4"] : []),
             ...(model.maxReferenceAudios ? ["reference_audios=@./reference.mp3"] : []),
             ...(model.supportsAudioOutput ? ["generate_audio=true"] : []),
         ];
-        return `curl -X POST "${endpoint}/videos" \\\n  -H "Authorization: Bearer YOUR_API_KEY" \\\n  -H "Idempotency-Key: YOUR_UNIQUE_REQUEST_ID" \\\n  -F "model=${model.id}" \\\n  -F "prompt=商品在柔和光影中缓慢旋转"${fields.length ? ` \\\n${fields.map((field) => `  -F "${field}"`).join(" \\\n")}` : ""}`;
+        return `curl -X POST "${endpoint}/videos" \\\n  -H "Authorization: Bearer YOUR_API_KEY" \\\n  -H "Idempotency-Key: YOUR_UNIQUE_REQUEST_ID" \\\n  -F "model=${model.id}" \\\n  -F "prompt=${prompt}"${fields.length ? ` \\\n${fields.map((field) => `  -F "${field}"`).join(" \\\n")}` : ""}`;
     }
     return `curl -X POST "${endpoint}/audio/speech" \\\n  -H "Authorization: Bearer YOUR_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -H "Idempotency-Key: YOUR_UNIQUE_REQUEST_ID" \\\n  -d '${JSON.stringify({ model: model.id, input: "欢迎使用幻图开放接口。", voice: "alloy", response_format: "mp3" }, null, 2)}' \\\n  --output speech.mp3`;
 }
@@ -756,7 +762,10 @@ function imageOutputSize(ratio: string) {
 
 function referenceCapabilityValues(model: MarketplaceModel) {
     if (!model.maxReferenceImages) return [];
-    return [`最多 ${model.maxReferenceImages} 张`, model.referenceMode === "mixed" ? "关键帧 + 参考图" : model.referenceMode === "frame" ? "帧参考" : model.referenceMode === "asset" ? "素材参考" : "普通参考"];
+    return [
+        `${model.referenceMode === "mixed" ? "合计" : ""}最多 ${model.maxReferenceImages} 张`,
+        model.referenceMode === "mixed" ? "关键帧 + 参考图" : model.referenceMode === "frame" ? "帧参考" : model.referenceMode === "asset" ? "素材参考" : "普通参考",
+    ];
 }
 
 function operationLabel(operation: string) {

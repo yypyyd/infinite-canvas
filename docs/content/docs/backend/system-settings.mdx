@@ -288,7 +288,7 @@ AutoDL 渠道不在线抓取网页或模型列表。管理员先手动增加对�
 
 服务端通过 AutoDL 的创建与结果查询接口维护任务，不把 Token、请求中的存储签名引用或 AutoDL 临时结果 URL 返回浏览器、写入生成任务结果或审计详情。成功结果只允许从 HTTPS 公网地址下载，重定向后仍会重新校验，并限制文件类型和大小；下载完成后立即归档到当前企业配置的文件存储。图片连接中断和普通视频任务均由生成任务维护 Worker 继续查询，最终失败或超过公共等待窗口时按任务固化的扣费来源幂等退款。后台“模型测试”只校验工作流 ID、模板和映射，不提交可能产生费用的真实任务。
 
-后端调用模型时，会先按对外模型名、类型、操作、请求规格、三类参考素材数量、参考素材合计数量和音频输出要求筛选已启用且密钥完整的渠道，再在能力相符的渠道中按 `weight` 加权随机选择。用户价格始终读取公开模型的 `pricingRules`，不会因随机命中不同上游渠道而变化；OpenAI 请求发送前会把 `model` 替换为所选渠道的 `upstreamModel`，AutoDL 请求则按当前模型的工作流配置渲染。视频 multipart 请求使用 `input_reference`、`reference_videos`、`reference_audios` 和 `generate_audio` 字段；用户端对已上传到工作区的引用提交对应 `storageKey` JSON，服务端校验企业归属后为对应 Provider 生成短期私有 URL 或流式组装 multipart。图片、视频、音频单文件分别限制为 20MiB、200MiB、50MiB，整体引用限制为 320MiB。
+后端调用模型时，会先按对外模型名、类型、操作、请求规格、三类参考素材数量、参考素材合计数量和音频输出要求筛选已启用且密钥完整的渠道，再在能力相符的渠道中按 `weight` 加权随机选择。用户价格始终读取公开模型的 `pricingRules`，不会因随机命中不同上游渠道而变化；OpenAI 请求发送前会把 `model` 替换为所选渠道的 `upstreamModel`，AutoDL 请求则按当前模型的工作流配置渲染。视频页与画布当前使用 multipart 提交 `input_reference`、`keyframes`、`reference_videos`、`reference_audios` 和 `generate_audio`，Kling 的关键帧与参考图分别提交、合计计入图片上限。接口也接收工作区 `storageKey` JSON，服务端校验企业归属后为对应 Provider 生成短期私有 URL 或流式组装 multipart。图片、视频、音频单文件分别限制为 20MiB、200MiB、50MiB，整体引用限制为 320MiB。
 
 `promptSync` 字段：
 

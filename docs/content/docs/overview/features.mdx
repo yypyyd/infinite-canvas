@@ -70,7 +70,7 @@ OpenAI 兼容图像和文本能力继续复用现有接口：
 - OpenAI 风格视频：`POST /api/v1/videos`、`GET /api/v1/videos/{id}`、`GET /api/v1/videos/{id}/content`。
 - Seedance 等特殊上游协议由后端渠道适配，前端仍只请求同源接口。
 
-`POST /api/v1/videos` 对外仍支持 multipart 请求；用户端引用已经上传到工作区的图片、视频和音频时，改用 JSON 提交 `input_reference_storage_keys`、`reference_videos_storage_keys` 和 `reference_audios_storage_keys`。Go 服务端会按当前企业校验 `storageKey`，从七牛私有地址流式下载到临时 multipart 文件后转发上游，浏览器和 Next.js 只处理几 KB 的 JSON，不会把大视频重新放进请求体。旧 multipart 调用仍兼容；单张参考图、单个参考视频、单个参考音频分别限制为 20MiB、200MiB、50MiB，整体引用限制为 320MiB。
+`POST /api/v1/videos` 支持 multipart 请求，当前视频页与画布读取已上传的工作区媒体后以 multipart 提交。接口也接收 `input_reference_storage_keys`、`reference_videos_storage_keys` 和 `reference_audios_storage_keys` 等 JSON 字段，Go 服务端按当前企业校验 `storageKey` 后流式组装 multipart 转发。单张参考图、单个参考视频、单个参考音频分别限制为 20MiB、200MiB、50MiB，整体引用限制为 320MiB。Kling 关键帧与参考图的具体参数见[视频对接](../api/video)，本次变更的验收状态见[待测试清单](../progress/pending-test)。
 
 可配置项：
 

@@ -44,4 +44,19 @@ curl "https://huantu.xyz/api/v1/videos" \
 
 JSON 请求的 `input_reference` 与 `keyframes` 均为数组，每项为图片 base64 或 data URI。站内已上传素材可分别传 `input_reference_storage_keys` 与 `keyframe_storage_keys`，服务端检查文件所属用户后转发；不可混用存储键和原始图片输入。修改图片分类或顺序属于不同请求，使用新的 `Idempotency-Key`。
 
+同一请求的 JSON 参数示例（将占位内容替换成完整的图片 base64）：
+
+```json
+{
+  "model": "kling-4.0",
+  "prompt": "参考 @image1 中的商品，按照关键帧控制起止画面",
+  "seconds": "4",
+  "size": "1280x720",
+  "keyframes": ["data:image/png;base64,START_IMAGE_BASE64", "data:image/png;base64,END_IMAGE_BASE64"],
+  "input_reference": ["data:image/png;base64,PRODUCT_IMAGE_BASE64"]
+}
+```
+
+`@image1` 指向 `input_reference` 的第一张图片，关键帧不占用参考图编号。当前视频页与画布使用 multipart 分别提交两类图片；模型广场的「复制示例」提供相同字段。
+
 只使用统一图片数组的调用方也可传 `reference_mode=asset|frame`；`frame` 不能与独立的 `keyframes` 同时设置。

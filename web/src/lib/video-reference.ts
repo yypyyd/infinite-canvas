@@ -5,7 +5,7 @@ export const VIDEO_REFERENCE_LIMITS = {
     requestMaxBytes: 320 * 1024 * 1024,
 };
 
-export type VideoModelDefinition = { id: string; maxReferenceImages?: number; maxReferenceVideos?: number; maxReferenceAudios?: number; maxReferenceMedia?: number; supportsAudioOutput?: boolean };
+export type VideoModelDefinition = { id: string; maxReferenceImages?: number; maxReferenceVideos?: number; maxReferenceAudios?: number; maxReferenceMedia?: number; supportsAudioOutput?: boolean; referenceMode?: string };
 
 export function videoReferenceCapabilities(model: string, definitions?: VideoModelDefinition[]) {
     const definition = definitions?.find((item) => item.id === model);
@@ -13,7 +13,15 @@ export function videoReferenceCapabilities(model: string, definitions?: VideoMod
     const maxVideos = positiveInteger(definition?.maxReferenceVideos);
     const maxAudios = positiveInteger(definition?.maxReferenceAudios);
     const maxMedia = positiveInteger(definition?.maxReferenceMedia);
-    return { image: maxImages > 0, video: maxVideos > 0, audio: maxAudios > 0, maxImages, maxVideos, maxAudios, maxMedia, supportsAudioOutput: definition?.supportsAudioOutput === true };
+    return { image: maxImages > 0, video: maxVideos > 0, audio: maxAudios > 0, maxImages, maxVideos, maxAudios, maxMedia, supportsAudioOutput: definition?.supportsAudioOutput === true, referenceMode: definition?.referenceMode };
+}
+
+export function videoImageReferenceMode(preferred: string, supported?: string): "asset" | "frame" {
+    return supported === "mixed" ? (preferred === "frame" ? "frame" : "asset") : supported === "frame" ? "frame" : "asset";
+}
+
+export function videoKeyframeLabel(index: number, total: number) {
+    return index === 0 ? "首帧" : index === total - 1 ? "尾帧" : `中间帧 ${index}`;
 }
 
 function positiveInteger(value?: number) {

@@ -10,7 +10,7 @@ import { useConfigStore, type AiConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
-import { videoReferenceCapabilities, VIDEO_REFERENCE_LIMITS } from "@/lib/video-reference";
+import { videoImageReferenceMode, videoReferenceCapabilities, VIDEO_REFERENCE_LIMITS } from "@/lib/video-reference";
 
 type VideoResponse = { id: string; status?: string; storage_key?: string; bytes?: number; mime_type?: string; error?: { message?: string } };
 type ApiVideoResponse = VideoResponse | { code: number; data: VideoResponse | null; msg?: string };
@@ -42,6 +42,7 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
     const definition = findVideoModel(model);
     const capabilities = videoReferenceCapabilities(model, definition ? [definition] : []);
     validateReferenceCounts(references.length, videoReferences.length, audioReferences.length, capabilities);
+    const referenceMode = capabilities.referenceMode === "mixed" ? videoImageReferenceMode(config.videoReferenceMode, capabilities.referenceMode) : undefined;
     const ratio = supportedValue(definition?.aspectRatios, normalizeVideoRatio(config.size), defaultVideoRatios[0]);
     const resolution = supportedValue(definition?.resolutionTiers, normalizeVideoResolution(config.vquality), defaultVideoResolutions[0]);
     const duration = supportedNumber(definition?.durations, Number(config.videoSeconds), defaultVideoDurations[0]);
@@ -69,6 +70,7 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
                             resolution,
                             size: videoOutputSize(resolution, ratio),
                             generate_audio: capabilities.supportsAudioOutput && config.videoGenerateAudio === "true",
+                            reference_mode: referenceMode,
                             input_reference_storage_keys: references.map((reference) => reference.storageKey),
                             reference_videos_storage_keys: videoReferences.map((reference) => reference.storageKey),
                             reference_audios_storage_keys: audioReferences.map((reference) => reference.storageKey),
@@ -85,6 +87,7 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
             body.append("resolution", resolution);
             body.append("size", videoOutputSize(resolution, ratio));
             body.append("generate_audio", String(capabilities.supportsAudioOutput && config.videoGenerateAudio === "true"));
+            if (referenceMode) body.append("reference_mode", referenceMode);
             const [referenceFiles, videoFiles, audioFiles] = await Promise.all([
                 Promise.all(references.map(async (reference) => dataUrlToFile({ ...reference, dataUrl: await imageToDataUrl(reference) }))),
                 Promise.all(videoReferences.map((reference) => mediaReferenceToFile(reference))),

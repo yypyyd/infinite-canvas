@@ -421,7 +421,7 @@ export type AdminChannelModel = {
     maxReferenceAudios: number;
     maxReferenceMedia: number;
     supportsAudioOutput: boolean;
-    referenceMode: "frame" | "asset" | "none";
+    referenceMode: "frame" | "asset" | "mixed" | "none";
     workflow?: {
         workflowId: string;
         requestTemplate: string;
@@ -446,7 +446,7 @@ export type AdminDiscoveredModel = {
     maxReferenceAudios: number;
     maxReferenceMedia: number;
     supportsAudioOutput: boolean;
-    referenceMode: "frame" | "asset" | "none";
+    referenceMode: "frame" | "asset" | "mixed" | "none";
     referenceCapabilityProvided: boolean;
     referenceVideosProvided: boolean;
     referenceAudiosProvided: boolean;
@@ -487,7 +487,7 @@ export type AdminManagedModel = {
     maxReferenceAudios: number;
     maxReferenceMedia: number;
     supportsAudioOutput: boolean;
-    referenceMode: "frame" | "asset" | "none";
+    referenceMode: "frame" | "asset" | "mixed" | "none";
     remark: string;
 };
 

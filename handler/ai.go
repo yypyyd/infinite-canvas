@@ -640,6 +640,9 @@ func buildAIUpstreamStorageRequest(ctx context.Context, r *http.Request, user mo
 		"size":           meta.Size,
 		"generate_audio": strconv.FormatBool(meta.GenerateAudio),
 	}
+	if mode := readStringField(meta.Payload, "reference_mode"); mode != "" {
+		fields["reference_mode"] = mode
+	}
 	if isVividAI(selection.Channel.BaseURL) {
 		adapted := vividAIVideoPayload(selection.Model.UpstreamModel, fields["prompt"], fields["seconds"], fields["size"], fields["resolution"], hasStorageReferences(meta))
 		fields = map[string]string{}

@@ -827,8 +827,8 @@ function normalizeResolutionTier(value: string) {
     return normalized;
 }
 
-function normalizeReferenceMode(value?: string): "frame" | "asset" | "none" {
-    return value === "frame" || value === "asset" ? value : "none";
+function normalizeReferenceMode(value?: string): "frame" | "asset" | "mixed" | "none" {
+    return value === "frame" || value === "asset" || value === "mixed" ? value : "none";
 }
 
 function mergeChannelApiKeys(currentChannels: AdminModelChannel[], saved: AdminSettings): AdminSettings {

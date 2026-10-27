@@ -73,6 +73,7 @@ export function resolveAgentMediaConfig(defaults: AiConfig, options: AgentMediaO
         quality: options.quality || metadata?.quality || defaults.quality,
         vquality: options.resolution || metadata?.vquality || defaults.vquality,
         videoGenerateAudio: options.generateAudio == null ? (metadata?.generateAudio ?? defaults.videoGenerateAudio) : String(options.generateAudio),
+        videoReferenceMode: metadata?.videoReferenceMode || defaults.videoReferenceMode,
         count: String(options.count || metadata?.count || 1),
         videoSeconds: String(options.duration || metadata?.seconds || defaults.videoSeconds || 6),
     };

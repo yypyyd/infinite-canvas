@@ -440,7 +440,7 @@ func (h *V1Handler) CreateVideo(c *gin.Context) {
 	c.Request = c.Request.WithContext(preferredProviderContext(c))
 	principal := apiPrincipal(c)
 	var err error
-	var modelID, prompt, seconds, size, resolutionOverride string
+	var modelID, prompt, seconds, size, resolutionOverride, referenceMode string
 	var refs []string
 	var videos, audios []service.MediaReference
 	var generateAudio bool
@@ -466,6 +466,7 @@ func (h *V1Handler) CreateVideo(c *gin.Context) {
 		seconds = c.PostForm("seconds")
 		size = c.PostForm("size")
 		resolutionOverride = c.PostForm("resolution")
+		referenceMode = c.PostForm("reference_mode")
 		var readErr error
 		refs, readErr = readMultipartImagesStrict(c, "input_reference", "input_reference[]", "reference_images", "reference_images[]")
 		if readErr == nil {
@@ -501,6 +502,7 @@ func (h *V1Handler) CreateVideo(c *gin.Context) {
 			// data-URI strings — the JSON equivalent of multipart input_reference.
 			InputReference  []string `json:"input_reference"`
 			ReferenceImages []string `json:"reference_images"`
+			ReferenceMode   string   `json:"reference_mode"`
 			ReferenceVideos []string `json:"reference_videos"`
 			ReferenceAudios []string `json:"reference_audios"`
 			GenerateAudio   bool     `json:"generate_audio"`
@@ -517,6 +519,7 @@ func (h *V1Handler) CreateVideo(c *gin.Context) {
 		}
 		modelID, prompt, size = body.Model, body.Prompt, body.Size
 		resolutionOverride = body.Resolution
+		referenceMode = body.ReferenceMode
 		seconds = rawToString(body.Seconds)
 		imageInputs := make([]string, 0, len(body.InputReference)+len(body.ReferenceImages))
 		imageInputs = append(imageInputs, body.InputReference...)
@@ -560,6 +563,7 @@ func (h *V1Handler) CreateVideo(c *gin.Context) {
 		AspectRatio:     aspect,
 		Resolution:      resolution,
 		ReferenceImages: refs,
+		ReferenceMode:   strings.ToLower(strings.TrimSpace(referenceMode)),
 		ReferenceVideos: videos,
 		ReferenceAudios: audios,
 		ReferenceGrid:   referenceGrid,

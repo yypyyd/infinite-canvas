@@ -1,6 +1,7 @@
 package adobe
 
 import (
+	"fmt"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -255,7 +256,6 @@ type VideoInputs struct {
 // Adobe video engines. Only Kling 4.0 (kling-v4) is restored; other partner
 // video stacks stay out of the closed catalog.
 func BuildVideoPayload(engine, prompt, aspectRatio string, durationSeconds int, resolution, referenceMode, upstreamModel string, in VideoInputs) map[string]any {
-	_ = referenceMode
 	_ = upstreamModel
 	seedVal := int(time.Now().Unix()) % 999999
 	engine = defaultString(engine, "kling-v4")
@@ -273,7 +273,7 @@ func BuildVideoPayload(engine, prompt, aspectRatio string, durationSeconds int, 
 		module := "text2video"
 		if isVideo {
 			module = "video2video"
-		} else if isImage {
+		} else if isImage && referenceMode == "frame" {
 			module = "image2video"
 		}
 		// The Firefly model-version keys are hyphenated. The underscored
@@ -296,15 +296,20 @@ func BuildVideoPayload(engine, prompt, aspectRatio string, durationSeconds int, 
 			"output":             map[string]any{"storeInputs": true},
 			"referenceBlobs":     []any{},
 		}
-		if isVideo {
-			refs := []any{map[string]any{"id": in.VideoBlobIDs[0], "usage": "source"}}
-			if isImage {
-				refs = append(refs, map[string]any{"id": in.ImageBlobIDs[0], "usage": "style"})
-			}
-			payload["referenceBlobs"] = refs
-		} else if isImage {
-			payload["referenceBlobs"] = []any{map[string]any{"id": in.ImageBlobIDs[0], "usage": "frame", "order": 1}}
+		refs := make([]any, 0, len(in.ImageBlobIDs)+len(in.VideoBlobIDs))
+		for _, id := range in.VideoBlobIDs {
+			refs = append(refs, map[string]any{"id": id, "usage": "source"})
 		}
+		for index, id := range in.ImageBlobIDs {
+			ref := map[string]any{"id": id, "usage": "general"}
+			if referenceMode == "frame" {
+				ref["usage"], ref["order"] = "frame", index+1
+			} else {
+				ref["mention"] = map[string]any{"id": fmt.Sprintf("image%d", index+1)}
+			}
+			refs = append(refs, ref)
+		}
+		payload["referenceBlobs"] = refs
 		return payload
 	default:
 		// Unknown engines fall through to Kling 4.0 t2v so a misconfigured route

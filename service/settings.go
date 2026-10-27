@@ -1880,7 +1880,7 @@ func parseSupportedDurations(values []json.RawMessage) []int {
 
 func normalizeReferenceMode(value string) string {
 	switch normalizePricingToken(value) {
-	case "frame", "asset":
+	case "frame", "asset", "mixed":
 		return normalizePricingToken(value)
 	default:
 		return "none"

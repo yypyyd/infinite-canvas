@@ -361,6 +361,7 @@ type V1VideoRequest struct {
 	AspectRatio     string
 	Resolution      string
 	ReferenceImages []string
+	ReferenceMode   string
 	ReferenceGrid   bool
 	ReferenceVideos []MediaReference
 	ReferenceAudios []MediaReference
@@ -615,11 +616,17 @@ func v1LogicalModelEntry(item model.LogicalModel, routes []model.ModelRoute, cre
 	profiles := make([]map[string]any, 0)
 	seenProfiles := map[string]bool{}
 	maxImages, maxVideos, maxAudios, maxMedia, audioOutput := 0, 0, 0, 0, false
+	referenceMode := ""
 	// max_images_per_request is the loosest cap across routes: 0 (no cap) on any
 	// route wins, otherwise the largest cap.
 	perRequest, uncapped := 0, false
 	for _, route := range routes {
 		for _, profile := range model.DecodeCapabilityProfiles(route.Capabilities) {
+			if referenceMode == "" {
+				referenceMode = profile.ReferenceMode
+			} else if profile.ReferenceMode != "" && referenceMode != profile.ReferenceMode {
+				referenceMode = "mixed"
+			}
 			ratios = unionStrings(ratios, profile.Ratios)
 			resolutions = unionStrings(resolutions, profile.Resolutions)
 			durations = unionStrings(durations, profile.Durations)
@@ -652,6 +659,7 @@ func v1LogicalModelEntry(item model.LogicalModel, routes []model.ModelRoute, cre
 	entry["max_reference_images"], entry["max_reference_videos"] = maxImages, maxVideos
 	entry["max_reference_audios"], entry["max_reference_media"] = maxAudios, maxMedia
 	entry["supports_audio_output"] = audioOutput
+	entry["reference_mode"], entry["referenceMode"] = defaultString(referenceMode, "none"), defaultString(referenceMode, "none")
 	entry["maxReferenceImages"], entry["maxReferenceVideos"] = maxImages, maxVideos
 	entry["maxReferenceAudios"], entry["maxReferenceMedia"] = maxAudios, maxMedia
 	entry["supportsAudioOutput"] = audioOutput
@@ -1939,13 +1947,13 @@ func videoRequestFingerprint(in V1VideoRequest) string {
 		return out
 	}
 	payload := struct {
-		Model, Prompt, Duration, AspectRatio, Resolution string
-		ReferenceImages                                  []string
-		ReferenceVideos                                  []string
-		ReferenceAudios                                  []string
-		GenerateAudio, ReferenceGrid                     bool
+		Model, Prompt, Duration, AspectRatio, Resolution, ReferenceMode string
+		ReferenceImages                                                 []string
+		ReferenceVideos                                                 []string
+		ReferenceAudios                                                 []string
+		GenerateAudio, ReferenceGrid                                    bool
 	}{
-		strings.TrimSpace(in.Model), in.Prompt, strings.TrimSpace(in.Duration), strings.TrimSpace(in.AspectRatio), strings.TrimSpace(in.Resolution),
+		strings.TrimSpace(in.Model), in.Prompt, strings.TrimSpace(in.Duration), strings.TrimSpace(in.AspectRatio), strings.TrimSpace(in.Resolution), in.ReferenceMode,
 		referenceImages, hashMedia(in.ReferenceVideos), hashMedia(in.ReferenceAudios), in.GenerateAudio, in.ReferenceGrid,
 	}
 	raw, _ := json.Marshal(payload)
@@ -2713,6 +2721,9 @@ func (s *V1Service) prepareImage(ctx context.Context, principal *APIPrincipal, i
 }
 
 func (s *V1Service) prepareVideo(ctx context.Context, principal *APIPrincipal, in V1VideoRequest) (*model.ModelConfig, string, string, string, error) {
+	if in.ReferenceMode != "" && in.ReferenceMode != "asset" && in.ReferenceMode != "frame" {
+		return nil, "", "", "", invalidParameter("reference_mode", "reference_mode must be asset or frame.", "asset", "frame")
+	}
 	modelID := strings.TrimSpace(in.Model)
 	prompt := strings.TrimSpace(in.Prompt)
 	duration := strings.TrimSpace(in.Duration)
@@ -2758,7 +2769,7 @@ func (s *V1Service) prepareVideo(ctx context.Context, principal *APIPrincipal, i
 		resolution = "720p"
 	}
 	if _, err := s.firstAvailableRoute(ctx, modelItem.ID, "video", model.RouteRequirements{Operation: "generation",
-		Ratio: aspectRatio, Resolution: resolution, Duration: duration, ReferenceImages: len(in.ReferenceImages),
+		Ratio: aspectRatio, Resolution: resolution, Duration: duration, ReferenceImages: len(in.ReferenceImages), ReferenceMode: in.ReferenceMode,
 		ReferenceVideos: len(in.ReferenceVideos), ReferenceAudios: len(in.ReferenceAudios), GenerateAudio: in.GenerateAudio}); err != nil {
 		return nil, "", "", "", err
 	}
@@ -2968,7 +2979,7 @@ func (s *V1Service) generateAdobeVideo(ctx context.Context, eventID string, mode
 	}
 
 	engine, upstreamModel := resolveAdobeVideoEngine(modelItem.ID)
-	referenceMode := defaultString(strings.TrimSpace(modelItem.ReferenceMode), "frame")
+	referenceMode := defaultString(in.ReferenceMode, defaultString(modelItem.ReferenceMode, "frame"))
 
 	var videoURL string
 	data, err := s.runPoolWithFailoverPolicy(ctx, eventID, "adobe", active, "video", func(token model.TokenAccount) ([]byte, error) {

@@ -460,6 +460,9 @@ func isUnsupportedVideoModel(err error, body []byte) bool {
 }
 
 func (c *Client) GenerateVideo(ctx context.Context, sessionKey, token, arpSessionToken, engine, prompt, aspectRatio string, durationSeconds int, resolution, referenceMode, upstreamModel string, inputs VideoInputs, downloadResult bool) ([]byte, map[string]any, error) {
+	if len(inputs.ImageBlobIDs) > 10 || (referenceMode != "" && referenceMode != "mixed" && referenceMode != "asset" && referenceMode != "frame") {
+		return nil, nil, ErrInvalidParams
+	}
 	submitSess, err := c.newSubmitTLSClient(sessionKey)
 	if err != nil {
 		return nil, nil, err

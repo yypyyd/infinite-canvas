@@ -756,7 +756,7 @@ function imageOutputSize(ratio: string) {
 
 function referenceCapabilityValues(model: MarketplaceModel) {
     if (!model.maxReferenceImages) return [];
-    return [`最多 ${model.maxReferenceImages} 张`, model.referenceMode === "frame" ? "帧参考" : model.referenceMode === "asset" ? "素材参考" : "普通参考"];
+    return [`最多 ${model.maxReferenceImages} 张`, model.referenceMode === "mixed" ? "素材 / 关键帧可选" : model.referenceMode === "frame" ? "帧参考" : model.referenceMode === "asset" ? "素材参考" : "普通参考"];
 }
 
 function operationLabel(operation: string) {

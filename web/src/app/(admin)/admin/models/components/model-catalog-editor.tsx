@@ -802,7 +802,7 @@ function normalizeModels(models: AdminManagedModel[]): AdminManagedModel[] {
                 maxReferenceAudios: modality === "video" ? Math.max(0, Math.floor(Number(model.maxReferenceAudios) || 0)) : 0,
                 maxReferenceMedia: modality === "video" ? Math.max(0, Math.floor(Number(model.maxReferenceMedia) || 0)) : 0,
                 supportsAudioOutput: modality === "video" && model.supportsAudioOutput === true,
-                referenceMode: supportsResolution && (model.referenceMode === "frame" || model.referenceMode === "asset") ? model.referenceMode : "none",
+                referenceMode: supportsResolution && (model.referenceMode === "frame" || model.referenceMode === "asset" || model.referenceMode === "mixed") ? model.referenceMode : "none",
                 remark: model.remark || "",
             };
         })

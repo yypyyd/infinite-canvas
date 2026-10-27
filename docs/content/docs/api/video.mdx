@@ -16,3 +16,29 @@ description: 创建任务、查询 id、完成后下载
 每 2–3 秒查一次，只有 `completed` 才能下载。任务号是 `id`。HTTP 状态码大于等于 400 就停，读 `error.message`。`seconds` 和 `size` 以模型广场里该模型的能力为准。
 
 还没拿到 `id` 时，用原 `Idempotency-Key` 调用 `GET /generation-tasks/recovery`。
+
+## Kling 4.0 图片模式
+
+`kling-4.0` 最多接受 10 张图片，使用 `reference_mode` 明确选择用途：
+
+| 参数值 | 图片用途 |
+| --- | --- |
+| `asset`（默认） | 人物、商品、场景等素材参考；可在提示词里用 `@image1`、`@image2` 引用上传顺序对应的图片 |
+| `frame` | 按上传顺序作为关键帧；第一张是首帧，最后一张是尾帧，中间为连续关键帧；只有一张时是首帧 |
+
+一次请求选择一种模式，不会把第二张素材图自动当作尾帧。两种模式均完整发送图片，超过 10 张拒绝请求。当前渠道继续开放 720p、4–8 秒、16:9 / 1:1 / 9:16；参考视频与音频没有在此次变更中开放。`GET /models` 的 `max_reference_images` 为 `10`，`reference_mode: mixed` 表示两种模式可选，创建任务时只传 `asset` 或 `frame`。
+
+```bash
+curl "https://huantu.xyz/api/v1/videos" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Idempotency-Key: kling-multi-reference-001" \
+  -F "model=kling-4.0" \
+  -F "prompt=参考 @image1 中的商品和 @image2 中的场景，缓慢推进镜头" \
+  -F "seconds=4" \
+  -F "size=1280x720" \
+  -F "reference_mode=asset" \
+  -F "input_reference=@product.png" \
+  -F "input_reference=@scene.png"
+```
+
+JSON 请求使用 `input_reference` 数组，每项为图片 base64 或 data URI，并在同一对象中传 `reference_mode`。将模式改为 `frame` 即按数组顺序提交关键帧；修改模式属于不同请求，使用新的 `Idempotency-Key`。

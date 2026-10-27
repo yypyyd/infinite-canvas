@@ -2,7 +2,7 @@
 
 import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, LoaderCircle, Music2, Plus, SlidersHorizontal, Sparkles, Trash2, Upload, VideoIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { App, Button, Checkbox, Drawer, Input, Modal, Tag, Typography } from "antd";
+import { App, Button, Checkbox, Drawer, Input, Modal, Segmented, Tag, Typography } from "antd";
 import { nanoid } from "nanoid";
 
 import { AssetPickerModal, type InsertAssetPayload } from "@/app/(user)/canvas/components/asset-picker-modal";
@@ -15,7 +15,7 @@ import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { resolveVideoPricingSettings, videoOutputSize } from "@/lib/video-format";
 import { useOpenMedia } from "@/hooks/use-open-media";
-import { videoReferenceCapabilities, videoReferenceLabel, VIDEO_REFERENCE_LIMITS } from "@/lib/video-reference";
+import { videoImageReferenceMode, videoKeyframeLabel, videoReferenceCapabilities, videoReferenceLabel, VIDEO_REFERENCE_LIMITS } from "@/lib/video-reference";
 import { resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
 import { deleteStoredGenerationRecord, GENERATION_HISTORY_CHANGED_EVENT, readWorkbenchGenerationRecords, saveGenerationRecord, type GenerationRecordStatus } from "@/services/generation-history";
 import { resolveImageUrl, resolveImageVariantUrl, uploadImage } from "@/services/image-storage";
@@ -118,6 +118,7 @@ export default function VideoPage() {
     const videoSettings = resolveVideoPricingSettings(effectiveConfig, modelDefinition, model, pricingRules);
     const referenceCapabilities = videoReferenceCapabilities(model, managedModels);
     const imageReferenceLimit = referenceCapabilities.maxImages;
+    const referenceMode = videoImageReferenceMode(effectiveConfig.videoReferenceMode, referenceCapabilities.referenceMode);
     const referenceAccept = [referenceCapabilities.image ? "image/*" : "", referenceCapabilities.video ? "video/mp4,video/quicktime" : "", referenceCapabilities.audio ? "audio/mpeg,audio/wav,audio/x-wav,.mp3,.wav" : ""].filter(Boolean).join(",");
     const canGenerate = Boolean(prompt.trim());
     const creditQuote = requestCreditQuote({
@@ -464,7 +465,18 @@ export default function VideoPage() {
                             {referenceCapabilities.image ? (
                                 <div className="min-w-0">
                                     <div className="mb-2 flex items-center justify-between gap-3">
-                                        <span className="text-base font-semibold">参考图</span>
+                                        {referenceCapabilities.referenceMode === "mixed" ? (
+                                            <Segmented
+                                                value={referenceMode}
+                                                options={[
+                                                    { value: "asset", label: "素材参考" },
+                                                    { value: "frame", label: "关键帧" },
+                                                ]}
+                                                onChange={(value) => updateConfig("videoReferenceMode", value)}
+                                            />
+                                        ) : (
+                                            <span className="text-base font-semibold">参考图</span>
+                                        )}
                                         <div className="flex gap-2">
                                             <Button size="small" disabled={references.length >= imageReferenceLimit} icon={<ClipboardPaste className="size-3.5" />} onClick={() => void addReferencesFromClipboard()}>
                                                 剪切板
@@ -478,7 +490,9 @@ export default function VideoPage() {
                                         {references.map((item, index) => (
                                             <div key={item.id} className="group relative size-20 shrink-0 overflow-hidden rounded-md border border-neutral-200 dark:border-neutral-800">
                                                 <img src={resolveImageVariantUrl(item.storageKey, item.dataUrl, "thumb")} alt={item.name} loading="lazy" decoding="async" className="size-full object-cover" />
-                                                <span className="absolute left-1 top-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">{videoReferenceLabel("image", index)}</span>
+                                                <span className="absolute left-1 top-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                                                    {referenceMode === "frame" ? videoKeyframeLabel(index, references.length) : videoReferenceLabel("image", index)}
+                                                </span>
                                                 <ReferenceOrderButtons index={index} total={references.length} onMove={(offset) => setReferences((value) => moveListItem(value, index, offset))} />
                                                 <button
                                                     type="button"
@@ -492,6 +506,9 @@ export default function VideoPage() {
                                         ))}
                                         {!references.length ? <div className="flex min-w-full items-center justify-center text-sm text-neutral-500">暂无参考图，最多 {imageReferenceLimit} 张</div> : null}
                                     </div>
+                                    {referenceCapabilities.referenceMode === "mixed" ? (
+                                        <p className="mt-2 text-xs text-muted-foreground">{referenceMode === "frame" ? "按上传顺序作为首帧、中间帧和尾帧；使用图片上的箭头调整顺序。" : "参考人物、商品或场景，可用 @image1、@image2 指定对应图片。"}</p>
+                                    ) : null}
                                 </div>
                             ) : null}
 

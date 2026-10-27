@@ -67,11 +67,10 @@ func builtinPoolChannel(aliases []model.PoolModelAlias) (model.ModelChannel, boo
 	}
 	for _, item := range items {
 		maxImages := item.MaxReferenceImages
-		// referenceMode only applies to video: pool video models take
-		// reference images as frames (image-to-video).
+		// Preserve the video route's material/keyframe capability.
 		referenceMode := "none"
 		if item.Modality == "video" && maxImages > 0 {
-			referenceMode = "frame"
+			referenceMode = item.ReferenceMode
 		}
 		channel.Models = append(channel.Models, model.ChannelModel{
 			Model:               item.ID,

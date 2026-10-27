@@ -126,6 +126,7 @@ export function buildCommercePackageBlueprint(input: CommercePackageRequest, ori
                     seconds: config.videoSeconds,
                     vquality: config.vquality,
                     generateAudio: config.videoGenerateAudio,
+                    videoReferenceMode: config.videoReferenceMode,
                     watermark: config.videoWatermark,
                     status: "idle",
                 },

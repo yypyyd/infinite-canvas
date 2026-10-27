@@ -21,6 +21,7 @@ const aspectRatioOptions = ["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "
 const referenceModeOptions = [
     { label: "帧参考（frame）", value: "frame" },
     { label: "素材参考（asset）", value: "asset" },
+    { label: "素材 / 关键帧可选（mixed）", value: "mixed" },
     { label: "不支持（none）", value: "none" },
 ];
 
@@ -235,7 +236,7 @@ function ModelCapabilityFields({ fieldName, channelModel, managedModel, managedM
                             </Form.Item>
                         </Col>
                         <Col xs={24} md={12}>
-                            <Form.Item name={[fieldName, "referenceMode"]} label="参考模式" extra="frame 表示帧参考，asset 表示素材参考；不支持参考图时选择 none。">
+                            <Form.Item name={[fieldName, "referenceMode"]} label="参考模式" extra="mixed 表示可在素材参考和关键帧之间选择，需渠道支持 reference_mode 参数；不支持参考图时选择 none。">
                                 <Select options={referenceModeOptions} />
                             </Form.Item>
                         </Col>

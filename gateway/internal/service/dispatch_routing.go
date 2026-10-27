@@ -427,7 +427,7 @@ func (s *V1Service) dispatchImageRoutes(ctx context.Context, eventID string, log
 
 func (s *V1Service) dispatchVideoRoutes(ctx context.Context, eventID string, logical *model.ModelConfig, in V1VideoRequest, ratio, resolution, duration string, download bool) ([]byte, string, error) {
 	requirements := model.RouteRequirements{Operation: "generation", Ratio: ratio, Resolution: resolution, Duration: duration,
-		ReferenceImages: len(in.ReferenceImages), ReferenceVideos: len(in.ReferenceVideos), ReferenceAudios: len(in.ReferenceAudios), GenerateAudio: in.GenerateAudio}
+		ReferenceImages: len(in.ReferenceImages), ReferenceMode: in.ReferenceMode, ReferenceVideos: len(in.ReferenceVideos), ReferenceAudios: len(in.ReferenceAudios), GenerateAudio: in.GenerateAudio}
 	routes, err := s.matchingRoutes(ctx, logical.ID, requirements)
 	if err != nil {
 		return nil, "", err

@@ -304,7 +304,7 @@ func poolModelToChannelModel(item gateway.PoolModel) model.ChannelModel {
 	maxImages := item.MaxReferenceImages
 	referenceMode := "none"
 	if item.Modality == "video" && maxImages > 0 {
-		referenceMode = "frame"
+		referenceMode = item.ReferenceMode
 	}
 	return model.ChannelModel{
 		Model: item.ID, UpstreamModel: item.ID, Modality: item.Modality,

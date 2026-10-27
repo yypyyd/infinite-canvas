@@ -21,6 +21,7 @@ type PoolModel struct {
 	ResolutionTiers     []string
 	Durations           []int
 	MaxReferenceImages  int
+	ReferenceMode       string
 	MaxReferenceVideos  int
 	MaxReferenceAudios  int
 	MaxReferenceMedia   int
@@ -73,6 +74,7 @@ func (m *Module) Models(ctx context.Context) ([]PoolModel, error) {
 			ResolutionTiers:     stringsValue(entry["supported_resolutions"]),
 			Durations:           durationsValue(entry["supported_durations"]),
 			MaxReferenceImages:  intValue(entry["max_reference_images"]),
+			ReferenceMode:       stringValue(entry["reference_mode"]),
 			MaxReferenceVideos:  intValue(entry["max_reference_videos"]),
 			MaxReferenceAudios:  intValue(entry["max_reference_audios"]),
 			MaxReferenceMedia:   intValue(entry["max_reference_media"]),

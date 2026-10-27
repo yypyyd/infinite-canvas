@@ -5,6 +5,13 @@ description: 当前版本已实现但仍需人工或自动化验证的变更项
 
 # 待测试
 
+## Kling 4.0 多图与关键帧
+
+- 根据 Adobe 当前 `/v2/models/discovery?resolveSchema=true&includeFirstParty=true` 的 `kling-v4-omni-ref` schema，图片 `general` 与 `frame` 均支持最多 10 张；原 1 张限制来自本项目目录与只取 `ImageBlobIDs[0]` 的实现。通用帮助页的 Kling 3.0 元素说明不能作为 4.0 上限依据。
+- 内置 Kling 路由与公开模型目录同步为最多 10 张、`reference_mode: mixed`，表示素材参考与关键帧可选。创建请求支持 JSON / multipart `reference_mode=asset|frame`，默认素材参考；全量传递图片，关键帧顺序从 1 连续递增，模式参与幂等指纹和路由校验。保留 720p、4–8 秒及现有计费。
+- 视频生成页新增模式切换与说明，关键帧显示首帧、中间帧、尾帧并可调整顺序。画布视频设置支持相同模式，节点、重试与服务端用户偏好保存选择；画布组装提示词按引用顺序提交。模型广场和对接文档同步展示能力，助手单次视频图片数量上限调整为 10，仍按所选模型校验。
+- 公开前端协议静态证据：REA `ev_00f31dd5a2e1dc008d3d0cd9f945f91c01950c1abafdf2269f8b84af83fdfac0`，分析存在动态语义覆盖限制；实现依据为在线 discovery schema，不把静态分析当成出片成功。待验收两种模式的多图出片、10 张边界与 11 张拒绝、模型别名、JSON/multipart/服务端素材路径、画布刷新与顺序及失败退款。
+
 ## 星衡中转站导航入口
 
 - 桌面顶部导航和移动端导航抽屉增加外链，名称按要求设为「星衡中转站」，新标签页打开 `https://newapi.xinghengcode.shop`，复用现有导航样式和外链逻辑。

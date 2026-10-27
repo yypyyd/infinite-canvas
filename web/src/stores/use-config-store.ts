@@ -19,6 +19,7 @@ export type AiConfig = {
     videoSeconds: string;
     vquality: string;
     videoGenerateAudio: string;
+    videoReferenceMode: string;
     videoWatermark: string;
     systemPrompt: string;
     models: string[];
@@ -45,6 +46,7 @@ const AI_PREFERENCE_KEYS = [
     "videoSeconds",
     "vquality",
     "videoGenerateAudio",
+    "videoReferenceMode",
     "videoWatermark",
     "quality",
     "size",
@@ -69,6 +71,7 @@ export const defaultConfig: AiConfig = {
     videoSeconds: "6",
     vquality: "720",
     videoGenerateAudio: "true",
+    videoReferenceMode: "asset",
     videoWatermark: "false",
     systemPrompt: "",
     models: [],

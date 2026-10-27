@@ -2135,4 +2135,12 @@ SET status='active',dead=FALSE,image_limited=FALSE,video_limited=FALSE,quota_rec
     updated_at=NOW()
 WHERE pool='adobe' AND meta->>'adobe_trial_exhausted'='true';
 `,
+	"000046_kling40_reference_modes.sql": `-- Kling 4 supports up to ten material references or ordered keyframes.
+UPDATE model_routes
+SET capabilities = (
+    SELECT jsonb_agg(profile || '{"max_reference_images":10,"max_reference_media":10,"reference_mode":"mixed"}'::jsonb ORDER BY ordinal)
+    FROM jsonb_array_elements(capabilities) WITH ORDINALITY AS items(profile, ordinal)
+), updated_at = NOW()
+WHERE id = 'video.kling-4.0.adobe';
+`,
 }

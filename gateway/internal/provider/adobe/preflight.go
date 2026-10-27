@@ -100,6 +100,9 @@ func (c *Client) fetchGenerationPreflight(ctx context.Context, sess *tlsSession,
 	if resp.StatusCode == http.StatusUnauthorized {
 		return nil, ErrAuth
 	}
+	if resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusUnprocessableEntity {
+		return nil, fmt.Errorf("%w: Adobe %s quota preflight HTTP %d", ErrInvalidParams, kind, resp.StatusCode)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("%w: Adobe %s quota preflight HTTP %d", ErrTemporaryUpstream, kind, resp.StatusCode)
 	}

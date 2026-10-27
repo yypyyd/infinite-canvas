@@ -2,12 +2,16 @@ package adobe
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"time"
+
+	nanoid "github.com/matoous/go-nanoid/v2"
 )
 
 var imageSeedCounter atomic.Uint64
+var videoImageMention = regexp.MustCompile(`@image[1-9][0-9]*\b`)
 
 func init() {
 	imageSeedCounter.Store(uint64(time.Now().UnixNano()))
@@ -298,6 +302,7 @@ func BuildVideoPayload(engine, prompt, aspectRatio string, durationSeconds int, 
 			"referenceBlobs":     []any{},
 		}
 		refs := make([]any, 0, len(in.ImageBlobIDs)+len(in.KeyframeBlobIDs)+len(in.VideoBlobIDs))
+		mentions := make(map[string]string, len(in.ImageBlobIDs))
 		for _, id := range in.VideoBlobIDs {
 			refs = append(refs, map[string]any{"id": id, "usage": "source"})
 		}
@@ -306,7 +311,9 @@ func BuildVideoPayload(engine, prompt, aspectRatio string, durationSeconds int, 
 			if referenceMode == "frame" {
 				ref["usage"], ref["order"] = "frame", index+1
 			} else {
-				ref["mention"] = map[string]any{"id": fmt.Sprintf("image%d", index+1)}
+				label, mentionID := fmt.Sprintf("image%d", index+1), nanoid.Must()
+				ref["mention"] = map[string]any{"id": mentionID, "label": label}
+				mentions["@"+label] = "@" + mentionID
 			}
 			refs = append(refs, ref)
 		}
@@ -314,6 +321,12 @@ func BuildVideoPayload(engine, prompt, aspectRatio string, durationSeconds int, 
 			refs = append(refs, map[string]any{"id": id, "usage": "frame", "order": index + 1})
 		}
 		payload["referenceBlobs"] = refs
+		payload["prompt"] = videoImageMention.ReplaceAllStringFunc(prompt, func(mention string) string {
+			if replacement, ok := mentions[mention]; ok {
+				return replacement
+			}
+			return mention
+		})
 		return payload
 	default:
 		// Unknown engines fall through to Kling 4.0 t2v so a misconfigured route

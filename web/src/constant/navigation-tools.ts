@@ -38,7 +38,7 @@ export const navigationTools = [
     },
     {
         slug: "newapi",
-        label: "New API",
+        label: "星衡中转站",
         icon: ExternalLink,
         href: "https://newapi.xinghengcode.shop",
     },

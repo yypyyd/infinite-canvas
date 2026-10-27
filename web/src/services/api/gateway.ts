@@ -40,7 +40,7 @@ export type GatewayModel = { id: string; kind: "text" | "image" | "video" | stri
 
 export type GatewayAccountRoute = { id: string; route_id: string; model_id: string; enabled: boolean; provider?: string; upstream_model?: string };
 
-export type GatewayQuotaBucket = { name: string; remaining: number; total: number; reserved: number; reset_at?: string; unit?: string; refreshed_at?: string; next_refresh_at?: string };
+export type GatewayQuotaBucket = { name: string; remaining: number | null; total: number | null; reserved: number; reset_at?: string; unit?: string; refreshed_at?: string; next_refresh_at?: string };
 
 export type GatewayAccount = {
     id: string;

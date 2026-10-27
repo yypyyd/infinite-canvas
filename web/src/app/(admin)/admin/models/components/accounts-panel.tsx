@@ -1,7 +1,7 @@
 "use client";
 
 import { DeleteOutlined, ExperimentOutlined, ImportOutlined, ReloadOutlined, SyncOutlined } from "@ant-design/icons";
-import { Alert, Button, Card, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tag, Tooltip, Typography, Upload } from "antd";
+import { Alert, Button, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tag, Tooltip, Typography, Upload } from "antd";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
@@ -13,9 +13,15 @@ import { AccountTestModal } from "../../account-pool/accounts/account-test-modal
 
 type ImportItem = { provider: string; credential: unknown };
 
-const healthColors: Record<string, string> = { active: "green", quota: "orange", pending: "blue", disabled: "default", dead: "red", busy: "gold" };
-const healthLabels: Record<string, string> = { active: "可用", quota: "额度耗尽", pending: "待验证", disabled: "已停用", dead: "凭据失效", busy: "忙碌" };
+const healthColors: Record<string, string> = { healthy: "green", degraded: "orange", unhealthy: "red", active: "green", quota: "orange", pending: "blue", disabled: "default", dead: "red", busy: "gold" };
+const healthLabels: Record<string, string> = { healthy: "健康", degraded: "受限", unhealthy: "异常", active: "可用", quota: "额度耗尽", pending: "待验证", disabled: "已停用", dead: "凭据失效", busy: "忙碌" };
 const quotaStateLabels: Record<string, string> = { available: "有额度", empty: "额度耗尽", unknown: "未探测" };
+const quotaBucketLabels: Record<string, string> = { "chatgpt.image": "图片", "chatgpt.text": "对话", "byteplus.computing_points": "通用", "grok.media": "媒体", "grok.text": "对话" };
+const quotaUnitLabels: Record<string, string> = { generations: "次", credits: "积分", points: "积分" };
+
+function formatQuota(remaining: number | null, total: number | null, unit = "") {
+    return remaining == null ? "待查询" : `${remaining}${total == null ? "" : `/${total}`}${unit ? ` ${quotaUnitLabels[unit] || unit}` : ""}`;
+}
 
 const statusFilterOptions = [
     { value: "", label: "全部状态" },
@@ -27,20 +33,12 @@ const statusFilterOptions = [
     { value: "busy", label: "忙碌" },
 ];
 
-export type AccountsPanelProps = {
-    /** Lock the provider filter (builtin channel Accounts tab). */
-    fixedProvider?: string;
-    /** Compact layout inside a channel drawer. */
-    embedded?: boolean;
-};
-
 /** Account CRUD against the gateway API — not mixed into settings JSON saves. */
-export function AccountsPanel({ fixedProvider = "", embedded = false }: AccountsPanelProps) {
+export function AccountsPanel({ provider, onProviderChange }: { provider: string; onProviderChange: (provider: string) => void }) {
     const token = useGatewayToken();
     const run = useGatewayAction();
     const [page, setPage] = useState(1);
-    const [limit, setLimit] = useState(embedded ? 10 : 20);
-    const [provider, setProvider] = useState(fixedProvider);
+    const [limit, setLimit] = useState(20);
     const [status, setStatus] = useState("");
     const [keyword, setKeyword] = useState("");
     const [importOpen, setImportOpen] = useState(false);
@@ -54,12 +52,6 @@ export function AccountsPanel({ fixedProvider = "", embedded = false }: Accounts
     const [batching, setBatching] = useState(false);
     const [busyIds, setBusyIds] = useState<Record<string, boolean>>({});
     const queryClient = useQueryClient();
-
-    useEffect(() => {
-        setProvider(fixedProvider);
-        setPage(1);
-        setSelectedIds([]);
-    }, [fixedProvider]);
 
     useEffect(() => {
         setSelectedIds([]);
@@ -161,25 +153,22 @@ export function AccountsPanel({ fixedProvider = "", embedded = false }: Accounts
         }
     };
 
-    const body = (
+    return (
         <>
             <Space style={{ width: "100%", justifyContent: "space-between", marginBottom: 16 }} wrap>
                 <Space wrap>
-                    {fixedProvider ? (
-                        <Tag color="purple">{providerLabels[fixedProvider] || fixedProvider}</Tag>
-                    ) : (
-                        <Select
-                            value={provider}
-                            onChange={(value) => (setProvider(value), setPage(1))}
-                            style={{ width: 160 }}
-                            options={[
-                                { value: "", label: "全部平台" },
-                                ...ACCOUNT_PROVIDERS.map((value: string) => ({ value, label: `${providerLabels[value] || value}${accounts.data?.provider_counts?.[value] != null ? ` (${accounts.data.provider_counts[value]})` : ""}` })),
-                            ]}
-                        />
-                    )}
+                    <Select
+                        aria-label="筛选平台"
+                        value={provider}
+                        onChange={(value) => (onProviderChange(value), setPage(1))}
+                        style={{ width: 180 }}
+                        options={[
+                            { value: "", label: "全部平台" },
+                            ...ACCOUNT_PROVIDERS.map((value: string) => ({ value, label: `${providerLabels[value] || value}${accounts.data?.provider_counts?.[value] != null ? ` (${accounts.data.provider_counts[value]})` : ""}` })),
+                        ]}
+                    />
                     <Select value={status} onChange={(value) => (setStatus(value), setPage(1))} style={{ width: 140 }} options={statusFilterOptions} />
-                    <Input.Search allowClear placeholder="搜索账号 / 邮箱 / ID" onSearch={(value) => (setKeyword(value), setPage(1))} style={{ width: embedded ? 200 : 260 }} />
+                    <Input.Search allowClear placeholder="搜索账号 / 邮箱 / ID" onSearch={(value) => (setKeyword(value), setPage(1))} style={{ width: 260 }} />
                 </Space>
                 <Space wrap>
                     <Button icon={<ReloadOutlined />} onClick={() => void accounts.refetch()} loading={accounts.isFetching}>
@@ -234,8 +223,9 @@ export function AccountsPanel({ fixedProvider = "", embedded = false }: Accounts
                 rowKey="id"
                 loading={accounts.isLoading}
                 dataSource={accounts.data?.data || []}
-                scroll={{ x: embedded ? 1360 : 1600 }}
-                size={embedded ? "small" : "middle"}
+                scroll={{ x: 1680 }}
+                size="small"
+                column={{ className: "whitespace-nowrap" }}
                 rowSelection={{
                     selectedRowKeys: selectedIds,
                     onChange: (keys) => setSelectedIds(keys.map(String)),
@@ -245,57 +235,61 @@ export function AccountsPanel({ fixedProvider = "", embedded = false }: Accounts
                     current: page,
                     pageSize: limit,
                     total: accounts.data?.total || 0,
-                    showSizeChanger: !embedded,
+                    showSizeChanger: true,
                     pageSizeOptions: [10, 20, 50, 100, 200],
                     onChange: (next, size) => (size !== limit ? (setLimit(size), setPage(1)) : setPage(next)),
                 }}
-                expandable={{
-                    rowExpandable: (item) => Boolean(item.quota_buckets?.length || item.readiness_detail),
-                    expandedRowRender: (item) => (
-                        <Space direction="vertical" style={{ width: "100%" }} size={8}>
-                            {item.quota_buckets?.length ? (
-                                <Table
-                                    size="small"
-                                    rowKey="name"
-                                    pagination={false}
-                                    dataSource={item.quota_buckets}
-                                    columns={[
-                                        { title: "额度桶", dataIndex: "name" },
-                                        { title: "剩余 / 总量", render: (_, bucket) => `${bucket.remaining} / ${bucket.total}${bucket.unit ? ` ${bucket.unit}` : ""}` },
-                                        { title: "预占", dataIndex: "reserved", width: 80 },
-                                        { title: "重置时间", render: (_, bucket) => formatTime(bucket.reset_at) },
-                                        { title: "刷新时间", render: (_, bucket) => formatTime(bucket.refreshed_at) },
-                                    ]}
-                                />
-                            ) : null}
-                            {item.readiness_detail ? <Typography.Text type="secondary">{item.readiness_detail}</Typography.Text> : null}
-                        </Space>
-                    ),
-                }}
                 columns={[
-                    ...(fixedProvider ? [] : [{ title: "平台", dataIndex: "provider" as const, width: 128, fixed: "left" as const, render: (value: string) => providerLabels[value] || value }]),
+                    { title: "平台", dataIndex: "provider", width: 128, fixed: "left", render: (value: string) => providerLabels[value] || value },
                     { title: "账号", width: 240, render: (_: unknown, item: GatewayAccount) => <Typography.Text ellipsis={{ tooltip: item.id }}>{item.label || item.email || item.id}</Typography.Text> },
-                    { title: "健康", dataIndex: "health", width: 108, render: (value: string) => <Tag color={healthColors[value] || "default"}>{healthLabels[value] || value}</Tag> },
                     {
-                        title: "额度",
+                        title: "健康",
+                        dataIndex: "health",
+                        width: 108,
+                        render: (value: string, item: GatewayAccount) => (
+                            <Tooltip title={item.readiness_detail}>
+                                <Tag color={healthColors[value] || "default"}>{healthLabels[value] || value}</Tag>
+                            </Tooltip>
+                        ),
+                    },
+                    {
+                        title: "剩余额度",
                         dataIndex: "quota_state",
-                        width: 160,
-                        render: (value: string, item: GatewayAccount) =>
-                            item.provider === "adobe" ? (
-                                <div className="flex flex-col text-xs leading-5">
-                                    {(["image", "video"] as const).map((kind) => {
-                                        const quota = item.adobe_model_quotas?.[kind];
-                                        const limited = kind === "image" ? item.image_limited : item.video_limited;
-                                        return (
-                                            <span key={kind} title={quota?.checked_at ? `额度查询时间：${formatTime(quota.checked_at)}` : undefined}>
-                                                {kind === "image" ? "图片" : "视频"}：{limited ? "已用完" : quota ? `剩余 ${quota.remaining}/${quota.total}` : "待查询"}
-                                            </span>
-                                        );
-                                    })}
-                                </div>
-                            ) : (
-                                quotaStateLabels[value] || value || "—"
-                            ),
+                        width: 280,
+                        ellipsis: { showTitle: false },
+                        render: (value: string, item: GatewayAccount) => {
+                            const quotas =
+                                item.provider === "adobe"
+                                    ? (["image", "video"] as const).map((kind) => {
+                                          const quota = item.adobe_model_quotas?.[kind];
+                                          const limited = kind === "image" ? item.image_limited : item.video_limited;
+                                          return {
+                                              label: `${kind === "image" ? "图片" : "视频"} ${limited ? "已用完" : quota ? formatQuota(quota.remaining, quota.total, "generations") : "待查询"}`,
+                                              detail: `查询时间：${formatTime(quota?.checked_at)}`,
+                                          };
+                                      })
+                                    : (item.quota_buckets || []).map((bucket) => ({
+                                          label: `${quotaBucketLabels[bucket.name] || bucket.name} ${formatQuota(bucket.remaining, bucket.total, bucket.unit)}`,
+                                          detail: `预占 ${bucket.reserved} · 重置：${formatTime(bucket.reset_at)} · 刷新：${formatTime(bucket.refreshed_at)}`,
+                                      }));
+                            return (
+                                <Tooltip
+                                    title={
+                                        quotas.length
+                                            ? quotas.map((quota, index) => (
+                                                  <div key={index}>
+                                                      {quota.label}
+                                                      <br />
+                                                      {quota.detail}
+                                                  </div>
+                                              ))
+                                            : undefined
+                                    }
+                                >
+                                    <span className="block truncate tabular-nums">{quotas.map((quota) => quota.label).join(" · ") || quotaStateLabels[value] || "—"}</span>
+                                </Tooltip>
+                            );
+                        },
                     },
                     {
                         title: "权重",
@@ -433,12 +427,5 @@ export function AccountsPanel({ fixedProvider = "", embedded = false }: Accounts
             </Modal>
             {testing ? <AccountTestModal account={testing} models={models.data?.data || []} onClose={() => setTesting(null)} /> : null}
         </>
-    );
-
-    if (embedded) return <div>{body}</div>;
-    return (
-        <main>
-            <Card variant="borderless">{body}</Card>
-        </main>
     );
 }

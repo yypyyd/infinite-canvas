@@ -7,7 +7,6 @@ import { ACCOUNT_PROVIDERS } from "@/lib/gateway/models";
 import { patchAdminModelSource, type AdminBuiltinProviderSource, type AdminModelOverview, type AdminPoolModelAlias } from "@/services/api/admin";
 import { gatewayApi, type GatewayModel, type GatewayRoute } from "@/services/api/gateway";
 import { providerLabels, useGatewayAction, useGatewayQuery } from "../../account-pool/use-gateway";
-import { AccountsPanel } from "./accounts-panel";
 
 export type PoolChannelRow = {
     provider: string;
@@ -76,7 +75,6 @@ type DrawerProps = {
     /** Legacy global aliases — shown read-only for migration; not editable here. */
     legacyAliases: AdminPoolModelAlias[];
     isSaving: boolean;
-    initialTab?: string;
     onClose: () => void;
     /** Persist modelMappings onto this provider only (writes BuiltinProviders). */
     onSaveProviderMappings: (provider: string, mappings: AdminPoolModelAlias[]) => Promise<boolean>;
@@ -100,12 +98,12 @@ type PoolForm = {
 const defaultPriorities: Record<string, number> = { chatgpt: 200, grok: 200, byteplus: 190, adobe: 180 };
 
 /** Edit form for one built-in provider channel (ChatGPT / Grok / BytePlus / Adobe Firefly). */
-export function PoolChannelDrawer({ token, row, pool: _pool, builtinProvider, legacyAliases, isSaving, initialTab = "base", onClose, onSaveProviderMappings, onMigrateLegacyAliases, onChanged }: DrawerProps) {
+export function PoolChannelDrawer({ token, row, pool: _pool, builtinProvider, legacyAliases, isSaving, onClose, onSaveProviderMappings, onMigrateLegacyAliases, onChanged }: DrawerProps) {
     const { message } = App.useApp();
     const run = useGatewayAction();
     const [form] = Form.useForm<PoolForm>();
     const [saving, setSaving] = useState(false);
-    const [tab, setTab] = useState(initialTab === "test" ? "accounts" : initialTab);
+    const [tab, setTab] = useState("base");
     const settings = useGatewayQuery(["settings"], gatewayApi.settings);
     // Parent may hold a stale row snapshot; prefer the live gateway query so model
     // enable toggles (and priority/weight) reflect PATCH + reload immediately.
@@ -113,8 +111,8 @@ export function PoolChannelDrawer({ token, row, pool: _pool, builtinProvider, le
     const liveRow = (row && liveChannels.rows.find((item) => item.provider === row.provider)) || row;
 
     useEffect(() => {
-        setTab(initialTab === "test" ? "accounts" : initialTab || "base");
-    }, [row?.provider, initialTab]);
+        setTab("base");
+    }, [row?.provider]);
 
     const providerMappings = builtinProvider?.modelMappings || [];
     const hasLegacy = legacyAliases.length > 0;
@@ -221,11 +219,9 @@ export function PoolChannelDrawer({ token, row, pool: _pool, builtinProvider, le
             extra={
                 <Flex gap={8}>
                     <Button onClick={onClose}>取消</Button>
-                    {tab === "accounts" ? null : (
-                        <Button type="primary" loading={saving} disabled={isSaving} onClick={() => void saveBaseAndMappings()}>
-                            保存
-                        </Button>
-                    )}
+                    <Button type="primary" loading={saving} disabled={isSaving} onClick={() => void saveBaseAndMappings()}>
+                        保存
+                    </Button>
                 </Flex>
             }
         >
@@ -238,7 +234,6 @@ export function PoolChannelDrawer({ token, row, pool: _pool, builtinProvider, le
                         items={[
                             { key: "base", label: "基础配置" },
                             { key: "mappings", label: "模型映射" },
-                            { key: "accounts", label: "账号" },
                         ]}
                     />
                     <Form form={form} layout="vertical" requiredMark={false} disabled={saving || isSaving}>
@@ -248,7 +243,7 @@ export function PoolChannelDrawer({ token, row, pool: _pool, builtinProvider, le
                                 showIcon
                                 className="!mb-4"
                                 message={`${row.label} 为号池平台（内置 chatgpt/adobe/byteplus/grok），与外部渠道统一参与调度。`}
-                                description="站点优先级与外部渠道比较（ChatGPT/Grok 默认 200，BytePlus 190，Adobe 180，外部渠道默认 0）；池内优先级/权重仅影响同平台账号调度。代理提取 API 可按平台覆盖。账号请在「账号」页签管理，不随本表单提交。"
+                                description="站点优先级与外部渠道比较（ChatGPT/Grok 默认 200，BytePlus 190，Adobe 180，外部渠道默认 0）；池内优先级/权重仅影响同平台账号调度。代理提取 API 可按平台覆盖。账号、导入与能力测试统一在「号池平台 → 账号」中管理。"
                             />
                             <Typography.Title level={5}>本平台（站点）</Typography.Title>
                             <Row gutter={16}>
@@ -424,9 +419,6 @@ export function PoolChannelDrawer({ token, row, pool: _pool, builtinProvider, le
                             />
                         </div>
                     </Form>
-                    <div hidden={tab !== "accounts"}>
-                        <AccountsPanel fixedProvider={row.provider} embedded />
-                    </div>
                 </>
             ) : null}
         </Drawer>

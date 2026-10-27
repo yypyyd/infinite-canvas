@@ -29,6 +29,7 @@ import { ModelListTable, PricingTable, specKey, type PricingSpec } from "./compo
 import { ChannelHealthBadge, ModelTags, PoolChannelDrawer, PoolModelTags, usePoolChannels, type PoolChannelRow } from "./components/pool-channels";
 import { ChannelModelCapabilitiesEditor } from "./components/channel-model-capabilities-editor";
 import { ProtocolTemplatesEditor } from "./components/protocol-templates-editor";
+import { AccountsPanel } from "./components/accounts-panel";
 import PoolLogsPanel from "../account-pool/logs/logs-panel";
 import PoolSettingsPanel from "../account-pool/settings/settings-panel";
 
@@ -43,6 +44,7 @@ export default function AdminModelsPage() {
     const savingRef = useRef(false);
     const [activeTab, setActiveTab] = useState("pool");
     const [poolTab, setPoolTab] = useState("platforms");
+    const [accountProvider, setAccountProvider] = useState("");
     const [requestedModel, setRequestedModel] = useState<string | null>(null);
     const [viewChannelIndex, setViewChannelIndex] = useState<number | null>(null);
     const [channelEditorTab, setChannelEditorTab] = useState("connection");
@@ -58,49 +60,41 @@ export default function AdminModelsPage() {
             setActiveTab("external");
             setProtocolDrawerOpen(true);
         }
-        if (nextPoolTab && ["platforms", "logs", "settings"].includes(nextPoolTab)) setPoolTab(nextPoolTab);
+        if (nextPoolTab && ["platforms", "accounts", "logs", "settings"].includes(nextPoolTab)) setPoolTab(nextPoolTab);
+        setAccountProvider((params.get("provider") || "").trim());
     }, []);
     const changeTab = (tab: string) => {
         setActiveTab(tab);
         const url = new URL(window.location.href);
         url.searchParams.set("tab", tab);
         url.searchParams.delete("source");
-        if (tab !== "pool") url.searchParams.delete("poolTab");
+        if (tab === "pool") {
+            url.searchParams.set("poolTab", poolTab);
+            if (poolTab === "accounts" && accountProvider) url.searchParams.set("provider", accountProvider);
+            else url.searchParams.delete("provider");
+        } else {
+            url.searchParams.delete("poolTab");
+            url.searchParams.delete("provider");
+        }
         window.history.replaceState(null, "", url);
     };
-    const changePoolTab = (tab: string) => {
+    const changePoolTab = (tab: string, provider = accountProvider) => {
         setPoolTab(tab);
+        setAccountProvider(provider);
         const url = new URL(window.location.href);
         url.searchParams.set("tab", "pool");
         url.searchParams.set("poolTab", tab);
+        if (tab === "accounts" && provider) url.searchParams.set("provider", provider);
+        else url.searchParams.delete("provider");
         window.history.replaceState(null, "", url);
     };
     const [overview, setOverview] = useState<AdminModelOverview | null>(null);
     const [overviewLoading, setOverviewLoading] = useState(false);
     const [poolRow, setPoolRow] = useState<PoolChannelRow | null>(null);
-    const [poolDrawerTab, setPoolDrawerTab] = useState("base");
     const [protocolDrawerOpen, setProtocolDrawerOpen] = useState(false);
     const [routingDrawerOpen, setRoutingDrawerOpen] = useState(false);
     const poolChannels = usePoolChannels();
 
-    // Deep-link from /admin/account-pool/accounts?provider=… → open builtin Accounts tab.
-    useEffect(() => {
-        const params = new URLSearchParams(window.location.search);
-        const provider = (params.get("provider") || "").trim();
-        const subtab = (params.get("subtab") || "").trim() || "accounts";
-        if (!provider || poolChannels.loading || !poolChannels.rows.length) return;
-        const match = poolChannels.rows.find((row) => row.provider === provider);
-        if (!match) return;
-        setActiveTab("pool");
-        setPoolTab("platforms");
-        setPoolDrawerTab(subtab === "accounts" || subtab === "mappings" || subtab === "base" ? subtab : "accounts");
-        setPoolRow(match);
-        const url = new URL(window.location.href);
-        url.searchParams.set("tab", "pool");
-        url.searchParams.delete("provider");
-        url.searchParams.delete("subtab");
-        window.history.replaceState(null, "", url);
-    }, [poolChannels.loading, poolChannels.rows]);
     const loadOverview = async () => {
         if (!token) return;
         setOverviewLoading(true);
@@ -259,11 +253,6 @@ export default function AdminModelsPage() {
             },
         }));
     };
-    const openPoolChannel = (row: PoolChannelRow, tab = "base") => {
-        setPoolDrawerTab(tab);
-        setPoolRow(row);
-    };
-
     const persistModels = (models: AdminManagedModel[], pricingRules: AdminPricingRule[]) =>
         persistSettings((latest) => {
             // Keep channel capability lists in sync with catalog tiers so saving 480P
@@ -594,7 +583,7 @@ export default function AdminModelsPage() {
                     <Typography.Title level={3} className="!mb-1 !mt-0">
                         供应源
                     </Typography.Title>
-                    <Typography.Text type="secondary">号池平台与外部渠道共用统一供应路由表（supplies）；启用开关写入站点选路并同步网关调度。模型页决定对外开放哪些模型，定价页为每个规格设置价格。账号、能力测试与导入在号池平台抽屉中维护。</Typography.Text>
+                    <Typography.Text type="secondary">管理号池平台与外部渠道，配置模型和定价。各平台账号统一在「账号」页签中管理、导入和测试。</Typography.Text>
                 </div>
                 <Button icon={<ReloadOutlined />} loading={isLoading} disabled={isSaving} onClick={reloadAll}>
                     刷新
@@ -648,6 +637,7 @@ export default function AdminModelsPage() {
                         className="!mb-3"
                         items={[
                             { key: "platforms", label: "平台", disabled: isSaving },
+                            { key: "accounts", label: "账号", disabled: isSaving },
                             { key: "logs", label: "账号池日志", disabled: isSaving },
                             { key: "settings", label: "号池设置", disabled: isSaving },
                         ]}
@@ -673,7 +663,7 @@ export default function AdminModelsPage() {
                                     title: "平台",
                                     width: 140,
                                     render: (_, row) => (
-                                        <Typography.Link strong onClick={() => openPoolChannel(row)}>
+                                        <Typography.Link strong onClick={() => setPoolRow(row)}>
                                             {row.label}
                                         </Typography.Link>
                                     ),
@@ -701,7 +691,7 @@ export default function AdminModelsPage() {
                                     width: 110,
                                     render: (_, row) => (
                                         <Typography.Link
-                                            onClick={() => openPoolChannel(row, "accounts")}
+                                            onClick={() => changePoolTab("accounts", row.provider)}
                                             title={`可用 ${row.activeAccounts} · 额度耗尽 ${row.health?.quota || 0} · 停用 ${row.health?.disabled || 0} · 失效 ${row.health?.dead || 0} · 待验证 ${row.health?.pending || 0}`}
                                         >
                                             {row.activeAccounts}/{row.accounts} 可用
@@ -756,22 +746,18 @@ export default function AdminModelsPage() {
                                 {
                                     title: "操作",
                                     key: "actions",
-                                    width: 200,
+                                    width: 88,
                                     fixed: "right",
                                     render: (_, row) => (
-                                        <Space size={4}>
-                                            <Button type="text" size="small" disabled={isSaving} onClick={() => openPoolChannel(row)}>
-                                                编辑
-                                            </Button>
-                                            <Button type="text" size="small" disabled={isSaving} onClick={() => openPoolChannel(row, "accounts")}>
-                                                账号
-                                            </Button>
-                                        </Space>
+                                        <Button type="text" size="small" disabled={isSaving} onClick={() => setPoolRow(row)}>
+                                            编辑
+                                        </Button>
                                     ),
                                 },
                             ]}
                         />
                     </div>
+                    {activeTab === "pool" && poolTab === "accounts" ? <AccountsPanel provider={accountProvider} onProviderChange={(provider) => changePoolTab("accounts", provider)} /> : null}
                     <div hidden={poolTab !== "logs"}>
                         <PoolLogsPanel />
                     </div>
@@ -908,7 +894,6 @@ export default function AdminModelsPage() {
                     builtinProvider={poolRow ? settings?.private.builtinProviders?.find((item) => item.provider === poolRow.provider) || null : null}
                     legacyAliases={settings?.private.poolModelAliases || []}
                     isSaving={isSaving}
-                    initialTab={poolDrawerTab}
                     onClose={() => setPoolRow(null)}
                     onSaveProviderMappings={saveProviderMappings}
                     onMigrateLegacyAliases={migrateLegacyAliases}

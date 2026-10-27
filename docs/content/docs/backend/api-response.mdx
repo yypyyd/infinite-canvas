@@ -68,7 +68,9 @@ Authorization: Bearer ic_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 ## 在线支付
 
-`GET /api/payments/config`、`POST /api/payments/orders`、`GET /api/payments/orders` 和 `GET /api/payments/orders/:orderNo` 继续使用统一 JSON 结构。创建订单只接受充值档位 `packageId` 和支付方式 `method`，金额、支付平台和签名由服务端生成；返回 `order`、`submitUrl`、`params`，浏览器以 POST 表单跳转到支付收银台。订单中的 `provider` 为 `epay` 或 `zpay`，商户密钥不返回。
+`GET /api/payments/config`、`POST /api/payments/orders`、`GET /api/payments/orders` 和 `GET /api/payments/orders/:orderNo` 继续使用统一 JSON 结构。创建订单只接受充值档位 `packageId` 和支付方式 `method`，金额、支付平台和签名由服务端生成。易支付返回 `order`、`submitUrl`、`params`，浏览器以 POST 表单跳转到支付收银台；ZPay 由服务端调用 `mapi.php` 下单，返回 `order` 和 `checkout`（`qrCode`、`qrImageUrl`、`payUrl`），前端在当前页面显示二维码，无需第三方 iframe 跳转。订单中的 `provider` 为 `epay` 或 `zpay`，商户密钥不返回。
+
+ZPay 弹窗通过 `GET /api/payments/orders/:orderNo` 查询当前登录用户的本地订单，只有服务端核验并入账后的 `paid` 才视为成功；轮询与「我已支付」按钮只读取状态，不触发付款或直接增加余额。关闭页面不会中断服务端通知入账。
 
 支付平台通过 GET `/api/payments/notify` 通知结果，成功及重复已入账通知返回纯文本 `success`，验签、查单或入账失败返回纯文本 `fail`，不使用业务 JSON。ZPay 在验签、订单金额校验通过后还会由服务端查单确认已支付。GET `/api/payments/return` 复用同一核对和幂等入账流程，再跳转到个人中心余额页；仅浏览器跳转成功不能作为已付款凭证。
 

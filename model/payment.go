@@ -129,6 +129,13 @@ type BalanceExchangeResult struct {
 
 type PaymentSubmission struct {
 	Order     PaymentOrder      `json:"order"`
-	SubmitURL string            `json:"submitUrl"`
-	Params    map[string]string `json:"params"`
+	SubmitURL string            `json:"submitUrl,omitempty"`
+	Params    map[string]string `json:"params,omitempty"`
+	Checkout  *PaymentCheckout  `json:"checkout,omitempty"`
+}
+
+type PaymentCheckout struct {
+	QRCode     string `json:"qrCode,omitempty"`
+	QRImageURL string `json:"qrImageUrl,omitempty"`
+	PayURL     string `json:"payUrl,omitempty"`
 }

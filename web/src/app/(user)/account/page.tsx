@@ -54,12 +54,13 @@ import {
     type GenerationTask,
     type UserAPIKey,
 } from "@/services/api/auth";
-import { createPaymentOrder, exchangeBalanceForCredits, fetchPaymentConfig, fetchPaymentOrders, type PaymentMethod, type PaymentOrder } from "@/services/api/payments";
+import { createPaymentOrder, exchangeBalanceForCredits, fetchPaymentConfig, fetchPaymentOrders, type PaymentMethod, type PaymentOrder, type PaymentSubmission } from "@/services/api/payments";
 import { fetchReferralDashboard } from "@/services/api/referrals";
 import { countGenerationHistory, deleteGenerationHistory, GENERATION_HISTORY_CHANGED_EVENT, readGenerationHistory, resolveGenerationHistoryMedia, resolveGenerationHistoryPreview, type GenerationHistoryItem } from "@/services/generation-history";
 import { workspaceOwnerId } from "@/services/workspace-changes";
 import { useUserStore } from "@/stores/use-user-store";
 import { useWorkspaceStatusStore } from "@/stores/use-workspace-status-store";
+import { PaymentCheckoutModal } from "./payment-checkout-modal";
 
 type AccountTab = "profile" | "balance" | "tasks" | "history" | "credits" | "referrals" | "api";
 type ProfileFormValues = { displayName: string; avatarUrl: string };
@@ -1096,6 +1097,7 @@ function BalanceSection() {
     const [exchangeYuan, setExchangeYuan] = useState<number | null>(1);
     const [method, setMethod] = useState<PaymentMethod | "">("");
     const [submitting, setSubmitting] = useState(false);
+    const [checkout, setCheckout] = useState<Extract<PaymentSubmission, { checkout: unknown }> | null>(null);
     const [orderPage, setOrderPage] = useState(1);
     const configQuery = useQuery({ queryKey: ["payment-config", token], queryFn: () => fetchPaymentConfig(token), enabled: Boolean(token) });
     const ordersQuery = useQuery({ queryKey: ["payment-orders", token, orderPage], queryFn: () => fetchPaymentOrders(token, { page: orderPage, pageSize: 5 }), enabled: Boolean(token) });
@@ -1124,6 +1126,11 @@ function BalanceSection() {
         setSubmitting(true);
         try {
             const submission = await createPaymentOrder(token, packageId, method);
+            if (submission.checkout) {
+                setCheckout(submission);
+                void queryClient.invalidateQueries({ queryKey: ["payment-orders"] });
+                return;
+            }
             const form = document.createElement("form");
             form.method = "POST";
             form.action = submission.submitUrl;
@@ -1139,6 +1146,7 @@ function BalanceSection() {
             form.submit();
         } catch (error) {
             message.error(error instanceof Error ? error.message : "创建支付订单失败");
+        } finally {
             setSubmitting(false);
         }
     };
@@ -1259,6 +1267,7 @@ function BalanceSection() {
                     )}
                 </>
             )}
+            {checkout ? <PaymentCheckoutModal submission={checkout} onClose={() => setCheckout(null)} /> : null}
             {ordersQuery.data?.items.length ? (
                 <div className="border-t border-border pt-4">
                     <div className="mb-2 flex items-center justify-between gap-3">

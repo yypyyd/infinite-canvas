@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"net"
 	"net/url"
 	"sort"
 	"strconv"
@@ -32,7 +33,7 @@ func GetPaymentConfig() (model.PaymentConfig, error) {
 	return model.PaymentConfig{Enabled: enabled, Methods: payment.Methods, Packages: payment.Packages, CreditsPerYuan: payment.CreditsPerYuan}, nil
 }
 
-func CreatePaymentOrder(user model.AuthUser, packageID string, method model.PaymentMethod) (model.PaymentSubmission, error) {
+func CreatePaymentOrder(ctx context.Context, user model.AuthUser, packageID string, method model.PaymentMethod, clientIP string) (model.PaymentSubmission, error) {
 	settings, err := repository.GetSettings()
 	if err != nil {
 		return model.PaymentSubmission{}, err
@@ -43,6 +44,9 @@ func CreatePaymentOrder(user model.AuthUser, packageID string, method model.Paym
 	}
 	if !paymentMethodEnabled(payment.Methods, method) {
 		return model.PaymentSubmission{}, safeMessageError{message: "不支持所选支付方式"}
+	}
+	if payment.Provider == model.PaymentProviderZPay && net.ParseIP(clientIP) == nil {
+		return model.PaymentSubmission{}, safeMessageError{message: "无法识别支付请求 IP，请稍后重试"}
 	}
 	selected, ok := paymentPackageByID(payment.Packages, strings.TrimSpace(packageID))
 	if !ok {
@@ -76,9 +80,11 @@ func CreatePaymentOrder(user model.AuthUser, packageID string, method model.Paym
 		if payment.ChannelID != "" {
 			params["cid"] = payment.ChannelID
 		}
-	} else {
-		params["sitename"] = payment.SiteName
+		delete(params, "return_url")
+		params["clientip"] = clientIP
+		return createZPayCheckout(ctx, payment, order, params)
 	}
+	params["sitename"] = payment.SiteName
 	params["sign"] = signPaymentParameters(params, payment.MerchantKey)
 	params["sign_type"] = "MD5"
 	return model.PaymentSubmission{Order: order, SubmitURL: paymentSubmitURL(payment.GatewayURL), Params: params}, nil

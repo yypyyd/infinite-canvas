@@ -39,7 +39,7 @@ func CreatePaymentOrder(w http.ResponseWriter, r *http.Request) {
 		Fail(w, "请求参数无效")
 		return
 	}
-	result, err := service.CreatePaymentOrder(user, request.PackageID, request.Method)
+	result, err := service.CreatePaymentOrder(r.Context(), user, request.PackageID, request.Method, requestRemoteIP(r))
 	if err != nil {
 		FailError(w, err)
 		return

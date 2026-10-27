@@ -46,11 +46,7 @@ export type PaymentOrderList = {
     total: number;
 };
 
-export type PaymentSubmission = {
-    order: PaymentOrder;
-    submitUrl: string;
-    params: Record<string, string>;
-};
+export type PaymentSubmission = { order: PaymentOrder } & ({ checkout: { qrCode?: string; qrImageUrl?: string; payUrl?: string }; submitUrl?: never; params?: never } | { checkout?: never; submitUrl: string; params: Record<string, string> });
 
 export const fetchPaymentConfig = (token: string) => apiGet<PaymentConfig>("/api/payments/config", undefined, token);
 

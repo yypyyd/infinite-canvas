@@ -8,12 +8,16 @@ import { FileText, Image as ImageIcon, Music2, Video, X } from "lucide-react";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { NodeGenerationInput } from "./canvas-node-generation";
+import { CanvasVideoReferences } from "./canvas-video-references";
+import type { ReferenceImage } from "@/types/image";
 
 type CanvasConfigComposerProps = {
     value: string;
     inputs: NodeGenerationInput[];
     onChange: (value: string) => void;
     onClose: () => void;
+    keyframeIds?: string[];
+    onKeyframesChange?: (ids: string[]) => void;
 };
 
 type Token = { type: "text"; value: string } | { type: "reference"; nodeId: string };
@@ -24,7 +28,7 @@ type MentionState = {
 
 export const CONFIG_REFERENCE_PATTERN = /@\[node:([^\]]+)\]/g;
 
-export function CanvasConfigComposer({ value, inputs, onChange, onClose }: CanvasConfigComposerProps) {
+export function CanvasConfigComposer({ value, inputs, onChange, onClose, keyframeIds = [], onKeyframesChange }: CanvasConfigComposerProps) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const editorRef = useRef<HTMLDivElement>(null);
     const composingRef = useRef(false);
@@ -177,6 +181,7 @@ export function CanvasConfigComposer({ value, inputs, onChange, onClose }: Canva
                 />
                 {mention && candidates.length ? <MentionMenu inputs={candidates} allInputs={inputs} activeIndex={Math.min(activeIndex, candidates.length - 1)} theme={theme} onSelect={insertReference} /> : null}
             </div>
+            {onKeyframesChange ? <CanvasVideoReferences images={inputs.map((input) => input.image).filter((image): image is ReferenceImage => Boolean(image))} keyframeIds={keyframeIds} onChange={onKeyframesChange} /> : null}
             {imagePreview ? <Image src={imagePreview} alt="引用图片预览" style={{ display: "none" }} preview={{ visible: true, src: imagePreview, onVisibleChange: (visible) => !visible && setImagePreview(null) }} /> : null}
         </div>
     );

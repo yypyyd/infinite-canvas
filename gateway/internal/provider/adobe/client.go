@@ -331,6 +331,7 @@ func (c *Client) uploadMediaOnce(ctx context.Context, sessionKey, token string, 
 	if err != nil {
 		// Transport error (incl. Client.Timeout on the storage endpoint) — a
 		// network blip, retryable on a fresh connection.
+		log.Printf("adobe media upload transport failed account=%s kind=%s", sessionKey, kind)
 		return nil, fmt.Errorf("adobe upload request: %w", err), true
 	}
 	defer resp.Body.Close()
@@ -338,6 +339,9 @@ func (c *Client) uploadMediaOnce(ctx context.Context, sessionKey, token string, 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err, true
+	}
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("adobe media upload failed account=%s kind=%s status=%d", sessionKey, kind, resp.StatusCode)
 	}
 	if resp.StatusCode == 401 || resp.StatusCode == 403 {
 		return nil, accessError(resp.StatusCode, resp.Header.Get("x-access-error"), body), false
@@ -460,7 +464,7 @@ func isUnsupportedVideoModel(err error, body []byte) bool {
 }
 
 func (c *Client) GenerateVideo(ctx context.Context, sessionKey, token, arpSessionToken, engine, prompt, aspectRatio string, durationSeconds int, resolution, referenceMode, upstreamModel string, inputs VideoInputs, downloadResult bool) ([]byte, map[string]any, error) {
-	if len(inputs.ImageBlobIDs) > 10 || (referenceMode != "" && referenceMode != "mixed" && referenceMode != "asset" && referenceMode != "frame") {
+	if len(inputs.ImageBlobIDs)+len(inputs.KeyframeBlobIDs) > 10 || (referenceMode != "" && referenceMode != "mixed" && referenceMode != "asset" && referenceMode != "frame") {
 		return nil, nil, ErrInvalidParams
 	}
 	submitSess, err := c.newSubmitTLSClient(sessionKey)
@@ -472,6 +476,7 @@ func (c *Client) GenerateVideo(ctx context.Context, sessionKey, token, arpSessio
 		payload["modelVersion"] = strings.TrimSpace(upstreamModel)
 	}
 	if err := c.checkGenerationPreflight(ctx, submitSess, token, "video", payload); err != nil {
+		log.Printf("adobe video preflight failed account=%s refs=%d frames=%d error=%v", sessionKey, len(inputs.ImageBlobIDs), len(inputs.KeyframeBlobIDs), err)
 		return nil, nil, err
 	}
 	// Kling 4.0 (and other firefly-3p video) needs the same Arkose-backed

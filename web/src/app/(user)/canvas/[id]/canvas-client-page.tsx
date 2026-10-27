@@ -3046,7 +3046,7 @@ function InfiniteCanvasPage() {
                             seconds: generationConfig.videoSeconds,
                             vquality: generationConfig.vquality,
                             generateAudio: generationConfig.videoGenerateAudio,
-                            videoReferenceMode: generationConfig.videoReferenceMode,
+                            videoKeyframeIds: generationConfig.videoKeyframeIds,
                             watermark: generationConfig.videoWatermark,
                             references: generationReferenceUrls(generationContext),
                         },
@@ -3088,7 +3088,7 @@ function InfiniteCanvasPage() {
                                               seconds: generationConfig.videoSeconds,
                                               vquality: generationConfig.vquality,
                                               generateAudio: generationConfig.videoGenerateAudio,
-                                              videoReferenceMode: generationConfig.videoReferenceMode,
+                                              videoKeyframeIds: generationConfig.videoKeyframeIds,
                                               watermark: generationConfig.videoWatermark,
                                               references: generationReferenceUrls(generationContext),
                                           },
@@ -3494,7 +3494,7 @@ function InfiniteCanvasPage() {
                                           seconds: generationConfig.videoSeconds,
                                           vquality: generationConfig.vquality,
                                           generateAudio: generationConfig.videoGenerateAudio,
-                                          videoReferenceMode: generationConfig.videoReferenceMode,
+                                          videoKeyframeIds: generationConfig.videoKeyframeIds,
                                           watermark: generationConfig.videoWatermark,
                                           references: context ? generationReferenceUrls(context) : [],
                                       },
@@ -4030,7 +4030,6 @@ function InfiniteCanvasPage() {
                 vquality: settings?.resolution || effectiveConfig.vquality,
                 seconds: String(settings?.duration || effectiveConfig.videoSeconds || 6),
                 generateAudio: settings?.generateAudio == null ? effectiveConfig.videoGenerateAudio : String(settings.generateAudio),
-                videoReferenceMode: effectiveConfig.videoReferenceMode,
                 count: settings?.count || 1,
                 prompt: settings?.prompt,
                 composerContent: settings?.prompt,
@@ -4294,12 +4293,19 @@ function InfiniteCanvasPage() {
                     inputs={configInputsById.get(panelNode.id) || []}
                     onChange={(composerContent) => handleConfigNodeChange(panelNode.id, { composerContent })}
                     onClose={() => setDialogNodeId(null)}
+                    keyframeIds={panelNode.metadata?.videoKeyframeIds}
+                    onKeyframesChange={
+                        panelNode.metadata?.generationMode === "video" && videoReferenceCapabilities(buildGenerationConfig(effectiveConfig, panelNode, "video").model, managedModels).referenceMode === "mixed"
+                            ? (videoKeyframeIds) => handleConfigNodeChange(panelNode.id, { videoKeyframeIds })
+                            : undefined
+                    }
                 />
             ) : (
                 <CanvasNodePromptPanel
                     node={panelNode}
                     isRunning={runningNodeId === panelNode.id}
                     mentionReferences={canvasMentionReferences.filter((reference) => reference.nodeId !== panelNode.id)}
+                    referenceImages={buildNodeGenerationInputs(panelNode.id, nodesRef.current, connectionsRef.current).flatMap((input) => (input.image ? [input.image] : []))}
                     onMentionReference={(reference) => connectNodes({ nodeId: reference.nodeId, handleType: "source" }, panelNode.id)}
                     onPromptChange={handleNodePromptChange}
                     onConfigChange={handleConfigNodeChange}
@@ -4313,7 +4319,7 @@ function InfiniteCanvasPage() {
                     }}
                 />
             ),
-        [canvasMentionReferences, configInputsById, confirmStopGeneration, connectNodes, handleConfigNodeChange, handleGenerateNode, handleNodePromptChange, promptEditorNodeId, runningNodeId],
+        [canvasMentionReferences, configInputsById, confirmStopGeneration, connectNodes, effectiveConfig, managedModels, handleConfigNodeChange, handleGenerateNode, handleNodePromptChange, promptEditorNodeId, runningNodeId],
     );
 
     const renderCanvasConfigNode = useCallback(
@@ -5108,7 +5114,7 @@ function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | undefine
         videoSeconds: node?.metadata?.seconds || config.videoSeconds || defaultConfig.videoSeconds,
         vquality: node?.metadata?.vquality || config.vquality || defaultConfig.vquality,
         videoGenerateAudio: node?.metadata?.generateAudio || config.videoGenerateAudio || defaultConfig.videoGenerateAudio,
-        videoReferenceMode: node?.metadata?.videoReferenceMode || config.videoReferenceMode || defaultConfig.videoReferenceMode,
+        videoKeyframeIds: node?.metadata?.videoKeyframeIds,
         videoWatermark: node?.metadata?.watermark || config.videoWatermark || defaultConfig.videoWatermark,
         audioVoice: node?.metadata?.audioVoice || config.audioVoice || defaultConfig.audioVoice,
         audioFormat: node?.metadata?.audioFormat || config.audioFormat || defaultConfig.audioFormat,

@@ -13,7 +13,7 @@ import { usePricingStore } from "@/stores/use-pricing-store";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { normalizeImageCount } from "@/lib/image-utils";
 import { supportsImageReferences } from "@/lib/image-model-capabilities";
-import { videoImageReferenceMode, videoReferenceCapabilities } from "@/lib/video-reference";
+import { videoReferenceCapabilities } from "@/lib/video-reference";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasImageSettingsPopover } from "./canvas-image-settings-popover";
 import { CanvasAudioSettingsPopover, type CanvasAudioSettingKey } from "./canvas-audio-settings-popover";
@@ -123,9 +123,7 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
 
             <div className="mb-2 flex flex-wrap gap-1.5">
                 <InputChip label="提示词" value={`${inputSummary.textCount} 个`} style={chipStyle} />
-                {supportsImageInput ? (
-                    <InputChip label={mode === "video" && videoImageReferenceMode(config.videoReferenceMode, videoCapabilities.referenceMode) === "frame" ? "关键帧" : "参考图"} value={`${inputSummary.imageCount} 张`} style={chipStyle} />
-                ) : null}
+                {supportsImageInput ? <InputChip label="图片" value={`${inputSummary.imageCount} 张`} style={chipStyle} /> : null}
                 {supportsVideoInput ? <InputChip label="参考视频" value={`${inputSummary.videoCount} 个`} style={chipStyle} /> : null}
                 {supportsAudioInput ? <InputChip label="参考音频" value={`${inputSummary.audioCount} 个`} style={chipStyle} /> : null}
                 <button type="button" className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border px-2 text-[11px]" style={chipStyle} onMouseDown={(event) => event.stopPropagation()} onClick={onComposerToggle}>
@@ -223,7 +221,7 @@ function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: Can
         videoSeconds: node.metadata?.seconds || globalConfig.videoSeconds || defaultConfig.videoSeconds,
         vquality: node.metadata?.vquality || globalConfig.vquality || defaultConfig.vquality,
         videoGenerateAudio: node.metadata?.generateAudio || globalConfig.videoGenerateAudio || defaultConfig.videoGenerateAudio,
-        videoReferenceMode: node.metadata?.videoReferenceMode || globalConfig.videoReferenceMode || defaultConfig.videoReferenceMode,
+        videoKeyframeIds: node.metadata?.videoKeyframeIds,
         videoWatermark: node.metadata?.watermark || globalConfig.videoWatermark || defaultConfig.videoWatermark,
         audioVoice: node.metadata?.audioVoice || globalConfig.audioVoice || defaultConfig.audioVoice,
         audioFormat: node.metadata?.audioFormat || globalConfig.audioFormat || defaultConfig.audioFormat,

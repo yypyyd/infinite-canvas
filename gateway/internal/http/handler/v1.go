@@ -441,7 +441,7 @@ func (h *V1Handler) CreateVideo(c *gin.Context) {
 	principal := apiPrincipal(c)
 	var err error
 	var modelID, prompt, seconds, size, resolutionOverride, referenceMode string
-	var refs []string
+	var refs, keyframes []string
 	var videos, audios []service.MediaReference
 	var generateAudio bool
 	var referenceGrid bool
@@ -469,6 +469,9 @@ func (h *V1Handler) CreateVideo(c *gin.Context) {
 		referenceMode = c.PostForm("reference_mode")
 		var readErr error
 		refs, readErr = readMultipartImagesStrict(c, "input_reference", "input_reference[]", "reference_images", "reference_images[]")
+		if readErr == nil {
+			keyframes, readErr = readMultipartImagesStrict(c, "keyframes", "keyframes[]")
+		}
 		if readErr == nil {
 			videos, readErr = readMultipartMedia(c, 200<<20, "video", "reference_videos", "reference_videos[]", "input_video")
 		}
@@ -503,6 +506,7 @@ func (h *V1Handler) CreateVideo(c *gin.Context) {
 			InputReference  []string `json:"input_reference"`
 			ReferenceImages []string `json:"reference_images"`
 			ReferenceMode   string   `json:"reference_mode"`
+			Keyframes       []string `json:"keyframes"`
 			ReferenceVideos []string `json:"reference_videos"`
 			ReferenceAudios []string `json:"reference_audios"`
 			GenerateAudio   bool     `json:"generate_audio"`
@@ -525,6 +529,9 @@ func (h *V1Handler) CreateVideo(c *gin.Context) {
 		imageInputs = append(imageInputs, body.InputReference...)
 		imageInputs = append(imageInputs, body.ReferenceImages...)
 		refs, err = decodeJSONImages(imageInputs)
+		if err == nil {
+			keyframes, err = decodeJSONImages(body.Keyframes)
+		}
 		if err == nil {
 			videos, err = decodeJSONMedia(body.ReferenceVideos, "video/mp4")
 		}
@@ -564,6 +571,7 @@ func (h *V1Handler) CreateVideo(c *gin.Context) {
 		Resolution:      resolution,
 		ReferenceImages: refs,
 		ReferenceMode:   strings.ToLower(strings.TrimSpace(referenceMode)),
+		Keyframes:       keyframes,
 		ReferenceVideos: videos,
 		ReferenceAudios: audios,
 		ReferenceGrid:   referenceGrid,

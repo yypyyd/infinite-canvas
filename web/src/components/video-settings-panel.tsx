@@ -5,12 +5,11 @@ import { type ReactNode, useEffect } from "react";
 import { ImageSettingsTheme } from "@/components/image-settings-panel";
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import { normalizeVideoRatio, normalizeVideoResolution, resolveVideoPricingSettings, videoOutputSize, videoRatioLabel } from "@/lib/video-format";
-import { videoImageReferenceMode } from "@/lib/video-reference";
 import { useConfigStore, type AiConfig } from "@/stores/use-config-store";
 
 type VideoSettingsPanelProps = {
     config: AiConfig;
-    onConfigChange: (key: "vquality" | "size" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark" | "videoReferenceMode", value: string) => void;
+    onConfigChange: (key: "vquality" | "size" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark", value: string) => void;
     theme: CanvasTheme;
     showTitle?: boolean;
     className?: string;
@@ -21,7 +20,6 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
     const definition = useConfigStore((state) => state.publicSettings?.modelChannel.models?.find((item) => item.id === model));
     const pricingRules = useConfigStore((state) => state.publicSettings?.modelChannel.pricingRules);
     const { ratios, resolutions, durations, ratio, resolution, seconds } = resolveVideoPricingSettings(config, definition, model, pricingRules);
-    const referenceMode = videoImageReferenceMode(config.videoReferenceMode, definition?.referenceMode);
 
     // Sync clamped video options when model catalog capabilities change (union → active model).
     useEffect(() => {
@@ -34,25 +32,6 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
         <ImageSettingsTheme theme={theme}>
             <div data-canvas-no-zoom className={className} style={{ color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()}>
                 {showTitle ? <div className="text-lg font-semibold">视频设置</div> : null}
-                {definition?.referenceMode === "mixed" ? (
-                    <SettingGroup title="图片用途" color={theme.node.muted}>
-                        <div className="grid grid-cols-2 gap-2.5">
-                            {(
-                                [
-                                    { value: "asset", label: "素材参考" },
-                                    { value: "frame", label: "关键帧" },
-                                ] as const
-                            ).map((item) => (
-                                <OptionPill key={item.value} selected={referenceMode === item.value} theme={theme} onClick={() => onConfigChange("videoReferenceMode", item.value)}>
-                                    {item.label}
-                                </OptionPill>
-                            ))}
-                        </div>
-                        <p className="text-xs leading-5" style={{ color: theme.node.muted }}>
-                            {referenceMode === "frame" ? "按图片顺序生成：首帧 → 中间帧 → 尾帧。画布中可调整提示词里的图片引用顺序；仅一张时作为首帧。" : "参考人物、商品和场景，不固定为视频首帧。"} 最多 {definition.maxReferenceImages} 张。
-                        </p>
-                    </SettingGroup>
-                ) : null}
                 <SettingGroup title="分辨率" color={theme.node.muted}>
                     <div className="grid grid-cols-3 gap-2.5">
                         {resolutions.map((item) => (

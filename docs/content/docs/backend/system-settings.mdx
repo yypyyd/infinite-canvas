@@ -255,7 +255,7 @@ description: settings 表中 public 和 private 配置结构说明
 | `maxReferenceAudios` | number | 当前视频渠道最多接受的参考音频数量；`0` 表示不支持 |
 | `maxReferenceMedia` | number | 参考图、参考视频和参考音频的合计上限；`0` 表示不额外限制合计数量 |
 | `supportsAudioOutput` | boolean | 是否接受 `generate_audio=true` 的视频生成请求 |
-| `referenceMode` | string | 参考模式：`frame`、`asset`、`mixed` 或 `none`；`mixed` 表示调用方可选择素材参考或关键帧，单次请求用 `reference_mode` 指定 `asset` / `frame` |
+| `referenceMode` | string | 参考模式：`frame`、`asset`、`mixed` 或 `none`；Kling 4.0 的 `mixed` 支持 `input_reference` 参考图与 `keyframes` 关键帧分开传入，合计不超过图片上限 |
 | `workflow` | object | 仅 `autodl_comfyui` 使用，包含 `workflowId`、`requestTemplate` 和 `valueMaps` |
 
 ### AutoDL ComfyUI 工作流渠道

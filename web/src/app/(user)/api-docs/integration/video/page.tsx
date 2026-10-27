@@ -23,7 +23,7 @@ export default function VideoIntegrationPage() {
                                     ["seconds", "该模型支持的时长"],
                                     ["size", "同时符合比例和分辨率"],
                                     ["input_reference", "参考图片，可重复传入；上限见模型广场"],
-                                    ["reference_mode", "Kling 4.0：asset 为素材参考（默认），frame 为按顺序的关键帧，均最多 10 张"],
+                                    ["keyframes", "Kling 4.0 独立关键帧，可与 input_reference 参考图同时传入；合计最多 10 张，按首帧、中间帧、尾帧排序"],
                                 ]}
                             />
                         </Block>

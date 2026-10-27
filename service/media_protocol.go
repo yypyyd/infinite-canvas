@@ -21,6 +21,21 @@ func IsManagedMediaChannel(channel model.ModelChannel) bool {
 	return IsAutoDLComfyUIChannel(channel) || IsCustomHTTPChannel(channel)
 }
 
+func ValidateVideoReferenceInputs(selection ModelChannelSelection, mode string, keyframes int) error {
+	if mode != "" && mode != "asset" && mode != "frame" {
+		return errors.New("reference_mode 仅支持 asset 或 frame")
+	}
+	if keyframes > 0 {
+		if selection.Model.UpstreamModel != "kling-4.0" || IsManagedMediaChannel(selection.Channel) {
+			return errors.New("当前渠道不支持独立关键帧")
+		}
+		if mode == "frame" {
+			return errors.New("关键帧请放入 keyframes，参考图请放入 input_reference，无需设置 reference_mode")
+		}
+	}
+	return nil
+}
+
 func customProtocolOperation(selection ModelChannelSelection, modality, operation string) (model.ProtocolTemplate, model.ProtocolOperation, error) {
 	settings, err := repository.GetSettings()
 	if err != nil {

@@ -16,10 +16,6 @@ export function videoReferenceCapabilities(model: string, definitions?: VideoMod
     return { image: maxImages > 0, video: maxVideos > 0, audio: maxAudios > 0, maxImages, maxVideos, maxAudios, maxMedia, supportsAudioOutput: definition?.supportsAudioOutput === true, referenceMode: definition?.referenceMode };
 }
 
-export function videoImageReferenceMode(preferred: string, supported?: string): "asset" | "frame" {
-    return supported === "mixed" ? (preferred === "frame" ? "frame" : "asset") : supported === "frame" ? "frame" : "asset";
-}
-
 export function videoKeyframeLabel(index: number, total: number) {
     return index === 0 ? "首帧" : index === total - 1 ? "尾帧" : `中间帧 ${index}`;
 }

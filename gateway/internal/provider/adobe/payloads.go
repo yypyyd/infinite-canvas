@@ -246,10 +246,11 @@ func cloneMap(in map[string]any) map[string]any {
 // VideoInputs carries uploaded blob IDs and the Firefly generateAudio flag for
 // partner video models (currently Kling 4.0 only).
 type VideoInputs struct {
-	ImageBlobIDs  []string
-	VideoBlobIDs  []string
-	AudioBlobIDs  []string
-	GenerateAudio bool
+	ImageBlobIDs    []string
+	KeyframeBlobIDs []string
+	VideoBlobIDs    []string
+	AudioBlobIDs    []string
+	GenerateAudio   bool
 }
 
 // BuildVideoPayload builds the firefly-3p generate-async body for the supported
@@ -273,7 +274,7 @@ func BuildVideoPayload(engine, prompt, aspectRatio string, durationSeconds int, 
 		module := "text2video"
 		if isVideo {
 			module = "video2video"
-		} else if isImage && referenceMode == "frame" {
+		} else if len(in.KeyframeBlobIDs) > 0 || (isImage && referenceMode == "frame") {
 			module = "image2video"
 		}
 		// The Firefly model-version keys are hyphenated. The underscored
@@ -296,7 +297,7 @@ func BuildVideoPayload(engine, prompt, aspectRatio string, durationSeconds int, 
 			"output":             map[string]any{"storeInputs": true},
 			"referenceBlobs":     []any{},
 		}
-		refs := make([]any, 0, len(in.ImageBlobIDs)+len(in.VideoBlobIDs))
+		refs := make([]any, 0, len(in.ImageBlobIDs)+len(in.KeyframeBlobIDs)+len(in.VideoBlobIDs))
 		for _, id := range in.VideoBlobIDs {
 			refs = append(refs, map[string]any{"id": id, "usage": "source"})
 		}
@@ -308,6 +309,9 @@ func BuildVideoPayload(engine, prompt, aspectRatio string, durationSeconds int, 
 				ref["mention"] = map[string]any{"id": fmt.Sprintf("image%d", index+1)}
 			}
 			refs = append(refs, ref)
+		}
+		for index, id := range in.KeyframeBlobIDs {
+			refs = append(refs, map[string]any{"id": id, "usage": "frame", "order": index + 1})
 		}
 		payload["referenceBlobs"] = refs
 		return payload

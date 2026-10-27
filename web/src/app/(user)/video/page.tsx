@@ -2,7 +2,7 @@
 
 import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, LoaderCircle, Music2, Plus, SlidersHorizontal, Sparkles, Trash2, Upload, VideoIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { App, Button, Checkbox, Drawer, Input, Modal, Segmented, Tag, Typography } from "antd";
+import { App, Button, Checkbox, Drawer, Input, Modal, Tag, Typography } from "antd";
 import { nanoid } from "nanoid";
 
 import { AssetPickerModal, type InsertAssetPayload } from "@/app/(user)/canvas/components/asset-picker-modal";
@@ -15,7 +15,7 @@ import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { resolveVideoPricingSettings, videoOutputSize } from "@/lib/video-format";
 import { useOpenMedia } from "@/hooks/use-open-media";
-import { videoImageReferenceMode, videoKeyframeLabel, videoReferenceCapabilities, videoReferenceLabel, VIDEO_REFERENCE_LIMITS } from "@/lib/video-reference";
+import { videoKeyframeLabel, videoReferenceCapabilities, videoReferenceLabel, VIDEO_REFERENCE_LIMITS } from "@/lib/video-reference";
 import { resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
 import { deleteStoredGenerationRecord, GENERATION_HISTORY_CHANGED_EVENT, readWorkbenchGenerationRecords, saveGenerationRecord, type GenerationRecordStatus } from "@/services/generation-history";
 import { resolveImageUrl, resolveImageVariantUrl, uploadImage } from "@/services/image-storage";
@@ -57,6 +57,7 @@ type GenerationLog = {
     model: string;
     config: GenerationLogConfig;
     references: ReferenceImage[];
+    keyframes: ReferenceImage[];
     videoReferences: ReferenceVideo[];
     audioReferences: ReferenceAudio[];
     durationMs: number;
@@ -83,6 +84,7 @@ export default function VideoPage() {
     const { message } = App.useApp();
     const openMedia = useOpenMedia();
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const uploadTarget = useRef<"references" | "keyframes">("references");
     const config = useConfigStore((state) => state.config);
     const managedModels = useConfigStore((state) => state.publicSettings?.modelChannel.models);
     const effectiveConfig = useEffectiveConfig();
@@ -98,6 +100,8 @@ export default function VideoPage() {
     const historyOwnerId = useUserStore((state) => (state.user ? workspaceOwnerId(state.user.id, state.user.organizationId) : "guest"));
     const [prompt, setPrompt] = useState("");
     const [references, setReferences] = useState<ReferenceImage[]>([]);
+    const [keyframes, setKeyframes] = useState<ReferenceImage[]>([]);
+    const [uploading, setUploading] = useState(false);
     const [videoReferences, setVideoReferences] = useState<ReferenceVideo[]>([]);
     const [audioReferences, setAudioReferences] = useState<ReferenceAudio[]>([]);
     const [results, setResults] = useState<GenerationResult[]>([]);
@@ -118,9 +122,10 @@ export default function VideoPage() {
     const videoSettings = resolveVideoPricingSettings(effectiveConfig, modelDefinition, model, pricingRules);
     const referenceCapabilities = videoReferenceCapabilities(model, managedModels);
     const imageReferenceLimit = referenceCapabilities.maxImages;
-    const referenceMode = videoImageReferenceMode(effectiveConfig.videoReferenceMode, referenceCapabilities.referenceMode);
+    const supportsKeyframes = referenceCapabilities.referenceMode === "mixed";
+    const imageCount = references.length + keyframes.length;
     const referenceAccept = [referenceCapabilities.image ? "image/*" : "", referenceCapabilities.video ? "video/mp4,video/quicktime" : "", referenceCapabilities.audio ? "audio/mpeg,audio/wav,audio/x-wav,.mp3,.wav" : ""].filter(Boolean).join(",");
-    const canGenerate = Boolean(prompt.trim());
+    const canGenerate = Boolean(prompt.trim()) && !uploading;
     const creditQuote = requestCreditQuote({
         pricingRules,
         specPricing,
@@ -171,58 +176,71 @@ export default function VideoPage() {
     }, [logs, previewLog?.id]);
 
     useEffect(() => {
-        setReferences((current) => current.slice(0, imageReferenceLimit));
+        setReferences((current) => current.slice(0, Math.max(0, imageReferenceLimit - (supportsKeyframes ? keyframes.length : 0))));
+        if (!supportsKeyframes && keyframes.length) setKeyframes([]);
+        else if (keyframes.length > imageReferenceLimit) setKeyframes((current) => current.slice(0, imageReferenceLimit));
         setVideoReferences((current) => current.slice(0, referenceCapabilities.maxVideos));
         setAudioReferences((current) => current.slice(0, referenceCapabilities.maxAudios));
-    }, [imageReferenceLimit, referenceCapabilities.maxAudios, referenceCapabilities.maxVideos]);
+    }, [imageReferenceLimit, referenceCapabilities.maxAudios, referenceCapabilities.maxVideos, supportsKeyframes, keyframes.length]);
 
-    const addReferences = async (files?: FileList | null) => {
-        const selectedFiles = Array.from(files || []);
-        const unsupported = selectedFiles.filter((file) => (file.type.startsWith("image/") ? !referenceCapabilities.image : file.type.startsWith("video/") ? !referenceCapabilities.video : isSupportedAudioFile(file) ? !referenceCapabilities.audio : true));
-        if (unsupported.length) message.warning("已忽略当前模型不支持的参考素材");
-        let remainingMedia = referenceCapabilities.maxMedia > 0 ? Math.max(0, referenceCapabilities.maxMedia - references.length - videoReferences.length - audioReferences.length) : Number.POSITIVE_INFINITY;
-        const imageFiles = referenceCapabilities.image
-            ? selectedFiles.filter((file) => file.type.startsWith("image/") && file.size <= VIDEO_REFERENCE_LIMITS.imageMaxBytes).slice(0, Math.min(Math.max(0, imageReferenceLimit - references.length), remainingMedia))
-            : [];
-        remainingMedia -= imageFiles.length;
-        const videoFiles = referenceCapabilities.video
-            ? selectedFiles.filter((file) => file.type.startsWith("video/") && file.size <= VIDEO_REFERENCE_LIMITS.videoMaxBytes).slice(0, Math.min(Math.max(0, referenceCapabilities.maxVideos - videoReferences.length), remainingMedia))
-            : [];
-        remainingMedia -= videoFiles.length;
-        const audioFiles = referenceCapabilities.audio
-            ? selectedFiles.filter((file) => isSupportedAudioFile(file) && file.size <= VIDEO_REFERENCE_LIMITS.audioMaxBytes).slice(0, Math.min(Math.max(0, referenceCapabilities.maxAudios - audioReferences.length), remainingMedia))
-            : [];
-        if (referenceCapabilities.image && selectedFiles.some((file) => file.type.startsWith("image/") && file.size > VIDEO_REFERENCE_LIMITS.imageMaxBytes)) message.warning("已忽略超过 20MB 的参考图");
-        if (referenceCapabilities.video && selectedFiles.some((file) => file.type.startsWith("video/") && file.size > VIDEO_REFERENCE_LIMITS.videoMaxBytes)) message.warning("已忽略超过 200MB 的参考视频");
-        if (referenceCapabilities.audio && selectedFiles.some((file) => isSupportedAudioFile(file) && file.size > VIDEO_REFERENCE_LIMITS.audioMaxBytes)) message.warning("已忽略超过 50MB 的参考音频");
-        const nextReferences = await Promise.all(
-            imageFiles.map(async (file) => {
-                const image = await uploadImage(file);
-                return { id: nanoid(), name: file.name, type: image.mimeType, dataUrl: image.url, storageKey: image.storageKey };
-            }),
-        );
-        const nextVideoReferences = await Promise.all(
-            videoFiles.map(async (file) => {
-                const video = await uploadMediaFile(file, "video-reference");
-                return { id: nanoid(), name: file.name, type: video.mimeType, url: video.url, storageKey: video.storageKey, bytes: video.bytes, width: video.width, height: video.height, durationMs: video.durationMs };
-            }),
-        );
-        const nextAudioReferences = filterAudioReferencesByDuration(
-            audioReferences,
-            await Promise.all(
-                audioFiles.map(async (file) => {
-                    const audio = await uploadMediaFile(file, "audio-reference");
-                    return { id: nanoid(), name: file.name, type: audio.mimeType, url: audio.url, storageKey: audio.storageKey, durationMs: audio.durationMs };
+    const addReferences = async (files?: FileList | File[] | null, target = "references") => {
+        if (uploading) return;
+        setUploading(true);
+        try {
+            const selectedFiles = Array.from(files || []).filter((file) => target !== "keyframes" || file.type.startsWith("image/"));
+            const unsupported = selectedFiles.filter((file) =>
+                file.type.startsWith("image/") ? !referenceCapabilities.image : file.type.startsWith("video/") ? !referenceCapabilities.video : isSupportedAudioFile(file) ? !referenceCapabilities.audio : true,
+            );
+            if (unsupported.length) message.warning("已忽略当前模型不支持的参考素材");
+            let remainingMedia = referenceCapabilities.maxMedia > 0 ? Math.max(0, referenceCapabilities.maxMedia - imageCount - videoReferences.length - audioReferences.length) : Number.POSITIVE_INFINITY;
+            const imageFiles = referenceCapabilities.image
+                ? selectedFiles.filter((file) => file.type.startsWith("image/") && file.size <= VIDEO_REFERENCE_LIMITS.imageMaxBytes).slice(0, Math.min(Math.max(0, imageReferenceLimit - imageCount), remainingMedia))
+                : [];
+            remainingMedia -= imageFiles.length;
+            const videoFiles = referenceCapabilities.video
+                ? selectedFiles.filter((file) => file.type.startsWith("video/") && file.size <= VIDEO_REFERENCE_LIMITS.videoMaxBytes).slice(0, Math.min(Math.max(0, referenceCapabilities.maxVideos - videoReferences.length), remainingMedia))
+                : [];
+            remainingMedia -= videoFiles.length;
+            const audioFiles = referenceCapabilities.audio
+                ? selectedFiles.filter((file) => isSupportedAudioFile(file) && file.size <= VIDEO_REFERENCE_LIMITS.audioMaxBytes).slice(0, Math.min(Math.max(0, referenceCapabilities.maxAudios - audioReferences.length), remainingMedia))
+                : [];
+            if (referenceCapabilities.image && selectedFiles.some((file) => file.type.startsWith("image/") && file.size > VIDEO_REFERENCE_LIMITS.imageMaxBytes)) message.warning("已忽略超过 20MB 的参考图");
+            if (referenceCapabilities.video && selectedFiles.some((file) => file.type.startsWith("video/") && file.size > VIDEO_REFERENCE_LIMITS.videoMaxBytes)) message.warning("已忽略超过 200MB 的参考视频");
+            if (referenceCapabilities.audio && selectedFiles.some((file) => isSupportedAudioFile(file) && file.size > VIDEO_REFERENCE_LIMITS.audioMaxBytes)) message.warning("已忽略超过 50MB 的参考音频");
+            const nextReferences = await Promise.all(
+                imageFiles.map(async (file) => {
+                    const image = await uploadImage(file);
+                    return { id: nanoid(), name: file.name, type: image.mimeType, dataUrl: image.url, storageKey: image.storageKey };
                 }),
-            ),
-            message.warning,
-        );
-        setReferences((value) => [...value, ...nextReferences].slice(0, imageReferenceLimit));
-        setVideoReferences((value) => [...value, ...nextVideoReferences].slice(0, referenceCapabilities.maxVideos));
-        setAudioReferences((value) => [...value, ...nextAudioReferences].slice(0, referenceCapabilities.maxAudios));
+            );
+            const nextVideoReferences = await Promise.all(
+                videoFiles.map(async (file) => {
+                    const video = await uploadMediaFile(file, "video-reference");
+                    return { id: nanoid(), name: file.name, type: video.mimeType, url: video.url, storageKey: video.storageKey, bytes: video.bytes, width: video.width, height: video.height, durationMs: video.durationMs };
+                }),
+            );
+            const nextAudioReferences = filterAudioReferencesByDuration(
+                audioReferences,
+                await Promise.all(
+                    audioFiles.map(async (file) => {
+                        const audio = await uploadMediaFile(file, "audio-reference");
+                        return { id: nanoid(), name: file.name, type: audio.mimeType, url: audio.url, storageKey: audio.storageKey, durationMs: audio.durationMs };
+                    }),
+                ),
+                message.warning,
+            );
+            if (target === "keyframes") setKeyframes((value) => [...value, ...nextReferences]);
+            else setReferences((value) => [...value, ...nextReferences]);
+            setVideoReferences((value) => [...value, ...nextVideoReferences].slice(0, referenceCapabilities.maxVideos));
+            setAudioReferences((value) => [...value, ...nextAudioReferences].slice(0, referenceCapabilities.maxAudios));
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "素材上传失败");
+        } finally {
+            setUploading(false);
+        }
     };
 
-    const addReferencesFromClipboard = async () => {
+    const addReferencesFromClipboard = async (target: "references" | "keyframes") => {
         if (!referenceCapabilities.image) {
             message.warning("当前模型不支持参考图");
             return;
@@ -234,14 +252,10 @@ export default function VideoPage() {
                 message.error("剪切板里没有可读取的图片");
                 return;
             }
-            const nextReferences = await Promise.all(
-                blobs.slice(0, Math.max(0, imageReferenceLimit - references.length)).map(async (blob, index) => {
-                    const image = await uploadImage(blob);
-                    return { id: nanoid(), name: `clipboard-${index + 1}.png`, type: image.mimeType, dataUrl: image.url, storageKey: image.storageKey };
-                }),
+            await addReferences(
+                blobs.map((blob, index) => new File([blob], `clipboard-${index + 1}.png`, { type: blob.type })),
+                target,
             );
-            setReferences((value) => [...value, ...nextReferences].slice(0, imageReferenceLimit));
-            message.success(`已读取 ${nextReferences.length} 张参考图`);
         } catch {
             message.error("剪切板里没有可读取的图片");
         }
@@ -271,6 +285,7 @@ export default function VideoPage() {
             model,
             config: snapshot.config,
             references: snapshot.references,
+            keyframes: snapshot.keyframes,
             videoReferences: snapshot.videoReferences,
             audioReferences: snapshot.audioReferences,
             durationMs: 0,
@@ -280,7 +295,7 @@ export default function VideoPage() {
         try {
             await saveLog(pendingLog);
             await flushActiveWorkspaceChanges({ domains: ["generation_record"] });
-            const stored = await storeGeneratedVideo(await requestVideoGeneration(snapshot.config, snapshot.text, snapshot.references, snapshot.videoReferences, snapshot.audioReferences, { idempotencyKey: requestId }));
+            const stored = await storeGeneratedVideo(await requestVideoGeneration(snapshot.config, snapshot.text, snapshot.references, snapshot.videoReferences, snapshot.audioReferences, { idempotencyKey: requestId, keyframes: snapshot.keyframes }));
             const [outputWidth, outputHeight] = videoOutputSize(snapshot.config.vquality, snapshot.config.size).split("x").map(Number);
             const nextVideo: GeneratedVideo = {
                 id: nanoid(),
@@ -319,12 +334,14 @@ export default function VideoPage() {
             return null;
         }
         let remainingMedia = referenceCapabilities.maxMedia > 0 ? referenceCapabilities.maxMedia : Number.POSITIVE_INFINITY;
+        const effectiveKeyframes = supportsKeyframes ? keyframes : [];
+        remainingMedia -= effectiveKeyframes.length;
         const effectiveReferences = referenceCapabilities.image ? references.slice(0, Math.min(referenceCapabilities.maxImages, remainingMedia)) : [];
         remainingMedia -= effectiveReferences.length;
         const effectiveVideoReferences = referenceCapabilities.video ? videoReferences.slice(0, Math.min(referenceCapabilities.maxVideos, remainingMedia)) : [];
         remainingMedia -= effectiveVideoReferences.length;
         const effectiveAudioReferences = referenceCapabilities.audio ? audioReferences.slice(0, Math.min(referenceCapabilities.maxAudios, remainingMedia)) : [];
-        return { text, config: buildVideoConfig(effectiveConfig, model, videoSettings), references: effectiveReferences, videoReferences: effectiveVideoReferences, audioReferences: effectiveAudioReferences };
+        return { text, config: buildVideoConfig(effectiveConfig, model, videoSettings), references: effectiveReferences, keyframes: effectiveKeyframes, videoReferences: effectiveVideoReferences, audioReferences: effectiveAudioReferences };
     };
 
     const retryResult = () => {
@@ -352,10 +369,14 @@ export default function VideoPage() {
         if (payload.kind === "text") {
             setPrompt(payload.content);
         } else if (payload.kind === "image" && referenceCapabilities.image) {
+            if (imageCount >= imageReferenceLimit || uploading) {
+                message.warning(`关键帧和参考图合计最多 ${imageReferenceLimit} 张`);
+                return;
+            }
             const stored = await uploadImage(payload.dataUrl);
-            setReferences((value) => [...value, { id: nanoid(), name: payload.title, type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey }].slice(0, imageReferenceLimit));
+            setReferences((value) => [...value, { id: nanoid(), name: payload.title, type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey }].slice(0, imageReferenceLimit - keyframes.length));
         } else if (payload.kind === "video" && referenceCapabilities.video) {
-            const hasRoom = referenceCapabilities.maxMedia === 0 || references.length + videoReferences.length + audioReferences.length < referenceCapabilities.maxMedia;
+            const hasRoom = referenceCapabilities.maxMedia === 0 || imageCount + videoReferences.length + audioReferences.length < referenceCapabilities.maxMedia;
             if (!hasRoom) {
                 message.warning(`当前模型最多支持 ${referenceCapabilities.maxMedia} 个参考素材`);
                 return;
@@ -370,6 +391,7 @@ export default function VideoPage() {
     const createSession = () => {
         setPrompt("");
         setReferences([]);
+        setKeyframes([]);
         setVideoReferences([]);
         setAudioReferences([]);
         setResults([]);
@@ -402,6 +424,7 @@ export default function VideoPage() {
         setLogsOpen(false);
         setPrompt(log.prompt);
         setReferences(log.references || []);
+        setKeyframes(log.keyframes || []);
         setVideoReferences(log.videoReferences || []);
         setAudioReferences(log.audioReferences || []);
         if (log.config.videoModel || log.model) updateConfig("videoModel", log.config.videoModel || log.model);
@@ -462,55 +485,59 @@ export default function VideoPage() {
                                 <Input.TextArea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={7} placeholder="描述镜头运动、主体动作、场景氛围和画面风格" />
                             </div>
 
-                            {referenceCapabilities.image ? (
-                                <div className="min-w-0">
+                            {(referenceCapabilities.image
+                                ? [...(supportsKeyframes ? [{ kind: "keyframes" as const, title: "关键帧", items: keyframes, setItems: setKeyframes }] : []), { kind: "references" as const, title: "参考图", items: references, setItems: setReferences }]
+                                : []
+                            ).map(({ kind, title, items, setItems }) => (
+                                <div key={kind} className="min-w-0">
                                     <div className="mb-2 flex items-center justify-between gap-3">
-                                        {referenceCapabilities.referenceMode === "mixed" ? (
-                                            <Segmented
-                                                value={referenceMode}
-                                                options={[
-                                                    { value: "asset", label: "素材参考" },
-                                                    { value: "frame", label: "关键帧" },
-                                                ]}
-                                                onChange={(value) => updateConfig("videoReferenceMode", value)}
-                                            />
-                                        ) : (
-                                            <span className="text-base font-semibold">参考图</span>
-                                        )}
+                                        <span className="text-base font-semibold">{title}</span>
                                         <div className="flex gap-2">
-                                            <Button size="small" disabled={references.length >= imageReferenceLimit} icon={<ClipboardPaste className="size-3.5" />} onClick={() => void addReferencesFromClipboard()}>
-                                                剪切板
+                                            <Button size="small" disabled={uploading || imageCount >= imageReferenceLimit} icon={<ClipboardPaste className="size-3.5" />} onClick={() => void addReferencesFromClipboard(kind)}>
+                                                剪贴板
                                             </Button>
-                                            <Button size="small" disabled={references.length >= imageReferenceLimit} icon={<Upload className="size-3.5" />} onClick={() => fileInputRef.current?.click()}>
+                                            <Button
+                                                size="small"
+                                                disabled={uploading || imageCount >= imageReferenceLimit}
+                                                icon={<Upload className="size-3.5" />}
+                                                onClick={() => {
+                                                    uploadTarget.current = kind;
+                                                    fileInputRef.current?.click();
+                                                }}
+                                            >
                                                 上传
                                             </Button>
                                         </div>
                                     </div>
-                                    <div className="hover-scrollbar hover-scrollbar-hint flex min-h-24 w-full min-w-0 max-w-full gap-2 overflow-x-scroll overflow-y-hidden rounded-lg border border-dashed border-neutral-300 p-2 pb-3 overscroll-x-contain dark:border-neutral-700">
-                                        {references.map((item, index) => (
-                                            <div key={item.id} className="group relative size-20 shrink-0 overflow-hidden rounded-md border border-neutral-200 dark:border-neutral-800">
+                                    <div className="hover-scrollbar hover-scrollbar-hint flex min-h-24 w-full min-w-0 max-w-full gap-2 overflow-x-scroll overflow-y-hidden rounded-lg border border-dashed border-border p-2 pb-3 overscroll-x-contain">
+                                        {items.map((item, index) => (
+                                            <div key={item.id} className="group relative size-20 shrink-0 overflow-hidden rounded-md border border-border">
                                                 <img src={resolveImageVariantUrl(item.storageKey, item.dataUrl, "thumb")} alt={item.name} loading="lazy" decoding="async" className="size-full object-cover" />
                                                 <span className="absolute left-1 top-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">
-                                                    {referenceMode === "frame" ? videoKeyframeLabel(index, references.length) : videoReferenceLabel("image", index)}
+                                                    {kind === "keyframes" ? videoKeyframeLabel(index, items.length) : videoReferenceLabel("image", index)}
                                                 </span>
-                                                <ReferenceOrderButtons index={index} total={references.length} onMove={(offset) => setReferences((value) => moveListItem(value, index, offset))} />
+                                                <ReferenceOrderButtons index={index} total={items.length} onMove={(offset) => setItems((value) => moveListItem(value, index, offset))} />
                                                 <button
                                                     type="button"
                                                     className="absolute right-1 top-1 hidden size-6 items-center justify-center rounded bg-black/60 text-white group-hover:flex"
-                                                    onClick={() => setReferences((value) => value.filter((ref) => ref.id !== item.id))}
-                                                    aria-label="移除参考图"
+                                                    onClick={() => setItems((value) => value.filter((ref) => ref.id !== item.id))}
+                                                    aria-label={`移除${title}`}
                                                 >
                                                     <Trash2 className="size-3.5" />
                                                 </button>
                                             </div>
                                         ))}
-                                        {!references.length ? <div className="flex min-w-full items-center justify-center text-sm text-neutral-500">暂无参考图，最多 {imageReferenceLimit} 张</div> : null}
+                                        {!items.length ? (
+                                            <div className="flex min-w-full items-center justify-center text-sm text-muted-foreground">{kind === "keyframes" ? "上传首帧、中间帧或尾帧" : `暂无参考图，最多 ${imageReferenceLimit} 张`}</div>
+                                        ) : null}
                                     </div>
-                                    {referenceCapabilities.referenceMode === "mixed" ? (
-                                        <p className="mt-2 text-xs text-muted-foreground">{referenceMode === "frame" ? "按上传顺序作为首帧、中间帧和尾帧；使用图片上的箭头调整顺序。" : "参考人物、商品或场景，可用 @image1、@image2 指定对应图片。"}</p>
+                                    {supportsKeyframes ? (
+                                        <p className="mt-2 text-xs text-muted-foreground">
+                                            {kind === "keyframes" ? "控制画面顺序，可用箭头调整；仅一张时作为首帧。" : `参考人物、商品或场景，可用 @image1、@image2 指定。两区合计 ${imageCount} / ${imageReferenceLimit} 张。`}
+                                        </p>
                                     ) : null}
                                 </div>
-                            ) : null}
+                            ))}
 
                             {referenceCapabilities.video ? (
                                 <div className="min-w-0">
@@ -648,7 +675,8 @@ export default function VideoPage() {
                 multiple
                 className="hidden"
                 onChange={(event) => {
-                    void addReferences(event.target.files);
+                    void addReferences(event.target.files, uploadTarget.current);
+                    uploadTarget.current = "references";
                     event.target.value = "";
                 }}
             />
@@ -893,6 +921,7 @@ async function normalizeLog(log: Partial<GenerationLog>): Promise<GenerationLog>
             dataUrl: await resolveImageUrl(item.storageKey, item.dataUrl),
         })),
     );
+    const keyframes = await Promise.all((log.keyframes || []).map(async (item) => ({ ...item, dataUrl: await resolveImageUrl(item.storageKey, item.dataUrl) })));
     const config = normalizeLogConfig(log);
     return {
         id: log.id || nanoid(),
@@ -904,6 +933,7 @@ async function normalizeLog(log: Partial<GenerationLog>): Promise<GenerationLog>
         model: log.model || config.videoModel || "",
         config,
         references,
+        keyframes,
         videoReferences,
         audioReferences,
         durationMs: log.durationMs || 0,
@@ -921,6 +951,7 @@ function serializeLog(log: GenerationLog): GenerationLog {
     return {
         ...log,
         references: log.references.map((item) => ({ ...item, dataUrl: item.storageKey ? "" : item.dataUrl })),
+        keyframes: log.keyframes.map((item) => ({ ...item, dataUrl: item.storageKey ? "" : item.dataUrl })),
         videoReferences: log.videoReferences.map((item) => (item.storageKey ? { ...item, url: "" } : item)),
         audioReferences: log.audioReferences.map((item) => (item.storageKey ? { ...item, url: "" } : item)),
         video: log.video?.storageKey ? { ...log.video, url: "" } : log.video,
@@ -987,6 +1018,7 @@ function buildLog({
     model,
     config,
     references,
+    keyframes,
     videoReferences,
     audioReferences,
     durationMs,
@@ -1000,6 +1032,7 @@ function buildLog({
     model: string;
     config: AiConfig;
     references: ReferenceImage[];
+    keyframes: ReferenceImage[];
     videoReferences: ReferenceVideo[];
     audioReferences: ReferenceAudio[];
     durationMs: number;
@@ -1027,6 +1060,7 @@ function buildLog({
         model,
         config: logConfig,
         references,
+        keyframes,
         videoReferences,
         audioReferences,
         durationMs,

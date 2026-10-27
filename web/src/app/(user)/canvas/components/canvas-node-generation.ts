@@ -1,6 +1,6 @@
 import type { ChatCompletionMessage } from "@/services/api/image";
 import { imageReferenceLabel } from "@/lib/image-reference-prompt";
-import { videoReferenceLabel } from "@/lib/video-reference";
+import { videoKeyframeLabel, videoReferenceLabel } from "@/lib/video-reference";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "../types";
@@ -27,13 +27,13 @@ export type NodeGenerationInput = {
     audio?: ReferenceAudio;
 };
 
-export type NodeReferenceCapabilities = { image: boolean; video: boolean; audio: boolean; maxImages?: number; maxVideos?: number; maxAudios?: number; maxMedia?: number };
+export type NodeReferenceCapabilities = { image: boolean; video: boolean; audio: boolean; maxImages?: number; maxVideos?: number; maxAudios?: number; maxMedia?: number; referenceMode?: string };
 
 export function buildNodeGenerationContext(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[], prompt: string, capabilities?: NodeReferenceCapabilities): NodeGenerationContext {
     const inputs = filterNodeGenerationInputs(buildNodeGenerationInputs(nodeId, nodes, connections), capabilities);
     const sourceNode = nodes.find((node) => node.id === nodeId);
     if (sourceNode?.type === CanvasNodeType.Config && Boolean(sourceNode.metadata?.composerContent?.trim())) {
-        return buildComposerGenerationContext(inputs, prompt);
+        return buildComposerGenerationContext(inputs, prompt, capabilities?.referenceMode === "mixed", sourceNode.metadata?.videoKeyframeIds);
     }
 
     const upstreamText = inputs
@@ -74,12 +74,17 @@ export function filterNodeGenerationInputs(inputs: NodeGenerationInput[], capabi
     });
 }
 
-function buildComposerGenerationContext(inputs: NodeGenerationInput[], prompt: string): NodeGenerationContext {
+function buildComposerGenerationContext(inputs: NodeGenerationInput[], prompt: string, separateImages = false, keyframeIds: string[] = []): NodeGenerationContext {
     const inputByNodeId = new Map(inputs.map((input) => [input.nodeId, input]));
-    const selectedInputs: NodeGenerationInput[] = [];
+    const selectedInputs: NodeGenerationInput[] = separateImages ? inputs.filter((input) => input.type === "image") : [];
     const labelByNodeId = new Map<string, string>();
     const textBlocks: string[] = [];
     const counts = { image: 0, video: 0, audio: 0, text: 0 };
+    const frames = keyframeIds.filter((id) => selectedInputs.some((input) => input.nodeId === id));
+    for (const input of selectedInputs) {
+        const frameIndex = frames.indexOf(input.nodeId);
+        labelByNodeId.set(input.nodeId, frameIndex >= 0 ? videoKeyframeLabel(frameIndex, frames.length) : `@image${++counts.image}`);
+    }
     let hasToken = false;
     let lastIndex = 0;
     let nextPrompt = "";
@@ -108,7 +113,7 @@ function buildComposerGenerationContext(inputs: NodeGenerationInput[], prompt: s
     const referenceVideos = selectedInputs.map((input) => input.video).filter((video): video is ReferenceVideo => Boolean(video));
     const referenceAudios = selectedInputs.map((input) => input.audio).filter((audio): audio is ReferenceAudio => Boolean(audio));
 
-    if (!hasToken) {
+    if (!hasToken && !separateImages) {
         return {
             prompt,
             referenceImages: [],

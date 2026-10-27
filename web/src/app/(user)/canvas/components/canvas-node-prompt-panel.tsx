@@ -20,6 +20,8 @@ import { CanvasPromptLibrary } from "./canvas-prompt-library";
 import { CanvasAudioSettingsPopover, type CanvasAudioSettingKey } from "./canvas-audio-settings-popover";
 import { CanvasResourceMentionTextarea } from "./canvas-resource-mention-textarea";
 import { CanvasVideoSettingsPopover } from "./canvas-video-settings-popover";
+import { CanvasVideoReferences } from "./canvas-video-references";
+import type { ReferenceImage } from "@/types/image";
 import { CanvasNodeType, type CanvasGenerationMode, type CanvasNodeData } from "../types";
 import type { CanvasResourceReference } from "../utils/canvas-resource-references";
 import { canvasVideoModelPatch, resolveCanvasVideoConfig } from "../utils/canvas-video-config";
@@ -34,6 +36,7 @@ type CanvasNodePromptPanelProps = {
     onGenerate: (nodeId: string, mode: CanvasNodeGenerationMode, prompt: string) => void;
     onStop: (nodeId: string) => void;
     mentionReferences?: CanvasResourceReference[];
+    referenceImages?: ReferenceImage[];
     onMentionReference?: (reference: CanvasResourceReference) => void;
     mentionMenuDisabled?: boolean;
     onImageSettingsOpenChange?: (open: boolean) => void;
@@ -48,6 +51,7 @@ export function CanvasNodePromptPanel({
     onGenerate,
     onStop,
     mentionReferences = [],
+    referenceImages = [],
     onMentionReference,
     mentionMenuDisabled = false,
     onImageSettingsOpenChange,
@@ -127,6 +131,9 @@ export function CanvasNodePromptPanel({
                 placeholder={promptPlaceholder(mode, hasImageContent, hasTextContent, imageSupportsReferences)}
             />
 
+            {mode === "video" && videoReferenceCapabilities(config.model, managedModels).referenceMode === "mixed" ? (
+                <CanvasVideoReferences images={referenceImages} keyframeIds={node.metadata?.videoKeyframeIds || []} onChange={(videoKeyframeIds) => onConfigChange(node.id, { videoKeyframeIds })} />
+            ) : null}
             <div className="mt-2 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
                 <div className="flex min-w-0 items-center gap-2">
                     <CanvasPromptLibrary onSelect={updatePrompt} />
@@ -220,7 +227,7 @@ function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: Can
         videoSeconds: node.metadata?.seconds || globalConfig.videoSeconds || defaultConfig.videoSeconds,
         vquality: node.metadata?.vquality || globalConfig.vquality || defaultConfig.vquality,
         videoGenerateAudio: node.metadata?.generateAudio || globalConfig.videoGenerateAudio || defaultConfig.videoGenerateAudio,
-        videoReferenceMode: node.metadata?.videoReferenceMode || globalConfig.videoReferenceMode || defaultConfig.videoReferenceMode,
+        videoKeyframeIds: node.metadata?.videoKeyframeIds,
         videoWatermark: node.metadata?.watermark || globalConfig.videoWatermark || defaultConfig.videoWatermark,
         audioVoice: node.metadata?.audioVoice || globalConfig.audioVoice || defaultConfig.audioVoice,
         audioFormat: node.metadata?.audioFormat || globalConfig.audioFormat || defaultConfig.audioFormat,

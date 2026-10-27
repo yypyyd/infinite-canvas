@@ -13,7 +13,7 @@ var userPreferenceKeys = map[string]bool{"theme": true, "aiConfig": true, "image
 var aiPreferenceKeys = map[string]bool{
 	"model": true, "imageModel": true, "videoModel": true, "textModel": true, "audioModel": true,
 	"audioVoice": true, "audioFormat": true, "audioSpeed": true, "audioInstructions": true,
-	"videoSeconds": true, "vquality": true, "videoGenerateAudio": true, "videoWatermark": true, "videoReferenceMode": true,
+	"videoSeconds": true, "vquality": true, "videoGenerateAudio": true, "videoWatermark": true,
 	"quality": true, "size": true, "count": true, "canvasImageCount": true,
 }
 

@@ -17,16 +17,16 @@ description: 创建任务、查询 id、完成后下载
 
 还没拿到 `id` 时，用原 `Idempotency-Key` 调用 `GET /generation-tasks/recovery`。
 
-## Kling 4.0 图片模式
+## Kling 4.0 关键帧与参考图
 
-`kling-4.0` 最多接受 10 张图片，使用 `reference_mode` 明确选择用途：
+`kling-4.0` 使用两个独立字段，同一次请求可同时传入，合计最多 10 张图片：
 
-| 参数值 | 图片用途 |
+| 参数 | 图片用途 |
 | --- | --- |
-| `asset`（默认） | 人物、商品、场景等素材参考；可在提示词里用 `@image1`、`@image2` 引用上传顺序对应的图片 |
-| `frame` | 按上传顺序作为关键帧；第一张是首帧，最后一张是尾帧，中间为连续关键帧；只有一张时是首帧 |
+| `input_reference` | 人物、商品、场景等素材参考；可在提示词里用 `@image1`、`@image2` 引用该字段中对应的图片 |
+| `keyframes` | 按上传顺序作为关键帧；第一张是首帧，最后一张是尾帧，中间为连续关键帧；只有一张时是首帧 |
 
-一次请求选择一种模式，不会把第二张素材图自动当作尾帧。两种模式均完整发送图片，超过 10 张拒绝请求。当前渠道继续开放 720p、4–8 秒、16:9 / 1:1 / 9:16；参考视频与音频没有在此次变更中开放。`GET /models` 的 `max_reference_images` 为 `10`，`reference_mode: mixed` 表示两种模式可选，创建任务时只传 `asset` 或 `frame`。
+两类图片分别编号，超过合计上限拒绝请求。当前渠道开放 720p、4–8 秒、16:9 / 1:1 / 9:16；参考视频与音频没有在此次变更中开放。`GET /models` 的 `max_reference_images` 为 `10`，`reference_mode: mixed` 表示支持这两类图片。创建任务无需选择图片用途。
 
 ```bash
 curl "https://huantu.xyz/api/v1/videos" \
@@ -36,9 +36,12 @@ curl "https://huantu.xyz/api/v1/videos" \
   -F "prompt=参考 @image1 中的商品和 @image2 中的场景，缓慢推进镜头" \
   -F "seconds=4" \
   -F "size=1280x720" \
-  -F "reference_mode=asset" \
+  -F "keyframes=@start.png" \
+  -F "keyframes=@end.png" \
   -F "input_reference=@product.png" \
   -F "input_reference=@scene.png"
 ```
 
-JSON 请求使用 `input_reference` 数组，每项为图片 base64 或 data URI，并在同一对象中传 `reference_mode`。将模式改为 `frame` 即按数组顺序提交关键帧；修改模式属于不同请求，使用新的 `Idempotency-Key`。
+JSON 请求的 `input_reference` 与 `keyframes` 均为数组，每项为图片 base64 或 data URI。站内已上传素材可分别传 `input_reference_storage_keys` 与 `keyframe_storage_keys`，服务端检查文件所属用户后转发；不可混用存储键和原始图片输入。修改图片分类或顺序属于不同请求，使用新的 `Idempotency-Key`。
+
+只使用统一图片数组的调用方也可传 `reference_mode=asset|frame`；`frame` 不能与独立的 `keyframes` 同时设置。

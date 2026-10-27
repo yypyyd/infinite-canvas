@@ -362,6 +362,7 @@ type V1VideoRequest struct {
 	Resolution      string
 	ReferenceImages []string
 	ReferenceMode   string
+	Keyframes       []string
 	ReferenceGrid   bool
 	ReferenceVideos []MediaReference
 	ReferenceAudios []MediaReference
@@ -1915,7 +1916,7 @@ func (s *V1Service) StartVideoJob(ctx context.Context, principal *APIPrincipal, 
 	}
 	// Source "v1": no output file is allocated — the result is the upstream URL,
 	// stored on the event when the render completes.
-	eventID, err := s.logPendingEvent(ctx, "video", modelItem, principal, in.Prompt, aspectRatio, resolution, duration, len(in.ReferenceImages)+len(in.ReferenceVideos)+len(in.ReferenceAudios), "", "v1", nil, false, in.RequestID, "", fingerprint)
+	eventID, err := s.logPendingEvent(ctx, "video", modelItem, principal, in.Prompt, aspectRatio, resolution, duration, len(in.ReferenceImages)+len(in.Keyframes)+len(in.ReferenceVideos)+len(in.ReferenceAudios), "", "v1", nil, false, in.RequestID, "", fingerprint)
 	if err != nil {
 		// The database uniqueness boundary is authoritative across processes. A
 		// concurrent winner may have inserted after our initial read; re-read and
@@ -1933,10 +1934,13 @@ func (s *V1Service) StartVideoJob(ctx context.Context, principal *APIPrincipal, 
 }
 
 func videoRequestFingerprint(in V1VideoRequest) string {
-	referenceImages := make([]string, 0, len(in.ReferenceImages))
-	for _, reference := range in.ReferenceImages {
-		sum := sha256.Sum256([]byte(reference))
-		referenceImages = append(referenceImages, hex.EncodeToString(sum[:]))
+	hashImages := func(images []string) []string {
+		out := make([]string, 0, len(images))
+		for _, reference := range images {
+			sum := sha256.Sum256([]byte(reference))
+			out = append(out, hex.EncodeToString(sum[:]))
+		}
+		return out
 	}
 	hashMedia := func(items []MediaReference) []string {
 		out := make([]string, 0, len(items))
@@ -1949,12 +1953,13 @@ func videoRequestFingerprint(in V1VideoRequest) string {
 	payload := struct {
 		Model, Prompt, Duration, AspectRatio, Resolution, ReferenceMode string
 		ReferenceImages                                                 []string
+		Keyframes                                                       []string
 		ReferenceVideos                                                 []string
 		ReferenceAudios                                                 []string
 		GenerateAudio, ReferenceGrid                                    bool
 	}{
 		strings.TrimSpace(in.Model), in.Prompt, strings.TrimSpace(in.Duration), strings.TrimSpace(in.AspectRatio), strings.TrimSpace(in.Resolution), in.ReferenceMode,
-		referenceImages, hashMedia(in.ReferenceVideos), hashMedia(in.ReferenceAudios), in.GenerateAudio, in.ReferenceGrid,
+		hashImages(in.ReferenceImages), hashImages(in.Keyframes), hashMedia(in.ReferenceVideos), hashMedia(in.ReferenceAudios), in.GenerateAudio, in.ReferenceGrid,
 	}
 	raw, _ := json.Marshal(payload)
 	sum := sha256.Sum256(raw)
@@ -2724,6 +2729,17 @@ func (s *V1Service) prepareVideo(ctx context.Context, principal *APIPrincipal, i
 	if in.ReferenceMode != "" && in.ReferenceMode != "asset" && in.ReferenceMode != "frame" {
 		return nil, "", "", "", invalidParameter("reference_mode", "reference_mode must be asset or frame.", "asset", "frame")
 	}
+	if len(in.Keyframes) > 0 {
+		if in.Model != "kling-4.0" {
+			return nil, "", "", "", invalidParameter("keyframes", "This model does not support separate keyframes.")
+		}
+		if in.ReferenceMode == "frame" {
+			return nil, "", "", "", invalidParameter("reference_mode", "Use keyframes for frames and input_reference for reference images; omit reference_mode.")
+		}
+		if err := ensureReferenceSizes(in.Keyframes); err != nil {
+			return nil, "", "", "", err
+		}
+	}
 	modelID := strings.TrimSpace(in.Model)
 	prompt := strings.TrimSpace(in.Prompt)
 	duration := strings.TrimSpace(in.Duration)
@@ -2769,11 +2785,21 @@ func (s *V1Service) prepareVideo(ctx context.Context, principal *APIPrincipal, i
 		resolution = "720p"
 	}
 	if _, err := s.firstAvailableRoute(ctx, modelItem.ID, "video", model.RouteRequirements{Operation: "generation",
-		Ratio: aspectRatio, Resolution: resolution, Duration: duration, ReferenceImages: len(in.ReferenceImages), ReferenceMode: in.ReferenceMode,
+		Ratio: aspectRatio, Resolution: resolution, Duration: duration, ReferenceImages: len(in.ReferenceImages) + len(in.Keyframes), ReferenceMode: in.videoReferenceMode(),
 		ReferenceVideos: len(in.ReferenceVideos), ReferenceAudios: len(in.ReferenceAudios), GenerateAudio: in.GenerateAudio}); err != nil {
 		return nil, "", "", "", err
 	}
 	return modelItem, resolution, aspectRatio, duration, nil
+}
+
+func (in V1VideoRequest) videoReferenceMode() string {
+	if len(in.Keyframes) > 0 {
+		if len(in.ReferenceImages) > 0 {
+			return "mixed"
+		}
+		return "frame"
+	}
+	return in.ReferenceMode
 }
 
 func (s *V1Service) userDir(principal *APIPrincipal) string {
@@ -2979,18 +3005,29 @@ func (s *V1Service) generateAdobeVideo(ctx context.Context, eventID string, mode
 	}
 
 	engine, upstreamModel := resolveAdobeVideoEngine(modelItem.ID)
-	referenceMode := defaultString(in.ReferenceMode, defaultString(modelItem.ReferenceMode, "frame"))
+	referenceMode := defaultString(in.ReferenceMode, "asset")
+	frames, err := decodeReferenceImages(in.Keyframes, max(1, modelItem.MaxReferenceImages))
+	if err != nil {
+		return nil, "", err
+	}
 
 	var videoURL string
 	data, err := s.runPoolWithFailoverPolicy(ctx, eventID, "adobe", active, "video", func(token model.TokenAccount) ([]byte, error) {
 		token = s.ensureAdobeIMSMatchesEgress(ctx, token)
 		inputs := adobe.VideoInputs{GenerateAudio: in.GenerateAudio}
 		for _, ref := range refs {
-			id, upErr := s.adobe.UploadImage(ctx, token.ID, token.Value, ref, "image/png", engine)
+			id, upErr := s.adobe.UploadImage(ctx, token.ID, token.Value, ref, http.DetectContentType(ref), engine)
 			if upErr != nil {
 				return nil, upErr
 			}
 			inputs.ImageBlobIDs = append(inputs.ImageBlobIDs, id)
+		}
+		for _, frame := range frames {
+			id, upErr := s.adobe.UploadImage(ctx, token.ID, token.Value, frame, http.DetectContentType(frame), engine)
+			if upErr != nil {
+				return nil, upErr
+			}
+			inputs.KeyframeBlobIDs = append(inputs.KeyframeBlobIDs, id)
 		}
 		for _, ref := range in.ReferenceVideos {
 			id, upErr := s.adobe.UploadMedia(ctx, token.ID, token.Value, ref.Data, ref.ContentType, engine, "video")

@@ -467,9 +467,7 @@ function ModelDetails({
                     {model.modality === "video" ? <Capability label="参考素材合计" values={model.maxReferenceMedia ? [`最多 ${model.maxReferenceMedia} 个`] : []} fallback="不额外限制" /> : null}
                     {model.modality === "video" ? <Capability label="视频音频输出" values={model.supportsAudioOutput ? ["支持 generate_audio"] : []} fallback="不支持" /> : null}
                 </div>
-                {model.modality === "video" && model.referenceMode === "mixed" ? (
-                    <p className="mt-3 text-xs leading-6 text-muted-foreground">关键帧用 keyframes，按首帧、中间帧、尾帧排序；参考图用 input_reference，可用 @image1、@image2 引用。两类图片合计最多 {model.maxReferenceImages} 张，无需设置图片用途。</p>
-                ) : null}
+                {model.modality === "video" && model.referenceMode === "mixed" ? <MixedVideoReferenceGuide maxImages={model.maxReferenceImages} /> : null}
             </section>
 
             <section className="mt-7 overflow-hidden rounded-xl border border-border">
@@ -579,6 +577,32 @@ function Capability({ label, values, fallback }: { label: string; values: Array<
                 ) : (
                     <span className="text-xs text-muted-foreground">{fallback}</span>
                 )}
+            </div>
+        </div>
+    );
+}
+
+function MixedVideoReferenceGuide({ maxImages }: { maxImages: number }) {
+    return (
+        <div className="mt-4 overflow-hidden rounded-xl border border-border bg-muted/25">
+            <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+                <div>
+                    <div className="text-sm font-semibold">图片上传字段</div>
+                    <div className="mt-0.5 text-[11px] text-muted-foreground">两个字段可以同时上传，不需要选择图片用途</div>
+                </div>
+                <span className="shrink-0 rounded-md bg-primary/10 px-2 py-1 text-[11px] font-medium text-primary">合计最多 {maxImages} 张</span>
+            </div>
+            <div className="divide-y divide-border">
+                <div className="grid gap-2 px-4 py-3 sm:grid-cols-[88px_150px_minmax(0,1fr)] sm:items-center">
+                    <div className="text-xs font-semibold">关键帧</div>
+                    <code className="w-fit rounded-md bg-foreground/[.07] px-2 py-1 text-xs font-semibold text-foreground">keyframes</code>
+                    <div className="text-xs leading-5 text-muted-foreground">上传首帧、中间帧、尾帧；重复使用此字段，按上传顺序排列。</div>
+                </div>
+                <div className="grid gap-2 px-4 py-3 sm:grid-cols-[88px_150px_minmax(0,1fr)] sm:items-center">
+                    <div className="text-xs font-semibold">参考图</div>
+                    <code className="w-fit rounded-md bg-foreground/[.07] px-2 py-1 text-xs font-semibold text-foreground">input_reference</code>
+                    <div className="text-xs leading-5 text-muted-foreground">上传人物、商品、场景；提示词里的 @image1、@image2 只按这里的图片顺序编号。</div>
+                </div>
             </div>
         </div>
     );

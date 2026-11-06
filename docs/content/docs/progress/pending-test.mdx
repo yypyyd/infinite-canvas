@@ -5,17 +5,15 @@ description: 当前版本已实现但仍需人工或自动化验证的变更项
 
 # 待测试
 
-## Adobe 3P 生成持续 408（根因已定位，暂无纯协议解）
+## Adobe 3P 生成持续 408（已确认为 Adobe 服务端，非客户端问题）
 
-- 线上实测确认 `firefly-3p.ff.adobe.io/v2/3p-images/generate-async` 对项目请求一律在 2–3 秒内快速返回 `408 timeout_error / system under load`，是风控快速拒绝而非真实负载超时。
-- 已用线上实际客户端做受控对照，逐一排除：
-  - **ARP 令牌**：发伪造 `x-arp-session-id`（arp_len=552）与完全不发（arp_len=0）均 408。
-  - **出口一致性**：代理出口、服务器直连、以及「直连出口新签发的 IMS token（egress_fp 为空）」三种组合均 408，排除「IMS 签发出口与提交出口跨出口」假设。
-  - **client_id / x-api-key**：官网前端包确认就是 `clio-playground-web`，与项目完全一致。
-  - **端点、请求头、请求体、x-nonce 算法**：与当前官网前端一致。
-- 结论：差异只剩真实浏览器内执行的风控（Arkose/ARP sherlock/BFP 组合信号、浏览器 TLS 指纹与时序）。纯 HTTP + Node VM 无法复现该信号，符合此前「只有官网真实完整会话才被受理」的记录。配置或简单改参数无法修复。
-- 代码改动：GPT Image 2 与 Kling 视频提交不再生成 Arkose 会话、不发 `x-arp-session-id`（官网该头来自 sherlock，且登录账号本可不发；伪造值是错误实现）。此为正确性清理与减负，**不是** 408 的修复。Arkose 相关代码保留未删除。
-- 现状：`gpt-image-2` 由 ChatGPT 主通道正常出图；Adobe 作为备用通道在恢复前持续不可用。下一步方向需用户决策：投入逆向 Adobe 浏览器风控（工作量大、不确定、违反无浏览器约束风险），或暂时接受 Adobe 停用、仅靠 ChatGPT。
+- 决定性验证：用真实 Chromium 驱动**官网 firefly.adobe.com 自身的生成 UI**（登录态、住宅代理、无头浏览器），让官网自己提交生成。官网发往 `firefly-3p.ff.adobe.io/v2/3p-images/generate-async` 的请求**同样返回 408 `timeout_error / system under load`**；官网默认模型为 Nano Banana（`modelId:gemini-flash`，非 GPT Image）也一样 408。证明 408 与项目代码、请求体、令牌、端点、浏览器均无关。
+- 受控对照逐一排除（均 408）：伪造/不发/真实完整 `x-arp-session-id`（官网实际只发 64 字符 ARP 也 408）；代理出口 / 服务器直连 / 直连新签发 IMS；`client_id`/`x-api-key`（官网同为 `clio-playground-web`）；端点、请求头、请求体、`x-nonce` 算法（`SHA-256_hex(utf8(userId-prompt[:256]))`，与官网一致）。
+- 预检接口（同域 `firefly-3p`）返回 `authorized` + `quota_available`（免费额度 3 次用 1 剩 2），IMS token 有效约 23 小时，账号与会话均未过期。问题精确在生成提交。
+- 最可能根因：**出口 IP 信誉**。Adobe 3P 经 Forter 风控，对机房 IP（服务器 `38.76.212.24`）与所用 bestgo「住宅」代理 IP 均判高风险，一律 408；真实用户在干净家庭 IP 上可生成。此前 10/28 直连成功应为当时 IP 未被标记。
+- 逆向成果（供参考）：官网真实 `x-arp-session-id` = base64(JSON{`sid`,`ftr`=Forter,`ark`=Arkose,`bfp`=BFP})，由浏览器内 FORTER/FingerprintJS/BFP 采集组装，不经 arp.adobe.io 往返；但此令牌对 408 无影响（官网 64 字符 ARP 也 408）。
+- 代码改动：GPT Image 2 与 Kling 视频提交不再生成 Arkose 会话、不发 `x-arp-session-id`（正确性清理，非 408 修复）。Arkose 代码保留。
+- 现状：`gpt-image-2` 由 ChatGPT 主通道正常出图；Adobe 3P 在现有服务器/代理 IP 下持续不可用。可行方向：换**干净的优质住宅 IP**（可能恢复，需验证且有成本），或暂时接受 Adobe 停用仅靠 ChatGPT。不需要浏览器依赖。
 
 ## Kling 4.0 多图与关键帧
 

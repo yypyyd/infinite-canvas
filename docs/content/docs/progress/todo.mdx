@@ -29,7 +29,7 @@ description: 当前项目后续值得处理的事项
 
 ## Adobe GPT Image 2 纯协议生成
 
-- SDK 4.6.2 加密入口改名已修正。持续 408 的根因已定位：`x-arp-session-id` 携带了伪造的 Arkose 令牌，而官方使用的是 ARP sherlock 令牌且已登录账号不需要此头。已移除伪造令牌，提交不发此头，待部署后验证实际出图。
+- Adobe 3P 生成持续 408 已线上受控定位：排除 ARP 令牌(发/不发均 408)、出口(代理/直连/直连新签发 IMS 均 408)、client_id(与官网同为 `clio-playground-web`)、端点/请求头/体/nonce(均与官网一致)。快速 408 是风控拒绝,唯一差异是真实浏览器内执行的 Arkose/ARP sherlock/BFP 风控信号,纯 HTTP 无法复现,与「只有官网真实会话才被受理」的旧记录一致。已移除伪造的 `x-arp-session-id`(正确性清理,非修复)。`gpt-image-2` 由 ChatGPT 主通道正常出图;Adobe 恢复方案需进一步决策,详见[待测试清单](./pending-test)。
 
 - 已撤销 Adobe 合计三次成功停用规则并部署，官方试用额度和耗尽标记独立；同账号视频耗尽不停止图片调度已验证，图片实际提交仍有 408，继续排查会话；见[待测试清单](./pending-test)。
 

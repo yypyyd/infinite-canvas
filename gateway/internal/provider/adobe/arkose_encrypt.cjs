@@ -9,13 +9,19 @@ process.stdin.on('data', chunk => {
 });
 process.stdin.on('end', async () => {
   const watchdog = setTimeout(() => process.exit(1), 10000);
+  let stage = 'sdk';
   try {
     const { source, profile, userAgent, publicKey } = JSON.parse(input);
     const marker = ',Pn=n(4166),In=n(2389)';
     if (!source.includes(marker)) throw Error('unsupported SDK');
+    // Resolve the function used by the SDK's own fingerprint submission path.
+    // Minified names change between releases (xn became Rn); do not pin one.
+    const calls = [...source.matchAll(/,([A-Za-z_$][\w$]*)\([A-Za-z_$][\w$]*,[A-Za-z_$][\w$]*,[A-Za-z_$][\w$]*\.publicKey\);case \d+:if\([^;]*?\.data,[^;]*?\.timestamp,/g)];
+    const encryptNames = [...new Set(calls.map(match => match[1]))];
+    if (encryptNames.length !== 1) throw Error('unsupported SDK encryption entry');
     // Stop before the UI bootstraps. Only the SDK serialization/encryption is used.
     const isolatedSource = source.replace(marker,
-      ';window.__encrypt=xn;window.__hash=le.K;window.__build=O.jt;window.__version=O.i8;return;var Pn=n(4166),In=n(2389)');
+      `;window.__encrypt=${encryptNames[0]};window.__hash=le.K;window.__build=O.jt;window.__version=O.i8;return;var Pn=n(4166),In=n(2389)`);
     class Element {
       matches() { return false; }
       closest() { return null; }
@@ -46,6 +52,8 @@ process.stdin.on('end', async () => {
     sandbox.self = sandbox;
     vm.createContext(sandbox);
     vm.runInContext(isolatedSource, sandbox, { timeout: 5000 });
+    if (typeof sandbox.__encrypt !== 'function' || typeof sandbox.__hash !== 'function') throw Error('unsupported SDK exports');
+    stage = 'encrypt';
     const sessionID = webcrypto.randomUUID();
     const fields = profile.find(item => item.key === 'enhanced_fp').value;
     for (const field of fields) {
@@ -68,6 +76,6 @@ process.stdin.on('end', async () => {
     });
   } catch {
     clearTimeout(watchdog);
-    process.exit(1);
+    process.exit(stage === 'sdk' ? 2 : 3);
   }
 });

@@ -15,7 +15,7 @@ import (
 
 var ErrAdobeUpstreamBusy = fmt.Errorf("%w: Adobe 上游服务暂时繁忙，请稍后重试", ErrProviderTemporary)
 var ErrAdobeTrialExhausted = fmt.Errorf("%w: Adobe 当前模型免费试用次数已用完", ErrProviderQuota)
-var ErrAdobeGenerationSession = fmt.Errorf("%w: Adobe 生成会话刷新失败，请检查服务端 Node.js 或稍后重试", ErrProviderTemporary)
+var ErrAdobeGenerationSession = fmt.Errorf("%w: Adobe 生成会话初始化失败，请稍后重试；服务端日志包含具体失败阶段", ErrProviderTemporary)
 
 // publicGenerationError collapses provider-specific failures into stable,
 // credential-free API categories. Provider errors routinely contain reflected

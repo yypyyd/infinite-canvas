@@ -94,7 +94,17 @@ func encryptArkose(ctx context.Context, source, userAgent string) (encryptedArko
 	cmd.Stdin = bytes.NewReader(input)
 	result, err := cmd.Output()
 	if err != nil {
-		return encrypted, fmt.Errorf("%w: SDK encryption failed; check Node.js and SDK version", ErrGenerationSession)
+		if runCtx.Err() != nil {
+			return encrypted, fmt.Errorf("%w: SDK computation timed out or was canceled", ErrGenerationSession)
+		}
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			if exitErr.ExitCode() == 2 {
+				return encrypted, fmt.Errorf("%w: unsupported SDK encryption entry or exports", ErrGenerationSession)
+			}
+			return encrypted, fmt.Errorf("%w: SDK computation failed (exit=%d)", ErrGenerationSession, exitErr.ExitCode())
+		}
+		return encrypted, fmt.Errorf("%w: Node.js process could not start", ErrGenerationSession)
 	}
 	if json.Unmarshal(result, &encrypted) != nil || encrypted.Data == "" || encrypted.Timestamp <= 0 || encrypted.SessionID == "" || encrypted.BuildID == "" || encrypted.Version == "" {
 		return encrypted, fmt.Errorf("%w: invalid SDK output (bytes=%d valid_json=%t)", ErrGenerationSession, len(result), json.Valid(result))

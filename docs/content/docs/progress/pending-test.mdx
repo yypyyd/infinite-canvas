@@ -5,6 +5,12 @@ description: 当前版本已实现但仍需人工或自动化验证的变更项
 
 # 待测试
 
+## Adobe SDK 4.6.2 会话初始化
+
+- 线上 Node.js 22.23.4 正常；加密阶段失败源于 SDK 将实际入口由 `xn` 改为 `Rn`。改为从 SDK 自身指纹提交调用位置识别入口，并校验唯一性和函数类型，继续使用纯 HTTP 与 Node 计算，不引入浏览器。
+- 当前 SDK 已输出完整 11,180 字节 JSON；服务器上三个账号的项目客户端均已通过加密与握手，生成提交仍返回上游 `408 timeout_error / system under load`。刷新 IMS 后复验仍如此，本次不能声称完整生图恢复。
+- 日志分别报告 Node 无法启动、SDK 入口或导出不兼容、计算超时及计算失败；保留 stdout 写入完成后退出的保护。`9d59ffc` 已自动部署，API 和两个 Worker 健康；网站账号测试接口已不再出现初始化错误，返回 `adobe_upstream_busy`，日志为提交阶段 408。实际生成和图片下载解码仍待通过。
+
 ## Kling 4.0 多图与关键帧
 
 - 根据 Adobe 当前 `/v2/models/discovery?resolveSchema=true&includeFirstParty=true` 的 `kling-v4-omni-ref` schema，图片 `general` 与 `frame` 均支持最多 10 张；原 1 张限制来自本项目目录与只取 `ImageBlobIDs[0]` 的实现。通用帮助页的 Kling 3.0 元素说明不能作为 4.0 上限依据。

@@ -378,10 +378,13 @@ func (c *Client) GenerateImage(ctx context.Context, sessionKey, token, arpSessio
 		if err := c.checkGenerationPreflight(ctx, submitSess, token, "image", payload); err != nil {
 			return nil, nil, err
 		}
-		arpSessionToken, err = generationSession(ctx, submitSess)
-		if err != nil {
-			return nil, nil, err
-		}
+		// The real Firefly client sends an ARP sherlock token from
+		// commerce.adobe.com/amsterdam/sdk/sherlock.min.js as x-arp-session-id.
+		// Our previous Arkose-based fabrication was silently accepted until
+		// early November 2026 and now triggers 408 rejection. Signed-in
+		// accounts do not require the header (ARP is a guest-only flow in the
+		// IMS library); omit it so the submit proceeds on the IMS token alone.
+		arpSessionToken = ""
 	}
 	pollSess, err := c.newDirectTLSClient()
 	if err != nil {
@@ -409,10 +412,8 @@ generationAttempts:
 		for _, payload := range candidates {
 			respBody, pollURL, submitErr := c.submitImage(ctx, submitSess, sessionKey, token, arpSessionToken, prompt, endpoint, payload)
 			if isGPTImage2(modelID) && retryGenerationSession(submitErr) {
-				arpSessionToken, err = generationSession(ctx, submitSess)
-				if err != nil {
-					return nil, nil, err
-				}
+				// Retry once on transient 408; no Arkose session regeneration
+				// since x-arp-session-id is intentionally omitted.
 				respBody, pollURL, submitErr = c.submitImage(ctx, submitSess, sessionKey, token, arpSessionToken, prompt, endpoint, payload)
 			}
 			if submitErr == nil {
@@ -479,13 +480,11 @@ func (c *Client) GenerateVideo(ctx context.Context, sessionKey, token, arpSessio
 		log.Printf("adobe video preflight failed account=%s refs=%d frames=%d error=%v", sessionKey, len(inputs.ImageBlobIDs), len(inputs.KeyframeBlobIDs), err)
 		return nil, nil, err
 	}
-	// Kling 4.0 (and other firefly-3p video) needs the same Arkose-backed
-	// generation session as GPT Image 2. A local sid-only ARP is masked by
-	// Adobe as timeout_error / "system under load".
-	arpSessionToken, err = generationSession(ctx, submitSess)
-	if err != nil {
-		return nil, nil, err
-	}
+	// x-arp-session-id carried a fabricated Arkose token that Adobe's 3P
+	// gateway now rejects as 408. The real client uses an ARP sherlock token
+	// from commerce.adobe.com which is only required for guest sessions.
+	// Signed-in accounts omit the header; see GenerateImage for details.
+	arpSessionToken = ""
 	pollSess, err := c.newDirectTLSClient()
 	if err != nil {
 		return nil, nil, err
@@ -506,10 +505,6 @@ func (c *Client) GenerateVideo(ctx context.Context, sessionKey, token, arpSessio
 		log.Printf("adobe video modelVersion try account=%s version=%s", sessionKey, ver)
 		respBody, pollURL, lastSubmitErr = c.submitVideo(ctx, submitSess, sessionKey, token, arpSessionToken, videoSubmitURL, payload)
 		if retryGenerationSession(lastSubmitErr) {
-			arpSessionToken, err = generationSession(ctx, submitSess)
-			if err != nil {
-				return nil, nil, err
-			}
 			respBody, pollURL, lastSubmitErr = c.submitVideo(ctx, submitSess, sessionKey, token, arpSessionToken, videoSubmitURL, payload)
 		}
 		if lastSubmitErr == nil {

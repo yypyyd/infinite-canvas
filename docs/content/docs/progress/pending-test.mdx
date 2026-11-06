@@ -5,11 +5,16 @@ description: 当前版本已实现但仍需人工或自动化验证的变更项
 
 # 待测试
 
-## Adobe SDK 4.6.2 会话初始化
+## Adobe x-arp-session-id 去除伪造令牌
 
-- 线上 Node.js 22.23.4 正常；加密阶段失败源于 SDK 将实际入口由 `xn` 改为 `Rn`。改为从 SDK 自身指纹提交调用位置识别入口，并校验唯一性和函数类型，继续使用纯 HTTP 与 Node 计算，不引入浏览器。
-- 当前 SDK 已输出完整 11,180 字节 JSON；服务器上三个账号的项目客户端均已通过加密与握手，生成提交仍返回上游 `408 timeout_error / system under load`。刷新 IMS 后复验仍如此，本次不能声称完整生图恢复。
-- 日志分别报告 Node 无法启动、SDK 入口或导出不兼容、计算超时及计算失败；保留 stdout 写入完成后退出的保护。`9d59ffc` 已自动部署，API 和两个 Worker 健康；网站账号测试接口已不再出现初始化错误，返回 `adobe_upstream_busy`，日志为提交阶段 408。实际生成和图片下载解码仍待通过。
+- 分析当前 Firefly 前端 JS 包确认：`x-arp-session-id` 应携带 ARP sherlock 令牌（`commerce.adobe.com/amsterdam/sdk/sherlock.min.js`），与 Arkose funcaptcha 是两套独立系统。IMS 库中 ARP 仅在 `enableARP` 且访客会话时启用；已登录账号的生成请求可不发此头。
+- 项目此前自行拼接 `{"sid":"...","ark":"..."}` base64 作为 `x-arp-session-id`，格式与官方完全不同。Adobe 3P 网关约 11 月初开始严格校验并一律返回 `408 timeout_error / system under load`，与 SDK 入口改名同期。
+- 修复方式：GPT Image 2 和 Kling 视频提交不再生成 Arkose 会话，`arpSessionToken` 置空，`x-arp-session-id` 头不发送。408 重试保留但不再调用 Arkose 会话。Arkose 相关代码保留未删除，以备后续需要。
+- 待部署后验证图片和视频生成实际出图并解码通过；仍需确认 Adobe 代理出口配置（白名单恢复后 Adobe 会重新走代理）。
+
+## Adobe SDK 4.6.2 会话初始化（历史）
+
+- SDK 入口 `xn→Rn` 改名修复已部署（`9d59ffc`），加密与 Arkose 握手通过。后续持续 408 的原因已定位为伪造的 `x-arp-session-id`，见上条。
 
 ## Kling 4.0 多图与关键帧
 
@@ -29,6 +34,14 @@ description: 当前版本已实现但仍需人工或自动化验证的变更项
 - 桌面顶部导航和移动端导航抽屉增加外链，名称按要求设为「星衡中转站」，新标签页打开 `https://newapi.xinghengcode.shop`，复用现有导航样式和外链逻辑。
 - 入口及改名已部署至 `31119c7`，自动检查、镜像构建与部署通过；线上顶部已确认显示「星衡中转站」，链接地址与新标签打开属性正确。
 - 待验证桌面、移动端及内嵌场景的入口显示和跳转，确认原幻图页面保持打开。
+
+## New API 侧栏内嵌画布
+
+- 已启用 `https://canvas.xinghengcode.shop/canvas`，反向代理至现有画布服务 `127.0.0.1:3050`，共用原有账号和数据；`huantu.xyz` 保持可用。与 `newapi.xinghengcode.shop` 使用同站点子域名，保留 `SameSite=Lax` 登录 Cookie；两套系统账号仍独立，新域名需重新登录画布账号。
+- New API 的画布聊天预设名称为「幻图无限画布」，地址为 `https://canvas.xinghengcode.shop/canvas`，侧栏「聊天 → 幻图无限画布」对应 `/chat/0`。使用数据库条件更新并等待应用自动同步，未重启 New API。
+- 已排查「提示登录成功但仍未登录」：预设地址被改回 `https://huantu.xyz`，实际登录请求发生在跨站内嵌的旧域名，后续账号查询返回游客。已保留入口名称并将地址恢复为同站点子域名；修改预设时应继续使用新地址，刷新整个 New API 页面后重试，不能只刷新内嵌画布。
+- Nginx 配置位于 `/www/server/panel/vhost/nginx/canvas.xinghengcode.shop.conf`，副本位于 `/opt/infinite-canvas-newapi-embed/`；已签发独立 HTTPS 证书，Certbot 自动续期定时器启用。内嵌来源通过 CSP 限制为自身与 `https://newapi.xinghengcode.shop`，代理关闭缓存和响应缓冲，沿用上游缓存策略。
+- 已确认新域名的画布页、登录页、健康接口以及原域名、新 API 状态接口正常；浏览器访问画布会显示登录页并保留返回画布的地址。当前浏览器未登录 New API，登录后的实际 iframe 登录、刷新、画布保存和媒体加载仍需用户验收。
 
 ## ZPay 内嵌扫码充值
 

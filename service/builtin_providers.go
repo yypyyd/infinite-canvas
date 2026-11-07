@@ -284,12 +284,20 @@ func builtinProviderChannels(private model.PrivateSetting) []model.ModelChannel 
 		if len(mappings) == 0 {
 			mappings = private.PoolModelAliases
 		}
-		channel.Models = append(channel.Models, poolAliasModels(channel.Models, mappings)...)
+		aliases := poolAliasModels(channel.Models, mappings)
+		// A provider that exposes a target under a renamed public name no longer
+		// supplies the target's original name.
+		renamed := map[string]bool{}
+		for _, alias := range aliases {
+			renamed[alias.UpstreamModel] = true
+		}
+		channel.Models = append(channel.Models, aliases...)
 		kept := channel.Models[:0]
 		for _, cm := range channel.Models {
-			if !cm.Disabled {
-				kept = append(kept, cm)
+			if cm.Disabled || renamed[cm.Model] {
+				continue
 			}
+			kept = append(kept, cm)
 		}
 		channel.Models = kept
 		if len(channel.Models) == 0 {

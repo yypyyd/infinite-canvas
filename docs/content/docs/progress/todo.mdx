@@ -24,12 +24,11 @@ description: 当前项目后续值得处理的事项
 
 ## 号池住宅代理
 
-- 提取接口失败时静默改为直连且不写日志：代理白名单失效期间 ChatGPT 直连被 Cloudflare 403，管理端只看到 `provider temporary unavailable`。后续记录提取失败的状态码和简短原因，不记录提取 URL 与凭据。
-- Adobe 仍配置了同一提取 API，与「生产 Adobe 切换为直连」的记录不一致；白名单已恢复，Adobe 会重新走代理，需确认是否清空 Adobe 提取配置。
+- 提取接口失败目前不写日志，管理端只能看到通用临时错误；后续记录提取失败的状态码和简短原因，不记录提取 URL 与凭据。
 
 ## Adobe GPT Image 2 纯协议生成
 
-- Adobe 3P 生成持续 408 已确认为 **Adobe 服务端问题**：用真实 Chromium 驱动官网 firefly.adobe.com 自身 UI 生成,官网发往 `3p-images/generate-async` 同样 408(连默认 Nano Banana 也 408),证明与项目代码/请求/令牌/端点/浏览器无关。预检 authorized、额度剩 2、token 有效 23h。最可能根因是出口 IP 信誉(机房 IP 与 bestgo 代理 IP 被 Forter 风控判高风险),干净住宅 IP 可能恢复。已移除伪造 `x-arp-session-id`(正确性清理,非修复);逆向确认真实 ARP=base64{sid,ftr,ark,bfp} 但对 408 无影响。`gpt-image-2` 由 ChatGPT 主通道正常出图。方向:换干净优质住宅 IP 验证,或接受 Adobe 停用。详见[待测试清单](./pending-test)。
+- Adobe 已三处修复并上线：恢复 Node Arkose 会话（`arp_len=552`）、Adobe 出口改走住宅代理（`proxy.adobe.extract_api`，对照确认机房 IP 是主因）、重新启用 Adobe 供应（主站 + 网关）。真实管线已出图（ADAVXZPGUKWG，31s）。剩余为 bestgo 共享住宅池成功率约 15–25%，靠号池换号兜底；提高成功率需优质/独享住宅代理或未标记新账号，详见[待测试清单](./pending-test)。
 
 - 已撤销 Adobe 合计三次成功停用规则并部署，官方试用额度和耗尽标记独立；同账号视频耗尽不停止图片调度已验证，图片实际提交仍有 408，继续排查会话；见[待测试清单](./pending-test)。
 

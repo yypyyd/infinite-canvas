@@ -361,7 +361,7 @@ func buildModelOverview(settings model.Settings, routes []gateway.RouteDetail, r
 		if emitProviders {
 			for _, pch := range providerChannels {
 				provider := BuiltinProviderOf(pch)
-				hasModel := false
+				hasModel, renamed := false, false
 				sourceTarget := target
 				for _, cm := range pch.Models {
 					if cm.Model == name {
@@ -370,9 +370,11 @@ func buildModelOverview(settings model.Settings, routes []gateway.RouteDetail, r
 						sourceTarget = firstNonEmpty(cm.UpstreamModel, cm.Model)
 						break
 					}
+					renamed = renamed || cm.UpstreamModel == name
 				}
-				// An alias is exposed only by the provider that defines it.
-				if !hasModel && name != target {
+				// An alias is exposed only by the provider that defines it, and a
+				// provider that renamed this model no longer supplies its original name.
+				if !hasModel && (name != target || renamed) {
 					continue
 				}
 				providerRoutes := 0

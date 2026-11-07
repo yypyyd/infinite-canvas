@@ -5,15 +5,24 @@ description: 当前版本已实现但仍需人工或自动化验证的变更项
 
 # 待测试
 
-## Adobe 3P 生成持续 408（已确认为 Adobe 服务端，非客户端问题）
+## Adobe 3P 生成：恢复 Node Arkose 会话 + 住宅代理 + 重新启用
 
-- 决定性验证：用真实 Chromium 驱动**官网 firefly.adobe.com 自身的生成 UI**（登录态、住宅代理、无头浏览器），让官网自己提交生成。官网发往 `firefly-3p.ff.adobe.io/v2/3p-images/generate-async` 的请求**同样返回 408 `timeout_error / system under load`**；官网默认模型为 Nano Banana（`modelId:gemini-flash`，非 GPT Image）也一样 408。证明 408 与项目代码、请求体、令牌、端点、浏览器均无关。
-- 受控对照逐一排除（均 408）：伪造/不发/真实完整 `x-arp-session-id`（官网实际只发 64 字符 ARP 也 408）；代理出口 / 服务器直连 / 直连新签发 IMS；`client_id`/`x-api-key`（官网同为 `clio-playground-web`）；端点、请求头、请求体、`x-nonce` 算法（`SHA-256_hex(utf8(userId-prompt[:256]))`，与官网一致）。
-- 预检接口（同域 `firefly-3p`）返回 `authorized` + `quota_available`（免费额度 3 次用 1 剩 2），IMS token 有效约 23 小时，账号与会话均未过期。问题精确在生成提交。
-- 最可能根因：**出口 IP 信誉**。Adobe 3P 经 Forter 风控，对机房 IP（服务器 `38.76.212.24`）与所用 bestgo「住宅」代理 IP 均判高风险，一律 408；真实用户在干净家庭 IP 上可生成。此前 10/28 直连成功应为当时 IP 未被标记。
-- 逆向成果（供参考）：官网真实 `x-arp-session-id` = base64(JSON{`sid`,`ftr`=Forter,`ark`=Arkose,`bfp`=BFP})，由浏览器内 FORTER/FingerprintJS/BFP 采集组装，不经 arp.adobe.io 往返；但此令牌对 408 无影响（官网 64 字符 ARP 也 408）。
-- 代码改动：GPT Image 2 与 Kling 视频提交不再生成 Arkose 会话、不发 `x-arp-session-id`（正确性清理，非 408 修复）。Arkose 代码保留。
-- 现状：`gpt-image-2` 由 ChatGPT 主通道正常出图；Adobe 3P 在现有服务器/代理 IP 下持续不可用。可行方向：换**干净的优质住宅 IP**（可能恢复，需验证且有成本），或暂时接受 Adobe 停用仅靠 ChatGPT。不需要浏览器依赖。
+- 线上「持续 408」是三个原因叠加，不是不可修复：(1) `54baeec` 把提交的 `x-arp-session-id` 置空（arp_len=0）；(2) 服务器机房 IP 在 10/28 后被 Adobe/Forter 标记；(3) Adobe 供应整体被停用。`dispatch_attempts` 显示 10/25–28 每天成功 3/20/17/19 次（同一套 Node Arkose 方案），11/6 起全部 408——证明方案本身可用，是环境（令牌缺失 + IP + 停用）变了。
+- 已修复并部署（纯 HTTP + Node 加密，无浏览器）：
+  - 恢复 Node Arkose 会话铸造（`57af2eb`）：Arkose SDK 4.6.2 标记匹配、握手返回被动令牌（`sup=1`），生产镜像 `adobe-arp-57af2eb`（基于 `54baeec` 仅替换 Go 二进制），线上提交从 `arp_len=0` 变为 `arp_len=552`。
+  - Adobe 出口改走住宅代理（`proxy.adobe.extract_api`，与 ChatGPT 同一 bestgo 提取 API）。对照实测：同一批在机房直连全 408 的账号，经干净住宅出口（AT&T / Google Fiber / Charter-Spectrum，`hosting=false`）部分成功（每账号独立住宅出口约 2/8 成功）；受信任账号 ADZGOOYDTORE 连机房 IP 也能成功出图 3 次——说明主因是机房 IP 信誉而非账号。
+  - 重新启用 Adobe 供应（主站 `BuiltinProviders` + 网关 `providers_enabled`，PATCH `/api/admin/model-sources`）。优先级 180 低于 ChatGPT 200，`gpt-image-2` 仍由 ChatGPT 主通道优先，Adobe 作二线并承担自有模型（Kling）。
+- 住宅代理提取 API 的服务器出口白名单已恢复（原待办 `IP Whitelist Check Failed`）：从服务器提取成功，ChatGPT 与 Adobe 均已实际出图。Adobe 保留同一提取配置是本次修复的一部分，不再清空。
+- 真实管线验收：通过网关管理能力测试，账号 ADAVXZPGUKWG 经住宅出口实际出图（31s，HTTP 200）。
+- 限制：bestgo 为共享住宅池，单账号成功率约 15–25%（部分出口/账号仍被标记），靠号池换号兜底。进一步提高需换优质/独享住宅代理或导入未标记新账号；必要时提高 Adobe 临时失败换号预算（当前同签名 408 连续 3 次即停）。
+- 待验证 / 后续：画布与商品图真实用户出图命中 Adobe 的扣费与归档；住宅代理稳定性与延迟；受信任账号免费额度（3 次）耗尽后仅停对应模型；主站保存设置或容器重启后 Adobe 仍为启用。`57af2eb` 的自动部署因本文件未转义的花括号被 MDX 当作表达式解析，docs 构建失败，镜像构建与部署被跳过，线上曾临时使用服务器本地镜像；文档已改写并经本地 docs 构建验证，改由正式 CI 构建与部署。
+
+## 号池模型映射后原名默认不再走该供应
+
+- 新规则：内置供应在「本平台模型映射」里把某个目标模型改名暴露（如 Adobe `ad-gpt-image-2 → gpt-image-2`，name≠target）后，该供应不再作为原名（`gpt-image-2`）的默认来源，只通过映射名提供。`service/builtin_providers.go` 的 `builtinProviderChannels` 只在映射别名实际生效（目标在该供应存在、名称不与现有模型冲突）时丢弃直连原名；`name==target` 的自映射（仅用于定价）不受影响。
+- 真实管线已验证：用临时 API Key 调 `/api/v1/images/generations`，`gpt-image-2` 路由到 **ChatGPT** 出图成功、不再走 Adobe；`ad-gpt-image-2` 路由到 **Adobe** 出图成功。临时 Key 已删除。
+- 管理台「模型总览」同步同一规则（`service/model_overview.go`）：改名映射的供应不再列为原名来源，`gpt-image-2` 只显示 ChatGPT，`ad-gpt-image-2` 显示 Adobe；网关规范路由 `image.gpt-image-2.adobe` 保留供映射名使用。
+- 待验证：其它带重命名映射的供应/模型是否同样只走映射名、原名回退到其余供应；自映射（name==target）、映射名冲突或目标不存在时原名仍由该供应提供；画布 / 商品图 / 对外 API 按原名与映射名分别命中预期供应与计费；删除映射后原名恢复该供应。
 
 ## Kling 4.0 多图与关键帧
 

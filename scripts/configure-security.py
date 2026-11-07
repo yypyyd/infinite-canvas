@@ -12,12 +12,23 @@ NGINX = shutil.which("nginx") or "/www/server/nginx/sbin/nginx"
 
 
 def inspect():
-    result = subprocess.run([NGINX, "-T"], capture_output=True, text=True, check=True)
-    sections = re.split(r"^# configuration file (.+):\s*$", result.stdout, flags=re.M)
+    binaries = {NGINX}
+    for process in Path("/proc").glob("[0-9]*"):
+        try:
+            if b"nginx: master process" in (process / "cmdline").read_bytes():
+                binaries.add(str((process / "exe").resolve()))
+        except (OSError, PermissionError):
+            pass
+    output = ""
+    for binary in sorted(binaries):
+        result = subprocess.run([binary, "-T"], capture_output=True, text=True, check=True)
+        print(json.dumps({"nginx": binary, "dump_bytes": len(result.stdout) + len(result.stderr)}))
+        output += result.stdout + result.stderr
+    sections = re.split(r"^# configuration file (.+):[ \t]*$", output, flags=re.M)
     files = []
     for index in range(1, len(sections), 2):
         path, body = sections[index:index + 2]
-        if re.search(r"proxy_pass\s+http://(?:127\.0\.0\.1|localhost):3050(?:/)?\s*;", body):
+        if "3050" in body or "huantu.xyz" in body or "canvas.xinghengcode.shop" in body:
             files.append(path)
             relevant = [line.strip() for line in body.splitlines() if re.search(r"server_name|proxy_pass|proxy_set_header|real_ip|include|location", line)]
             relevant = [re.sub(r"(proxy_set_header\s+(?!Host\b|X-Real-IP\b|X-Forwarded-For\b|X-Forwarded-Proto\b|Upgrade\b|Connection\b)\S+).*;", r"\1 [REDACTED];", line) for line in relevant]

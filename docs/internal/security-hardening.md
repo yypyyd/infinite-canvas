@@ -46,6 +46,6 @@ proxy_set_header X-Forwarded-Proto $scheme;
 8. 对真实公网客户端与伪造来源头分别检查 `auth_login`/`http_request`，来源地址应一致、不可伪造；确认告警规则能聚合失败与 429。
 9. 文档页面、搜索、LLM 导出不包含内部报告全文；发布接口和前端包只含公开版本摘要。
 
-补充了来源 IP 伪造、并发限流/退避和 JWT 算法/后台有效期的回归测试，尚未运行。按项目约定，本次未执行语法检查、构建或线上复测。实现完成即进入 pending-test，用户确认通过后再更新正式功能说明。
+来源 IP 伪造、并发限流/退避和 JWT 算法/后台有效期回归测试已在 `cd2d0c1` 的 CI 中通过，前后端、文档检查及镜像构建通过。自动部署被服务器环境变量缺失拦截，旧服务未停止；尚未完成新版本线上复测。本地未执行构建。实现完成即进入 pending-test，用户确认通过后再更新正式功能说明。
 
 参考：[Turnstile 服务端验证](https://developers.cloudflare.com/turnstile/get-started/server-side-validation/)、[Cloudflare 官方网段](https://www.cloudflare.com/ips/)。

@@ -70,10 +70,14 @@ def configure(input_path):
         raise ValueError("Existing proxy token requires explicit correction")
     settings["REVERSE_PROXY_TOKEN"] = proxy_token
 
+    request = urllib.request.Request("https://api.cloudflare.com/client/v4/ips", headers={"User-Agent": "infinite-canvas-security-setup"})
+    with urllib.request.urlopen(request, timeout=20) as response:
+        published = json.load(response)
+    if not published.get("success"):
+        raise ValueError("Cloudflare network discovery failed")
     ranges = []
     for version in (4, 6):
-        with urllib.request.urlopen("https://www.cloudflare.com/ips-v%d/" % version, timeout=20) as response:
-            networks = [ipaddress.ip_network(line) for line in response.read().decode().splitlines() if line.strip()]
+        networks = [ipaddress.ip_network(line) for line in published["result"]["ipv%d_cidrs" % version]]
         if not networks or any(net.version != version or net.prefixlen == 0 for net in networks):
             raise ValueError("Invalid Cloudflare network list")
         ranges.extend(str(net) for net in networks)

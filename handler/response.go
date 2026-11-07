@@ -28,8 +28,23 @@ func Fail(w http.ResponseWriter, msg string) {
 	writeJSON(w, response{Code: 1, Data: nil, Msg: msg})
 }
 
+func FailStatus(w http.ResponseWriter, status int, msg string) {
+	writeJSONStatus(w, status, response{Code: 1, Data: nil, Msg: msg})
+}
+
 func FailError(w http.ResponseWriter, err error) {
 	log.Printf("request failed request_id=%q: %v", w.Header().Get("X-Request-ID"), err)
+	if failure, ok := err.(interface {
+		HTTPStatus() int
+		SafeMessage() string
+		RetryAfter() int
+	}); ok {
+		if failure.RetryAfter() > 0 {
+			w.Header().Set("Retry-After", strconv.Itoa(failure.RetryAfter()))
+		}
+		FailStatus(w, failure.HTTPStatus(), failure.SafeMessage())
+		return
+	}
 	if safe, ok := err.(interface{ SafeMessage() string }); ok {
 		Fail(w, safe.SafeMessage())
 		return
@@ -38,11 +53,13 @@ func FailError(w http.ResponseWriter, err error) {
 }
 
 func writeJSON(w http.ResponseWriter, value any) {
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(value)
 }
 
 func writeJSONStatus(w http.ResponseWriter, status int, value any) {
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)

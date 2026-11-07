@@ -27,6 +27,8 @@ export type AuthSession = {
 export type LoginPayload = {
     username: string;
     password: string;
+    admin?: boolean;
+    turnstileToken?: string;
 };
 
 export type RegisterPayload = LoginPayload & {
@@ -110,7 +112,11 @@ export type CreatedUserAPIKey = UserAPIKey & {
 };
 
 export async function login(payload: LoginPayload) {
-    return apiPost<AuthSession>("/api/auth/login", payload);
+    return apiPost<AuthSession>(payload.admin ? "/api/admin/login" : "/api/auth/login", payload);
+}
+
+export async function fetchAdminLoginChallenge() {
+    return apiGet<{ siteKey: string }>("/api/admin/login-challenge");
 }
 
 export async function register(payload: RegisterPayload) {

@@ -147,6 +147,7 @@ Agent 的长期记忆表。记忆同时绑定企业、用户和可选画布项�
 | `id` | string | 主键 |
 | `username` | string | 用户名，唯一索引 |
 | `password` | string | 密码哈希 |
+| `token_version` | int64 | 会话版本，默认 1；改密、登出、角色或封禁状态变化时递增，JWT 必须与当前值一致；不对外返回 |
 | `email` | string | 邮箱 |
 | `email_key` | nullable string | 规范化邮箱唯一键；历史空值为 `NULL`，新注册用户用于防止并发重复注册 |
 | `display_name` | string | 昵称 |

@@ -19,7 +19,7 @@ description: 业务接口统一响应结构与前端处理约定
 - `data`: 业务数据。失败时通常为 `null`。
 - `msg`: 响应消息。成功默认为 `ok`，失败时放错误原因。
 
-前端请求逻辑以 `code` 判断业务是否成功。当前后端业务失败也会返回 HTTP 200，前端不要只依赖 HTTP 状态码判断结果。
+前端请求逻辑以 `code` 判断业务是否成功。普通业务校验失败仍可返回 HTTP 200；登录失败或缺少有效会话返回 401，已认证但后台权限不足返回 403，登录或邮箱验证码限流返回 429 并附 Retry-After，后台验证未配置或暂不可用返回 503。以上业务响应均保留 code、data、msg，前端同时检查 HTTP 状态与 code。
 
 接口连接失败、服务不可达、返回体不是约定 JSON 时，前端按网络或接口异常处理。
 
@@ -37,7 +37,7 @@ description: 业务接口统一响应结构与前端处理约定
 
 ## 用户 API Key
 
-面向外部调用方的完整示例按类型分开：[图片对接](/docs/api/image)、[视频对接](/docs/api/video)、[音频对接](/docs/api/audio)。`ic_live_` API Key 调用 `/api/v1/*` 时，成功响应保持各接口自己的结果；失败返回对应 HTTP 状态码和 OpenAI 错误体，不再使用 `{ code, data, msg }`。登录会话调用同一路由时，失败仍是 HTTP 200 的 `{ code, data, msg }`。
+面向外部调用方的完整示例按类型分开：[图片对接](/docs/api/image)、[视频对接](/docs/api/video)、[音频对接](/docs/api/audio)。`ic_live_` API Key 调用 `/api/v1/*` 时，成功响应保持各接口自己的结果；失败返回对应 HTTP 状态码和 OpenAI 错误体，不再使用 `{ code, data, msg }`。登录会话调用同一路由时仍使用 `{ code, data, msg }`；鉴权失败为 HTTP 401，普通业务失败可为 HTTP 200。
 
 ```json
 {

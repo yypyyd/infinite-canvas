@@ -71,7 +71,7 @@ func SendRegistrationEmailCode(rawEmail string, requestIP string) error {
 	}
 	if exists {
 		if sentAt, parseErr := time.Parse(time.RFC3339, current.SentAt); parseErr == nil && currentTime.Sub(sentAt) < emailCodeResendInterval {
-			return safeMessageError{message: "验证码发送过于频繁，请稍后再试"}
+			return authError{429, "验证码发送过于频繁，请稍后再试", int(emailCodeResendInterval.Seconds()-currentTime.Sub(sentAt).Seconds()) + 1}
 		}
 	}
 	requestIP = strings.TrimSpace(requestIP)
@@ -81,7 +81,7 @@ func SendRegistrationEmailCode(rawEmail string, requestIP string) error {
 			return countErr
 		}
 		if total >= emailIPLimit {
-			return safeMessageError{message: "验证码请求过于频繁，请稍后再试"}
+			return authError{429, "验证码请求过于频繁，请稍后再试", 60}
 		}
 	}
 

@@ -79,7 +79,7 @@ export function AdminLayoutClient({ children }: { children: ReactNode }) {
     const submitLogout = async () => {
         try {
             await flushActiveWorkspaceChanges();
-            logout();
+            await logout();
         } catch (error) {
             message.error(error instanceof Error ? error.message : "当前数据尚未保存，无法退出登录");
         }

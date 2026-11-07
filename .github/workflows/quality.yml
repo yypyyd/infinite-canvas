@@ -26,6 +26,8 @@ jobs:
             exit 1
           fi
       - run: go vet ./...
+      - name: Authentication security regression tests
+        run: go test ./service -run 'Test(ClientIPRequiresProxyAuthentication|LoginLimitReservesInFlightAttemptsAndBacksOff|SessionAlgorithmAndAdminLifetime)$' -count=1
 
   web:
     runs-on: ubuntu-latest

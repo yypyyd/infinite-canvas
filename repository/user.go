@@ -6,6 +6,7 @@ import (
 
 	"github.com/yypyyd/infinite-canvas/model"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ListUsers 分页查询用户。
@@ -76,7 +77,56 @@ func SaveUser(user model.User) (model.User, error) {
 	if err != nil {
 		return user, err
 	}
-	return user, db.Save(&user).Error
+	expectedVersion := user.TokenVersion
+	err = transactionWithSQLiteRetry(db, func(tx *gorm.DB) error {
+		var current model.User
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&current, "id = ?", user.ID).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		if err == nil && current.TokenVersion != expectedVersion {
+			return gorm.ErrInvalidData
+		}
+		user.TokenVersion = current.TokenVersion
+		if errors.Is(err, gorm.ErrRecordNotFound) || current.Password != user.Password || current.Role != user.Role || current.Status != user.Status {
+			user.TokenVersion++
+		}
+		return tx.Save(&user).Error
+	})
+	return user, err
+}
+
+func RevokeUserSessions(id string) error {
+	db, err := DB()
+	if err != nil {
+		return err
+	}
+	return db.Model(&model.User{}).Where("id = ?", id).UpdateColumn("token_version", gorm.Expr("token_version + 1")).Error
+}
+
+func UpdateUserLogin(id, timestamp string) error {
+	db, err := DB()
+	if err != nil {
+		return err
+	}
+	return db.Model(&model.User{}).Where("id = ?", id).Updates(map[string]any{"last_login_at": timestamp, "updated_at": timestamp}).Error
+}
+
+func UpdateUserProfile(id, displayName, avatarURL, timestamp string) error {
+	db, err := DB()
+	if err != nil {
+		return err
+	}
+	return db.Model(&model.User{}).Where("id = ?", id).Updates(map[string]any{"display_name": displayName, "avatar_url": avatarURL, "updated_at": timestamp}).Error
+}
+
+func UpdateUserPassword(id, previousHash, passwordHash, timestamp string) (bool, error) {
+	db, err := DB()
+	if err != nil {
+		return false, err
+	}
+	result := db.Model(&model.User{}).Where("id = ? AND password = ?", id, previousHash).Updates(map[string]any{"password": passwordHash, "token_version": gorm.Expr("token_version + 1"), "updated_at": timestamp})
+	return result.RowsAffected == 1, result.Error
 }
 
 // GetUserByEmail queries a normalized email and also covers users created before email_key existed.

@@ -15,7 +15,7 @@ ENV NEXT_PUBLIC_VERSION_URL=${NEXT_PUBLIC_VERSION_URL}
 COPY web/package.json web/bun.lock ./
 RUN --mount=type=cache,target=/root/.bun/install/cache bun install --frozen-lockfile --cache-dir=/root/.bun/install/cache
 COPY VERSION /app/VERSION
-COPY CHANGELOG.md /app/CHANGELOG.md
+COPY RELEASE_NOTES.md /app/RELEASE_NOTES.md
 COPY web ./
 RUN node node_modules/next/dist/bin/next build
 
@@ -47,7 +47,7 @@ FROM node:22-bookworm-slim
 
 WORKDIR /app
 COPY VERSION /app/VERSION
-COPY CHANGELOG.md /app/CHANGELOG.md
+COPY RELEASE_NOTES.md /app/RELEASE_NOTES.md
 COPY LICENSE NOTICE.md THIRD_PARTY_NOTICES.md /app/
 COPY --from=api-build /server /app/server
 COPY --from=api-build /batch-worker /app/batch-worker

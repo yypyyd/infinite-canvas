@@ -11,7 +11,7 @@ const title = '更新日志';
 const description = '项目版本变更记录';
 
 async function readChangelog() {
-  return readFile(join(process.cwd(), '..', 'CHANGELOG.md'), 'utf8');
+  return readFile(join(process.cwd(), '..', 'RELEASE_NOTES.md'), 'utf8');
 }
 
 export default async function ChangelogPage() {

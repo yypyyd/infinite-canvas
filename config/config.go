@@ -16,6 +16,10 @@ type Config struct {
 	AdminPassword                string `env:"ADMIN_PASSWORD"`
 	JWTSecret                    string `env:"JWT_SECRET"`
 	JWTExpireHours               int    `env:"JWT_EXPIRE_HOURS" envDefault:"168"`
+	ReverseProxyToken            string `env:"REVERSE_PROXY_TOKEN"`
+	TurnstileSiteKey             string `env:"TURNSTILE_SITE_KEY"`
+	TurnstileSecretKey           string `env:"TURNSTILE_SECRET_KEY"`
+	TurnstileHostnames           string `env:"TURNSTILE_HOSTNAMES"`
 	StorageDriver                string `env:"STORAGE_DRIVER" envDefault:"sqlite"`
 	DatabaseDSN                  string `env:"DATABASE_DSN" envDefault:"data/infinite-canvas.db"`
 	PublicBaseURL                string `env:"PUBLIC_BASE_URL"`

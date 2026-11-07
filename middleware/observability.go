@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/yypyyd/infinite-canvas/service"
 )
 
 const RequestIDHeader = "X-Request-ID"
@@ -39,6 +40,6 @@ func RequestObservability(c *gin.Context) {
 		"status", c.Writer.Status(),
 		"latency_ms", time.Since(startedAt).Milliseconds(),
 		"response_bytes", c.Writer.Size(),
-		"client_ip", c.ClientIP(),
+		"client_ip", service.RequestClientIP(c.Request),
 	)
 }

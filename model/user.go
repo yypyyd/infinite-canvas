@@ -20,6 +20,7 @@ type User struct {
 	ID              string     `json:"id" gorm:"primaryKey"`
 	Username        string     `json:"username" gorm:"uniqueIndex"`
 	Password        string     `json:"password,omitempty"`
+	TokenVersion    int64      `json:"-" gorm:"not null;default:1"`
 	Email           string     `json:"email" gorm:"index"`
 	EmailKey        *string    `json:"-" gorm:"uniqueIndex"`
 	DisplayName     string     `json:"displayName"`

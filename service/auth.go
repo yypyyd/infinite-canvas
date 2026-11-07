@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"net/url"
 	"strings"
@@ -16,9 +17,11 @@ import (
 )
 
 type TokenClaims struct {
-	UserID   string         `json:"userId"`
-	Username string         `json:"username"`
-	Role     model.UserRole `json:"role"`
+	UserID       string         `json:"userId"`
+	Username     string         `json:"username"`
+	Role         model.UserRole `json:"role"`
+	TokenVersion int64          `json:"tokenVersion"`
+	Admin        bool           `json:"admin"`
 	jwt.RegisteredClaims
 }
 
@@ -76,18 +79,6 @@ func Register(username string, email string, code string, password string, refer
 	if len(code) != 6 {
 		return model.AuthSession{}, safeMessageError{message: "请输入 6 位邮箱验证码"}
 	}
-	if _, ok, err := repository.GetUserByUsername(username); err != nil || ok {
-		if err != nil {
-			return model.AuthSession{}, err
-		}
-		return model.AuthSession{}, safeMessageError{message: "用户名已存在"}
-	}
-	if _, ok, err := repository.GetUserByEmail(email); err != nil || ok {
-		if err != nil {
-			return model.AuthSession{}, err
-		}
-		return model.AuthSession{}, safeMessageError{message: "该邮箱已注册"}
-	}
 	verificationID := emailVerificationID(email)
 	verification, ok, err := repository.GetEmailVerification(verificationID)
 	if err != nil {
@@ -101,6 +92,18 @@ func Register(username string, email string, code string, password string, refer
 	if parseErr != nil || !expiresAt.After(time.Now()) || !verifyEmailCodeHash(verification.CodeHash, codeHash) {
 		_ = repository.IncrementEmailVerificationAttempts(verificationID, verification.CodeHash)
 		return model.AuthSession{}, safeMessageError{message: "邮箱验证码无效或已过期"}
+	}
+	if _, ok, err := repository.GetUserByUsername(username); err != nil || ok {
+		if err != nil {
+			return model.AuthSession{}, err
+		}
+		return model.AuthSession{}, safeMessageError{message: "用户名已存在"}
+	}
+	if _, ok, err := repository.GetUserByEmail(email); err != nil || ok {
+		if err != nil {
+			return model.AuthSession{}, err
+		}
+		return model.AuthSession{}, safeMessageError{message: "该邮箱已注册"}
 	}
 	hash, err := hashPassword(password)
 	if err != nil {
@@ -176,8 +179,23 @@ func createRegisteredUser(user model.User, settings model.Settings, verification
 	return repository.CreateVerifiedUserWithCreditLog(user, organization, membership, audit, log, verificationID, codeHash, now(), emailMaxAttempts, inviterIDs...)
 }
 
-func Login(identifier string, password string) (model.AuthSession, error) {
-	identifier = strings.TrimSpace(identifier)
+type LoginInput struct {
+	Username, Password, Challenge, IP, RequestID string
+	Admin                                        bool
+}
+
+func Login(ctx context.Context, input LoginInput) (session model.AuthSession, err error) {
+	identifier := strings.TrimSpace(input.Username)
+	defer func() { recordLogin(identifier, input.IP, input.RequestID, input.Admin, err) }()
+	finishIP, err := beginLoginAttempt(loginLimitKey("ip", input.IP))
+	if err != nil {
+		return session, err
+	}
+	success := false
+	defer func() { finishIP(success) }()
+	if len(identifier) > 254 || len(input.Password) > 72 {
+		return session, authError{401, "账号或密码错误", 0}
+	}
 	user, ok, err := repository.GetUserByUsername(identifier)
 	if err == nil && !ok {
 		if email, normalizeErr := normalizeEmailAddress(identifier); normalizeErr == nil {
@@ -185,33 +203,60 @@ func Login(identifier string, password string) (model.AuthSession, error) {
 		}
 	}
 	if err != nil {
-		return model.AuthSession{}, err
+		return session, err
 	}
-	if !ok || bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)) != nil {
-		return model.AuthSession{}, safeMessageError{message: "用户名、邮箱或密码错误"}
+	account := strings.ToLower(identifier)
+	if ok {
+		account = user.ID
 	}
-	if user.Status == model.UserStatusBan {
-		return model.AuthSession{}, safeMessageError{message: "账号已被禁用"}
+	finishAccount, err := beginLoginAttempt(loginLimitKey("account", account))
+	if err != nil {
+		return session, err
+	}
+	defer func() { finishAccount(success) }()
+	if input.Admin {
+		if err := verifyAdminChallenge(ctx, input.Challenge, input.IP); err != nil {
+			return session, err
+		}
+	}
+	// Match the real bcrypt cost even when the account is absent.
+	hash := user.Password
+	if !ok {
+		hash = dummyPasswordHash
+	}
+	passwordErr := bcrypt.CompareHashAndPassword([]byte(hash), []byte(input.Password))
+	if !ok || passwordErr != nil || user.Status == model.UserStatusBan {
+		return session, authError{401, "账号或密码错误", 0}
+	}
+	if input.Admin && user.Role != model.UserRoleAdmin {
+		return session, authError{403, "需要管理员权限", 0}
+	}
+	if !input.Admin && user.Role == model.UserRoleAdmin {
+		return session, authError{403, "管理员请使用后台登录入口", 0}
 	}
 	normalizeUserDefaults(&user)
 	user.LastLoginAt = now()
-	user.Group = normalizeUserGroup(user.Group)
-	user.UpdatedAt = now()
-	user, err = repository.SaveUser(user)
-	if err != nil {
-		return model.AuthSession{}, err
+	if err := repository.UpdateUserLogin(user.ID, user.LastLoginAt); err != nil {
+		return session, err
 	}
-	return newSession(user)
+	session, err = newSession(user)
+	success = err == nil
+	return session, err
 }
+
+var dummyPasswordHash = func() string {
+	hash, err := bcrypt.GenerateFromPassword([]byte(uuid.NewString()), bcrypt.DefaultCost)
+	if err != nil {
+		panic(err)
+	}
+	return string(hash)
+}()
 
 func ParseToken(tokenText string) (TokenClaims, error) {
 	claims := TokenClaims{}
 	token, err := jwt.ParseWithClaims(tokenText, &claims, func(token *jwt.Token) (any, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, errors.New("登录状态无效")
-		}
 		return []byte(config.Cfg.JWTSecret), nil
-	})
+	}, jwt.WithValidMethods([]string{"HS256"}), jwt.WithExpirationRequired())
 	if err != nil || !token.Valid {
 		return TokenClaims{}, errors.New("登录状态无效")
 	}
@@ -227,7 +272,7 @@ func CurrentAuthUser(tokenText string) (model.AuthUser, bool) {
 	if err != nil || !ok {
 		return model.AuthUser{}, false
 	}
-	if user.Status == model.UserStatusBan {
+	if user.Status == model.UserStatusBan || claims.TokenVersion != user.TokenVersion || claims.TokenVersion < 1 {
 		return model.AuthUser{}, false
 	}
 	normalizeUserDefaults(&user)
@@ -320,6 +365,7 @@ func SaveUser(user model.User, password string) (model.User, error) {
 	} else if ok {
 		user.CreatedAt = saved.CreatedAt
 		user.Password = saved.Password
+		user.TokenVersion = saved.TokenVersion
 		if strings.TrimSpace(user.Email) == "" {
 			user.Email = saved.Email
 			user.EmailKey = saved.EmailKey
@@ -418,8 +464,7 @@ func UpdateProfile(userID string, displayName string, avatarURL string) (model.A
 	user.DisplayName = displayName
 	user.AvatarURL = avatarURL
 	user.UpdatedAt = now()
-	user, err = repository.SaveUser(user)
-	if err != nil {
+	if err := repository.UpdateUserProfile(user.ID, user.DisplayName, user.AvatarURL, user.UpdatedAt); err != nil {
 		return model.AuthUser{}, err
 	}
 	return model.PublicUser(user), nil
@@ -428,9 +473,6 @@ func UpdateProfile(userID string, displayName string, avatarURL string) (model.A
 func ChangePassword(userID string, currentPassword string, newPassword string) error {
 	if currentPassword == "" || newPassword == "" {
 		return safeMessageError{message: "当前密码和新密码不能为空"}
-	}
-	if utf8.RuneCountInString(newPassword) < 6 {
-		return safeMessageError{message: "新密码不能少于 6 个字符"}
 	}
 	user, ok, err := repository.GetUserByID(userID)
 	if err != nil || !ok {
@@ -446,10 +488,14 @@ func ChangePassword(userID string, currentPassword string, newPassword string) e
 	if err != nil {
 		return err
 	}
-	user.Password = hash
-	user.UpdatedAt = now()
-	_, err = repository.SaveUser(user)
-	return err
+	updated, err := repository.UpdateUserPassword(user.ID, user.Password, hash, now())
+	if err != nil {
+		return err
+	}
+	if !updated {
+		return safeMessageError{message: "账号状态已变化，请重新登录"}
+	}
+	return nil
 }
 
 func ListCreditLogs(q model.Query) (model.CreditLogList, error) {
@@ -506,10 +552,15 @@ func newToken(user model.User) (string, error) {
 	if expireHours <= 0 {
 		expireHours = 168
 	}
+	if user.Role == model.UserRoleAdmin && expireHours > 12 {
+		expireHours = 12
+	}
 	claims := TokenClaims{
-		UserID:   user.ID,
-		Username: user.Username,
-		Role:     user.Role,
+		TokenVersion: user.TokenVersion,
+		Admin:        user.Role == model.UserRoleAdmin,
+		UserID:       user.ID,
+		Username:     user.Username,
+		Role:         user.Role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(expireHours) * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -520,6 +571,18 @@ func newToken(user model.User) (string, error) {
 }
 
 func hashPassword(password string) (string, error) {
+	if utf8.RuneCountInString(password) < 12 || len(password) > 72 {
+		return "", safeMessageError{message: "密码至少 12 个字符，且不能超过 72 字节"}
+	}
+	normalized := strings.ToLower(strings.TrimSpace(password))
+	for _, weak := range []string{"123456789012", "1234567890123456", "password1234", "password123456", "qwerty123456", "qwertyuiop123", "administrator", "infinite-canvas"} {
+		if normalized == weak {
+			return "", safeMessageError{message: "请勿使用常见弱密码"}
+		}
+	}
+	if normalized == "" || strings.Trim(normalized, string([]rune(normalized)[0])) == "" {
+		return "", safeMessageError{message: "请勿使用重复字符密码"}
+	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	return string(hash), err
 }

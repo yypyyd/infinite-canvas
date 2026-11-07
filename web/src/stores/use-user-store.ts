@@ -13,7 +13,7 @@ type UserStore = {
     isLoading: boolean;
     setSession: (token: string, user: AuthUser) => void;
     setOrganizationId: (organizationId: string) => void;
-    clearSession: () => void;
+    clearSession: () => Promise<void>;
     refreshUser: () => Promise<AuthUser | null>;
     hydrateUser: () => Promise<void>;
     login: (payload: LoginPayload) => Promise<AuthUser>;
@@ -34,8 +34,8 @@ export const useUserStore = create<UserStore>()((set, get) => ({
         setActiveOrganizationId(organizationId);
         set((state) => ({ user: state.user ? { ...state.user, organizationId } : null }));
     },
-    clearSession: () => {
-        void logout().catch(() => undefined);
+    clearSession: async () => {
+        await logout();
         setActiveOrganizationId("");
         setWorkspaceActorId("");
         set({ token: "", user: null, isReady: true });

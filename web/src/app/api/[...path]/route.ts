@@ -1,4 +1,6 @@
 import type { NextRequest } from "next/server";
+import { timingSafeEqual } from "node:crypto";
+import { isIP } from "node:net";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -12,8 +14,18 @@ function proxyHeaders(request: NextRequest) {
     headers.delete("host");
     headers.delete("content-length");
     headers.delete("connection");
+    const secret = process.env.REVERSE_PROXY_TOKEN || "";
+    const supplied = request.headers.get("x-proxy-token") || "";
+    const ip = request.headers.get("x-real-ip")?.trim() || "";
+    const trusted = secret.length >= 32 && Buffer.byteLength(secret) === Buffer.byteLength(supplied) && timingSafeEqual(Buffer.from(secret), Buffer.from(supplied)) && isIP(ip);
+    for (const name of ["forwarded", "x-forwarded-for", "cf-connecting-ip", "x-real-client-ip", "x-real-ip", "x-proxy-token"]) headers.delete(name);
+    if (trusted) {
+        headers.set("x-real-ip", ip);
+        headers.set("x-proxy-token", secret);
+    }
     headers.set("x-forwarded-host", request.nextUrl.host);
-    headers.set("x-forwarded-proto", request.nextUrl.protocol.replace(":", ""));
+    const protocol = request.headers.get("x-forwarded-proto");
+    headers.set("x-forwarded-proto", trusted && (protocol === "https" || protocol === "http") ? protocol : request.nextUrl.protocol.replace(":", ""));
     return headers;
 }
 

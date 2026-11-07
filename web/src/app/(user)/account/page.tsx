@@ -285,6 +285,7 @@ function AccountMetric({ icon, label, value, suffix }: { icon: ReactNode; label:
 }
 
 function ProfileSection() {
+    const router = useRouter();
     const { message } = App.useApp();
     const [profileForm] = Form.useForm<ProfileFormValues>();
     const [passwordForm] = Form.useForm<PasswordFormValues>();
@@ -313,7 +314,9 @@ function ProfileSection() {
         onSuccess: () => {
             setPasswordOpen(false);
             passwordForm.resetFields();
-            message.success("密码已修改");
+            message.success("密码已修改，请重新登录");
+            void useUserStore.getState().refreshUser();
+            router.replace("/login");
         },
         onError: (error) => message.error(error instanceof Error ? error.message : "修改密码失败"),
     });
@@ -442,7 +445,7 @@ function ProfileSection() {
                         label="新密码"
                         rules={[
                             { required: true, message: "请输入新密码" },
-                            { min: 6, message: "新密码不能少于 6 个字符" },
+                            { min: 12, message: "新密码不能少于 12 个字符" },
                         ]}
                     >
                         <Input.Password autoComplete="new-password" />

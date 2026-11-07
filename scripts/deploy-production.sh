@@ -38,6 +38,20 @@ fi
 echo "pull $IMAGE"
 docker pull "$IMAGE"
 
+# Validate the image's required security settings before stopping the live service.
+docker run --rm --env-file "$ENV_FILE" --entrypoint node "$IMAGE" -e '
+const required = ["TURNSTILE_SITE_KEY", "TURNSTILE_SECRET_KEY", "TURNSTILE_HOSTNAMES", "REVERSE_PROXY_TOKEN"];
+const missing = required.filter(name => !process.env[name]?.trim());
+if (missing.length) {
+  console.error("Missing security configuration: " + missing.join(", "));
+  process.exit(1);
+}
+if (Buffer.byteLength(process.env.REVERSE_PROXY_TOKEN) < 32) {
+  console.error("REVERSE_PROXY_TOKEN must contain at least 32 bytes");
+  process.exit(1);
+}
+'
+
 if [[ "$BACKUP_DATA" == "1" ]]; then
   stamp="$(date +%Y%m%d-%H%M%S)"
   mkdir -p "$BACKUP_ROOT/$stamp"

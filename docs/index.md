@@ -31,6 +31,7 @@
 - [Adobe GPT Image 2 纯协议排障](/docs/backend/adobe-image2-protocol)
 - [后端数据库说明](/docs/backend/backend-database)
 - [画布数据结构](/docs/backend/canvas-data-structure)
+- [安全说明](/docs/security/security-test-report)
 
 ## 商务合作
 

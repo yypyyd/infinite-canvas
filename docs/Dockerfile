@@ -7,7 +7,7 @@ WORKDIR /app
 COPY docs/package.json docs/bun.lock ./
 RUN --mount=type=cache,target=/root/.bun/install/cache bun install --frozen-lockfile --ignore-scripts --cache-dir=/root/.bun/install/cache
 COPY docs ./
-COPY CHANGELOG.md /CHANGELOG.md
+COPY RELEASE_NOTES.md /RELEASE_NOTES.md
 RUN bun run postinstall
 RUN node node_modules/next/dist/bin/next build
 
@@ -24,7 +24,7 @@ COPY --from=docs-build --chown=nextjs:nodejs /app/index.md ./index.md
 COPY --from=docs-build --chown=nextjs:nodejs /app/content ./content
 COPY --from=docs-build --chown=nextjs:nodejs /app/.source ./.source
 COPY --from=docs-build --chown=nextjs:nodejs /app/source.config.ts ./source.config.ts
-COPY --from=docs-build --chown=nextjs:nodejs /CHANGELOG.md /CHANGELOG.md
+COPY --from=docs-build --chown=nextjs:nodejs /RELEASE_NOTES.md /RELEASE_NOTES.md
 COPY --from=docs-build --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=docs-build --chown=nextjs:nodejs /app/.next/static ./.next/static
 USER nextjs

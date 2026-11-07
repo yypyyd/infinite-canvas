@@ -1,0 +1,6 @@
+{
+  "title": "安全",
+  "root": true,
+  "defaultOpen": false,
+  "pages": ["security-test-report"]
+}

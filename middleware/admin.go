@@ -5,16 +5,28 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/yypyyd/infinite-canvas/config"
 	"github.com/yypyyd/infinite-canvas/handler"
 	"github.com/yypyyd/infinite-canvas/model"
 	"github.com/yypyyd/infinite-canvas/service"
 )
 
 func AdminAuth(c *gin.Context) {
-	user, ok := authUser(c)
-	if !ok || user.Role != model.UserRoleAdmin {
-		handler.Fail(c.Writer, "未登录或权限不足")
+	token := strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer ")
+	if token == "" {
+		token, _ = c.Cookie("infinite_canvas_admin_session")
+	}
+	if token == "" {
+		token, _ = c.Cookie("infinite_canvas_session")
+	}
+	user, ok := service.CurrentAuthUser(token)
+	if !ok {
+		handler.FailStatus(c.Writer, http.StatusUnauthorized, "请先登录后台")
+		c.Abort()
+		return
+	}
+	claims, err := service.ParseToken(token)
+	if err != nil || !claims.Admin || user.Role != model.UserRoleAdmin {
+		handler.FailStatus(c.Writer, http.StatusForbidden, "需要管理员权限")
 		c.Abort()
 		return
 	}
@@ -25,7 +37,7 @@ func AdminAuth(c *gin.Context) {
 func UserAuth(c *gin.Context) {
 	user, ok := authUser(c)
 	if !ok || user.Role == model.UserRoleGuest {
-		handler.Fail(c.Writer, "未登录或权限不足")
+		handler.FailStatus(c.Writer, http.StatusUnauthorized, "未登录或权限不足")
 		c.Abort()
 		return
 	}
@@ -86,28 +98,22 @@ func NotFoundJSON(c *gin.Context) {
 
 func authUser(c *gin.Context) (model.AuthUser, bool) {
 	token := strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer ")
-	if strings.TrimSpace(token) == "" {
-		token, _ = c.Cookie("infinite_canvas_session")
+	if strings.TrimSpace(token) != "" {
+		return service.CurrentAuthUser(token)
 	}
-	if strings.TrimSpace(token) == "" {
-		return model.AuthUser{}, false
-	}
-	user, ok := service.CurrentAuthUser(token)
-	if ok && strings.TrimSpace(c.GetHeader("Authorization")) != "" {
-		maxAge := config.Cfg.JWTExpireHours * 3600
-		if maxAge <= 0 {
-			maxAge = 7 * 24 * 3600
+	for _, name := range []string{"infinite_canvas_admin_session", "infinite_canvas_session"} {
+		token, _ := c.Cookie(name)
+		if user, ok := service.CurrentAuthUser(token); ok {
+			return user, true
 		}
-		c.SetSameSite(http.SameSiteLaxMode)
-		c.SetCookie("infinite_canvas_session", token, maxAge, "/", "", c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https", true)
 	}
-	return user, ok
+	return model.AuthUser{}, false
 }
 
 func OrganizationAuth(c *gin.Context) {
 	user, ok := service.UserFromContext(c.Request.Context())
 	if !ok {
-		handler.Fail(c.Writer, "未登录或权限不足")
+		handler.FailStatus(c.Writer, http.StatusUnauthorized, "未登录或权限不足")
 		c.Abort()
 		return
 	}

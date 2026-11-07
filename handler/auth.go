@@ -2,7 +2,6 @@ package handler
 
 import (
 	"encoding/json"
-	"net"
 	"net/http"
 	"strings"
 
@@ -12,8 +11,9 @@ import (
 )
 
 type loginRequest struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
+	Username       string `json:"username"`
+	Password       string `json:"password"`
+	TurnstileToken string `json:"turnstileToken"`
 }
 
 type registerRequest struct {
@@ -75,58 +75,53 @@ func SendRegistrationEmailCode(w http.ResponseWriter, r *http.Request) {
 	OK(w, true)
 }
 
-func requestRemoteIP(r *http.Request) string {
-	value := strings.TrimSpace(r.RemoteAddr)
-	if host, _, err := net.SplitHostPort(value); err == nil {
-		value = host
-	}
-	remoteIP := net.ParseIP(value)
-	if remoteIP == nil {
-		return ""
-	}
-	if remoteIP.IsLoopback() || remoteIP.IsPrivate() {
-		parts := strings.Split(r.Header.Get("X-Forwarded-For"), ",")
-		for index := len(parts) - 1; index >= 0; index-- {
-			forwardedIP := net.ParseIP(strings.TrimSpace(parts[index]))
-			if forwardedIP != nil && !forwardedIP.IsLoopback() && !forwardedIP.IsPrivate() {
-				return forwardedIP.String()
-			}
-		}
-	}
-	return remoteIP.String()
-}
+func requestRemoteIP(r *http.Request) string { return service.RequestClientIP(r) }
 
-func Login(w http.ResponseWriter, r *http.Request) {
-	var request loginRequest
-	_ = json.NewDecoder(r.Body).Decode(&request)
-	session, err := service.Login(request.Username, request.Password)
+func Login(w http.ResponseWriter, r *http.Request) { credentialLogin(w, r, false) }
+
+func AdminLogin(w http.ResponseWriter, r *http.Request) { credentialLogin(w, r, true) }
+
+func AdminLoginChallenge(w http.ResponseWriter, r *http.Request) {
+	siteKey, err := service.AdminLoginChallenge()
 	if err != nil {
 		FailError(w, err)
 		return
 	}
-	setUserSessionCookie(w, r, session.Token)
+	OK(w, map[string]string{"siteKey": siteKey})
+}
+
+func credentialLogin(w http.ResponseWriter, r *http.Request, admin bool) {
+	var request loginRequest
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&request) != nil {
+		FailStatus(w, http.StatusBadRequest, "登录参数无效")
+		return
+	}
+	session, err := service.Login(r.Context(), service.LoginInput{Username: request.Username, Password: request.Password, Challenge: request.TurnstileToken, IP: service.RequestClientIP(r), RequestID: r.Header.Get("X-Request-ID"), Admin: admin})
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	if admin {
+		http.SetCookie(w, &http.Cookie{Name: "infinite_canvas_admin_session", Value: session.Token, Path: "/api", MaxAge: service.AdminSessionMaxAge(), HttpOnly: true, Secure: requestIsSecure(r), SameSite: http.SameSiteStrictMode})
+	} else {
+		setUserSessionCookie(w, r, session.Token)
+	}
 	OK(w, session)
 }
 
 func Logout(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{Name: "infinite_canvas_session", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: requestIsSecure(r), SameSite: http.SameSiteLaxMode})
-	OK(w, true)
-}
-
-func AdminLogin(w http.ResponseWriter, r *http.Request) {
-	var request loginRequest
-	_ = json.NewDecoder(r.Body).Decode(&request)
-	session, err := service.Login(request.Username, request.Password)
-	if err != nil {
+	if err := service.Logout(r); err != nil {
 		FailError(w, err)
 		return
 	}
-	if session.User.Role != model.UserRoleAdmin {
-		Fail(w, "需要管理员权限")
-		return
+	clearSessionCookies(w, r)
+	OK(w, true)
+}
+
+func clearSessionCookies(w http.ResponseWriter, r *http.Request) {
+	for name, path := range map[string]string{"infinite_canvas_session": "/", "infinite_canvas_admin_session": "/api"} {
+		http.SetCookie(w, &http.Cookie{Name: name, Value: "", Path: path, MaxAge: -1, HttpOnly: true, Secure: requestIsSecure(r), SameSite: http.SameSiteLaxMode})
 	}
-	setUserSessionCookie(w, r, session.Token)
-	OK(w, session)
 }
 
 func setUserSessionCookie(w http.ResponseWriter, r *http.Request, token string) {
@@ -183,6 +178,7 @@ func ChangePassword(w http.ResponseWriter, r *http.Request) {
 		FailError(w, err)
 		return
 	}
+	clearSessionCookies(w, r)
 	OK(w, true)
 }
 

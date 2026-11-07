@@ -25,7 +25,8 @@ jobs:
       - uses: actions/checkout@v5
       - name: Download pinned Nginx parser
         if: inputs.operation == 'configure'
-        run: python3 -m pip download --no-deps --only-binary=:all: --dest /tmp/security-deps crossplane==0.5.8
+        run: |
+          python3 -m pip download --no-deps --only-binary=:all: --dest /tmp/security-deps crossplane==0.5.8
       - name: Configure production security
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}

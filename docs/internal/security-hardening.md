@@ -4,6 +4,10 @@
 
 ## 部署前配置
 
+已提供 `Production security configuration` 手动工作流：`inspect` 只读检查，`configure` 从 GitHub `production` 环境 Secrets 读取 Turnstile 两项配置，写入现有服务器 `.env`，自动生成并复用代理密钥，更新已确认的宝塔 Nginx 应用代理文件；`verify` 检查带指定请求 ID 的来源 IP 探针日志。域名固定为主站和现有内嵌入口。重复执行不会轮换已有代理密钥。
+
+配置工作流使用固定版本的 crossplane 解析 Nginx，并从 Cloudflare 官方地址读取可信网段。只更新通往应用端口的 location；写入后通过 Nginx 检查才平滑重载，失败恢复本次修改前的配置。密钥和输入文件不会进入日志；临时输入在流程退出时删除，不创建生产业务数据备份。
+
 - 在 Cloudflare 创建 Turnstile widget，允许实际使用的登录域名。服务端设置 `TURNSTILE_SITE_KEY`、`TURNSTILE_SECRET_KEY`、`TURNSTILE_HOSTNAMES`（逗号分隔的域名，不带协议或路径）。浏览器只取得 site key；secret 只在服务端。未配置、验证服务不可用、token 重复/过期、hostname/action 不匹配均不签发后台会话。Turnstile 是防自动化校验，不是双因素认证。
 - 生成至少 32 字符的随机 `REVERSE_PROXY_TOKEN`，由入口 Nginx、Next 与 Go 共同使用。它必须通过私有部署配置提供，不进入 Git、前端环境变量、响应或访问日志。
 - 入口代理必须覆盖客户端的 `X-Real-IP`、`X-Proxy-Token` 和 `X-Forwarded-Proto`。Next 只接受通过密钥校验的地址，再剥离其余来源 IP 头。Go 使用同一校验规则；密钥缺失或不匹配时仅使用 TCP 对端，绝不回退到客户端传入的 XFF。此时代理后的请求会共享 IP 限流桶，必须在开放流量前完成真实 IP 验收。

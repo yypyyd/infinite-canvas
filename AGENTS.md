@@ -111,6 +111,8 @@
 
 ## 生产部署与 Worker
 
+- 新增必填部署配置时，同步提供可重复执行的自动化配置流程；可自动生成的服务端密钥自行生成并保留复用，外部服务密钥通过生产环境 Secrets 注入，不要默认用户已经配置。
+
 - 生产通过 GitHub Actions docker-image.yml → scripts/deploy-production.sh 部署到服务器；该脚本在 API 健康后启动 sibling 容器 infinite-canvas-video-worker（/app/video-worker）与 infinite-canvas-batch-worker（/app/batch-worker），共用同一镜像、.env 与 /app/data。
 - Docker Compose 的 worker profile 仅用于本地；不要以为生产 compose up 了就会跑 video-worker。
 - 入口 docker-entrypoint.sh 只启动 Go API + Next.js，不会自动拉起 claim worker。

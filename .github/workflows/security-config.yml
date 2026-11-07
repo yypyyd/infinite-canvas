@@ -6,7 +6,7 @@ on:
       operation:
         description: Inspect or configure production authentication settings
         type: choice
-        options: [inspect, configure]
+        options: [inspect, configure, verify]
         default: inspect
         required: true
 
@@ -23,6 +23,9 @@ jobs:
     environment: production
     steps:
       - uses: actions/checkout@v5
+      - name: Download pinned Nginx parser
+        if: inputs.operation == 'configure'
+        run: python3 -m pip download --no-deps --only-binary=:all: --dest /tmp/security-deps crossplane==0.5.8
       - name: Configure production security
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
@@ -45,6 +48,9 @@ jobs:
           Path("/tmp/security-input.json").write_text(json.dumps({k: os.environ.get(k, "") for k in names}))
           PY
           remote_dir="$(ssh "$DEPLOY_USER@$DEPLOY_HOST" 'mktemp -d /tmp/infinite-canvas-security.XXXXXX')"
-          trap 'rm -f /tmp/security-input.json; ssh "$DEPLOY_USER@$DEPLOY_HOST" "rm -f $remote_dir/security-input.json $remote_dir/configure-security.py; rmdir $remote_dir" || true' EXIT
+          trap 'rm -f /tmp/security-input.json; ssh "$DEPLOY_USER@$DEPLOY_HOST" "rm -f $remote_dir/security-input.json $remote_dir/configure-security.py $remote_dir/crossplane-*.whl; rmdir $remote_dir" || true' EXIT
           scp -p scripts/configure-security.py /tmp/security-input.json "$DEPLOY_USER@$DEPLOY_HOST:$remote_dir/"
+          if [[ "$OPERATION" == "configure" ]]; then
+            scp -p /tmp/security-deps/*.whl "$DEPLOY_USER@$DEPLOY_HOST:$remote_dir/"
+          fi
           ssh "$DEPLOY_USER@$DEPLOY_HOST" "python3 $remote_dir/configure-security.py $OPERATION $remote_dir/security-input.json"

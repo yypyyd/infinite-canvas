@@ -1,0 +1,50 @@
+name: Production security configuration
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Inspect or configure production authentication settings
+        type: choice
+        options: [inspect, configure]
+        default: inspect
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  configure:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v5
+      - name: Configure production security
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          OPERATION: ${{ inputs.operation }}
+          TURNSTILE_SITE_KEY: ${{ secrets.TURNSTILE_SITE_KEY }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
+          TURNSTILE_HOSTNAMES: huantu.xyz,canvas.xinghengcode.shop
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          names = ("TURNSTILE_SITE_KEY", "TURNSTILE_SECRET_KEY", "TURNSTILE_HOSTNAMES")
+          Path("/tmp/security-input.json").write_text(json.dumps({k: os.environ.get(k, "") for k in names}))
+          PY
+          remote_dir="$(ssh "$DEPLOY_USER@$DEPLOY_HOST" 'mktemp -d /tmp/infinite-canvas-security.XXXXXX')"
+          trap 'rm -f /tmp/security-input.json; ssh "$DEPLOY_USER@$DEPLOY_HOST" "rm -f $remote_dir/security-input.json $remote_dir/configure-security.py; rmdir $remote_dir" || true' EXIT
+          scp -p scripts/configure-security.py /tmp/security-input.json "$DEPLOY_USER@$DEPLOY_HOST:$remote_dir/"
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" "python3 $remote_dir/configure-security.py $OPERATION $remote_dir/security-input.json"

@@ -61,6 +61,7 @@ export type AgentCanvasNode = {
     references?: string[];
     storageKey?: string;
     settings?: Omit<AgentMediaOptions, "mode"> & { mode?: string };
+    keyframeIds?: string[];
     status?: string;
 };
 
@@ -93,9 +94,14 @@ export type AgentCanvasOp =
 
 export type AgentCanvasOpResult = { op: AgentCanvasOp["op"]; ref?: string; nodeId?: string; fromNodeId?: string; toNodeId?: string; x?: number; y?: number; adjusted?: boolean };
 
+export type AgentPlanStep = { step: string; status: "pending" | "in_progress" | "completed" };
+
+export type AgentAskOption = { label: string; description?: string };
+
 export type AgentToolArguments =
     | { query?: string; nodeIds?: string[]; offset?: number }
-    | { summary: string; steps: string[] }
+    | { explanation?: string; steps: AgentPlanStep[] }
+    | { skillId: string }
     | (AgentMediaOptions & { prompt: string; count: number; referenceNodeIds?: string[] })
     | (AgentMediaOptions & { nodeId: string; prompt: string; count: number })
     | { nodeIds: string[]; criteria: string }
@@ -107,7 +113,7 @@ export type AgentToolArguments =
     | { fromNodeId: string; toNodeId: string }
     | { nodeIds: string[] }
     | { nodeId: string; text: string }
-    | { question: string; options: string[] }
+    | { header?: string; question: string; options: AgentAskOption[] }
     | { kind: "preference" | "fact" | "constraint" | "experience"; key: string; content: string; scope: "project" | "user"; confidence: number; expiresInDays: number }
     | { key: string; scope: "project" | "user" }
     | { ops: AgentCanvasOp[] };
@@ -115,6 +121,7 @@ export type AgentToolArguments =
 export type AgentToolName =
     | "canvas.read"
     | "canvas.plan"
+    | "skill.read"
     | "image.generate"
     | "image.edit"
     | "image.inspect"
@@ -138,13 +145,31 @@ export type AgentToolInspection = {
     revisedPrompt?: string;
 };
 
+/** 服务端执行生成时随 tool.call 下发的规格：页面据此放占位节点、写生成记录，并在完成后把结果落到画布。 */
+export type AgentMediaPresentation = { type: "image" | "video"; nodeIds: string[]; prompt: string; sourceNodeIds: string[]; model: string; size?: string; quality?: string; resolution?: string; seconds?: number };
+
 export type AgentEvent = {
     id: string;
     runId: string;
     sequence: number;
-    type: "run.started" | "plan.created" | "message.delta" | "message.stream" | "tool.preview" | "tool.confirmation_required" | "tool.call" | "tool.completed" | "tool.reverted" | "run.completed" | "run.failed" | "run.cancelled";
+    type:
+        | "run.started"
+        | "plan.updated"
+        | "message.delta"
+        | "message.stream"
+        | "message.commentary"
+        | "reasoning.stream"
+        | "tool.preview"
+        | "tool.confirmation_required"
+        | "tool.call"
+        | "tool.completed"
+        | "tool.reverted"
+        | "run.completed"
+        | "run.failed"
+        | "run.cancelled";
     data: {
         content?: string;
+        reasoning?: string;
         streaming?: boolean;
         index?: number;
         error?: string;
@@ -153,11 +178,39 @@ export type AgentEvent = {
         callId?: string;
         name?: AgentToolName;
         arguments?: AgentToolArguments;
-        output?: { answer?: string; inspection?: AgentToolInspection; memory?: { id?: string; key: string; status: "active" | "forgotten"; scope: "project" | "user" } };
-        meta?: { needsClaim?: boolean; retryOf?: string };
+        explanation?: string;
+        steps?: AgentPlanStep[];
+        output?: {
+            answer?: string;
+            error?: string;
+            inspection?: AgentToolInspection;
+            memory?: { id?: string; key: string; status: "active" | "forgotten"; scope: "project" | "user" };
+            skill?: { id: string; title: string };
+            images?: { nodeId: string; storageKey: string }[];
+            video?: { nodeId: string; storageKey: string };
+        };
+        meta?: { needsClaim?: boolean; retryOf?: string; executor?: "server"; media?: AgentMediaPresentation };
     };
     createdAt: string;
 };
+
+export type AgentSessionTimeline = {
+    session: AgentSession;
+    messages: AgentMessage[];
+    runs: { run: AgentRun; messageId: string; referenceNodeIds: string[]; events: AgentEvent[] | null; pendingPresentations: string[] }[];
+};
+
+export function listAgentSessions(projectId: string) {
+    return apiGet<AgentSession[]>(`/api/v1/agent/sessions?projectId=${encodeURIComponent(projectId)}`);
+}
+
+export function getAgentSessionTimeline(sessionId: string) {
+    return apiGet<AgentSessionTimeline>(`/api/v1/agent/sessions/${encodeURIComponent(sessionId)}/timeline`);
+}
+
+export function archiveAgentSession(sessionId: string) {
+    return apiPost<{ status: "archived" }>(`/api/v1/agent/sessions/${encodeURIComponent(sessionId)}/archive`);
+}
 
 export function createAgentSession(projectId: string, title = "新对话", sessionId?: string) {
     return apiPost<AgentSession>("/api/v1/agent/sessions", { sessionId, projectId, title, profile: {} });
@@ -173,23 +226,6 @@ export type AgentToolResult =
           status: "success";
           observation: AgentCanvasContext;
           plan?: never;
-          inspection?: never;
-          images?: never;
-          video?: never;
-          nodeIds?: never;
-          positions?: never;
-          nodeId?: never;
-          fromNodeId?: never;
-          toNodeId?: never;
-          text?: never;
-          placement?: never;
-          memory?: never;
-          error?: never;
-      }
-    | {
-          callId: string;
-          status: "success";
-          plan: { summary: string; steps: string[] };
           inspection?: never;
           images?: never;
           video?: never;
@@ -400,6 +436,22 @@ export function claimAgentToolExecution(runId: string, callId: string, token: st
     return apiPost<{ status: "claimed" }>(`/api/v1/agent/runs/${runId}/tool-claims`, { callId, token });
 }
 
+/** 认领、续期或完成（done）把服务端生成结果落到画布的工作；busy 表示另一个页面正在处理，done 表示已经落地。 */
+export function claimAgentToolPresentation(runId: string, callId: string, token: string, done = false, canvasContext?: AgentCanvasContext) {
+    return apiPost<{ status: "claimed" | "busy" | "done" }>(`/api/v1/agent/runs/${runId}/tool-presentations`, { callId, token, done, canvasContext });
+}
+
+/** 页面离开时让出落地租约，重新打开的页面可以立刻接手；keepalive 保证页面卸载过程中也能发出。 */
+export function releaseAgentToolPresentation(runId: string, callId: string, token: string) {
+    void fetch(`/api/v1/agent/runs/${runId}/tool-presentations`, {
+        method: "POST",
+        keepalive: true,
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...organizationHeaders() },
+        body: JSON.stringify({ callId, token, release: true }),
+    }).catch(() => {});
+}
+
 export function getAgentRun(runId: string) {
     return apiGet<AgentRun>(`/api/v1/agent/runs/${runId}`);
 }
@@ -429,7 +481,7 @@ export type AgentRunDiagnostics = Pick<AgentRun, "id" | "status" | "model" | "er
     budget: AgentRunBudget;
     usage: { toolCalls: number; mediaCalls: number; durationSec: number; streamReconnects: number; credits: number; toolLeaseTakeovers: number };
     budgetReason?: "tool_calls" | "media_calls" | "duration" | "credits";
-    plan: { id: string; revision: number; position: number; title: string; completionCriteria: string; dependsOnPosition?: number; status: "pending" | "running" | "completed" | "failed" | "skipped"; toolName?: AgentToolName; reason?: string }[];
+    plan: { id: string; revision: number; position: number; title: string; status: "pending" | "running" | "completed" | "failed" | "skipped"; reason?: string }[];
     steps: AgentStepDiagnostic[];
 };
 

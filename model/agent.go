@@ -33,10 +33,15 @@ const (
 	AgentStepStatusFailed    AgentStepStatus = "failed"
 	AgentStepStatusCancelled AgentStepStatus = "cancelled"
 
+	AgentPresentationPending = "pending"
+	AgentPresentationDone    = "done"
+
 	AgentEventRunStarted               AgentEventType = "run.started"
-	AgentEventPlanCreated              AgentEventType = "plan.created"
+	AgentEventPlanUpdated              AgentEventType = "plan.updated"
 	AgentEventMessageDelta             AgentEventType = "message.delta"
 	AgentEventMessageStream            AgentEventType = "message.stream"
+	AgentEventMessageCommentary        AgentEventType = "message.commentary"
+	AgentEventReasoningStream          AgentEventType = "reasoning.stream"
 	AgentEventToolPreview              AgentEventType = "tool.preview"
 	AgentEventToolConfirmationRequired AgentEventType = "tool.confirmation_required"
 	AgentEventToolCall                 AgentEventType = "tool.call"
@@ -127,27 +132,24 @@ type AgentRunSnapshot struct {
 	RestoredAt     string `json:"restoredAt,omitempty"`
 }
 
-// AgentPlanStep is a durable, revisioned execution plan. New plans skip unfinished
-// steps from the previous revision instead of mutating history.
+// AgentPlanStep is the agent's working plan. Every canvas.plan call writes a new
+// revision with the statuses the model reported; unfinished steps of the previous
+// revision are marked skipped instead of mutating history.
 type AgentPlanStep struct {
-	ID                 string              `json:"id" gorm:"primaryKey"`
-	OrganizationID     string              `json:"organizationId" gorm:"index:idx_agent_plan_owner,priority:1"`
-	UserID             string              `json:"userId" gorm:"index:idx_agent_plan_owner,priority:2"`
-	RunID              string              `json:"runId" gorm:"uniqueIndex:idx_agent_plan_position,priority:1;index"`
-	Revision           int                 `json:"revision" gorm:"uniqueIndex:idx_agent_plan_position,priority:2"`
-	PlanCallID         string              `json:"planCallId" gorm:"index"`
-	Position           int                 `json:"position" gorm:"uniqueIndex:idx_agent_plan_position,priority:3"`
-	Title              string              `json:"title"`
-	CompletionCriteria string              `json:"completionCriteria"`
-	DependsOnPosition  int                 `json:"dependsOnPosition,omitempty"`
-	Status             AgentPlanStepStatus `json:"status" gorm:"index"`
-	ToolCallID         string              `json:"toolCallId,omitempty" gorm:"index"`
-	ToolName           string              `json:"toolName,omitempty"`
-	Reason             string              `json:"reason,omitempty"`
-	StartedAt          string              `json:"startedAt,omitempty"`
-	CompletedAt        string              `json:"completedAt,omitempty"`
-	CreatedAt          string              `json:"createdAt"`
-	UpdatedAt          string              `json:"updatedAt"`
+	ID             string              `json:"id" gorm:"primaryKey"`
+	OrganizationID string              `json:"organizationId" gorm:"index:idx_agent_plan_owner,priority:1"`
+	UserID         string              `json:"userId" gorm:"index:idx_agent_plan_owner,priority:2"`
+	RunID          string              `json:"runId" gorm:"uniqueIndex:idx_agent_plan_position,priority:1;index"`
+	Revision       int                 `json:"revision" gorm:"uniqueIndex:idx_agent_plan_position,priority:2"`
+	PlanCallID     string              `json:"planCallId" gorm:"index"`
+	Position       int                 `json:"position" gorm:"uniqueIndex:idx_agent_plan_position,priority:3"`
+	Title          string              `json:"title"`
+	Status         AgentPlanStepStatus `json:"status" gorm:"index"`
+	Reason         string              `json:"reason,omitempty"`
+	StartedAt      string              `json:"startedAt,omitempty"`
+	CompletedAt    string              `json:"completedAt,omitempty"`
+	CreatedAt      string              `json:"createdAt"`
+	UpdatedAt      string              `json:"updatedAt"`
 }
 
 // AgentFeedback keeps the latest user outcome signal for a Run. Replacing a
@@ -175,13 +177,18 @@ type AgentStep struct {
 	Confirmation   string          `json:"confirmation,omitempty" gorm:"index"`
 	ExecutionToken string          `json:"-" gorm:"index"`
 	ExecutionAt    string          `json:"-" gorm:"index"`
-	Input          string          `json:"-" gorm:"type:text"`
-	Output         string          `json:"-" gorm:"type:text"`
-	Error          string          `json:"error,omitempty" gorm:"type:text"`
-	StartedAt      string          `json:"startedAt"`
-	CompletedAt    string          `json:"completedAt,omitempty"`
-	CreatedAt      string          `json:"createdAt"`
-	UpdatedAt      string          `json:"updatedAt"`
+	// ClaimedAt 是工具首次被认领执行的时间；下发后等页面上线的这段时间不计入运行时间预算。
+	ClaimedAt string `json:"-"`
+	// PresentToken / PresentAt 是服务端生成结果落到画布的租约：pending 等待页面认领，页面令牌表示正在落地，done 表示已落地。
+	PresentToken string `json:"-"`
+	PresentAt    string `json:"-"`
+	Input        string `json:"-" gorm:"type:text"`
+	Output       string `json:"-" gorm:"type:text"`
+	Error        string `json:"error,omitempty" gorm:"type:text"`
+	StartedAt    string `json:"startedAt"`
+	CompletedAt  string `json:"completedAt,omitempty"`
+	CreatedAt    string `json:"createdAt"`
+	UpdatedAt    string `json:"updatedAt"`
 }
 
 type AgentEvent struct {

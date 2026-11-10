@@ -49,5 +49,6 @@ func main() {
 	service.StartOrganizationEmailOutboxWorker()
 	service.StartUserFileMaintenanceWorker()
 	service.StartGenerationTaskMaintenanceWorker()
+	service.StartAgentBackgroundToolWorker()
 	log.Fatal(engine.Run(":" + config.Cfg.Port))
 }

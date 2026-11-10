@@ -1,165 +1,91 @@
 import { flushActiveWorkspaceChanges } from "@/components/layout/workspace-provider";
-import { supportsImageQuality, supportsImageReferences, type ImageModelDefinition } from "@/lib/image-model-capabilities";
-import { requestEdit, requestGeneration } from "@/services/api/image";
-import type { AgentMediaOptions, AgentToolResult } from "@/services/api/agent";
-import { saveCanvasImageGenerationRecord } from "@/services/generation-history";
-import { imageToDataUrl, storeGeneratedImage } from "@/services/image-storage";
-import type { AiConfig } from "@/stores/use-config-store";
-import type { ReferenceImage } from "@/types/image";
-import type { CanvasAssistantGenerationPlaceholder, CanvasAssistantImage, CanvasAssistantReference, CanvasNodeData } from "../types";
-import { resolveAgentMediaConfig, type AgentCanvasState } from "../utils/canvas-agent-context";
+import { videoOutputSize } from "@/lib/video-format";
+import type { AgentMediaPresentation, AgentToolResult } from "@/services/api/agent";
+import { storedMediaFile, type UploadedFile } from "@/services/file-storage";
+import { saveCanvasImageGenerationRecord, saveCanvasVideoGenerationRecord } from "@/services/generation-history";
+import { resolveImageUrl } from "@/services/image-storage";
+import type { CanvasAssistantGenerationPlaceholder, CanvasAssistantImage, CanvasAssistantVideo, CanvasNodeData } from "../types";
 
-export type AgentImageArguments = AgentMediaOptions & ({ prompt: string; count: number; referenceNodeIds?: string[] } | { nodeId: string; prompt: string; count: number });
+// 助手的图片和视频由服务端生成，页面只负责把它们落到画布：
+// 开始时放占位节点并写一条“生成中”的记录（刷新页面后记录会按请求编号自动补全），完成后换成真实节点并补全记录。
 
-type ExecuteAgentImageToolOptions = {
-    name: "image.generate" | "image.edit";
-    argumentsValue: AgentImageArguments;
-    config: AiConfig;
-    managedModels?: ImageModelDefinition[];
-    isConfigReady: (config: AiConfig, model: string) => boolean;
-    nodes: CanvasNodeData[];
-    connections: AgentCanvasState["connections"];
+export type AgentMediaPresenter = {
     historyOwnerId: string;
     projectId: string;
-    runId: string;
-    callId: string;
-    signal: AbortSignal;
-    nodeToReference: (node: CanvasNodeData) => CanvasAssistantReference | null;
+    readNodes: () => CanvasNodeData[];
     onStartGeneration: (placeholder: CanvasAssistantGenerationPlaceholder) => void;
-    onRenewLease: () => Promise<unknown>;
-    onInsertImages: (images: CanvasAssistantImage[], signal?: AbortSignal) => Promise<{ nodeId: string; storageKey: string }[]>;
+    onInsertImages: (images: CanvasAssistantImage[]) => Promise<{ nodeId: string; storageKey: string }[]>;
+    onInsertVideo: (video: UploadedFile & CanvasAssistantVideo) => Promise<{ nodeId: string; storageKey: string }>;
 };
 
-export type AgentImageToolExecution = {
-    result: AgentToolResult;
-    images: (CanvasAssistantImage & { nodeId?: string })[];
-    failedCount: number;
-    edited: boolean;
-};
+export type AgentMediaOutput = { images?: { nodeId: string; storageKey: string }[]; video?: { nodeId: string; storageKey: string } };
 
-export async function executeAgentImageTool(options: ExecuteAgentImageToolOptions): Promise<AgentImageToolExecution> {
-    const { name, argumentsValue, config, managedModels, nodes, historyOwnerId, projectId, runId, callId, signal, nodeToReference, onStartGeneration, onRenewLease, onInsertImages } = options;
-    const resolved = resolveAgentMediaConfig(config, argumentsValue, { nodes, connections: options.connections }, "image");
-    const toolConfig = resolved.config;
-    const imageModel = toolConfig.model;
-    const imageCount = argumentsValue.count;
-    if (!Number.isInteger(imageCount) || imageCount < 1 || imageCount > 4) throw new Error("单次生成数量必须为 1 至 4 张");
-    if (!new Set(["auto", "low", "medium", "high", "standard", "hd", "1k", "2k", "4k"]).has(toolConfig.quality)) throw new Error("图片质量参数不受支持，请调整规格");
-    if (argumentsValue.quality && argumentsValue.quality !== "auto" && !supportsImageQuality(imageModel)) throw new Error("当前模型不支持指定的图片质量，请调整模型或规格");
-    if (argumentsValue.configNodeId && toolConfig.quality !== "auto" && !supportsImageQuality(imageModel)) throw new Error("当前模型不支持配置节点指定的图片质量");
-    if (resolved.sourceNodes.some((node) => node.type === "video" || node.type === "audio")) throw new Error("图片工具不支持配置节点中的视频或音频输入");
-    if (!supportsImageQuality(imageModel)) toolConfig.quality = "auto";
-    if (!options.isConfigReady(toolConfig, imageModel)) throw new Error("请先配置可用的图片模型");
+type MediaRecord = { id?: string; requestId?: string; storageKeys?: string[]; video?: UploadedFile; error?: string; durationMs?: number };
 
-    const nodeById = new Map(nodes.map((node) => [node.id, node]));
-    let referenceNodeIds: string[] = [];
-    let references: CanvasAssistantReference[] = [];
-    if (name === "image.edit" && "nodeId" in argumentsValue) {
-        const sourceNode = nodeById.get(argumentsValue.nodeId);
-        const reference = sourceNode ? nodeToReference(sourceNode) : null;
-        if (!reference?.dataUrl) throw new Error("未找到可用的源图片节点");
-        if (!supportsImageReferences(imageModel, managedModels)) throw new Error("当前图片模型不支持参考图编辑");
-        referenceNodeIds = [argumentsValue.nodeId];
-        references = [reference];
-    } else {
-        const requestedIds = "referenceNodeIds" in argumentsValue ? argumentsValue.referenceNodeIds : undefined;
-        referenceNodeIds = [...new Set([...(requestedIds || []), ...resolved.sourceNodes.filter((node) => node.type === "image").map((node) => node.id)])];
-        if (referenceNodeIds.length && !supportsImageReferences(imageModel, managedModels)) throw new Error("当前图片模型不支持参考图，请选择支持参考图的模型");
-        references = referenceNodeIds.map((id) => {
-            const node = nodeById.get(id);
-            const reference = node ? nodeToReference(node) : null;
-            if (!reference?.dataUrl) throw new Error("指定的参考图片不可用，请重新选择");
-            return reference;
-        });
+function placeholdersOf(presenter: AgentMediaPresenter, runId: string, callId: string) {
+    return presenter.readNodes().filter((node) => node.metadata?.agentRunId === runId && node.metadata?.agentToolCallId === callId);
+}
+
+function startPlaceholders(presenter: AgentMediaPresenter, runId: string, callId: string, media: AgentMediaPresentation, generationRecordId?: string) {
+    presenter.onStartGeneration({ runId, callId, type: media.type, count: media.nodeIds.length, prompt: media.prompt, sourceNodeIds: media.sourceNodeIds, generationRecordId, nodeIds: media.nodeIds });
+}
+
+// 带 requestId 的是开始时的“生成中”记录，其余按是否有结果记为成功、部分失败或失败。
+function saveMediaRecord(presenter: AgentMediaPresenter, media: AgentMediaPresentation, record: MediaRecord) {
+    const shared = { id: record.id, prompt: media.prompt, model: media.model, size: media.size, status: record.requestId ? ("生成中" as const) : undefined, durationMs: record.durationMs, canvasId: presenter.projectId };
+    if (media.type === "video") {
+        return saveCanvasVideoGenerationRecord(presenter.historyOwnerId, { ...shared, resolution: media.resolution, seconds: media.seconds ? String(media.seconds) : "", video: record.video, error: record.error, requestId: record.requestId });
     }
-
-    for (const node of resolved.sourceNodes.filter((node) => node.type === "image" && !referenceNodeIds.includes(node.id))) {
-        const reference = nodeToReference(node);
-        if (!reference?.dataUrl) throw new Error("配置节点的参考图片不可用");
-        referenceNodeIds.push(node.id);
-        references.push(reference);
-    }
-    const definition = managedModels?.find((item) => item.id === imageModel);
-    if (definition?.maxReferenceImages != null && references.length > definition.maxReferenceImages) throw new Error(`当前模型最多支持 ${definition.maxReferenceImages} 张参考图`);
-
-    const sourceNodeIds = resolved.sourceNodeIds.length ? resolved.sourceNodeIds : referenceNodeIds;
-    const prompt = [argumentsValue.prompt || resolved.prompt, resolved.text].filter(Boolean).join("\n\n");
-    if (!prompt.trim()) throw new Error("配置节点没有可用的提示词或文本输入");
-
-    const referenceImages: ReferenceImage[] = await Promise.all(references.map(async (item) => ({ id: item.id, name: `${item.title}.png`, type: "image/png", dataUrl: await imageToDataUrl(item), storageKey: item.storageKey })));
-    signal.throwIfAborted();
-    const idempotencyKey = `agent:${runId}:${callId}`;
-    const startedAt = performance.now();
-    let recordCompleted = false;
-    const recordId = await saveCanvasImageGenerationRecord(historyOwnerId, {
-        prompt,
-        model: toolConfig.model,
-        size: toolConfig.size,
-        quality: toolConfig.quality,
-        images: [],
-        imageCount,
-        status: "生成中",
-        canvasId: projectId,
-        requestIds: [idempotencyKey],
+    const images = (record.storageKeys || []).map((storageKey) => ({ url: "", storageKey, width: 0, height: 0, bytes: 0, mimeType: "image/png" }));
+    return saveCanvasImageGenerationRecord(presenter.historyOwnerId, {
+        ...shared,
+        quality: media.quality,
+        images,
+        imageCount: media.nodeIds.length,
+        failCount: record.requestId ? 0 : media.nodeIds.length - images.length,
+        requestIds: record.requestId ? [record.requestId] : undefined,
     });
-    signal.throwIfAborted();
-    onStartGeneration({ runId, callId, type: "image", count: imageCount, prompt, sourceNodeIds, generationRecordId: recordId });
-    try {
-        await flushActiveWorkspaceChanges({ domains: ["generation_record"] });
-        const returned = referenceImages.length ? await requestEdit(toolConfig, prompt, referenceImages, undefined, { signal, idempotencyKey }) : await requestGeneration(toolConfig, prompt, { signal, idempotencyKey });
-        const generated = returned.slice(0, imageCount);
-        const storedResults = await Promise.allSettled(generated.map(async (image) => ({ generated: image, stored: await storeGeneratedImage(image) })));
-        const stored = storedResults.filter((item): item is PromiseFulfilledResult<{ generated: (typeof generated)[number]; stored: Awaited<ReturnType<typeof storeGeneratedImage>> }> => item.status === "fulfilled").map((item) => item.value);
-        if (!stored.length) throw storedResults.find((item): item is PromiseRejectedResult => item.status === "rejected")?.reason || new Error(name === "image.edit" ? "编辑图片保存失败" : "生成图片保存失败");
-        await saveCanvasImageGenerationRecord(historyOwnerId, {
-            id: recordId,
-            prompt,
-            model: toolConfig.model,
-            size: toolConfig.size,
-            quality: toolConfig.quality,
-            images: stored.map((item) => item.stored),
-            imageCount,
-            failCount: imageCount - stored.length,
-            durationMs: performance.now() - startedAt,
-            canvasId: projectId,
-        });
-        recordCompleted = true;
-        await flushActiveWorkspaceChanges().catch(() => {});
-        const canvasImages: CanvasAssistantImage[] = stored.map(({ generated: image, stored: saved }) => ({
-            id: image.id,
-            dataUrl: saved.url,
-            storageKey: saved.storageKey,
-            prompt,
-            agentRunId: runId,
-            agentToolCallId: callId,
-            sourceNodeIds,
-        }));
-        signal.throwIfAborted();
-        await onRenewLease();
-        signal.throwIfAborted();
-        const inserted = await onInsertImages(canvasImages, signal);
-        return {
-            result: { callId, status: "success", images: inserted },
-            images: canvasImages.map((image, index) => ({ ...image, nodeId: inserted[index]?.nodeId })),
-            failedCount: imageCount - stored.length,
-            edited: name === "image.edit",
-        };
-    } catch (error) {
-        if (!recordCompleted && !signal.aborted) {
-            await saveCanvasImageGenerationRecord(historyOwnerId, {
-                id: recordId,
-                prompt,
-                model: toolConfig.model,
-                size: toolConfig.size,
-                quality: toolConfig.quality,
-                images: [],
-                imageCount,
-                failCount: imageCount,
-                durationMs: performance.now() - startedAt,
-                canvasId: projectId,
-            });
-            await flushActiveWorkspaceChanges().catch(() => {});
-        }
-        throw error;
+}
+
+/** 服务端开始生成：在画布上放占位节点，并写一条生成中的记录。 */
+export async function startAgentMediaPresentation(presenter: AgentMediaPresenter, runId: string, callId: string, media: AgentMediaPresentation) {
+    if (placeholdersOf(presenter, runId, callId).length) return;
+    startPlaceholders(presenter, runId, callId, media, await saveMediaRecord(presenter, media, { requestId: `agent:${runId}:${callId}` }));
+    await flushActiveWorkspaceChanges({ domains: ["generation_record"] });
+}
+
+/** 服务端生成完成：把结果换到占位节点上（页面当时不在线则现在补建），补全生成记录，返回工具回执和用于消息卡片的媒体。 */
+export async function finishAgentMediaPresentation(presenter: AgentMediaPresenter, runId: string, callId: string, media: AgentMediaPresentation, output: AgentMediaOutput, durationMs: number) {
+    if (!placeholdersOf(presenter, runId, callId).length) startPlaceholders(presenter, runId, callId, media);
+    const generationRecordId = placeholdersOf(presenter, runId, callId)[0]?.metadata?.generationRecordId;
+    const shared = { prompt: media.prompt, agentRunId: runId, agentToolCallId: callId, sourceNodeIds: media.sourceNodeIds };
+    let result: AgentToolResult;
+    let images: CanvasAssistantImage[] | undefined;
+    let videos: CanvasAssistantVideo[] | undefined;
+    if (output.video) {
+        const [width, height] = videoOutputSize(media.resolution || "720p", media.size || "16:9")
+            .split("x")
+            .map(Number);
+        const stored = { ...(await storedMediaFile(output.video.storageKey)), width: width || undefined, height: height || undefined };
+        const video = await presenter.onInsertVideo({ ...stored, ...shared, nodeId: output.video.nodeId });
+        if (generationRecordId) await saveMediaRecord(presenter, media, { id: generationRecordId, video: stored, durationMs });
+        result = { callId, status: "success", video };
+        videos = [{ ...shared, url: stored.url, storageKey: stored.storageKey, nodeId: video.nodeId }];
+    } else {
+        const generated = await Promise.all((output.images || []).map(async (item) => ({ ...shared, id: item.nodeId, nodeId: item.nodeId, dataUrl: await resolveImageUrl(item.storageKey), storageKey: item.storageKey })));
+        const inserted = await presenter.onInsertImages(generated);
+        if (generationRecordId) await saveMediaRecord(presenter, media, { id: generationRecordId, storageKeys: inserted.map((item) => item.storageKey), durationMs });
+        result = { callId, status: "success", images: inserted };
+        images = generated.map((image, index) => ({ ...image, nodeId: inserted[index]?.nodeId }));
     }
+    await flushActiveWorkspaceChanges().catch(() => {});
+    return { result, images, videos };
+}
+
+/** 服务端生成失败：把开始时写下的生成记录标记为失败。 */
+export async function failAgentMediaPresentation(presenter: AgentMediaPresenter, runId: string, callId: string, media: AgentMediaPresentation, error: string) {
+    const generationRecordId = placeholdersOf(presenter, runId, callId)[0]?.metadata?.generationRecordId;
+    if (!generationRecordId) return;
+    await saveMediaRecord(presenter, media, { id: generationRecordId, error });
+    await flushActiveWorkspaceChanges().catch(() => {});
 }

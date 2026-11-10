@@ -115,6 +115,7 @@ export type CanvasAssistantVideo = {
     url: string;
     storageKey: string;
     prompt: string;
+    nodeId?: string;
     agentRunId: string;
     agentToolCallId: string;
     sourceNodeIds?: string[];
@@ -127,7 +128,9 @@ export type CanvasAssistantGenerationPlaceholder = {
     count: number;
     prompt: string;
     sourceNodeIds: string[];
-    generationRecordId: string;
+    generationRecordId?: string;
+    /** 服务端为本次生成预先分配的节点编号，占位节点按顺序使用。 */
+    nodeIds?: string[];
 };
 
 export type CanvasAssistantConfirmation = {
@@ -142,15 +145,21 @@ export type CanvasAssistantConfirmation = {
 export type CanvasAssistantAskUser = {
     runId: string;
     callId: string;
+    header?: string;
     question: string;
-    options: string[];
+    options: { label: string; description?: string }[];
     answer?: string;
     status: "pending" | "answering" | "answered" | "skipped" | "failed" | "cancelled";
 };
 
+export type CanvasAssistantPlan = {
+    explanation?: string;
+    steps: { step: string; status: "pending" | "in_progress" | "completed" }[];
+};
+
 export type AgentCanvasPlacement = "center" | "right_of_selection" | "below_selection" | "viewport";
 
-export type CanvasAssistantStageKind = "plan" | "ask" | "observe" | "inspect" | "image" | "image_edit" | "video" | "arrange" | "text" | "config" | "connect" | "delete" | "update_text" | "remember" | "forget";
+export type CanvasAssistantStageKind = "note" | "reasoning" | "skill" | "plan" | "ask" | "observe" | "inspect" | "image" | "image_edit" | "video" | "arrange" | "text" | "config" | "connect" | "delete" | "update_text" | "remember" | "forget";
 
 export type CanvasAgentOverlayPrompt =
     | {
@@ -180,7 +189,8 @@ export type CanvasAssistantStage = {
     kind: CanvasAssistantStageKind;
     label: string;
     status: "pending" | "done" | "failed";
-    plan?: { summary: string; steps: string[] };
+    // note / reasoning 阶段承载模型的中间说明与推理摘要。
+    text?: string;
     ask?: CanvasAssistantAskUser;
     inspection?: { status: "passed" | "needs_revision" | "unavailable"; summary: string; issues: string[] };
     inspectionMedia?: "image" | "video";
@@ -205,6 +215,13 @@ export type CanvasAssistantMessage = {
     lastEventSequence?: number;
     confirmation?: CanvasAssistantConfirmation;
     stages?: CanvasAssistantStage[];
+    plan?: CanvasAssistantPlan;
+    // 模型正在输出的推理摘要，落库后转为 reasoning 阶段。
+    reasoning?: string;
+    // 本轮运行的结局，决定工作轨迹的标题。
+    outcome?: "completed" | "failed" | "cancelled";
+    startedAt?: number;
+    finishedAt?: number;
     feedback?: "accepted" | "unhelpful";
 };
 
@@ -213,6 +230,8 @@ export type CanvasAssistantSession = {
     agentSessionId?: string;
     title: string;
     messages: CanvasAssistantMessage[];
+    // 服务端会话尚未拉取时间线时为 false。
+    loaded?: boolean;
     createdAt: string;
     updatedAt: string;
 };

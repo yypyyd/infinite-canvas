@@ -90,6 +90,9 @@ func CreateAgentRun(message model.AgentMessage, run model.AgentRun, step model.A
 		if err := tx.Create(&run).Error; err != nil {
 			return err
 		}
+		if err := tx.Model(&session).Update("updated_at", run.CreatedAt).Error; err != nil {
+			return err
+		}
 		if len(snapshots) > 0 {
 			snapshot := snapshots[0]
 			if err := tx.Create(&snapshot).Error; err != nil {
@@ -304,7 +307,42 @@ func WaitAgentRunForTools(organizationID, userID, runID, completionOutput string
 	})
 }
 
-func WaitAgentRunForConfirmation(organizationID, userID, runID, completionOutput string, toolStep model.AgentStep, event model.AgentEvent, timestamp string) error {
+// ContinueAgentRunWithServerTools 登记本轮全部由服务端直接完成的工具步骤，并创建下一次规划，运行保持 running。
+func ContinueAgentRunWithServerTools(organizationID, userID, runID, completionOutput string, toolSteps []model.AgentStep, nextCompletion model.AgentStep, timestamp string, events ...model.AgentEvent) error {
+	db, err := DB()
+	if err != nil {
+		return err
+	}
+	return transactionWithSQLiteRetry(db, func(tx *gorm.DB) error {
+		run, err := lockRunningAgentRun(tx, organizationID, userID, runID)
+		if err != nil {
+			return err
+		}
+		result := tx.Model(&model.AgentStep{}).Where("organization_id = ? AND user_id = ? AND run_id = ? AND type = ? AND status = ?", organizationID, userID, runID, model.AgentStepTypeCompletion, model.AgentStepStatusRunning).Updates(map[string]any{"status": model.AgentStepStatusCompleted, "output": completionOutput, "error": "", "completed_at": timestamp, "updated_at": timestamp})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return gorm.ErrRecordNotFound
+		}
+		for i := range toolSteps {
+			if err := tx.Create(&toolSteps[i]).Error; err != nil {
+				return err
+			}
+		}
+		for _, event := range events {
+			if err := appendAgentEvent(tx, run, event); err != nil {
+				return err
+			}
+		}
+		if err := tx.Create(&nextCompletion).Error; err != nil {
+			return err
+		}
+		return tx.Model(&model.AgentRun{}).Where("organization_id = ? AND user_id = ? AND id = ? AND status = ?", organizationID, userID, runID, model.AgentRunStatusRunning).Update("updated_at", timestamp).Error
+	})
+}
+
+func WaitAgentRunForConfirmation(organizationID, userID, runID, completionOutput string, toolStep model.AgentStep, timestamp string, events ...model.AgentEvent) error {
 	db, err := DB()
 	if err != nil {
 		return err
@@ -324,8 +362,10 @@ func WaitAgentRunForConfirmation(organizationID, userID, runID, completionOutput
 		if err := tx.Create(&toolStep).Error; err != nil {
 			return err
 		}
-		if err := appendAgentEvent(tx, run, event); err != nil {
-			return err
+		for _, event := range events {
+			if err := appendAgentEvent(tx, run, event); err != nil {
+				return err
+			}
 		}
 		result = tx.Model(&model.AgentRun{}).Where("organization_id = ? AND user_id = ? AND id = ? AND status = ?", organizationID, userID, runID, model.AgentRunStatusRunning).Updates(map[string]any{"status": model.AgentRunStatusWaitingConfirmation, "updated_at": timestamp})
 		if result.Error != nil {
@@ -928,7 +968,11 @@ func ClaimAgentToolExecution(organizationID, userID, runID, callID, token, times
 			return ErrAgentToolExecutionClaimed
 		}
 		takeover := step.ExecutionToken != "" && step.ExecutionToken != token
-		if err := tx.Model(&step).Updates(map[string]any{"execution_token": token, "execution_at": timestamp, "updated_at": timestamp}).Error; err != nil {
+		updates := map[string]any{"execution_token": token, "execution_at": timestamp, "updated_at": timestamp}
+		if step.ClaimedAt == "" {
+			updates["claimed_at"] = timestamp
+		}
+		if err := tx.Model(&step).Updates(updates).Error; err != nil {
 			return err
 		}
 		if takeover {
@@ -936,6 +980,56 @@ func ClaimAgentToolExecution(organizationID, userID, runID, callID, token, times
 		}
 		return nil
 	})
+}
+
+// ClaimAgentToolPresentation 认领或续期“把服务端生成结果落到画布”的租约：next 为 done 时标记已落地，为 pending 时把租约让出来（页面离开），
+// 否则由 token 对应的页面持有；context 非空时一并刷新运行的画布上下文。
+// 返回 claimed（由本页面负责）、busy（另一个页面正在处理）或 done（已落地，或该步骤没有需要落地的结果）。
+func ClaimAgentToolPresentation(organizationID, userID, runID, callID, token, next, context, timestamp, deadline string) (string, error) {
+	db, err := DB()
+	if err != nil {
+		return "", err
+	}
+	status := "claimed"
+	err = transactionWithSQLiteRetry(db, func(tx *gorm.DB) error {
+		var step model.AgentStep
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("organization_id = ? AND user_id = ? AND run_id = ? AND tool_call_id = ? AND type = ?", organizationID, userID, runID, callID, model.AgentStepTypeTool).First(&step).Error; err != nil {
+			return err
+		}
+		if step.PresentToken == "" || step.PresentToken == model.AgentPresentationDone {
+			status = "done"
+			return nil
+		}
+		// 别的页面持有且仍在续期时不能抢；让出租约只对自己持有的生效。
+		if step.PresentToken != token && (next == model.AgentPresentationPending || step.PresentToken != model.AgentPresentationPending && step.PresentAt > deadline) {
+			status = "busy"
+			return nil
+		}
+		if next == model.AgentPresentationDone {
+			status = "done"
+		}
+		if err := tx.Model(&step).Updates(map[string]any{"present_token": next, "present_at": timestamp}).Error; err != nil {
+			return err
+		}
+		if context == "" {
+			return nil
+		}
+		return tx.Model(&model.AgentRun{}).Where("organization_id = ? AND user_id = ? AND id = ? AND status IN ?", organizationID, userID, runID, []model.AgentRunStatus{model.AgentRunStatusRunning, model.AgentRunStatusWaitingConfirmation, model.AgentRunStatusWaitingTool}).Update("context", context).Error
+	})
+	return status, err
+}
+
+// ListOrphanedAgentToolSteps 找出等待结果的运行里没有执行者在续期的工具步骤（服务重启或实例下线后遗留），用于重新接管。
+func ListOrphanedAgentToolSteps(toolNames []string, deadline string, limit int) ([]model.AgentStep, error) {
+	db, err := DB()
+	if err != nil {
+		return nil, err
+	}
+	var steps []model.AgentStep
+	err = db.Where("type = ? AND status = ? AND tool_name IN ? AND execution_at <= ?", model.AgentStepTypeTool, model.AgentStepStatusRunning, toolNames, deadline).
+		Where("run_id IN (?)", db.Model(&model.AgentRun{}).Select("id").Where("status = ?", model.AgentRunStatusWaitingTool)).
+		Order("created_at asc").Limit(limit).Find(&steps).Error
+	return steps, err
 }
 
 func GetAgentToolOutput(organizationID, userID, runID, callID string) (string, error) {

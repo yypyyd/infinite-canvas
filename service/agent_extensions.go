@@ -117,9 +117,13 @@ func normalizeAgentRunSnapshot(raw json.RawMessage, context AgentCanvasContext) 
 
 func agentRunBudgetReason(run model.AgentRun, steps []model.AgentStep, proposedTool string) string {
 	budget := effectiveAgentRunBudget(run)
-	toolCalls, mediaCalls := 0, 0
+	toolCalls, mediaCalls, serverCalls := 0, 0, 0
 	for _, step := range steps {
 		if step.Type != model.AgentStepTypeTool {
+			continue
+		}
+		if agentServerTool(step.ToolName) {
+			serverCalls++
 			continue
 		}
 		toolCalls++
@@ -127,7 +131,12 @@ func agentRunBudgetReason(run model.AgentRun, steps []model.AgentStep, proposedT
 			mediaCalls += definition.MediaCost
 		}
 	}
-	if proposedTool != "" {
+	if agentServerTool(proposedTool) {
+		if serverCalls >= agentServerToolLimit {
+			return "tool_calls"
+		}
+		proposedTool = ""
+	} else if proposedTool != "" {
 		toolCalls++
 		if definition, ok := agentToolDefinitionFor(proposedTool); ok {
 			mediaCalls += definition.MediaCost
@@ -146,10 +155,45 @@ func agentRunBudgetReason(run model.AgentRun, steps []model.AgentStep, proposedT
 		}
 	}
 	startedAt, err := time.Parse(timestampLayout, run.StartedAt)
-	if err == nil && time.Since(startedAt) >= time.Duration(budget.MaxDurationSec)*time.Second {
+	if err == nil && time.Since(startedAt)-agentRunWaitingDuration(steps) >= time.Duration(budget.MaxDurationSec)*time.Second {
 		return "duration"
 	}
 	return ""
+}
+
+// agentRunWaitingDuration 汇总不计入运行时间预算的等待：提问与确认步骤等用户的时间，以及工具下发后等画布页面上线认领的时间。
+func agentRunWaitingDuration(steps []model.AgentStep) time.Duration {
+	var total time.Duration
+	// 同一批下发的页面工具共用开始时间，页面上线以其中最早的一次认领为准。
+	firstClaims := map[string]time.Time{}
+	for _, step := range steps {
+		if step.Type != model.AgentStepTypeTool {
+			continue
+		}
+		started, err := time.Parse(timestampLayout, step.StartedAt)
+		if err != nil {
+			continue
+		}
+		if agentToolRequiresConfirmation(step.ToolName) {
+			if completed, err := time.Parse(timestampLayout, step.CompletedAt); err == nil && completed.After(started) {
+				total += completed.Sub(started)
+			}
+			continue
+		}
+		claimed, err := time.Parse(timestampLayout, step.ClaimedAt)
+		if err != nil || agentBackgroundTool(step.ToolName) {
+			continue
+		}
+		if first, ok := firstClaims[step.StartedAt]; !ok || claimed.Before(first) {
+			firstClaims[step.StartedAt] = claimed
+		}
+	}
+	for startedAt, claimed := range firstClaims {
+		if started, err := time.Parse(timestampLayout, startedAt); err == nil && claimed.After(started) {
+			total += claimed.Sub(started)
+		}
+	}
+	return total
 }
 
 func agentBudgetMessage(reason string) string {
@@ -173,7 +217,7 @@ func agentRunUsage(run model.AgentRun, steps []model.AgentStep) AgentRunUsage {
 		usage.Credits, _ = repository.GetAgentRunCredits(run.OrganizationID, run.UserID, run.ID)
 	}
 	for _, step := range steps {
-		if step.Type != model.AgentStepTypeTool {
+		if step.Type != model.AgentStepTypeTool || agentServerTool(step.ToolName) {
 			continue
 		}
 		usage.ToolCalls++

@@ -149,6 +149,13 @@ func New() *gin.Engine {
 	v1.POST("/videos", gin.WrapF(handler.AIVideos))
 	v1.POST("/media/references", gin.WrapF(handler.UploadReferenceMedia))
 	v1.POST("/agent/sessions", gin.WrapF(handler.CreateAgentSession))
+	v1.GET("/agent/sessions", gin.WrapF(handler.ListAgentSessions))
+	v1.GET("/agent/sessions/:id/timeline", func(c *gin.Context) {
+		handler.GetAgentSessionTimeline(c.Writer, c.Request, c.Param("id"))
+	})
+	v1.POST("/agent/sessions/:id/archive", func(c *gin.Context) {
+		handler.ArchiveAgentSession(c.Writer, c.Request, c.Param("id"))
+	})
 	v1.GET("/agent/runs", gin.WrapF(handler.ListRecoverableAgentRuns))
 	v1.GET("/agent/memories", gin.WrapF(handler.ListAgentMemories))
 	v1.POST("/agent/memories/:id", func(c *gin.Context) { handler.UpdateAgentMemory(c.Writer, c.Request, c.Param("id")) })
@@ -176,6 +183,9 @@ func New() *gin.Engine {
 	})
 	v1.POST("/agent/runs/:id/tool-claims", func(c *gin.Context) {
 		handler.ClaimAgentToolExecution(c.Writer, c.Request, c.Param("id"))
+	})
+	v1.POST("/agent/runs/:id/tool-presentations", func(c *gin.Context) {
+		handler.ClaimAgentToolPresentation(c.Writer, c.Request, c.Param("id"))
 	})
 	v1.POST("/agent/runs/:id/confirmation", func(c *gin.Context) {
 		handler.ConfirmAgentTool(c.Writer, c.Request, c.Param("id"))

@@ -69,6 +69,47 @@ func CreateAgentSession(w http.ResponseWriter, r *http.Request) {
 	OK(w, session)
 }
 
+func ListAgentSessions(w http.ResponseWriter, r *http.Request) {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok {
+		Fail(w, "未登录或权限不足")
+		return
+	}
+	sessions, err := service.ListAgentSessions(user, r.URL.Query().Get("projectId"))
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, sessions)
+}
+
+func GetAgentSessionTimeline(w http.ResponseWriter, r *http.Request, sessionID string) {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok {
+		Fail(w, "未登录或权限不足")
+		return
+	}
+	timeline, err := service.GetAgentSessionTimeline(user, sessionID)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, timeline)
+}
+
+func ArchiveAgentSession(w http.ResponseWriter, r *http.Request, sessionID string) {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok {
+		Fail(w, "未登录或权限不足")
+		return
+	}
+	if err := service.ArchiveAgentSession(user, sessionID); err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, map[string]string{"status": "archived"})
+}
+
 func SubmitAgentMessage(w http.ResponseWriter, r *http.Request, sessionID string) {
 	user, ok := service.UserFromContext(r.Context())
 	if !ok {
@@ -341,6 +382,20 @@ func AgentRunEvents(w http.ResponseWriter, r *http.Request, runID string) {
 	idlePolls := 0
 
 	for {
+		// 先写完已到达的临时事件再读库：流式正文早于随后落库的说明、工具调用发出，前端按这个顺序折叠。
+		drained := false
+	drain:
+		for {
+			select {
+			case event := <-subscription.Events:
+				if err := writeAgentEvent(w, event); err != nil {
+					return
+				}
+				drained = true
+			default:
+				break drain
+			}
+		}
 		events, run, err := service.PollAgentRunEvents(user, runID, after)
 		if err != nil {
 			return
@@ -353,9 +408,11 @@ func AgentRunEvents(w http.ResponseWriter, r *http.Request, runID string) {
 		}
 		if len(events) > 0 {
 			idlePolls = 0
-			flusher.Flush()
 		} else {
 			idlePolls++
+		}
+		if len(events) > 0 || drained {
+			flusher.Flush()
 		}
 		if len(events) < 100 {
 			if run.Terminal() || run.Status == model.AgentRunStatusWaitingConfirmation {

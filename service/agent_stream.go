@@ -28,9 +28,30 @@ type agentUpstreamToolCall struct {
 	Function agentUpstreamToolFunction `json:"function"`
 }
 
+// agentLooseString 只取字符串值；上游把推理字段返回成对象或数组时按空处理，不让整条响应解析失败。
+type agentLooseString string
+
+func (value *agentLooseString) UnmarshalJSON(data []byte) error {
+	var text string
+	if json.Unmarshal(data, &text) == nil {
+		*value = agentLooseString(text)
+	}
+	return nil
+}
+
 type agentUpstreamMessage struct {
-	Content   string                  `json:"content"`
-	ToolCalls []agentUpstreamToolCall `json:"tool_calls"`
+	Content          string                  `json:"content"`
+	ReasoningContent agentLooseString        `json:"reasoning_content"`
+	Reasoning        agentLooseString        `json:"reasoning"`
+	ToolCalls        []agentUpstreamToolCall `json:"tool_calls"`
+}
+
+// reasoningText 兼容 reasoning_content（DeepSeek、Qwen 等）与 reasoning（OpenRouter）两种字段。
+func (message agentUpstreamMessage) reasoningText() string {
+	if text := strings.TrimSpace(string(message.ReasoningContent)); text != "" {
+		return text
+	}
+	return strings.TrimSpace(string(message.Reasoning))
 }
 
 // parseAgentCompletionJSON 解析非流式 chat/completions 响应。
@@ -51,10 +72,10 @@ func parseAgentCompletionJSON(body []byte) (agentUpstreamMessage, error) {
 
 // parseAgentCompletionStream 解析 OpenAI 兼容的 SSE 流：正文每次增量回调累计文本；
 // 某个工具调用在后续调用开始或流结束时视为参数完整并回调 onToolReady。
-func parseAgentCompletionStream(reader io.Reader, onContent func(string), onToolReady func(int, agentUpstreamToolCall)) (agentUpstreamMessage, error) {
+func parseAgentCompletionStream(reader io.Reader, onContent func(string), onReasoning func(string), onToolReady func(int, agentUpstreamToolCall)) (agentUpstreamMessage, error) {
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 64<<10), 4<<20)
-	var content strings.Builder
+	var content, reasoning strings.Builder
 	calls := map[int]*agentUpstreamToolCall{}
 	ready := map[int]bool{}
 	lastIndex := -1
@@ -92,8 +113,10 @@ func parseAgentCompletionStream(reader io.Reader, onContent func(string), onTool
 			} `json:"error"`
 			Choices []struct {
 				Delta struct {
-					Content   string `json:"content"`
-					ToolCalls []struct {
+					Content          string           `json:"content"`
+					ReasoningContent agentLooseString `json:"reasoning_content"`
+					Reasoning        agentLooseString `json:"reasoning"`
+					ToolCalls        []struct {
 						Index    *int                      `json:"index"`
 						ID       string                    `json:"id"`
 						Type     string                    `json:"type"`
@@ -116,6 +139,7 @@ func parseAgentCompletionStream(reader io.Reader, onContent func(string), onTool
 		if choice.Message != nil && !sawChunk && content.Len() == 0 && len(calls) == 0 {
 			// 少数兼容服务在流里一次性返回完整 message。
 			content.WriteString(choice.Message.Content)
+			reasoning.WriteString(choice.Message.reasoningText())
 			for i, call := range choice.Message.ToolCalls {
 				copied := call
 				calls[i] = &copied
@@ -126,6 +150,17 @@ func parseAgentCompletionStream(reader io.Reader, onContent func(string), onTool
 			continue
 		}
 		sawChunk = true
+		// 两个推理字段同时出现时内容相同，只取其一。
+		delta := string(choice.Delta.ReasoningContent)
+		if delta == "" {
+			delta = string(choice.Delta.Reasoning)
+		}
+		if delta != "" {
+			reasoning.WriteString(delta)
+			if onReasoning != nil {
+				onReasoning(reasoning.String())
+			}
+		}
 		if choice.Delta.Content != "" {
 			content.WriteString(choice.Delta.Content)
 			if onContent != nil {
@@ -172,7 +207,7 @@ func parseAgentCompletionStream(reader io.Reader, onContent func(string), onTool
 		indexes = append(indexes, index)
 	}
 	sort.Ints(indexes)
-	message := agentUpstreamMessage{Content: content.String(), ToolCalls: make([]agentUpstreamToolCall, 0, len(indexes))}
+	message := agentUpstreamMessage{Content: content.String(), ReasoningContent: agentLooseString(reasoning.String()), ToolCalls: make([]agentUpstreamToolCall, 0, len(indexes))}
 	for _, index := range indexes {
 		call := *calls[index]
 		if call.Type == "" {
@@ -183,13 +218,15 @@ func parseAgentCompletionStream(reader io.Reader, onContent func(string), onTool
 	return message, nil
 }
 
-// agentRunStreamPublisher 把模型流转成不落库的运行事件，正文按固定间隔节流。
+// agentRunStreamPublisher 把模型流转成不落库的运行事件，正文和推理按固定间隔节流。
 type agentRunStreamPublisher struct {
-	runID       string
-	mu          sync.Mutex
-	lastPublish time.Time
-	pending     string
-	published   string
+	runID              string
+	mu                 sync.Mutex
+	lastPublish        time.Time
+	pending            string
+	published          string
+	pendingReasoning   string
+	publishedReasoning string
 }
 
 func newAgentRunStreamPublisher(runID string) *agentRunStreamPublisher {
@@ -206,17 +243,40 @@ func (p *agentRunStreamPublisher) content(text string) {
 	}
 }
 
+func (p *agentRunStreamPublisher) reasoning(text string) {
+	p.mu.Lock()
+	p.pendingReasoning = text
+	due := time.Since(p.lastPublish) >= agentStreamPublishInterval
+	p.mu.Unlock()
+	if due {
+		p.flush()
+	}
+}
+
 func (p *agentRunStreamPublisher) flush() {
 	p.mu.Lock()
 	text := sanitizeAgentUserFacingText(p.pending)
-	if strings.TrimSpace(text) == "" || text == p.published {
-		p.mu.Unlock()
-		return
+	reasoning := truncateAgentRunes(strings.TrimSpace(p.pendingReasoning), agentReasoningMaxRunes)
+	publishText := strings.TrimSpace(text) != "" && text != p.published
+	publishReasoning := reasoning != "" && reasoning != p.publishedReasoning
+	if publishText {
+		p.published = text
 	}
-	p.published, p.lastPublish = text, time.Now()
+	if publishReasoning {
+		p.publishedReasoning = reasoning
+	}
+	if publishText || publishReasoning {
+		p.lastPublish = time.Now()
+	}
 	p.mu.Unlock()
-	payload, _ := json.Marshal(map[string]any{"content": text, "streaming": true})
-	repository.PublishAgentRunEvent(p.runID, model.AgentEvent{ID: newID("agent-event"), Type: model.AgentEventMessageStream, Payload: string(payload), CreatedAt: now()})
+	if publishReasoning {
+		payload, _ := json.Marshal(map[string]any{"content": reasoning, "streaming": true})
+		repository.PublishAgentRunEvent(p.runID, model.AgentEvent{ID: newID("agent-event"), Type: model.AgentEventReasoningStream, Payload: string(payload), CreatedAt: now()})
+	}
+	if publishText {
+		payload, _ := json.Marshal(map[string]any{"content": text, "streaming": true})
+		repository.PublishAgentRunEvent(p.runID, model.AgentEvent{ID: newID("agent-event"), Type: model.AgentEventMessageStream, Payload: string(payload), CreatedAt: now()})
+	}
 }
 
 func (p *agentRunStreamPublisher) toolReady(index int, call agentUpstreamToolCall) {

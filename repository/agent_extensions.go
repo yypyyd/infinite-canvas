@@ -74,12 +74,13 @@ func agentRunCreditQuery(db *gorm.DB, organizationID, userID, runID string) *gor
 	)
 }
 
-func ReplaceAgentPlan(organizationID, userID, runID, planCallID string, titles []string, timestamp string) ([]model.AgentPlanStep, error) {
+// ReplaceAgentPlan 用模型提交的最新计划写入新修订；items 只需填写 Title 和 Status，旧修订保留为历史。
+func ReplaceAgentPlan(organizationID, userID, runID, planCallID string, items []model.AgentPlanStep, timestamp string) ([]model.AgentPlanStep, error) {
 	db, err := DB()
 	if err != nil {
 		return nil, err
 	}
-	steps := make([]model.AgentPlanStep, 0, len(titles))
+	steps := make([]model.AgentPlanStep, 0, len(items))
 	err = transactionWithSQLiteRetry(db, func(tx *gorm.DB) error {
 		steps = steps[:0]
 		if err := tx.Where("organization_id = ? AND user_id = ? AND run_id = ? AND plan_call_id = ?", organizationID, userID, runID, planCallID).Order("position asc").Find(&steps).Error; err != nil {
@@ -92,58 +93,27 @@ func ReplaceAgentPlan(organizationID, userID, runID, planCallID string, titles [
 		if err := tx.Model(&model.AgentPlanStep{}).Where("organization_id = ? AND user_id = ? AND run_id = ?", organizationID, userID, runID).Select("COALESCE(MAX(revision), 0)").Scan(&revision).Error; err != nil {
 			return err
 		}
-		if err := tx.Model(&model.AgentPlanStep{}).Where("organization_id = ? AND user_id = ? AND run_id = ? AND status IN ?", organizationID, userID, runID, []model.AgentPlanStepStatus{model.AgentPlanStepStatusPending, model.AgentPlanStepStatusRunning}).Updates(map[string]any{"status": model.AgentPlanStepStatusSkipped, "reason": "计划已重新调整", "completed_at": timestamp, "updated_at": timestamp}).Error; err != nil {
+		if err := tx.Model(&model.AgentPlanStep{}).Where("organization_id = ? AND user_id = ? AND run_id = ? AND status IN ?", organizationID, userID, runID, []model.AgentPlanStepStatus{model.AgentPlanStepStatusPending, model.AgentPlanStepStatusRunning}).Updates(map[string]any{"status": model.AgentPlanStepStatusSkipped, "reason": "计划已更新", "completed_at": timestamp, "updated_at": timestamp}).Error; err != nil {
 			return err
 		}
 		revision++
-		for index, title := range titles {
-			dependsOn := 0
-			if index > 0 {
-				dependsOn = index
-			}
-			steps = append(steps, model.AgentPlanStep{
+		for index, item := range items {
+			step := model.AgentPlanStep{
 				ID: newRepositoryID("agent-plan-step"), OrganizationID: organizationID, UserID: userID, RunID: runID,
-				Revision: revision, PlanCallID: planCallID, Position: index + 1, Title: title, CompletionCriteria: "关联工具返回成功", DependsOnPosition: dependsOn,
-				Status: model.AgentPlanStepStatusPending, CreatedAt: timestamp, UpdatedAt: timestamp,
-			})
+				Revision: revision, PlanCallID: planCallID, Position: index + 1, Title: item.Title,
+				Status: item.Status, CreatedAt: timestamp, UpdatedAt: timestamp,
+			}
+			if step.Status == model.AgentPlanStepStatusRunning || step.Status == model.AgentPlanStepStatusCompleted {
+				step.StartedAt = timestamp
+			}
+			if step.Status == model.AgentPlanStepStatusCompleted {
+				step.CompletedAt = timestamp
+			}
+			steps = append(steps, step)
 		}
 		return tx.Create(&steps).Error
 	})
 	return steps, err
-}
-
-func StartNextAgentPlanStep(organizationID, userID, runID, callID, toolName, timestamp string) error {
-	db, err := DB()
-	if err != nil {
-		return err
-	}
-	return transactionWithSQLiteRetry(db, func(tx *gorm.DB) error {
-		var revision int
-		if err := tx.Model(&model.AgentPlanStep{}).Where("organization_id = ? AND user_id = ? AND run_id = ?", organizationID, userID, runID).Select("COALESCE(MAX(revision), 0)").Scan(&revision).Error; err != nil || revision == 0 {
-			return err
-		}
-		var step model.AgentPlanStep
-		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("organization_id = ? AND user_id = ? AND run_id = ? AND revision = ? AND status = ?", organizationID, userID, runID, revision, model.AgentPlanStepStatusPending).Order("position asc").First(&step).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		return tx.Model(&step).Updates(map[string]any{"status": model.AgentPlanStepStatusRunning, "tool_call_id": callID, "tool_name": toolName, "started_at": timestamp, "updated_at": timestamp}).Error
-	})
-}
-
-func FinishAgentPlanStep(organizationID, userID, runID, callID string, succeeded bool, reason, timestamp string) error {
-	db, err := DB()
-	if err != nil {
-		return err
-	}
-	status := model.AgentPlanStepStatusCompleted
-	if !succeeded {
-		status = model.AgentPlanStepStatusFailed
-	}
-	return db.Model(&model.AgentPlanStep{}).Where("organization_id = ? AND user_id = ? AND run_id = ? AND tool_call_id = ? AND status = ?", organizationID, userID, runID, callID, model.AgentPlanStepStatusRunning).Updates(map[string]any{"status": status, "reason": reason, "completed_at": timestamp, "updated_at": timestamp}).Error
 }
 
 func FinalizeAgentPlan(organizationID, userID, runID, reason, timestamp string) error {

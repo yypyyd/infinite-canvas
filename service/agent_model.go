@@ -134,9 +134,14 @@ const (
 	agentUpstreamSlowDropThreshold = 25 * time.Second
 	agentUpstreamLateDropLimit     = 40 * time.Second
 	agentUpstreamMaxLateRetries    = 1
-	// agentHistoryMaxMessages / agentHistoryMaxRunes 控制随请求发送的历史对话条数与每条长度。
-	agentHistoryMaxMessages = 6
-	agentHistoryMaxRunes    = 1500
+	// agentHistoryMaxTurns / agentHistoryMaxRunes 控制随请求回放的历史轮数与每条文字长度；
+	// 其中最近 agentHistoryToolTurns 轮连同工具调用和结果一起回放，更早的只留最终回复。
+	agentHistoryMaxTurns  = 6
+	agentHistoryToolTurns = 2
+	agentHistoryMaxRunes  = 2000
+	// agentReasoningMaxRunes 限制推送和保存的推理摘要长度。
+	agentReasoningMaxRunes = 4000
+	agentMaxOutputTokens   = 4096
 )
 
 // agentUpstreamRetryDelay 返回第 retry 次重试前的等待：0.5s、1s、2s……

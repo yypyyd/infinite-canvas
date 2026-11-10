@@ -3636,7 +3636,7 @@ function InfiniteCanvasPage() {
     );
 
     const startAssistantGeneration = useCallback(
-        ({ runId, callId, type, count, prompt, sourceNodeIds, generationRecordId }: CanvasAssistantGenerationPlaceholder) => {
+        ({ runId, callId, type, count, prompt, sourceNodeIds, generationRecordId, nodeIds }: CanvasAssistantGenerationPlaceholder) => {
             const nodeType = type === "image" ? CanvasNodeType.Image : CanvasNodeType.Video;
             const expectedCount = type === "image" ? normalizeImageCount(count) : 1;
             const spec = NODE_DEFAULT_SIZE[nodeType];
@@ -3653,10 +3653,12 @@ function InfiniteCanvasPage() {
                 : { x: center.x - (columns * spec.width + (columns - 1) * gap) / 2, y: center.y - (rows * spec.height + (rows - 1) * gap) / 2 };
             // 新的一组占位整体避开已有节点；续生成时沿用已有占位的位置。
             const origin = existing.length ? existing[0].position : findFreeSlot({ ...preferredOrigin, width: columns * spec.width + (columns - 1) * gap, height: rows * spec.height + (rows - 1) * gap }, nodesRef.current.map(nodeRect), "right");
+            // 服务端执行的生成会预先分配节点编号，占位节点直接使用，页面离线后回来也能对上。
+            const freeNodeIds = (nodeIds || []).filter((id) => !nodesRef.current.some((node) => node.id === id));
             const created = Array.from({ length: Math.max(0, expectedCount - existing.length) }, (_, offset) => {
                 const index = existing.length + offset;
                 return {
-                    id: nanoid(),
+                    id: freeNodeIds[offset] || nanoid(),
                     type: nodeType,
                     title: prompt.slice(0, 32) || (type === "image" ? "Generated Image" : "Generated Video"),
                     position: { x: origin.x + (index % columns) * (spec.width + gap), y: origin.y + Math.floor(index / columns) * (spec.height + gap) },
@@ -3743,10 +3745,11 @@ function InfiniteCanvasPage() {
             const totalWidth = stored.reduce((sum, item) => sum + item.size.width, 0) + Math.max(0, stored.length - 1) * gap;
             let x = center.x - totalWidth / 2;
             const resolved = stored.map(({ image, storedImage, meta, size: nodeSize }, index) => {
-                const placeholder = placeholders[index];
+                // 带节点编号的结果按编号对上占位节点，其余按顺序对应。
+                const placeholder = image.nodeId ? placeholders.find((node) => node.id === image.nodeId) : placeholders[index];
                 const position = placeholder ? { x: placeholder.position.x + placeholder.width / 2 - nodeSize.width / 2, y: placeholder.position.y + placeholder.height / 2 - nodeSize.height / 2 } : { x, y: center.y - nodeSize.height / 2 };
                 const node: CanvasNodeData = {
-                    id: placeholder?.id || nanoid(),
+                    id: placeholder?.id || image.nodeId || nanoid(),
                     type: CanvasNodeType.Image,
                     title: image.prompt.slice(0, 32) || "Generated Image",
                     position,
@@ -3766,12 +3769,7 @@ function InfiniteCanvasPage() {
                 return node;
             });
             const resolvedById = new Map(resolved.map((node) => [node.id, node]));
-            const unresolvedIds = new Set(
-                placeholders
-                    .slice(resolved.length)
-                    .filter((node) => !node.metadata?.content)
-                    .map((node) => node.id),
-            );
+            const unresolvedIds = new Set(placeholders.filter((node) => !resolvedById.has(node.id) && !node.metadata?.content).map((node) => node.id));
             const existingIds = new Set(nodesRef.current.map((node) => node.id));
             const nextNodes = [
                 ...nodesRef.current.map((node) => resolvedById.get(node.id) || (unresolvedIds.has(node.id) ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_ERROR, errorDetails: "图片未生成成功" } } : node)),
@@ -3816,7 +3814,7 @@ function InfiniteCanvasPage() {
                   ? { x: Math.max(...selected.map((node) => node.position.x + node.width)) + 40, y: Math.min(...selected.map((node) => node.position.y)) }
                   : { x: center.x - nodeSize.width / 2, y: center.y - nodeSize.height / 2 };
             const node: CanvasNodeData = {
-                id: placeholder?.id || nanoid(),
+                id: placeholder?.id || video.nodeId || nanoid(),
                 type: CanvasNodeType.Video,
                 title: video.prompt.slice(0, 32) || "Generated Video",
                 position,

@@ -45,6 +45,8 @@ func describeUnsupportedRoute(routes []model.ModelRoute, req model.RouteRequirem
 		{"aspect_ratio", req.Ratio, func(p model.CapabilityProfile) []string { return p.Ratios }},
 		{"resolution", req.Resolution, func(p model.CapabilityProfile) []string { return p.Resolutions }},
 		{"duration", req.Duration, func(p model.CapabilityProfile) []string { return p.Durations }},
+		{"background", req.Background, func(p model.CapabilityProfile) []string { return p.Backgrounds }},
+		{"output_format", req.OutputFormat, func(p model.CapabilityProfile) []string { return p.OutputFormats }},
 	}
 	// Narrow profiles after each field, preserving valid combinations rather
 	// than advertising a cross-product of unrelated provider capabilities.
@@ -61,6 +63,9 @@ func describeUnsupportedRoute(routes []model.ModelRoute, req model.RouteRequirem
 					matched = append(matched, profile)
 				}
 			}
+		}
+		if len(matched) == 0 && len(allowed) == 0 && (field.name == "background" || field.name == "output_format") {
+			return invalidParameter(field.name, fmt.Sprintf("This model does not support %s=%s.", field.name, field.wanted))
 		}
 		if len(matched) == 0 && len(allowed) > 0 {
 			values := make([]string, 0, len(allowed))

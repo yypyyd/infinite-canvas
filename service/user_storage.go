@@ -424,8 +424,13 @@ func userFileImageVariantQuery(mimeType, variant string) (string, bool) {
 	if variant == "" {
 		return "", true
 	}
-	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(mimeType)), "image/") {
+	mimeType = strings.ToLower(strings.TrimSpace(mimeType))
+	if !strings.HasPrefix(mimeType, "image/") {
 		return "", false
+	}
+	// Variants are re-encoded stills; a GIF keeps playing only as the original.
+	if mimeType == "image/gif" {
+		return "", true
 	}
 	switch variant {
 	case "thumb":

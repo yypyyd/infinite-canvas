@@ -212,6 +212,12 @@ func (r *EventRepository) UpdateStatus(ctx context.Context, eventID, status, err
 		Updates(patch).Error
 }
 
+// SetOutput records a requested transparent background or gif output.
+func (r *EventRepository) SetOutput(ctx context.Context, eventID, background, outputFormat string) error {
+	return r.db.WithContext(ctx).Model(&model.EventLog{}).Where("id = ?", eventID).
+		Updates(map[string]any{"background": background, "output_format": outputFormat}).Error
+}
+
 func (r *EventRepository) SetPhase(ctx context.Context, eventID, phase string) error {
 	return r.db.WithContext(ctx).Model(&model.EventLog{}).Where("id = ? AND status = 'pending'", eventID).
 		Updates(map[string]any{"phase": phase, "updated_at": time.Now()}).Error

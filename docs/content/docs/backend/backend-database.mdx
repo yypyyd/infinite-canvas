@@ -349,6 +349,8 @@ Agent 的长期记忆表。记忆同时绑定企业、用户和可选画布项�
 | `operations` | string[] | 当前渠道支持的操作列表 |
 | `resolutionTiers` | string[] | 当前渠道支持的分辨率档列表，图片使用 `1k/2k/4k`，视频使用 `480p/720p/1080p`；无分辨率概念的模型为空 |
 | `qualityLevels` | string[] | 可选的独立图片质量档，内置 Adobe GPT Image 2 声明 `low/medium`；公开模型与平台映射继承，不能当作分辨率 |
+| `backgrounds` | string[] | 可选的非默认背景，目前只有 `transparent`（透明背景）；内置账号池按线路声明（ChatGPT 线路支持），公开模型取所有启用渠道的并集，请求透明背景时只选声明了它的渠道 |
+| `outputFormats` | string[] | 可选的非默认输出格式，目前只有 `gif`（循环动图）；来源和选渠道规则同 `backgrounds` |
 
 `promptSync` 字段：
 

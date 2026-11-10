@@ -38,6 +38,10 @@ type EventLog struct {
 	// ResponseFormat preserves the OpenAI image response contract across an
 	// accepted upstream task and a later /v1/images/tasks recovery.
 	ResponseFormat string `gorm:"size:16;not null;default:''"`
+	// Background / OutputFormat keep a requested transparent background or gif
+	// output, so a task finished later by recovery is checked and described the same way.
+	Background   string `gorm:"size:16;not null;default:''"`
+	OutputFormat string `gorm:"size:16;not null;default:''"`
 	// MimeType is the payload-magic-detected artifact type, never a filename or
 	// upstream Content-Type guess.
 	MimeType   string         `gorm:"size:100;not null;default:''"`

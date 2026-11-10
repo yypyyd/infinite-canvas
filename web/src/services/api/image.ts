@@ -7,7 +7,8 @@ import { workspaceFileUrl } from "@/services/api/workspace";
 import { nanoid } from "nanoid";
 import { dataUrlToFile, normalizeImageCount } from "@/lib/image-utils";
 import { buildImageReferencePromptText } from "@/lib/image-reference-prompt";
-import { imageToDataUrl } from "@/services/image-storage";
+import { frameSheetToGif, parseFrameSheet } from "@/lib/frame-sheet-gif";
+import { imageToDataUrl, uploadImage } from "@/services/image-storage";
 import { waitForGenerationTaskRecovery } from "@/services/api/generation-task";
 import type { ReferenceImage } from "@/types/image";
 
@@ -56,6 +57,14 @@ const STANDARD_1K_IMAGE_SIZES: Record<string, string> = {
     "9:16": "720x1280",
     "21:9": "1680x720",
 };
+
+/** 透明背景和 GIF 只发给声明支持的模型，其余模型仍按默认 PNG 出图。 */
+function imageOutputFields(config: AiConfig): Record<string, string> {
+    const definition = useConfigStore.getState().publicSettings?.modelChannel.models.find((item) => item.id === config.model);
+    if (config.imageFormat === "gif" && definition?.outputFormats?.includes("gif")) return { output_format: "gif" };
+    if (config.background === "transparent" && definition?.backgrounds?.includes("transparent")) return { output_format: IMAGE_OUTPUT_FORMAT, background: "transparent" };
+    return { output_format: IMAGE_OUTPUT_FORMAT };
+}
 
 function normalizeQuality(quality: string) {
     const value = quality.trim().toLowerCase();
@@ -134,7 +143,24 @@ function parseStoredImage(item: Record<string, unknown>) {
         storageKey: storageKey || undefined,
         bytes: typeof item.bytes === "number" ? item.bytes : 0,
         mimeType: typeof item.mime_type === "string" ? item.mime_type : undefined,
+        frameSheet: parseFrameSheet(item.frame_sheet),
     };
+}
+
+/** 「GIF 动图」返回的是帧拼图：在浏览器里合成 GIF 并保存，调用方拿到的就是动图。合成失败时保留拼图，不丢已扣费的结果。 */
+async function composeFrameSheets(images: ReturnType<typeof parseImagePayload>) {
+    return Promise.all(
+        images.map(async ({ frameSheet, ...image }) => {
+            if (!frameSheet) return image;
+            try {
+                const gif = await uploadImage(await frameSheetToGif(await (await fetch(image.dataUrl)).blob(), frameSheet));
+                return { id: image.id, dataUrl: gif.url, storageKey: gif.storageKey as string | undefined, bytes: gif.bytes, mimeType: gif.mimeType as string | undefined };
+            } catch (error) {
+                console.warn("动图合成失败，保留原始帧拼图", error);
+                return image;
+            }
+        }),
+    );
 }
 
 function parseImagePayload(payload: ImageApiResponse) {
@@ -168,7 +194,7 @@ function readImagePayloadError(payload: ImageApiResponse) {
 }
 
 export function parseRecoveredImageGeneration(payload: unknown) {
-    return parseImagePayload(payload as ImageApiResponse);
+    return composeFrameSheets(parseImagePayload(payload as ImageApiResponse));
 }
 
 function readAxiosError(error: unknown, fallback: string) {
@@ -225,7 +251,7 @@ async function recoverInterruptedImages(error: unknown, config: AiConfig, option
     if (!requestId || axios.isCancel(error) || (status !== undefined && !RECOVERABLE_GATEWAY_STATUSES.has(status))) return null;
 
     const task = await waitForGenerationTaskRecovery(requestId, (current) => current.status === "success" && current.result !== undefined, options.signal);
-    const images = parseRecoveredImageGeneration(task.result);
+    const images = await parseRecoveredImageGeneration(task.result);
     refreshRemoteUser(config);
     return images;
 }
@@ -251,14 +277,14 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
                 ...(quality ? { quality } : {}),
                 ...(requestSize ? { size: requestSize } : {}),
                 response_format: "b64_json",
-                output_format: IMAGE_OUTPUT_FORMAT,
+                ...imageOutputFields(config),
             },
             {
                 headers: aiHeaders(config, "application/json", requestId),
                 signal: options?.signal,
             },
         );
-        const images = parseImagePayload(response.data);
+        const images = await composeFrameSheets(parseImagePayload(response.data));
         refreshRemoteUser(config);
         return images;
     } catch (error) {
@@ -284,7 +310,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     formData.set("prompt", withSystemPrompt(config, requestPrompt));
     formData.set("n", String(n));
     formData.set("response_format", "b64_json");
-    formData.set("output_format", IMAGE_OUTPUT_FORMAT);
+    Object.entries(imageOutputFields(config)).forEach(([key, value]) => formData.set(key, value));
     if (quality) {
         formData.set("quality", quality);
     }
@@ -297,7 +323,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
 
     try {
         const response = await axios.post<ImageApiResponse>(aiApiUrl(config, "/images/edits"), formData, { headers: aiHeaders(config, undefined, requestId), signal: options?.signal });
-        const images = parseImagePayload(response.data);
+        const images = await composeFrameSheets(parseImagePayload(response.data));
         refreshRemoteUser(config);
         return images;
     } catch (error) {

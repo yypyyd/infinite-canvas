@@ -61,6 +61,10 @@ type CapabilityProfile struct {
 	RequiresReference   bool     `json:"requires_reference,omitempty"`
 	// MaxImagesPerRequest caps images per request on this route; 0 = no cap.
 	MaxImagesPerRequest int `json:"max_images_per_request,omitempty"`
+	// Backgrounds and OutputFormats list the non-default image outputs the route
+	// can produce (transparent background, gif); the opaque PNG default needs none.
+	Backgrounds   []string `json:"backgrounds,omitempty"`
+	OutputFormats []string `json:"output_formats,omitempty"`
 }
 
 type RouteRequirements struct {
@@ -74,6 +78,9 @@ type RouteRequirements struct {
 	ReferenceVideos int
 	ReferenceAudios int
 	GenerateAudio   bool
+	// Background and OutputFormat stay empty for the default opaque PNG output.
+	Background   string
+	OutputFormat string
 }
 
 // QuotaCostPolicy describes how a route translates one normalized request
@@ -270,6 +277,9 @@ func CanonicalRoutingCatalog() []CanonicalModelDefinition {
 	commonImageRatios := []string{"1:1", "16:9", "9:16", "4:3", "3:4"}
 	chatGPTImageRatios := []string{"1:1", "16:9", "9:16", "4:3", "3:4", "3:2"}
 	adobeWideRatios := []string{"1:1", "5:4", "9:16", "21:9", "16:9", "4:3", "3:2", "4:5", "3:4", "2:3"}
+	// ChatGPT Images returns a transparent PNG, or the frames of a looping GIF, when the prompt asks for one.
+	chatGPTImage := imageProfile(chatGPTImageRatios, []string{"1K"}, 6)
+	chatGPTImage.Backgrounds, chatGPTImage.OutputFormats = []string{"transparent"}, []string{"gif"}
 	return []CanonicalModelDefinition{
 		{Model: LogicalModel{ID: "gpt-6", Kind: "text", Name: "GPT-6", Enabled: true}, Routes: []ModelRoute{
 			route("text.gpt-6.chatgpt", "gpt-6", "chatgpt", "gpt-6", "gpt-6", textProfile()),
@@ -285,7 +295,7 @@ func CanonicalRoutingCatalog() []CanonicalModelDefinition {
 		}},
 
 		{Model: LogicalModel{ID: "gpt-image-2", Kind: "image", Name: "GPT Image 2", Enabled: true}, Routes: []ModelRoute{
-			route("image.gpt-image-2.chatgpt", "gpt-image-2", "chatgpt", "gpt-image-2", "gpt-image-2", imageProfile(chatGPTImageRatios, []string{"1K"}, 6)),
+			route("image.gpt-image-2.chatgpt", "gpt-image-2", "chatgpt", "gpt-image-2", "gpt-image-2", chatGPTImage),
 			route("image.gpt-image-2.byteplus", "gpt-image-2", "byteplus", "lumina-gpt-image-2", "6824519374061285743", imageProfile(commonImageRatios, []string{"1K", "2K", "4K"}, 14)),
 			// Adobe free Firefly supply only exposes GPT Image 2 at 1K/2K.
 			route("image.gpt-image-2.adobe", "gpt-image-2", "adobe", "firefly-gpt-image-2", "", imageProfile(adobeWideRatios, []string{"1K", "2K"}, 6)),
@@ -383,7 +393,8 @@ func capabilitySupports(profile CapabilityProfile, req RouteRequirements) bool {
 		return false
 	}
 	if !contains(profile.Operations, req.Operation) || !contains(profile.Ratios, req.Ratio) ||
-		!contains(profile.Resolutions, req.Resolution) || !contains(profile.Durations, req.Duration) {
+		!contains(profile.Resolutions, req.Resolution) || !contains(profile.Durations, req.Duration) ||
+		!contains(profile.Backgrounds, req.Background) || !contains(profile.OutputFormats, req.OutputFormat) {
 		return false
 	}
 	if req.ReferenceImages > profile.MaxReferenceImages || req.ReferenceVideos > profile.MaxReferenceVideos || req.ReferenceAudios > profile.MaxReferenceAudios {

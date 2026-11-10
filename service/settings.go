@@ -45,6 +45,10 @@ type PricingRequest struct {
 	ReferenceAudios int
 	ReferenceMedia  int
 	GenerateAudio   bool
+	// Background / OutputFormat carry a requested transparent background or gif
+	// output; empty means the default image, which every image channel serves.
+	Background   string
+	OutputFormat string
 }
 
 type ModelChannelSelection struct {
@@ -109,6 +113,8 @@ func publicAPIModels(setting model.PublicModelChannelSetting) []model.PublicAPIM
 			AspectRatios:        item.AspectRatios,
 			ResolutionTiers:     item.ResolutionTiers,
 			QualityLevels:       item.QualityLevels,
+			Backgrounds:         item.Backgrounds,
+			OutputFormats:       item.OutputFormats,
 			Durations:           item.Durations,
 			MaxReferenceImages:  item.MaxReferenceImages,
 			MaxReferenceVideos:  item.MaxReferenceVideos,
@@ -486,6 +492,8 @@ func mergeEnabledChannelCapabilities(items []model.ModelDefinition, channels []m
 		supportsAudioOutput    bool
 		referenceMode          string
 		unrestrictedResolution bool
+		backgrounds            []string
+		outputFormats          []string
 	}
 
 	merged := map[string]capabilities{}
@@ -523,6 +531,8 @@ func mergeEnabledChannelCapabilities(items []model.ModelDefinition, channels []m
 			current.maxReferenceAudios = max(current.maxReferenceAudios, channelModel.MaxReferenceAudios)
 			current.maxReferenceMedia = max(current.maxReferenceMedia, channelModel.MaxReferenceMedia)
 			current.supportsAudioOutput = current.supportsAudioOutput || channelModel.SupportsAudioOutput
+			current.backgrounds = append(current.backgrounds, channelModel.Backgrounds...)
+			current.outputFormats = append(current.outputFormats, channelModel.OutputFormats...)
 			merged[modelID] = current
 		}
 	}
@@ -543,6 +553,12 @@ func mergeEnabledChannelCapabilities(items []model.ModelDefinition, channels []m
 		items[index].MaxReferenceMedia = capability.maxReferenceMedia
 		items[index].SupportsAudioOutput = capability.supportsAudioOutput
 		items[index].ReferenceMode = normalizeReferenceMode(capability.referenceMode)
+		// A request asking for these outputs is only routed to channels that declare them.
+		items[index].Backgrounds, items[index].OutputFormats = nil, nil
+		if capability.modality == "image" {
+			items[index].Backgrounds = normalizeStringList(capability.backgrounds, normalizePricingToken)
+			items[index].OutputFormats = normalizeStringList(capability.outputFormats, normalizePricingToken)
+		}
 		if capability.modality != "image" && capability.modality != "video" {
 			items[index].AspectRatios = []string{}
 			items[index].ResolutionTiers = []string{}
@@ -786,6 +802,12 @@ func normalizePricingRequest(request PricingRequest) PricingRequest {
 	request.ReferenceVideos = max(0, request.ReferenceVideos)
 	request.ReferenceAudios = max(0, request.ReferenceAudios)
 	request.ReferenceMedia = request.ReferenceImages + request.ReferenceVideos + request.ReferenceAudios
+	if request.Background = normalizePricingToken(request.Background); request.Background == "auto" || request.Background == "opaque" {
+		request.Background = ""
+	}
+	if request.OutputFormat = normalizePricingToken(request.OutputFormat); request.OutputFormat == "png" {
+		request.OutputFormat = ""
+	}
 	return request
 }
 
@@ -1607,6 +1629,8 @@ func normalizeModelChannel(channel model.ModelChannel) model.ModelChannel {
 		item.Operations = normalizeModelOperations(item.Operations, item.Model, item.Modality)
 		item.AspectRatios = normalizeStringList(item.AspectRatios, normalizePricingToken)
 		item.ResolutionTiers = normalizeStringList(item.ResolutionTiers, normalizeResolutionTier)
+		item.Backgrounds = normalizeStringList(item.Backgrounds, normalizePricingToken)
+		item.OutputFormats = normalizeStringList(item.OutputFormats, normalizePricingToken)
 		item.Durations = normalizeDurations(item.Durations)
 		item.MaxReferenceImages = max(0, item.MaxReferenceImages)
 		item.MaxReferenceVideos = max(0, item.MaxReferenceVideos)
@@ -2019,6 +2043,9 @@ func channelModelSupportsRequest(item model.ChannelModel, request PricingRequest
 		return false
 	}
 	if request.GenerateAudio && !item.SupportsAudioOutput {
+		return false
+	}
+	if request.Background != "" && !containsPricingValue(item.Backgrounds, request.Background) || request.OutputFormat != "" && !containsPricingValue(item.OutputFormats, request.OutputFormat) {
 		return false
 	}
 	duration := request.DurationSeconds

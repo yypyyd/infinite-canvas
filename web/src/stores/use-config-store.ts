@@ -31,6 +31,10 @@ export type AiConfig = {
     size: string;
     count: string;
     canvasImageCount: string;
+    /** "transparent" 生成透明背景；空为默认。 */
+    background?: string;
+    /** "gif" 生成循环动图；空为默认图片。 */
+    imageFormat?: string;
 };
 
 const AI_PREFERENCE_KEYS = [

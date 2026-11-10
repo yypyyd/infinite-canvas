@@ -41,6 +41,7 @@ export function CanvasImageSettingsPopover({ config, model, onConfigChange, onOp
     const activeModel = model || config.imageModel || config.model;
     const modelDefinition = managedModels?.find((item) => item.id === activeModel);
     const showQuality = supportsImageQuality(activeModel);
+    const outputLabel = config.imageFormat === "gif" && modelDefinition?.outputFormats?.includes("gif") ? "GIF" : config.background === "transparent" && modelDefinition?.backgrounds?.includes("transparent") ? "透明" : "";
     const updateOpen = (nextOpen: boolean) => {
         setOpen(nextOpen);
         onOpenChange?.(nextOpen);
@@ -104,7 +105,7 @@ export function CanvasImageSettingsPopover({ config, model, onConfigChange, onOp
                         updateOpen(!open);
                     }}
                 >
-                    <span className="truncate">{[showQuality ? imageQualityLabel(quality) : "", imageSizeLabel(activeSize), `${count} 张`].filter(Boolean).join(" · ")}</span>
+                    <span className="truncate">{[showQuality ? imageQualityLabel(quality) : "", outputLabel, imageSizeLabel(activeSize), `${count} 张`].filter(Boolean).join(" · ")}</span>
                 </Button>
             </span>
             {panel}

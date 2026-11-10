@@ -38,6 +38,8 @@ type PoolRoute struct {
 	Provider        string
 	Operations      []string
 	ResolutionTiers []string
+	Backgrounds     []string
+	OutputFormats   []string
 }
 
 const modelCacheTTL = 30 * time.Second
@@ -93,7 +95,8 @@ func (m *Module) Models(ctx context.Context) ([]PoolModel, error) {
 		for i := range items {
 			for _, route := range summaries[items[i].ID] {
 				items[i].Routes = append(items[i].Routes, PoolRoute{ID: route.ID, Provider: route.Provider,
-					Operations: route.Operations, ResolutionTiers: route.Resolutions})
+					Operations: route.Operations, ResolutionTiers: route.Resolutions,
+					Backgrounds: route.Backgrounds, OutputFormats: route.OutputFormats})
 			}
 		}
 	}

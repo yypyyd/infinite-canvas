@@ -375,7 +375,8 @@ func (s *V1Service) dispatchImageRoutes(ctx context.Context, eventID string, log
 		operation = "edit"
 	}
 	defaulted := imageResolutionDefaulted(in)
-	requirements := model.RouteRequirements{Operation: operation, Ratio: ratio, Resolution: resolution, Quality: in.Quality, ReferenceImages: len(in.ReferenceImages)}
+	requirements := model.RouteRequirements{Operation: operation, Ratio: ratio, Resolution: resolution, Quality: in.Quality, ReferenceImages: len(in.ReferenceImages),
+		Background: in.Background, OutputFormat: in.OutputFormat}
 	if defaulted {
 		requirements.Resolution = ""
 	}

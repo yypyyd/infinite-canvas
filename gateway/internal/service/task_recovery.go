@@ -67,6 +67,9 @@ func (s *V1Service) startAcceptedImageRecovery(parent context.Context, event *mo
 				if resumeErr == nil {
 					data, resumeErr = readProviderArtifact(body, ct, netguard.MediaImage, netguard.MaxImageBytes)
 				}
+				if resumeErr == nil {
+					resumeErr = checkImageOutput(data, event.Background, event.OutputFormat)
+				}
 			}
 		} else {
 			data, _, resumeErr = s.byteplus.ResumeImageTask(ctx, account.Value, attempt.UpstreamTaskID, true)
@@ -77,7 +80,8 @@ func (s *V1Service) startAcceptedImageRecovery(parent context.Context, event *mo
 			}
 			// A transient poll/download failure keeps the accepted task recoverable.
 			// Explicit terminal provider outcomes can safely close the event.
-			if errors.Is(resumeErr, byteplus.ErrQuotaExhausted) || errors.Is(resumeErr, byteplus.ErrRiskControl) || errors.Is(resumeErr, byteplus.ErrInvalidParams) || errors.Is(resumeErr, byteplus.ErrTaskFailed) || errors.Is(resumeErr, chatgpt.ErrContentPolicy) {
+			// ErrUnsupportedParams here is a finished image that is not the requested gif or transparent output.
+			if errors.Is(resumeErr, byteplus.ErrQuotaExhausted) || errors.Is(resumeErr, byteplus.ErrRiskControl) || errors.Is(resumeErr, byteplus.ErrInvalidParams) || errors.Is(resumeErr, byteplus.ErrTaskFailed) || errors.Is(resumeErr, chatgpt.ErrContentPolicy) || errors.Is(resumeErr, ErrUnsupportedParams) {
 				publicErr := publicGenerationError(resumeErr)
 				if errors.Is(resumeErr, byteplus.ErrTaskFailed) {
 					publicErr = ErrProviderExecution

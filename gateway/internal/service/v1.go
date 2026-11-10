@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"image/gif"
 	"image/png"
 	"io"
 	"log"
@@ -243,9 +244,9 @@ type V1ImageRequest struct {
 	// Quality is OpenAI's image quality (low|medium|high|auto). Providers that
 	// expose it independently from image dimensions receive it unchanged.
 	Quality string
-	// Background and OutputFormat are part of the GPT Image request surface, but
-	// this multi-provider gateway cannot currently guarantee them. Explicit
-	// values are rejected instead of being silently ignored.
+	// Background ("transparent") and OutputFormat ("gif") are only served by
+	// routes that declare them; any other explicit value is rejected instead of
+	// being silently ignored.
 	Background   string
 	OutputFormat string
 	// ResponseFormat controls the OpenAI-compatible API response. Empty defaults
@@ -573,10 +574,12 @@ func (s *V1Service) ListModels(ctx context.Context, extended bool) ([]map[string
 // (main-site) views only. It is deliberately not part of the public /v1/models
 // output so API clients never see which providers serve a model.
 type RouteSummary struct {
-	ID          string
-	Provider    string
-	Operations  []string
-	Resolutions []string
+	ID            string
+	Provider      string
+	Operations    []string
+	Resolutions   []string
+	Backgrounds   []string
+	OutputFormats []string
 }
 
 // ModelRouteSummaries returns the usable routes of every enabled model.
@@ -600,6 +603,8 @@ func (s *V1Service) ModelRouteSummaries(ctx context.Context) (map[string][]Route
 			for _, profile := range model.DecodeCapabilityProfiles(route.Capabilities) {
 				summary.Operations = unionStrings(summary.Operations, profile.Operations)
 				summary.Resolutions = unionStrings(summary.Resolutions, profile.Resolutions)
+				summary.Backgrounds = unionStrings(summary.Backgrounds, profile.Backgrounds)
+				summary.OutputFormats = unionStrings(summary.OutputFormats, profile.OutputFormats)
 			}
 			out[item.ID] = append(out[item.ID], summary)
 		}
@@ -1456,6 +1461,11 @@ func (s *V1Service) prepareImageExecution(ctx context.Context, principal *APIPri
 	if len(in.RequestID) > 191 {
 		return nil, fmt.Errorf("%w: idempotency key is too long", ErrUnsupportedParams)
 	}
+	background, outputFormat, outputErr := normalizeImageOutput(in.Background, in.OutputFormat)
+	if outputErr != nil {
+		return nil, outputErr
+	}
+	in.Background, in.OutputFormat = background, outputFormat
 	if source == "v1" {
 		responseFormat, err := normalizeImageResponseFormat(in.ResponseFormat)
 		if err != nil {
@@ -1518,6 +1528,10 @@ func (s *V1Service) prepareImageExecution(ctx context.Context, principal *APIPri
 	eventID, err := s.logPendingEvent(ctx, "image", modelItem, principal, in.Prompt, aspectRatio, resolution, "", refCount, relativePath, source, nil, in.DeAI, in.RequestID, in.ResponseFormat, eventFingerprint)
 	if err != nil {
 		return nil, err
+	}
+	if in.Background != "" || in.OutputFormat != "" {
+		// Kept on the event so a task finished later by recovery gets the same output.
+		recordBookkeepingError("record image output", s.events.SetOutput(ctx, eventID, in.Background, in.OutputFormat))
 	}
 	if apiRequest && storeOutput {
 		// API clients receive an opaque bearer URL rather than the internal
@@ -1619,7 +1633,7 @@ func (s *V1Service) prepareImageExecution(ctx context.Context, principal *APIPri
 			b64 := base64.StdEncoding.EncodeToString(imageBytes)
 			return map[string]any{
 				"created":    time.Now().Unix(),
-				"data":       []map[string]any{{"b64_json": b64}},
+				"data":       imageDataItem(map[string]any{"b64_json": b64}, in.OutputFormat, imageMimeType),
 				"model":      modelItem.EffectiveName(),
 				"kind":       "image",
 				"b64_json":   b64,
@@ -1631,7 +1645,7 @@ func (s *V1Service) prepareImageExecution(ctx context.Context, principal *APIPri
 			// Persisted results use our RustFS-backed public image proxy.
 			return map[string]any{
 				"created":    time.Now().Unix(),
-				"data":       []map[string]any{{"url": fileURL}},
+				"data":       imageDataItem(map[string]any{"url": fileURL}, in.OutputFormat, imageMimeType),
 				"model":      modelItem.EffectiveName(),
 				"kind":       "image",
 				"url":        fileURL,
@@ -1647,7 +1661,7 @@ func (s *V1Service) prepareImageExecution(ctx context.Context, principal *APIPri
 			outURL := publicImageContentURL(in.BaseURL, eventID)
 			return map[string]any{
 				"created":    time.Now().Unix(),
-				"data":       []map[string]any{{"url": outURL}},
+				"data":       imageDataItem(map[string]any{"url": outURL}, in.OutputFormat, imageMimeType),
 				"model":      modelItem.EffectiveName(),
 				"kind":       "image",
 				"url":        outURL,
@@ -1660,7 +1674,7 @@ func (s *V1Service) prepareImageExecution(ctx context.Context, principal *APIPri
 		b64 := base64.StdEncoding.EncodeToString(imageBytes)
 		return map[string]any{
 			"created":    time.Now().Unix(),
-			"data":       []map[string]any{{"b64_json": b64}},
+			"data":       imageDataItem(map[string]any{"b64_json": b64}, in.OutputFormat, imageMimeType),
 			"model":      modelItem.EffectiveName(),
 			"kind":       "image",
 			"b64_json":   b64,
@@ -1670,7 +1684,7 @@ func (s *V1Service) prepareImageExecution(ctx context.Context, principal *APIPri
 	}
 	return map[string]any{
 		"created":    time.Now().Unix(),
-		"data":       []map[string]any{{"url": fileURL, "b64_json": nil}},
+		"data":       imageDataItem(map[string]any{"url": fileURL, "b64_json": nil}, in.OutputFormat, imageMimeType),
 		"model":      modelItem.EffectiveName(),
 		"kind":       "image",
 		"url":        fileURL,
@@ -1741,7 +1755,7 @@ func (s *V1Service) imageTaskFromEvent(ctx context.Context, principal *APIPrinci
 		}
 		if storedImageResponseFormat(event.ResponseFormat) == "url" {
 			contentURL := publicImageContentURL(s.outputBaseURL(""), event.ID)
-			result["data"] = []map[string]any{{"url": contentURL}}
+			result["data"] = imageDataItem(map[string]any{"url": contentURL}, event.OutputFormat, event.MimeType)
 			result["url"] = contentURL
 			break
 		}
@@ -1766,7 +1780,7 @@ func (s *V1Service) imageTaskFromEvent(ctx context.Context, principal *APIPrinci
 			result["mime_type"] = mimeType
 		}
 		encoded := base64.StdEncoding.EncodeToString(body)
-		result["data"] = []map[string]any{{"b64_json": encoded}}
+		result["data"] = imageDataItem(map[string]any{"b64_json": encoded}, event.OutputFormat, mimeType)
 		result["b64_json"] = encoded
 	case "failed":
 		result["status"] = "failed"
@@ -2682,12 +2696,6 @@ func (s *V1Service) prepareImage(ctx context.Context, principal *APIPrincipal, i
 	if n != 1 {
 		return nil, "", "", invalidParameter("n", "n must be 1.", "1")
 	}
-	if strings.TrimSpace(in.Background) != "" {
-		return nil, "", "", invalidParameter("background", "background is not supported; omit this parameter.")
-	}
-	if strings.TrimSpace(in.OutputFormat) != "" {
-		return nil, "", "", invalidParameter("output_format", "output_format is not supported; omit this parameter.")
-	}
 	modelItem, err := s.models.Get(ctx, modelID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -2713,7 +2721,8 @@ func (s *V1Service) prepareImage(ctx context.Context, principal *APIPrincipal, i
 		preflightResolution = ""
 	}
 	if _, err := s.firstAvailableRoute(ctx, modelItem.ID, "image", model.RouteRequirements{Operation: operation,
-		Ratio: aspectRatio, Resolution: preflightResolution, Quality: in.Quality, ReferenceImages: len(in.ReferenceImages)}); err != nil {
+		Ratio: aspectRatio, Resolution: preflightResolution, Quality: in.Quality, ReferenceImages: len(in.ReferenceImages),
+		Background: in.Background, OutputFormat: in.OutputFormat}); err != nil {
 		if errors.Is(err, ErrUnsupportedParams) {
 			// Rejected events predate route selection and omit these fields. Keep
 			// bounded parameter diagnostics without prompts, references, or keys.
@@ -2723,6 +2732,45 @@ func (s *V1Service) prepareImage(ctx context.Context, principal *APIPrincipal, i
 		return nil, "", "", err
 	}
 	return modelItem, resolution, aspectRatio, nil
+}
+
+// normalizeImageOutput keeps the two non-default outputs a route can declare.
+// Empty means the default opaque PNG; any other explicit value is rejected.
+func normalizeImageOutput(background, outputFormat string) (string, string, error) {
+	background, outputFormat = strings.ToLower(strings.TrimSpace(background)), strings.ToLower(strings.TrimSpace(outputFormat))
+	if background != "" && background != "transparent" {
+		return "", "", invalidParameter("background", "background supports only transparent; omit it for the default.", "transparent")
+	}
+	if outputFormat != "" && outputFormat != "gif" {
+		return "", "", invalidParameter("output_format", "output_format supports only gif; omit it for the default.", "gif")
+	}
+	if background != "" && outputFormat != "" {
+		return "", "", invalidParameter("background", "transparent background is not available for gif output.")
+	}
+	return background, outputFormat, nil
+}
+
+// checkImageOutput fails a finished ChatGPT image that is not the requested output,
+// so the generation is refunded instead of delivering the wrong artifact. A GIF
+// request must come back as an animation or as the frame sheet the caller cuts into
+// one; a transparent request must really carry an alpha channel, a drawn
+// checkerboard does not.
+func checkImageOutput(data []byte, background, outputFormat string) error {
+	if outputFormat == "gif" {
+		if animation, err := gif.DecodeAll(bytes.NewReader(data)); err == nil && len(animation.Image) > 1 {
+			return nil
+		}
+		if checkFrameSheet(data) != nil {
+			return invalidParameter("output_format", "这次没有生成可以合成动图的画面，已按失败处理，请重试。")
+		}
+	}
+	if background == "transparent" {
+		decoded, _, err := image.Decode(bytes.NewReader(data))
+		if opaque, ok := decoded.(interface{ Opaque() bool }); err != nil || !ok || opaque.Opaque() {
+			return invalidParameter("background", "这次没有生成透明背景，已按失败处理，请重试。")
+		}
+	}
+	return nil
 }
 
 func (s *V1Service) prepareVideo(ctx context.Context, principal *APIPrincipal, in V1VideoRequest) (*model.ModelConfig, string, string, string, error) {
@@ -3229,7 +3277,7 @@ func (s *V1Service) generateChatGPTImage(ctx context.Context, eventID string, mo
 		if token.QuotaReserved {
 			generationCtx = chatgpt.WithReservedImageQuota(ctx)
 		}
-		d, meta, genErr := s.chatgpt.GenerateImage(generationCtx, token.Value, in.Prompt, modelItem.ID, aspectRatio, resolution, refs, false, func(id string) error {
+		d, meta, genErr := s.chatgpt.GenerateImage(generationCtx, token.Value, in.Prompt, modelItem.ID, aspectRatio, resolution, in.Background, in.OutputFormat, refs, false, func(id string) error {
 			bookCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 			defer cancel()
 			if err := s.models.Dispatch().AcceptLatest(bookCtx, eventID, token.ID, dispatchRouteFromContext(ctx), id); err != nil {
@@ -3248,6 +3296,8 @@ func (s *V1Service) generateChatGPTImage(ctx context.Context, eventID string, mo
 				d, genErr = readProviderArtifact(body, contentType, netguard.MediaImage, netguard.MaxImageBytes)
 				if genErr != nil {
 					genErr = chatgpt.AcceptedFailure(stringValue(meta["conversation_id"]), genErr)
+				} else {
+					genErr = checkImageOutput(d, in.Background, in.OutputFormat)
 				}
 			}
 		}

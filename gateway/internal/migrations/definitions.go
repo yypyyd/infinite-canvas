@@ -2143,4 +2143,12 @@ SET capabilities = (
 ), updated_at = NOW()
 WHERE id = 'video.kling-4.0.adobe';
 `,
+	"000047_chatgpt_image_transparent_gif.sql": `-- ChatGPT Images returns a transparent PNG, or the frames of a looping GIF, when asked.
+UPDATE model_routes
+SET capabilities = (
+    SELECT jsonb_agg(profile || '{"backgrounds":["transparent"],"output_formats":["gif"]}'::jsonb ORDER BY ordinal)
+    FROM jsonb_array_elements(capabilities) WITH ORDINALITY AS items(profile, ordinal)
+), updated_at = NOW()
+WHERE id = 'image.gpt-image-2.chatgpt';
+`,
 }

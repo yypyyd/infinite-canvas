@@ -62,7 +62,7 @@ const autoAspectOption: AspectOption[] = [{ value: "auto", label: "auto", width:
 
 type ImageSettingsPanelProps = {
     config: AiConfig;
-    onConfigChange: (key: "quality" | "size" | "count", value: string) => void;
+    onConfigChange: (key: "quality" | "size" | "count" | "background" | "imageFormat", value: string) => void;
     theme: CanvasTheme;
     showTitle?: boolean;
     className?: string;
@@ -93,7 +93,12 @@ export function ImageSettingsPanel({
 }: ImageSettingsPanelProps) {
     const [snapDimensionToStep, setSnapDimensionToStep] = useState(true);
     const managedModels = useConfigStore((state) => state.publicSettings?.modelChannel.models);
-    const activeQualityLevels = managedModels?.find((item) => item.id === (model || config.model))?.qualityLevels ?? imageQualityLevels(model || config.model);
+    const activeDefinition = managedModels?.find((item) => item.id === (model || config.model));
+    const activeQualityLevels = activeDefinition?.qualityLevels ?? imageQualityLevels(model || config.model);
+    const supportsTransparent = Boolean(activeDefinition?.backgrounds?.includes("transparent"));
+    const supportsGif = Boolean(activeDefinition?.outputFormats?.includes("gif"));
+    const background = supportsTransparent ? config.background || "" : "";
+    const imageFormat = supportsGif ? config.imageFormat || "" : "";
     const activeQualityOptions = qualityOptions.filter((item) => item.value === "auto" || activeQualityLevels.includes(item.value));
     const maxCount = modelImageCountLimit(managedModels, model || config.model, maxCountProp);
     const quickCount = Math.min(quickCountProp, maxCount);
@@ -128,6 +133,15 @@ export function ImageSettingsPanel({
         const option = aspectOptions.find((item) => item.value === value);
         onConfigChange("size", option?.size || option?.value || "auto");
     };
+    // 透明背景和 GIF 不能同时要，选中一个时清掉另一个。
+    const toggleTransparent = () => {
+        onConfigChange("background", background ? "" : "transparent");
+        if (!background && imageFormat) onConfigChange("imageFormat", "");
+    };
+    const toggleGif = () => {
+        onConfigChange("imageFormat", imageFormat ? "" : "gif");
+        if (!imageFormat && background) onConfigChange("background", "");
+    };
     const updateDimension = (key: "width" | "height", value: number | null) => {
         const next = Math.max(1, Math.floor(value || dimensions[key] || 1024));
         const width = key === "width" ? next : dimensions.width;
@@ -156,6 +170,23 @@ export function ImageSettingsPanel({
                                     {item.label}
                                 </OptionPill>
                             ))}
+                        </div>
+                    </div>
+                ) : null}
+                {supportsTransparent || supportsGif ? (
+                    <div className="space-y-2.5">
+                        <SettingTitle color={theme.node.muted}>输出</SettingTitle>
+                        <div className="grid grid-cols-2 gap-2.5">
+                            {supportsTransparent ? (
+                                <OptionPill selected={background === "transparent"} theme={theme} onClick={toggleTransparent}>
+                                    透明背景
+                                </OptionPill>
+                            ) : null}
+                            {supportsGif ? (
+                                <OptionPill selected={imageFormat === "gif"} theme={theme} onClick={toggleGif}>
+                                    GIF 动图
+                                </OptionPill>
+                            ) : null}
                         </div>
                     </div>
                 ) : null}

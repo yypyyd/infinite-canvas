@@ -457,7 +457,7 @@ func WithReservedImageQuota(ctx context.Context) context.Context {
 	return context.WithValue(ctx, reservedImageQuotaKey{}, true)
 }
 
-func (c *Client) GenerateImage(ctx context.Context, accessToken, prompt, model, aspectRatio, resolution string, refs [][]byte, downloadResult bool, accepted ...func(string) error) ([]byte, map[string]any, error) {
+func (c *Client) GenerateImage(ctx context.Context, accessToken, prompt, model, aspectRatio, resolution, background, outputFormat string, refs [][]byte, downloadResult bool, accepted ...func(string) error) ([]byte, map[string]any, error) {
 	// Every chatgpt.com call goes through the proxy: Cloudflare rejects the
 	// local egress with an HTML 403 on the sentinel/conversation/content
 	// endpoints. Only the raw blob upload host stays on direct local egress.
@@ -493,7 +493,7 @@ func (c *Client) GenerateImage(ctx context.Context, accessToken, prompt, model, 
 	if err != nil {
 		return nil, nil, err
 	}
-	effectivePrompt := injectSizeHint(prompt, aspectRatio, resolution)
+	effectivePrompt := injectOutputHint(injectSizeHint(prompt, aspectRatio, resolution), background, outputFormat)
 	uploadedRefs, err := c.uploadReferenceImages(ctx, session, directSession, accessToken, refs)
 	if err != nil {
 		return nil, nil, err
@@ -1972,6 +1972,20 @@ func injectSizeHint(prompt, aspectRatio, resolution string) string {
 		return strings.TrimSpace(prompt)
 	}
 	return strings.TrimSpace(prompt) + "\n\n将宽高比设为 " + ratio
+}
+
+// injectOutputHint asks for the transparent PNG or looping GIF in words: the web
+// conversation has no output parameter, Images follows the instruction instead.
+// A GIF comes back as one picture holding the frames, so the layout is spelled
+// out to match the 3×3 sheet the gateway checks and the caller cuts into an animation.
+func injectOutputHint(prompt, background, outputFormat string) string {
+	if outputFormat == "gif" {
+		return prompt + "\n\n做成循环播放的 GIF 动图：把连续的 9 帧画在同一张图里，排成 3 列 3 行，按从左到右、从上到下的顺序播放；每格大小完全相同并紧挨着排列，格子之间和四周不要有边框、间隙、文字或编号；每一帧的镜头、主体位置和背景保持一致，最后一帧能自然接回第一帧"
+	}
+	if background == "transparent" {
+		return prompt + "\n\n背景设为透明，输出带透明通道的 PNG，不要画棋盘格或纯色背景"
+	}
+	return prompt
 }
 
 func scanForIDs(text string) ([]string, []string) {

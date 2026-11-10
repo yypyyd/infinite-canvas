@@ -1013,6 +1013,10 @@ func normalizeChatGPT2APIImageTaskData(baseURL string, apiKey string, data []map
 		if revisedPrompt := firstStringValue(item, "revised_prompt"); revisedPrompt != "" {
 			next["revised_prompt"] = revisedPrompt
 		}
+		// The pool marks a gif request served as a frame sheet; the page cuts it into the animation.
+		if sheet, ok := item["frame_sheet"]; ok {
+			next["frame_sheet"] = sheet
+		}
 		result = append(result, next)
 	}
 	return result
@@ -1419,6 +1423,8 @@ type aiRequestMeta struct {
 	Count                     int
 	Size                      string
 	Quality                   string
+	Background                string
+	OutputFormat              string
 	Resolution                string
 	ResolutionTier            string
 	Duration                  int
@@ -1547,6 +1553,8 @@ func readMultipartAIRequest(body []byte, contentType string) aiRequestMeta {
 		Count:           readIntValue(firstFormValue(form, "n"), 1),
 		Size:            firstFormValue(form, "size", "ratio"),
 		Quality:         firstFormValue(form, "quality"),
+		Background:      firstFormValue(form, "background"),
+		OutputFormat:    firstFormValue(form, "output_format"),
 		Resolution:      firstFormValue(form, "resolution_name", "resolution", "vquality"),
 		ResolutionTier:  firstFormValue(form, "resolutionTier"),
 		Duration:        readIntValue(firstFormValue(form, "seconds", "duration", "videoSeconds"), 1),
@@ -1576,6 +1584,8 @@ func readJSONAIRequest(body []byte) aiRequestMeta {
 		Count:                     readIntField(payload, 1, "n"),
 		Size:                      readStringField(payload, "size", "ratio"),
 		Quality:                   readStringField(payload, "quality"),
+		Background:                readStringField(payload, "background"),
+		OutputFormat:              readStringField(payload, "output_format"),
 		Resolution:                readStringField(payload, "resolution", "resolution_name", "vquality"),
 		ResolutionTier:            readStringField(payload, "resolutionTier"),
 		Duration:                  readIntField(payload, 1, "duration", "seconds", "videoSeconds"),
@@ -1778,6 +1788,8 @@ func pricingRequestForAIPath(path string, request aiRequestMeta) service.Pricing
 		ReferenceAudios: request.ReferenceAudios,
 		ReferenceMedia:  request.ReferenceImages + request.ReferenceVideos + request.ReferenceAudios,
 		GenerateAudio:   request.GenerateAudio,
+		Background:      request.Background,
+		OutputFormat:    request.OutputFormat,
 	}
 	switch path {
 	case "/images/generations":

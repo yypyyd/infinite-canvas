@@ -469,6 +469,9 @@ export type AdminPublicModelChannelSettings = {
 
 export type AdminManagedModel = {
     qualityLevels?: string[];
+    /** 可选的非默认图片输出：transparent 透明背景、gif 动图；由支持的渠道声明。 */
+    backgrounds?: string[];
+    outputFormats?: string[];
     /** 每次请求最多生成的图片数；仅由内置账号池提供的模型为 1。 */
     maxImageCount?: number;
     /** 文本模型是否支持工具调用；false 时画布 Agent 不使用该模型。 */

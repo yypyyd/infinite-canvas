@@ -407,7 +407,7 @@ async function recoverPendingImageLog(ownerId: string, log: StoredImageLog) {
     const results = await Promise.allSettled(
         pendingRequestIds.map(async (requestId) => {
             const task = await waitForGenerationTaskRecovery(requestId, (item) => item.status === "success" && Boolean(item.result));
-            const generated = parseRecoveredImageGeneration(task.result);
+            const generated = await parseRecoveredImageGeneration(task.result);
             const images = await Promise.all(
                 generated.map(async (image) => {
                     const stored = await storeGeneratedImage(image);

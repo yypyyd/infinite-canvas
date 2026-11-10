@@ -15,3 +15,7 @@ description: 同步出图，一次请求结束就返回图片
 | 编辑 | `POST /images/edits` | 参考图用同名 `image` 重复上传 |
 
 `quality` 不改变分辨率档。超时不要换 `Idempotency-Key`，用原编号调用 `GET /generation-tasks/recovery`，成功读 `data.status`。
+
+模型在 `GET /models` 里列出 `backgrounds` 含 `transparent` 时，可传 `background: "transparent"` 生成透明背景 PNG；列出 `outputFormats` 含 `gif` 时，可传 `output_format: "gif"` 生成一段循环动画。两者不能同时传，价格与普通图片相同。结果没有透明背景或不是动画帧时按失败处理，不扣费。
+
+动画以帧拼图返回：`data[0]` 仍是一张 PNG，各帧按行列排在同一张图里，从左到右、从上到下播放，并带 `frame_sheet`，例如 `{ "columns": 3, "rows": 3, "frame_duration_ms": 200 }`。站内页面会在浏览器里把它切开合成 GIF；通过 API 调用时由调用方按 `frame_sheet` 自行切帧合成。上游直接给出 GIF 文件时不带 `frame_sheet`。

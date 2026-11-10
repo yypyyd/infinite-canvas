@@ -113,5 +113,7 @@ func poolModelToChannelModelForProvider(item gateway.PoolModel, provider string)
 	if len(matched.ResolutionTiers) > 0 {
 		cm.ResolutionTiers = append([]string(nil), matched.ResolutionTiers...)
 	}
+	cm.Backgrounds = append([]string(nil), matched.Backgrounds...)
+	cm.OutputFormats = append([]string(nil), matched.OutputFormats...)
 	return cm
 }

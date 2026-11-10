@@ -270,9 +270,9 @@ func secondsRange(first, last int) []string {
 }
 
 // CanonicalRoutingCatalog is the closed public model set. Runtime and upstream
-// ids stay on ModelRoute. Multi-provider products use `{provider}-{product}`
-// public IDs so clients select a channel explicitly; ChatGPT's GPT Image 2 uses
-// the unprefixed `gpt-image-2` ID. Oreate, Runway, and Custom are not public.
+// ids stay on ModelRoute; providers serving the same product are routes of one
+// public ID. ChatGPT renders Images 2.6, so its image route is the separate
+// `gpt-image-2.6` model. Oreate, Runway, and Custom are not public.
 func CanonicalRoutingCatalog() []CanonicalModelDefinition {
 	commonImageRatios := []string{"1:1", "16:9", "9:16", "4:3", "3:4"}
 	chatGPTImageRatios := []string{"1:1", "16:9", "9:16", "4:3", "3:4", "3:2"}
@@ -280,6 +280,9 @@ func CanonicalRoutingCatalog() []CanonicalModelDefinition {
 	// ChatGPT Images returns a transparent PNG, or the frames of a looping GIF, when the prompt asks for one.
 	chatGPTImage := imageProfile(chatGPTImageRatios, []string{"1K"}, 6)
 	chatGPTImage.Backgrounds, chatGPTImage.OutputFormats = []string{"transparent"}, []string{"gif"}
+	// No per-request cap is declared: the site sends one request per image and
+	// keeps offering several images per run, as it did under the shared gpt-image-2.
+	chatGPTImage.MaxImagesPerRequest = 0
 	return []CanonicalModelDefinition{
 		{Model: LogicalModel{ID: "gpt-6", Kind: "text", Name: "GPT-6", Enabled: true}, Routes: []ModelRoute{
 			route("text.gpt-6.chatgpt", "gpt-6", "chatgpt", "gpt-6", "gpt-6", textProfile()),
@@ -294,8 +297,11 @@ func CanonicalRoutingCatalog() []CanonicalModelDefinition {
 			route("text.grok-chat-fast.grok", "grok-chat-fast", "grok", "grok-chat-fast", "grok-chat-fast", textProfile()),
 		}},
 
+		{Model: LogicalModel{ID: "gpt-image-2.6", Kind: "image", Name: "GPT Image 2.6", Enabled: true}, Routes: []ModelRoute{
+			// The route keeps its original ID: account bindings and dispatch history reference it.
+			route("image.gpt-image-2.chatgpt", "gpt-image-2.6", "chatgpt", "gpt-image-2.6", "gpt-image-2.6", chatGPTImage),
+		}},
 		{Model: LogicalModel{ID: "gpt-image-2", Kind: "image", Name: "GPT Image 2", Enabled: true}, Routes: []ModelRoute{
-			route("image.gpt-image-2.chatgpt", "gpt-image-2", "chatgpt", "gpt-image-2", "gpt-image-2", chatGPTImage),
 			route("image.gpt-image-2.byteplus", "gpt-image-2", "byteplus", "lumina-gpt-image-2", "6824519374061285743", imageProfile(commonImageRatios, []string{"1K", "2K", "4K"}, 14)),
 			// Adobe free Firefly supply only exposes GPT Image 2 at 1K/2K.
 			route("image.gpt-image-2.adobe", "gpt-image-2", "adobe", "firefly-gpt-image-2", "", imageProfile(adobeWideRatios, []string{"1K", "2K"}, 6)),

@@ -1130,7 +1130,7 @@ func (c *Client) uploadReferenceImages(ctx context.Context, controlSession, dire
 }
 
 func imageModelSlug(model string) string {
-	if strings.EqualFold(strings.TrimSpace(model), "gpt-image-2") {
+	if strings.EqualFold(strings.TrimSpace(model), "gpt-image-2.6") {
 		return "gpt-6-t-mini"
 	}
 	return "gpt-6"

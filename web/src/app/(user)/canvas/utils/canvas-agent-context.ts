@@ -1,5 +1,5 @@
 import type { AgentCanvasContext, AgentCanvasViewport } from "@/services/api/agent";
-import type { AiConfig } from "@/stores/use-config-store";
+import { resolveSavedModel, type AiConfig } from "@/stores/use-config-store";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "../types";
 
 export type AgentCanvasState = { nodes: CanvasNodeData[]; connections: CanvasConnection[]; visibleArea?: AgentCanvasViewport };
@@ -37,7 +37,7 @@ export function buildAgentCanvasContext(state: AgentCanvasState, selected: strin
             settings:
                 node.type === CanvasNodeType.Config
                     ? {
-                          model: node.metadata?.model,
+                          model: resolveSavedModel(node.metadata?.model),
                           size: node.metadata?.size,
                           quality: node.metadata?.quality,
                           resolution: node.metadata?.generationMode === "video" ? node.metadata?.vquality : undefined,

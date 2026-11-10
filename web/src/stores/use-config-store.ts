@@ -62,8 +62,8 @@ export type AiPreferences = Pick<AiConfig, AiPreferenceKey>;
 export type ModelCapability = "image" | "video" | "text" | "audio";
 
 export const defaultConfig: AiConfig = {
-    model: "gpt-image-2",
-    imageModel: "gpt-image-2",
+    model: "gpt-image-2.6",
+    imageModel: "gpt-image-2.6",
     videoModel: "grok-imagine-video",
     textModel: "gpt-5.5",
     audioModel: "gpt-4o-mini-tts",
@@ -254,6 +254,17 @@ function normalizeAiPreferences(value: unknown): Partial<AiPreferences> {
         if (typeof item === "string") preferences[key] = item;
     });
     return preferences as Partial<AiPreferences>;
+}
+
+/** 改过名的模型：旧画布节点上保存的仍是旧名字。 */
+const RENAMED_MODELS: Record<string, string> = { "gpt-image-2": "gpt-image-2.6" };
+
+/** 画布节点保存的模型已不在模型目录里、而它改名后的模型在目录里时，返回新名字；其余原样返回。 */
+export function resolveSavedModel(model?: string) {
+    const renamed = model ? RENAMED_MODELS[model] : undefined;
+    if (!renamed) return model;
+    const models = useConfigStore.getState().publicSettings?.modelChannel.models || [];
+    return !models.some((item) => item.id === model) && models.some((item) => item.id === renamed) ? renamed : model;
 }
 
 /** Images per request allowed for a model (the built-in pool renders one). */

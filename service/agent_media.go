@@ -43,7 +43,7 @@ var (
 	agentStandardImageSizes     = map[string]string{"1:1": "1024x1024", "3:2": "1200x800", "2:3": "800x1200", "4:3": "1024x768", "3:4": "768x1024", "16:9": "1280x720", "9:16": "720x1280", "21:9": "1680x720"}
 	agentImageQualityAliases    = map[string]string{"1k": "low", "2k": "medium", "4k": "high"}
 	agentImageRequestQualities  = []string{"low", "medium", "high", "standard", "hd"}
-	agentGPTImageQualityModels  = []string{"gpt-image-2", "gpt-image-1.5", "gpt-image-1", "gpt-image-1-mini"}
+	agentGPTImageQualityModels  = []string{"gpt-image-2.6", "gpt-image-2", "gpt-image-1.5", "gpt-image-1", "gpt-image-1-mini"}
 	agentDefaultVideoRatios     = []string{"16:9", "9:16"}
 	agentDefaultVideoTiers      = []string{"480p", "720p"}
 	agentDefaultVideoDurations  = []int{6, 10}

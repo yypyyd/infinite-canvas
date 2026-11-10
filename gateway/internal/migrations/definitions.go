@@ -2151,4 +2151,31 @@ SET capabilities = (
 ), updated_at = NOW()
 WHERE id = 'image.gpt-image-2.chatgpt';
 `,
+	"000048_chatgpt_gpt_image_2_6.sql": `-- ChatGPT renders Images 2.6: its image route becomes the public model
+-- gpt-image-2.6, while gpt-image-2 keeps the BytePlus and Adobe routes. The route
+-- ID stays, so account bindings, quota and dispatch history remain valid.
+INSERT INTO logical_models (id, kind, name, enabled, weight, generation_count, created_at, updated_at)
+SELECT 'gpt-image-2.6', 'image', 'GPT Image 2.6', COALESCE(bool_and(enabled), TRUE), COALESCE(MAX(weight), 0), 0, NOW(), NOW()
+FROM logical_models WHERE id = 'gpt-image-2'
+ON CONFLICT (id) DO UPDATE SET
+    kind = EXCLUDED.kind,
+    name = EXCLUDED.name,
+    enabled = EXCLUDED.enabled,
+    updated_at = NOW();
+
+-- Sharing gpt-image-2 with Adobe's uncapped route left this model without a
+-- per-request image cap, so the site lets users ask for several images per run
+-- (one request each). The route drops its own cap to keep that unchanged.
+UPDATE model_routes
+SET logical_model_id = 'gpt-image-2.6', runtime_model = 'gpt-image-2.6', upstream_model = 'gpt-image-2.6',
+    capabilities = (
+        SELECT COALESCE(jsonb_agg(profile - 'max_images_per_request' ORDER BY ordinal), '[]'::jsonb)
+        FROM jsonb_array_elements(capabilities) WITH ORDINALITY AS items(profile, ordinal)
+    ),
+    updated_at = NOW()
+WHERE id = 'image.gpt-image-2.chatgpt';
+
+UPDATE event_logs SET model = 'gpt-image-2.6'
+WHERE model = 'gpt-image-2' AND provider = 'chatgpt';
+`,
 }

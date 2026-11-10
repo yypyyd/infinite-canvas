@@ -2,7 +2,7 @@ import { useConfigStore } from "@/stores/use-config-store";
 
 export type ImageModelDefinition = { id: string; operations: string[]; maxReferenceImages?: number; resolutionTiers?: string[]; aspectRatios?: string[]; qualityLevels?: string[] };
 
-const GPT_IMAGE_QUALITY_MODELS = ["gpt-image-2", "gpt-image-1.5", "gpt-image-1", "gpt-image-1-mini"];
+const GPT_IMAGE_QUALITY_MODELS = ["gpt-image-2.6", "gpt-image-2", "gpt-image-1.5", "gpt-image-1", "gpt-image-1-mini"];
 
 const ONE_K_SIZE_BY_RATIO: Record<string, string> = {
     "1:1": "1024x1024",

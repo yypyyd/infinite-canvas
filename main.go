@@ -45,6 +45,9 @@ func main() {
 	if _, err := service.MigrateLegacyPoolPricingRules(); err != nil {
 		log.Printf("pricing: legacy pool model migration skipped: %v", err)
 	}
+	if err := service.MovePoolChatGPTImageModelSettings(); err != nil {
+		log.Printf("settings: ChatGPT image model move skipped: %v", err)
+	}
 	service.StartPromptSyncScheduler()
 	service.StartOrganizationEmailOutboxWorker()
 	service.StartUserFileMaintenanceWorker()

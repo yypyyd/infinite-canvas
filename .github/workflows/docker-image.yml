@@ -64,6 +64,7 @@ jobs:
     needs: [build]
     if: always() && (github.event_name == 'workflow_dispatch' || needs.build.result == 'success')
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     environment: production
     steps:
       - uses: actions/checkout@v5
@@ -101,5 +102,6 @@ jobs:
               encoding="utf-8",
           )
           PY
-          scp scripts/deploy-production.sh /tmp/infinite-canvas-deploy.env "$USER@$HOST:/tmp/"
-          ssh "$USER@$HOST" 'install -d -m 755 /opt/infinite-canvas && install -m 755 /tmp/deploy-production.sh /opt/infinite-canvas/deploy-production.sh && set -a && . /tmp/infinite-canvas-deploy.env && rm -f /tmp/infinite-canvas-deploy.env && /opt/infinite-canvas/deploy-production.sh'
+          # 服务器拉镜像时可能长时间没有输出，保活防止连接被当成空闲断开后任务一直挂着。
+          scp -o ServerAliveInterval=30 -o ServerAliveCountMax=10 scripts/deploy-production.sh /tmp/infinite-canvas-deploy.env "$USER@$HOST:/tmp/"
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 "$USER@$HOST" 'install -d -m 755 /opt/infinite-canvas && install -m 755 /tmp/deploy-production.sh /opt/infinite-canvas/deploy-production.sh && set -a && . /tmp/infinite-canvas-deploy.env && rm -f /tmp/infinite-canvas-deploy.env && /opt/infinite-canvas/deploy-production.sh'

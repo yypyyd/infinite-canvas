@@ -46,6 +46,14 @@ RUN go build -o /server . \
 FROM node:22-bookworm-slim
 
 WORKDIR /app
+# 系统依赖必须装在复制程序之前：程序每次发版都会变，放在后面会让这一大层每次重建，服务器每次都要重新下载。
+# postgresql 提供内置账号池的嵌入式数据库：幻图使用 SQLite 且未配置 POOL_POSTGRES_DSN 时，
+# 入口脚本在容器内启动它（仅 Unix socket，数据在 /app/data/pool-postgres）。
+# 去掉 PostgreSQL 的 LLVM JIT（约 130MB），入口脚本以 jit=off 启动嵌入式库。
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates default-mysql-client postgresql postgresql-client ffmpeg \
+ && rm -f /usr/lib/postgresql/*/lib/llvmjit* && rm -rf /usr/lib/postgresql/*/lib/bitcode \
+ && dpkg -r --force-depends libllvm14 libz3-4 \
+ && rm -rf /var/lib/apt/lists/*
 COPY VERSION /app/VERSION
 COPY RELEASE_NOTES.md /app/RELEASE_NOTES.md
 COPY LICENSE NOTICE.md THIRD_PARTY_NOTICES.md /app/
@@ -63,13 +71,6 @@ ENV NODE_ENV=production
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
 ENV PROMPT_DATA_DIR=/app/data/prompts
-# postgresql 提供内置账号池的嵌入式数据库：幻图使用 SQLite 且未配置 POOL_POSTGRES_DSN 时，
-# 入口脚本在容器内启动它（仅 Unix socket，数据在 /app/data/pool-postgres）。
-# 去掉 PostgreSQL 的 LLVM JIT（约 130MB），入口脚本以 jit=off 启动嵌入式库。
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates default-mysql-client postgresql postgresql-client ffmpeg \
- && rm -f /usr/lib/postgresql/*/lib/llvmjit* && rm -rf /usr/lib/postgresql/*/lib/bitcode \
- && dpkg -r --force-depends libllvm14 libz3-4 \
- && rm -rf /var/lib/apt/lists/*
 RUN mkdir -p /app/data/prompts /app/data/generated
 COPY scripts/docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN sed -i 's/\r$//' /app/docker-entrypoint.sh && chmod +x /app/docker-entrypoint.sh

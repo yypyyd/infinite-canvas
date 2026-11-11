@@ -63,10 +63,10 @@ export default function CanvasPage() {
                     <div>
                         <p className="flex items-center gap-2 text-xs font-medium uppercase tracking-[.18em] text-primary">
                             <span className="size-1.5 rounded-full bg-primary" />
-                            商品创作空间
+                            创作空间
                         </p>
-                        <h1 className="mt-3 text-3xl font-semibold tracking-[-.04em] sm:text-4xl">每个商品，都有自己的画布。</h1>
-                        <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">按商品或活动管理参考图、生成过程与最终交付素材。</p>
+                        <h1 className="mt-3 text-3xl font-semibold tracking-[-.04em] sm:text-4xl">每个想法，都有自己的画布。</h1>
+                        <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">按项目管理参考图、生成过程和最终作品。</p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                         {selectedIds.length ? (
@@ -77,7 +77,7 @@ export default function CanvasPage() {
                                     onClick={() =>
                                         void exportCanvasProjects(
                                             projects.filter((project) => selectedIds.includes(project.id)),
-                                            `商品画布-${selectedIds.length}个项目`,
+                                            `我的画布-${selectedIds.length}个项目`,
                                         )
                                     }
                                 >
@@ -97,7 +97,7 @@ export default function CanvasPage() {
                             导入画布
                         </Button>
                         <Button disabled={!hydrated} type="primary" icon={<Plus className="size-4" />} onClick={() => createAndEnter()}>
-                            新建商品项目
+                            新建画布
                         </Button>
                     </div>
                 </header>
@@ -115,10 +115,10 @@ export default function CanvasPage() {
                     </section>
                 ) : (
                     <section className="flex min-h-[360px] flex-col items-center justify-center rounded-xl border border-dashed border-border bg-card p-8 text-center">
-                        <h2 className="text-xl font-medium">还没有商品项目</h2>
-                        <p className="mt-3 text-sm text-muted-foreground">为一个商品或一次营销活动建立独立画布，集中管理全部视觉素材。</p>
+                        <h2 className="text-xl font-medium">还没有画布</h2>
+                        <p className="mt-3 text-sm text-muted-foreground">为每个创作项目建一张画布，参考图、生成过程和作品都放在一起。</p>
                         <Button type="primary" className="mt-6" icon={<Plus className="size-4" />} onClick={() => createAndEnter()}>
-                            新建商品项目
+                            新建画布
                         </Button>
                     </section>
                 )}

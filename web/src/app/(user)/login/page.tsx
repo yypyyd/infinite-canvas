@@ -21,9 +21,9 @@ type LoginFormValues = {
 };
 
 const highlights = [
-    { color: "bg-[#2dd4bf]", text: "一张实拍生成白底主图、场景图和详情图" },
+    { color: "bg-[#2dd4bf]", text: "GPT Image 2 免费文生图、图生图和改图" },
     { color: "bg-[#38bdf8]", text: "无限画布里继续改图、连线和批量交付" },
-    { color: "bg-[#a78bfa]", text: "图片与营销视频共用同一套账号与算力" },
+    { color: "bg-[#a78bfa]", text: "可灵 Kling 免费生成短视频" },
 ];
 
 const inputClass = "!h-11 !rounded-[10px]";

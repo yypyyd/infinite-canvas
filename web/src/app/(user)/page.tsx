@@ -300,7 +300,7 @@ export default function IndexPage() {
                                   data: { content: item.prompt },
                                   metadata: { source: "prompt-library", promptId: item.id, githubUrl: item.githubUrl },
                               });
-                              message.success("已加入商品素材");
+                              message.success("已加入我的素材");
                           }
                         : undefined
                 }

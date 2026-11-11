@@ -358,11 +358,11 @@ export default function VideoPage() {
             title: "生成视频",
             coverUrl: "",
             tags: [],
-            source: "营销视频",
+            source: "AI 视频",
             data: { url: video.url, storageKey: video.storageKey, width: video.width, height: video.height, bytes: video.bytes, mimeType: video.mimeType },
             metadata: { source: "video-page", prompt },
         });
-        message.success("已加入商品素材");
+        message.success("已加入我的素材");
     };
 
     const insertPickedAsset = async (payload: InsertAssetPayload) => {
@@ -455,9 +455,9 @@ export default function VideoPage() {
                     <div className="thin-scrollbar flex flex-col bg-card p-5 lg:min-h-0 lg:overflow-y-auto lg:p-6 xl:border-r xl:border-border">
                         <div className="flex items-start justify-between gap-3">
                             <div>
-                                <div className="mb-2 text-xs font-medium text-primary">AI 动态影棚</div>
-                                <h1 className="text-3xl font-semibold tracking-[-.035em]">让商品动起来。</h1>
-                                <p className="mt-2 text-sm leading-6 text-muted-foreground">用商品参考图制作上新短片、展示动画与社媒内容。</p>
+                                <div className="mb-2 text-xs font-medium text-primary">AI 视频</div>
+                                <h1 className="text-3xl font-semibold tracking-[-.035em]">让画面动起来。</h1>
+                                <p className="mt-2 text-sm leading-6 text-muted-foreground">输入描述或上传参考图生成短视频，可灵 Kling 免费使用。</p>
                             </div>
                             <div className="flex shrink-0 gap-2 lg:hidden">
                                 <Button icon={<History className="size-4" />} onClick={() => setLogsOpen(true)}>
@@ -478,7 +478,7 @@ export default function VideoPage() {
                                             查看灵感模板
                                         </Button>
                                         <Button size="small" icon={<FolderPlus className="size-3.5" />} onClick={() => setAssetPickerOpen(true)}>
-                                            查看商品素材
+                                            查看我的素材
                                         </Button>
                                     </div>
                                 </div>
@@ -635,7 +635,7 @@ export default function VideoPage() {
                         <div className="mb-6 flex items-center justify-between gap-3 border-b border-border/70 pb-4">
                             <div>
                                 <div className="text-xs font-medium text-primary">实时结果</div>
-                                <h2 className="mt-1 text-2xl font-semibold tracking-[-.03em]">营销视频</h2>
+                                <h2 className="mt-1 text-2xl font-semibold tracking-[-.03em]">AI 视频</h2>
                             </div>
                             {running ? <Tag className="m-0 px-2 py-1">等待 {formatDuration(elapsedMs)}</Tag> : null}
                         </div>

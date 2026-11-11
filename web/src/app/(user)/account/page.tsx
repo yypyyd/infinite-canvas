@@ -715,7 +715,7 @@ function HistorySection() {
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div>
                         <h2 className="text-lg font-semibold">生成记录</h2>
-                        <p className="mt-1 text-sm text-muted-foreground">汇总当前账号在生图、视频工作台和商品画布产生的结果，并在登录设备之间自动同步。</p>
+                        <p className="mt-1 text-sm text-muted-foreground">汇总当前账号在 AI 生图、AI 视频和无限画布产生的结果，并在登录设备之间自动同步。</p>
                     </div>
                     <div className="flex flex-col gap-2 sm:flex-row">
                         <Input

@@ -35,7 +35,7 @@ export default function PromptsPage() {
 
     const savePromptAsset = (item: Prompt) => {
         addAsset({ kind: "text", title: item.title, coverUrl: item.coverUrl, tags: item.tags, source: item.category, data: { content: item.prompt }, metadata: { source: "prompt-library", promptId: item.id, githubUrl: item.githubUrl } });
-        message.success("已加入商品素材");
+        message.success("已加入我的素材");
     };
 
     const handleListScroll = (event: UIEvent<HTMLDivElement>) => {
@@ -109,7 +109,7 @@ export default function PromptsPage() {
                                     onCopy={() => copyText(item.prompt, "提示词已复制")}
                                     extraAction={
                                         <Button size="small" icon={<FolderPlus className="size-3.5" />} onClick={() => savePromptAsset(item)}>
-                                            加入商品素材
+                                            加入我的素材
                                         </Button>
                                     }
                                 />

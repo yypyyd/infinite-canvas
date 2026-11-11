@@ -8,17 +8,17 @@ export const navigationTools = [
     },
     {
         slug: "canvas",
-        label: "商品画布",
+        label: "无限画布",
         icon: Maximize2,
     },
     {
         slug: "image",
-        label: "商品图生成",
+        label: "AI 生图",
         icon: ImagePlus,
     },
     {
         slug: "video",
-        label: "营销视频",
+        label: "AI 视频",
         icon: Video,
     },
     {
@@ -28,7 +28,7 @@ export const navigationTools = [
     },
     {
         slug: "assets",
-        label: "商品素材",
+        label: "我的素材",
         icon: Images,
     },
     {

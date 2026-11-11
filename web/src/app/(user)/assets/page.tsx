@@ -195,10 +195,10 @@ export default function AssetsPage() {
                     <div className="mx-auto max-w-5xl text-center">
                         <div className="mb-3 inline-flex items-center gap-2 text-sm font-medium text-primary">
                             <span className="size-1.5 rounded-full bg-primary" />
-                            商品内容库
+                            素材库
                         </div>
-                        <h1 className="text-3xl font-semibold tracking-[-.04em] sm:text-4xl">每份素材，都为上新准备。</h1>
-                        <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-muted-foreground">集中管理商品实拍、品牌参考、卖点文案与生成结果。</p>
+                        <h1 className="text-3xl font-semibold tracking-[-.04em] sm:text-4xl">每份素材，随时取用。</h1>
+                        <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-muted-foreground">集中管理参考图、提示词和生成结果，在生图、视频和画布里随时调用。</p>
                     </div>
 
                     <div className="mx-auto mt-9 w-full max-w-2xl rounded-xl border border-border bg-card p-1.5">

@@ -336,11 +336,11 @@ export default function ImagePage() {
             title: `生成结果 ${index + 1}`,
             coverUrl: stored.url,
             tags: [],
-            source: "商品图生成",
+            source: "AI 生图",
             data: { dataUrl: stored.url, storageKey: stored.storageKey, width: stored.width, height: stored.height, bytes: stored.bytes, mimeType: stored.mimeType },
             metadata: { source: "image-page", prompt },
         });
-        message.success("已加入商品素材");
+        message.success("已加入我的素材");
     };
 
     const insertPickedAsset = async (payload: InsertAssetPayload) => {
@@ -355,7 +355,7 @@ export default function ImagePage() {
             const stored = await uploadImage(payload.dataUrl);
             setReferences((value) => [...value, { id: nanoid(), name: payload.title, type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey }]);
         } else {
-            message.warning("商品图生成只能使用文本或图片素材");
+            message.warning("AI 生图只能使用文本或图片素材");
         }
         setAssetPickerOpen(false);
     };
@@ -457,9 +457,9 @@ export default function ImagePage() {
                         <div>
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
-                                    <div className="mb-2 text-xs font-medium text-primary">AI 商品影棚</div>
-                                    <h1 className="text-3xl font-semibold tracking-[-.035em]">制作下一张商品好图。</h1>
-                                    <p className="mt-2 text-sm leading-6 text-muted-foreground">上传商品参考图，快速制作可直接用于上新的视觉素材。</p>
+                                    <div className="mb-2 text-xs font-medium text-primary">AI 生图</div>
+                                    <h1 className="text-3xl font-semibold tracking-[-.035em]">一句话，免费生成好图。</h1>
+                                    <p className="mt-2 text-sm leading-6 text-muted-foreground">输入描述直接出图，也可以上传参考图来改图、换风格。</p>
                                 </div>
                                 <div className="flex shrink-0 gap-2 lg:hidden">
                                     <Button icon={<History className="size-4" />} onClick={() => setLogsOpen(true)}>
@@ -474,7 +474,7 @@ export default function ImagePage() {
 
                         <div className="mt-6 space-y-5">
                             <div>
-                                <div className="mb-2 text-xs font-medium tracking-[.12em] text-neutral-500">电商任务模板</div>
+                                <div className="mb-2 text-xs font-medium tracking-[.12em] text-neutral-500">常用模板</div>
                                 <div className="flex flex-wrap gap-2">
                                     {commercePresets.map((preset) => {
                                         const Icon = preset.icon;
@@ -501,11 +501,11 @@ export default function ImagePage() {
                                             查看灵感模板
                                         </Button>
                                         <Button size="small" icon={<FolderPlus className="size-3.5" />} onClick={() => setAssetPickerOpen(true)}>
-                                            查看商品素材
+                                            查看我的素材
                                         </Button>
                                     </div>
                                 </div>
-                                <Input.TextArea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={7} placeholder="描述商品、目标人群、使用场景、核心卖点与投放平台" />
+                                <Input.TextArea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={7} placeholder="描述你想要的画面，比如主体、场景、风格、光线和构图" />
                             </div>
 
                             {supportsReferences ? (
@@ -594,7 +594,7 @@ export default function ImagePage() {
                         <div className="mb-6 flex items-center justify-between gap-3 border-b border-border/70 pb-4">
                             <div>
                                 <div className="text-xs font-medium text-primary">实时结果</div>
-                                <h2 className="mt-1 text-2xl font-semibold tracking-[-.03em]">商品视觉</h2>
+                                <h2 className="mt-1 text-2xl font-semibold tracking-[-.03em]">AI 生图</h2>
                             </div>
                             {running ? <Tag className="m-0 px-2 py-1">等待 {formatDuration(elapsedMs)}</Tag> : null}
                         </div>
@@ -616,7 +616,7 @@ export default function ImagePage() {
                                     <ImagePlus className="size-5" />
                                 </span>
                                 <div className="text-base font-semibold">结果画布已准备好</div>
-                                <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">添加商品参考图并描述目标画面，生成结果会在这里展开。</p>
+                                <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">描述想要的画面或添加参考图，生成结果会在这里展开。</p>
                                 <div className="mt-5 flex flex-wrap justify-center gap-2 text-xs text-muted-foreground">
                                     <span className="rounded-md bg-card px-2.5 py-1.5 ring-1 ring-border">01 添加参考图</span>
                                     <span className="rounded-md bg-card px-2.5 py-1.5 ring-1 ring-border">02 描述画面</span>

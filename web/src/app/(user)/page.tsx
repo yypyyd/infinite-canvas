@@ -22,11 +22,11 @@ const heroColumns = Array.from({ length: 3 }, (_, column) => heroMedia.filter((_
 const galleryColumns = Array.from({ length: 5 }, (_, column) => galleryMedia.filter((_, index) => index % 5 === column));
 const galleryRatios = ["aspect-[3/4]", "aspect-square", "aspect-[4/5]", "aspect-[5/4]", "aspect-[2/3]"];
 const galleryOffsets = ["pt-0", "pt-8", "pt-16", "pt-5", "pt-11"];
-const capabilityNames = ["图片生成", "营销视频", "无限画布", "灵感模板", "商品素材", "模型广场"];
+const capabilityNames = ["GPT Image 2", "可灵视频", "图片编辑", "无限画布", "灵感模板", "API 接入"];
 const workflow = [
-    { step: "01", title: "上传实拍", detail: "一张商品图就够，包装、Logo 和品牌素材可选。" },
-    { step: "02", title: "选择用途", detail: "白底主图、场景图或详情图，也可以自己描述画面。" },
-    { step: "03", title: "挑选交付", detail: "选出满意的图直接下载上架，或继续出整套。" },
+    { step: "01", title: "写一句话", detail: "描述想要的画面，或上传一张参考图。" },
+    { step: "02", title: "选择模型", detail: "GPT Image 2 出图改图，可灵 Kling 生成视频，都免费。" },
+    { step: "03", title: "下载或继续改", detail: "满意就直接下载，也能放进无限画布接着创作。" },
 ];
 
 export default function IndexPage() {
@@ -51,18 +51,14 @@ export default function IndexPage() {
         <main className="h-full overflow-y-auto bg-background text-foreground">
             <section className="overflow-hidden border-b border-border px-4 pb-8 pt-8 sm:px-8 lg:px-12">
                 <div className="mx-auto max-w-[1320px]">
-                    <motion.div initial={reducedMotion ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="max-w-3xl">
-                        <p className="text-xs font-medium uppercase tracking-[.2em] text-primary">电商上新 AI 工作台</p>
-                        <h1 className="mt-3 text-[34px] font-semibold leading-[1.12] tracking-[-.05em] sm:text-[44px]">一张实拍，出整套上新图。</h1>
-                        <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">上传商品图，生成白底主图、场景种草、卖点详情和 SKU 套图，直接用于上架。</p>
+                    <motion.div initial={reducedMotion ? false : { y: 12 }} animate={{ y: 0 }} transition={{ duration: 0.5 }} className="max-w-3xl">
+                        <p className="text-xs font-medium uppercase tracking-[.2em] text-primary">幻图 · 免费 AI 生图</p>
+                        <h1 className="mt-3 text-[34px] font-semibold leading-[1.12] tracking-[-.05em] sm:text-[44px]">免费 AI 生图，一句话出好图。</h1>
+                        <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">用 GPT Image 2 文生图、图生图和改图，用可灵 Kling 生成视频，注册即可免费使用。</p>
                         <div className="mt-6 flex flex-wrap items-center gap-4">
-                            <Link
-                                href="/image?preset=product-main"
-                                prefetch={false}
-                                className="flex min-h-12 min-w-0 items-center gap-3 rounded-xl border border-border bg-card px-4 text-sm text-muted-foreground transition hover:border-primary/30 sm:min-w-[360px]"
-                            >
+                            <Link href="/image" prefetch={false} className="flex min-h-12 min-w-0 items-center gap-3 rounded-xl border border-border bg-card px-4 text-sm text-muted-foreground transition hover:border-primary/30 sm:min-w-[360px]">
                                 <Sparkles className="size-4 shrink-0 text-primary" />
-                                <span className="flex-1">上传商品图，先出一张白底主图</span>
+                                <span className="flex-1">输入一句话，免费生成第一张图</span>
                                 <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground">
                                     <ArrowUpRight className="size-4" />
                                 </span>
@@ -86,7 +82,7 @@ export default function IndexPage() {
                                 >
                                     {column.map((src, index) => (
                                         <Link key={`${src}-${index}`} href="/image?preset=product-main" prefetch={false} className="group relative block aspect-[4/5] overflow-hidden rounded-xl border border-border bg-card">
-                                            <NextImage src={src} alt="AI 商品视觉作品" fill sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 33vw" className="object-cover transition duration-700 group-hover:scale-[1.05]" />
+                                            <NextImage src={src} alt="AI 生成的图片作品" fill loading="eager" sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 33vw" className="object-cover transition duration-700 group-hover:scale-[1.05]" />
                                         </Link>
                                     ))}
                                 </motion.div>
@@ -113,8 +109,8 @@ export default function IndexPage() {
             <section className="mx-auto max-w-[1360px] px-5 py-20 sm:px-8 lg:px-12">
                 <div className="mb-8 max-w-2xl">
                     <p className="text-xs font-medium uppercase tracking-[.18em] text-primary">精选作品</p>
-                    <h2 className="mt-3 text-3xl font-semibold tracking-[-.04em] sm:text-4xl">一件商品，不止一张图。</h2>
-                    <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">看看不同品类、材质和风格的成品效果，点击任意一张，用同款方式做你的商品。</p>
+                    <h2 className="mt-3 text-3xl font-semibold tracking-[-.04em] sm:text-4xl">看看 AI 生成的效果。</h2>
+                    <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">不同题材和风格的成品，点击任意一张，用同样的方式开始创作。</p>
                 </div>
                 <div className="grid grid-cols-2 items-start gap-3 overflow-hidden sm:grid-cols-3 lg:grid-cols-5">
                     {galleryColumns.map((column, columnIndex) => (
@@ -140,7 +136,7 @@ export default function IndexPage() {
                                         <div className={`relative ${galleryRatios[(index + columnIndex) % galleryRatios.length]}`}>
                                             <NextImage
                                                 src={src}
-                                                alt={`AI 商品视觉作品 ${index + heroCount + 1}`}
+                                                alt={`AI 生成的图片作品 ${index + heroCount + 1}`}
                                                 fill
                                                 sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
                                                 className="object-cover transition duration-700 group-hover:scale-[1.045]"
@@ -160,9 +156,9 @@ export default function IndexPage() {
 
             <motion.section initial={reducedMotion ? false : { opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.18 }} transition={{ duration: 0.7 }} className="mx-auto max-w-[1360px] px-5 py-20 sm:px-8 lg:px-12">
                 <div className="mb-8 max-w-2xl">
-                    <p className="text-xs font-medium uppercase tracking-[.18em] text-primary">使用场景</p>
-                    <h2 className="mt-3 text-3xl font-semibold tracking-[-.04em] sm:text-4xl">选择任务，马上开始。</h2>
-                    <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">每个入口都预设好对应的提示词和参数，不用从空白开始。</p>
+                    <p className="text-xs font-medium uppercase tracking-[.18em] text-primary">常用模板</p>
+                    <h2 className="mt-3 text-3xl font-semibold tracking-[-.04em] sm:text-4xl">选个模板，马上开始。</h2>
+                    <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">白底图、场景图、模特图等常用场景都预设好了提示词，不用从空白开始。</p>
                 </div>
                 <div className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)] lg:gap-8">
                     <div className="divide-y divide-border border-y border-border">
@@ -215,8 +211,8 @@ export default function IndexPage() {
                     transition={{ duration: 0.65 }}
                     className="mx-auto max-w-[1360px] px-5 py-16 sm:px-8 sm:py-20 lg:px-12"
                 >
-                    <p className="text-xs font-medium uppercase tracking-[.18em] text-primary">上新流程</p>
-                    <h2 className="mt-3 text-3xl font-semibold tracking-[-.04em] sm:text-4xl">三步，完成一次上新。</h2>
+                    <p className="text-xs font-medium uppercase tracking-[.18em] text-primary">使用流程</p>
+                    <h2 className="mt-3 text-3xl font-semibold tracking-[-.04em] sm:text-4xl">三步，免费出图。</h2>
                     <div className="relative mt-10 grid gap-8 sm:grid-cols-3 sm:gap-6">
                         <div className="pointer-events-none absolute left-[8%] right-[8%] top-4 hidden border-t border-border sm:block" />
                         {workflow.map((item, index) => (
@@ -282,9 +278,9 @@ export default function IndexPage() {
 
             <motion.section initial={reducedMotion ? false : { opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="border-t border-border px-6 py-16 text-center sm:px-10 sm:py-20">
                 <Sparkles className="mx-auto size-5 text-primary" />
-                <h2 className="mx-auto mt-4 max-w-2xl text-3xl font-semibold tracking-[-.04em] sm:text-4xl">下一款新品，从一张实拍开始。</h2>
-                <Link href="/image?preset=product-main" prefetch={false} className="mt-8 inline-flex min-h-11 items-center gap-2 rounded-lg bg-primary px-6 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90">
-                    上传商品图开始 <ArrowUpRight className="size-4" />
+                <h2 className="mx-auto mt-4 max-w-2xl text-3xl font-semibold tracking-[-.04em] sm:text-4xl">现在就免费生成第一张图。</h2>
+                <Link href="/image" prefetch={false} className="mt-8 inline-flex min-h-11 items-center gap-2 rounded-lg bg-primary px-6 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90">
+                    免费开始生图 <ArrowUpRight className="size-4" />
                 </Link>
             </motion.section>
 

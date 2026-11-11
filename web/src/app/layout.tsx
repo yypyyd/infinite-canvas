@@ -8,8 +8,8 @@ import "antd/dist/reset.css";
 import "./globals.css";
 import React from "react";
 
-const siteTitle = "幻图 - 一张实拍，出整套电商上新图";
-const siteDescription = "上传一张商品实拍，AI 生成白底主图、场景种草图、卖点详情图、SKU 套图和营销视频。面向淘宝、拼多多、抖店卖家与电商运营的 AI 视觉工作台。";
+const siteTitle = "幻图 - 免费 AI 生图与视频生成，支持 GPT Image 2、可灵 Kling";
+const siteDescription = "幻图是免费的在线 AI 生图网站：用 GPT Image 2 文生图、图生图和改图，用可灵 Kling 4.0 生成视频，还能在无限画布上排版创作，并提供兼容 OpenAI SDK 的 API。注册即可免费使用。";
 const ogImage = { url: "/og.png", width: 1200, height: 630, alt: siteTitle };
 const jsonLd = JSON.stringify({
     "@context": "https://schema.org",
@@ -21,10 +21,10 @@ const jsonLd = JSON.stringify({
 
 export const metadata: Metadata = {
     metadataBase: new URL(SITE_URL),
-    title: siteTitle,
+    title: { default: siteTitle, template: "%s - 幻图" },
     description: siteDescription,
     alternates: { canonical: "./" },
-    keywords: ["幻图", "AI 商品图", "电商主图生成", "白底图", "场景图", "详情页", "SKU 套图", "营销视频", "AI 电商工具"],
+    keywords: ["幻图", "幻图AI", "免费AI生图", "AI生图", "AI绘画", "GPT Image 2", "gpt-image-2", "可灵", "Kling", "AI视频生成", "无限画布", "AI生图API"],
     openGraph: { type: "website", locale: "zh_CN", url: "/", siteName: "幻图", title: siteTitle, description: siteDescription, images: [ogImage] },
     twitter: { card: "summary_large_image", title: siteTitle, description: siteDescription, images: [ogImage] },
     icons: { icon: [{ url: "/brand-mark.png", type: "image/png" }], apple: "/brand-mark.png" },

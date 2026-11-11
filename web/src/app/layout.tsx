@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { AntdRegistry } from "@ant-design/nextjs-registry";
 import { cookies } from "next/headers";
 import { AppProviders } from "@/components/layout/app-providers";
+import { SITE_URL } from "@/constant/env";
 import type { ThemeName } from "@/stores/use-theme-store";
 import "antd/dist/reset.css";
 import "./globals.css";
@@ -10,11 +11,19 @@ import React from "react";
 const siteTitle = "幻图 - 一张实拍，出整套电商上新图";
 const siteDescription = "上传一张商品实拍，AI 生成白底主图、场景种草图、卖点详情图、SKU 套图和营销视频。面向淘宝、拼多多、抖店卖家与电商运营的 AI 视觉工作台。";
 const ogImage = { url: "/og.png", width: 1200, height: 630, alt: siteTitle };
+const jsonLd = JSON.stringify({
+    "@context": "https://schema.org",
+    "@graph": [
+        { "@type": "WebSite", name: "幻图", alternateName: "Huantu", url: SITE_URL },
+        { "@type": "Organization", name: "幻图", url: SITE_URL, logo: `${SITE_URL}/brand-mark.png` },
+    ],
+}).replace(/</g, "\\u003c");
 
 export const metadata: Metadata = {
-    metadataBase: new URL(process.env.PUBLIC_BASE_URL || "https://huantu.xyz"),
+    metadataBase: new URL(SITE_URL),
     title: siteTitle,
     description: siteDescription,
+    alternates: { canonical: "./" },
     keywords: ["幻图", "AI 商品图", "电商主图生成", "白底图", "场景图", "详情页", "SKU 套图", "营销视频", "AI 电商工具"],
     openGraph: { type: "website", locale: "zh_CN", url: "/", siteName: "幻图", title: siteTitle, description: siteDescription, images: [ogImage] },
     twitter: { card: "summary_large_image", title: siteTitle, description: siteDescription, images: [ogImage] },
@@ -35,6 +44,7 @@ export default async function RootLayout({
                     fontFamily: '"SF Pro Display","SF Pro Text","PingFang SC","Microsoft YaHei","Helvetica Neue",sans-serif',
                 }}
             >
+                <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd }} />
                 <AntdRegistry>
                     <AppProviders initialTheme={initialTheme}>{children}</AppProviders>
                 </AntdRegistry>

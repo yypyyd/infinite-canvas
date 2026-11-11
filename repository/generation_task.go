@@ -643,12 +643,20 @@ func ChannelGenerationErrorsSince(since string, limit int) ([]model.DashboardNam
 }
 
 func RecentGenerationTasks(limit int) ([]model.GenerationTask, error) {
+	return RecentGenerationTasksSince("", limit)
+}
+
+func RecentGenerationTasksSince(since string, limit int) ([]model.GenerationTask, error) {
 	db, err := DB()
 	if err != nil {
 		return nil, err
 	}
 	var items []model.GenerationTask
-	err = db.Select("id, model, channel_name, path, modality, credits, status, substr(error_message, 1, 160) AS error_message, created_at").Order("created_at desc").Limit(limit).Find(&items).Error
+	query := db.Select("id, model, channel_name, path, modality, credits, status, substr(error_message, 1, 160) AS error_message, created_at").Order("created_at desc").Limit(limit)
+	if since != "" {
+		query = query.Where("created_at >= ?", since)
+	}
+	err = query.Find(&items).Error
 	return items, err
 }
 

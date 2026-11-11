@@ -12,7 +12,7 @@ import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { fetchAdminDashboard, type AdminDashboardSeriesPoint, type AdminGenerationTask } from "@/services/api/admin";
 import { useUserStore } from "@/stores/use-user-store";
 
-import { FailureGauge, HourlyStrip, RankBars, Sparkline, StackedMix, TrendArea, withAlpha, type Slice } from "./dashboard-charts";
+import { FailureGauge, RankBars, Sparkline, StackedMix, TrendArea, withAlpha, type Slice } from "./dashboard-charts";
 
 const metricIcons: Record<string, ReactNode> = {
     registrations: <UserPlus className="size-4" />,
@@ -55,13 +55,11 @@ export default function AdminDashboardPage() {
     });
     const data = query.data;
     const hourly = data?.hourly || emptyHourly();
-    const daily = data?.daily || [];
-    const periodTasks = daily.reduce((sum, item) => sum + item.tasks, 0);
-    const periodFailed = daily.reduce((sum, item) => sum + item.failed, 0);
-    const periodCredits = daily.reduce((sum, item) => sum + item.credits, 0);
-    const failureRate = data?.metrics.find((item) => item.key === "failureRate")?.value || 0;
-    const periodRate = periodTasks ? Math.round((periodFailed * 100) / periodTasks) : 0;
-    const healthRate = periodTasks ? 100 - periodRate : Math.max(0, 100 - failureRate);
+    const todayTasks = hourly.reduce((sum, item) => sum + item.tasks, 0);
+    const todaySuccess = hourly.reduce((sum, item) => sum + item.success, 0);
+    const todayFailed = hourly.reduce((sum, item) => sum + item.failed, 0);
+    const todayCredits = data?.metrics.find((item) => item.key === "consumedCredits")?.value || 0;
+    const healthRate = todayTasks ? Math.round((todaySuccess * 100) / todayTasks) : 0;
     const running = data?.statuses.find((item) => item.name === "运行中")?.value || 0;
     const statusColors: Record<string, string> = { 成功: token.colorSuccess, 失败: token.colorError, 运行中: token.colorWarning };
     const modalitySlices = toSlices(data?.modalities || [], [token.colorPrimary, token.colorWarning, token.colorSuccess, token.colorError]);
@@ -106,7 +104,7 @@ export default function AdminDashboardPage() {
                         <div>
                             <div className="text-xl font-semibold">运营监看</div>
                             <div className="text-[11px]" style={{ color: token.colorTextTertiary }}>
-                                近30日波形 / 今日时段
+                                今日 24 小时
                             </div>
                         </div>
                     </div>
@@ -120,7 +118,7 @@ export default function AdminDashboardPage() {
                     </div>
                     <div className="flex items-center gap-3">
                         <span className="text-xs tabular-nums" style={{ color: token.colorTextSecondary }}>
-                            运行 {running} · 30日 {periodTasks} 次 · {periodCredits} 点
+                            运行 {running} · 今日 {todayTasks} 次 · {todayCredits} 点
                         </span>
                         <Button size="small" type="text" icon={fullscreen ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />} onClick={toggleFullscreen}>
                             {fullscreen ? "退出全屏" : "全屏"}
@@ -142,12 +140,12 @@ export default function AdminDashboardPage() {
                                         {query.isLoading ? <Skeleton.Button active size="small" /> : item.key === "failureRate" ? `${item.value}%` : item.value.toLocaleString()}
                                     </div>
                                     <div className="mt-2 text-[11px] tabular-nums" style={{ color: token.colorTextTertiary }}>
-                                        {item.key === "tasks" ? `近30日 ${periodTasks}` : item.key === "failureRate" ? `近30日 ${periodRate}%` : item.key === "consumedCredits" ? `近30日 ${periodCredits}` : "今日口径"}
+                                        {item.key === "tasks" ? `成功 ${todaySuccess} · 失败 ${todayFailed}` : item.key === "failureRate" ? `失败 ${todayFailed} 次` : "今日口径"}
                                     </div>
                                 </div>
                                 {item.key === "tasks" || item.key === "consumedCredits" || item.key === "failureRate" ? (
                                     <Sparkline
-                                        values={daily.map((point) => (item.key === "consumedCredits" ? point.credits : item.key === "failureRate" ? point.failed : point.tasks))}
+                                        values={hourly.map((point) => (item.key === "consumedCredits" ? point.credits : item.key === "failureRate" ? point.failed : point.tasks))}
                                         color={item.key === "failureRate" ? token.colorError : item.key === "consumedCredits" ? token.colorWarning : token.colorPrimary}
                                     />
                                 ) : null}
@@ -156,18 +154,7 @@ export default function AdminDashboardPage() {
                     </motion.div>
                 ))}
 
-                <Panel
-                    className="col-span-12 min-h-[300px] 2xl:col-span-8"
-                    title="近30日生成波形"
-                    extra={
-                        <div className="w-56">
-                            <HourlyStrip points={hourly} />
-                            <div className="mt-1 text-right text-[10px] tracking-[0.14em]" style={{ color: token.colorTextTertiary }}>
-                                今日时段
-                            </div>
-                        </div>
-                    }
-                >
+                <Panel className="col-span-12 min-h-[300px] 2xl:col-span-8" title="今日生成波形">
                     <div className="relative h-full">
                         {reducedMotion ? null : (
                             <motion.div
@@ -177,12 +164,12 @@ export default function AdminDashboardPage() {
                                 transition={{ duration: 7.5, repeat: Infinity, ease: "linear" }}
                             />
                         )}
-                        <TrendArea points={daily} />
+                        <TrendArea points={hourly} />
                     </div>
                 </Panel>
-                <Panel className="col-span-12 min-h-[300px] 2xl:col-span-4" title="健康度 · 近30日">
+                <Panel className="col-span-12 min-h-[300px] 2xl:col-span-4" title="健康度 · 今日">
                     <div className="flex h-full flex-col items-center justify-center gap-3">
-                        <FailureGauge percent={healthRate} label={periodTasks ? "近30日成功率" : "今日成功率"} />
+                        <FailureGauge percent={healthRate} label="今日成功率" />
                         <div className="grid w-full grid-cols-3 gap-2 text-center text-xs">
                             {(data?.statuses || []).map((item) => (
                                 <div key={item.name}>
@@ -197,13 +184,13 @@ export default function AdminDashboardPage() {
                 </Panel>
 
                 <Panel className="col-span-12 min-h-[220px] md:col-span-6 2xl:col-span-3" title="热门模型">
-                    <RankBars items={data?.topModels || []} color={token.colorPrimary} empty="近30日暂无模型请求" />
+                    <RankBars items={data?.topModels || []} color={token.colorPrimary} empty="今日暂无模型请求" />
                 </Panel>
                 <Panel className="col-span-12 min-h-[220px] md:col-span-6 2xl:col-span-3" title="类型构成">
                     <StackedMix slices={modalitySlices} />
                 </Panel>
                 <Panel className="col-span-12 min-h-[220px] md:col-span-6 2xl:col-span-2" title="渠道错误">
-                    <RankBars items={data?.channelErrors || []} color={token.colorError} empty="近30日暂无渠道错误" />
+                    <RankBars items={data?.channelErrors || []} color={token.colorError} empty="今日暂无渠道错误" />
                 </Panel>
                 <Panel className="col-span-12 min-h-[220px] md:col-span-6 2xl:col-span-4" title="实时任务">
                     <TaskStream tasks={data?.recentTasks || []} loading={query.isLoading} empty="暂无任务" />

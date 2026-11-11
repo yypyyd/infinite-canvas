@@ -333,7 +333,6 @@ func AdminDashboard() (model.AdminDashboard, error) {
 	current := time.Now()
 	today := time.Date(current.Year(), current.Month(), current.Day(), 0, 0, 0, 0, current.Location())
 	sinceToday := repository.LocalDayStartUTC(0)
-	sincePeriod := repository.LocalDayStartUTC(29)
 	registrations, err := repository.CountUsersSince(sinceToday)
 	if err != nil {
 		return model.AdminDashboard{}, err
@@ -350,11 +349,11 @@ func AdminDashboard() (model.AdminDashboard, error) {
 	if err != nil {
 		return model.AdminDashboard{}, err
 	}
-	rows, err := repository.ListDashboardTaskRowsSince(sincePeriod)
+	rows, err := repository.ListDashboardTaskRowsSince(sinceToday)
 	if err != nil {
 		return model.AdminDashboard{}, err
 	}
-	hourly, daily, statuses, modalities, topModels, channelErrors := aggregateDashboardSeries(rows, today, 30)
+	hourly, daily, statuses, modalities, topModels, channelErrors := aggregateDashboardSeries(rows, today, 1)
 	todayTasks := int64(0)
 	todayFailed := int64(0)
 	for _, point := range hourly {
@@ -365,7 +364,7 @@ func AdminDashboard() (model.AdminDashboard, error) {
 	if todayTasks > 0 {
 		failureRate = todayFailed * 100 / todayTasks
 	}
-	recentTasks, err := repository.RecentGenerationTasks(8)
+	recentTasks, err := repository.RecentGenerationTasksSince(sinceToday, 8)
 	if err != nil {
 		return model.AdminDashboard{}, err
 	}

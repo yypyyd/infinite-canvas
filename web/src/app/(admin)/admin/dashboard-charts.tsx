@@ -7,9 +7,17 @@ export type TrendPoint = { label: string; success: number; failed: number; tasks
 export type Slice = { name: string; value: number; color: string };
 
 function formatDayLabel(label: string) {
+    if (label.includes(":")) return `今日 ${label}`;
     const [month, day] = label.split("-");
     if (!month || !day) return label;
     return `${Number(month)}月${Number(day)}日`;
+}
+
+function axisLabel(label: string) {
+    if (label.includes(":")) return label.slice(0, 2);
+    const [month, day] = label.split("-");
+    if (!month || !day) return label;
+    return `${Number(month)}/${Number(day)}`;
 }
 
 export function withAlpha(color: string, alpha: number) {
@@ -61,26 +69,6 @@ export function Sparkline({ values, color }: { values: number[]; color: string }
             <path d={`${path} L${width - 2},${height - 4} L2,${height - 4} Z`} fill={withAlpha(color, 0.2)} />
             <path d={path} fill="none" stroke={color || token.colorPrimary} strokeWidth="1.8" />
         </svg>
-    );
-}
-
-export function HourlyStrip({ points }: { points: TrendPoint[] }) {
-    const colors = useChartToken();
-    const maxValue = Math.max(1, ...points.map((item) => item.tasks));
-    return (
-        <div className="flex h-8 items-end gap-px">
-            {points.map((item) => (
-                <span
-                    key={item.label}
-                    title={`${item.label} ${item.tasks} 次`}
-                    className="min-w-0 flex-1 rounded-sm"
-                    style={{
-                        height: item.tasks ? `${Math.max(18, (item.tasks / maxValue) * 100)}%` : "14%",
-                        background: item.failed ? colors.failed : item.tasks ? colors.primary : withAlpha(colors.track, 0.28),
-                    }}
-                />
-            ))}
-        </div>
     );
 }
 
@@ -159,15 +147,17 @@ export function TrendArea({ points }: { points: TrendPoint[] }) {
                     </>
                 ) : null}
                 {points.map((item, index) => {
-                    if (index % 5 !== 0 && index !== points.length - 1 && item.tasks === 0) return null;
-                    if (item.tasks > 0 && index % 5 !== 0 && index !== points.length - 1) {
-                        const nearTick = index % 5 === 1 || index % 5 === 4;
-                        if (nearTick) return null;
+                    const hourAxis = item.label.includes(":");
+                    if (hourAxis) {
+                        if (index % 4 !== 0 && index !== points.length - 1) return null;
+                    } else if (index % 5 !== 0 && index !== points.length - 1 && item.tasks === 0) {
+                        return null;
+                    } else if (item.tasks > 0 && index % 5 !== 0 && index !== points.length - 1 && (index % 5 === 1 || index % 5 === 4)) {
+                        return null;
                     }
-                    const [month, day] = item.label.split("-");
                     return (
                         <text key={item.label} x={pointX(index)} y={height - 4} textAnchor="middle" fill={item.tasks ? colors.fg : colors.muted} fontSize="11">
-                            {Number(month)}/{Number(day)}
+                            {axisLabel(item.label)}
                         </text>
                     );
                 })}
@@ -285,7 +275,7 @@ export function StackedMix({ slices }: { slices: Slice[] }) {
     if (!total) {
         return (
             <div className="flex h-full items-center justify-center text-sm" style={{ color: colors.muted }}>
-                近30日暂无类型数据
+                今日暂无类型数据
             </div>
         );
     }

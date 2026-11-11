@@ -9,8 +9,9 @@ description: 当前版本已实现但仍需人工或自动化验证的变更项
 
 - 新增 `/robots.txt`：允许抓取公开页面，屏蔽后台、个人中心、商品素材、画布、企业中心、图片/视频生成和登录页，并声明 `sitemap.xml`。新增 `/sitemap.xml`，包含首页、灵感模板、模型广场和 API 接入文档。两者按运行时 `PUBLIC_BASE_URL` 生成地址，未配置时回退 `https://huantu.xyz`。
 - 每个页面输出指向自身路径的 `canonical`（去掉查询参数，域名取 `PUBLIC_BASE_URL`），`canvas.xinghengcode.shop` 上的同一页面也指向 `huantu.xyz`。页面统一输出 `WebSite` 与 `Organization` 结构化数据：站点名「幻图」、别名 Huantu、Logo 为 `/brand-mark.png`。
-- 需要验证：部署后 `https://huantu.xyz/robots.txt` 包含本站规则和 `Sitemap:` 行；`/sitemap.xml` 返回 7 个 `huantu.xyz` 地址；首页 canonical 为 `https://huantu.xyz`，`/prompts?keyword=1` 的 canonical 为 `https://huantu.xyz/prompts`；Google 富媒体搜索结果测试首页结构化数据无错误；Google Search Console 提交 sitemap 后公开页面没有“被 robots.txt 屏蔽”。
-- Cloudflare 开启了 AI 训练爬虫屏蔽（Bot Preference Sync），托管 robots 把 `Baiduspider`、`PetalBot` 写成 `Disallow: /`，百度和华为花瓣搜索无法收录。需要在 Cloudflare 关闭该同步或把 Training 改为允许，之后确认 robots.txt 不再屏蔽 `Baiduspider`。
+- 已在线上确认：`robots.txt` 只含本站规则和 `Sitemap:` 行，`/sitemap.xml` 返回 7 个 `huantu.xyz` 地址，首页 canonical 为 `https://huantu.xyz`，`/prompts?keyword=1` 与副域名 `/api-docs` 分别指向 `https://huantu.xyz/prompts`、`https://huantu.xyz/api-docs`，首页输出结构化数据。仍需验证：Google 富媒体搜索结果测试无错误；Search Console 读取 sitemap 成功，且公开页面没有“被 robots.txt 屏蔽”。
+- Cloudflare 原先在 AI 爬虫策略里把「训练」设为禁止，托管 robots 因此把 `Baiduspider`、`PetalBot` 写成 `Disallow: /`。现已改为允许，Cloudflare 不再往 robots 里插入内容。
+- Google Search Console 已通过 DNS TXT 验证添加网域资源 `huantu.xyz` 并提交 sitemap，首页原本已收录。新资源点「请求编入索引」暂时报错，需要之后重试。百度搜索资源平台要先完善账户信息（实名、手机和邮箱验证码）才能添加网站，之后用 CNAME 验证并提交 sitemap。Bing 站长平台网页无法加载，暂未添加，Bing 可通过 robots 中的 sitemap 自行发现。
 
 ## 画布助手交互升级（工作轨迹、决策卡、Skills、对话记录）
 

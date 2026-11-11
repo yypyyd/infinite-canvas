@@ -330,9 +330,9 @@ func isGenerationTaskWriteConflict(err error) bool {
 }
 
 func AdminDashboard() (model.AdminDashboard, error) {
-	current := time.Now()
+	current := time.Now().In(repository.DashboardLocation())
 	today := time.Date(current.Year(), current.Month(), current.Day(), 0, 0, 0, 0, current.Location())
-	sinceToday := repository.LocalDayStartUTC(0)
+	sinceToday := today.UTC().Format(timestampLayout)
 	registrations, err := repository.CountUsersSince(sinceToday)
 	if err != nil {
 		return model.AdminDashboard{}, err

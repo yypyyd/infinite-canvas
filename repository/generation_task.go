@@ -714,10 +714,15 @@ func DayStartRFC3339() string {
 }
 
 func LocalDayStartUTC(daysAgo int) string {
-	now := time.Now()
-	start := time.Date(now.Year(), now.Month(), now.Day()-daysAgo, 0, 0, 0, 0, now.Location())
+	now := time.Now().In(dashboardLocation)
+	start := time.Date(now.Year(), now.Month(), now.Day()-daysAgo, 0, 0, 0, 0, dashboardLocation)
 	return start.UTC().Format("2006-01-02T15:04:05.000000000Z")
 }
+
+// 运营看板的「今天」按北京时间，不跟容器时区。任务时间入库是 UTC，按容器的 UTC 切小时会把晚上的生成画到上午。
+var dashboardLocation = time.FixedZone("Asia/Shanghai", 8*60*60)
+
+func DashboardLocation() *time.Location { return dashboardLocation }
 
 type DashboardTaskRow struct {
 	CreatedAt   string

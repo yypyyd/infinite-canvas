@@ -50,6 +50,7 @@
 - 页面文案保持中文。
 - 不要在组件里堆太多无关逻辑；复杂逻辑优先抽成同目录工具函数或小组件。
 - 样式优先由组件自己管理；组件私有样式优先使用 Tailwind className 或少量内联 style，不要为单个组件新增大量全局 CSS。
+- antd 的 reset 和组件样式优先级高于 Tailwind 工具类：原生 `button` 上直接写 `text-*`、`leading-*` 不生效（会继承 antd 的 14px / 22px），antd 组件根节点上的外边距类（含父级 `space-y-*`）会被组件自身样式覆盖。字号、行高写在内层 `span` 上，间距用父级 `flex` + `gap-*`；确需覆盖 antd 组件样式时用 `!` 前缀。
 - 全局 CSS 只放基础变量、全局重置、跨页面通用样式和少量第三方组件必要覆盖；不要在 `globals.css` 堆页面私有样式。
 - 代码尽量短小直接，少拆不必要组件，少做多层 props 传递，避免为了抽象堆出更多代码。
 - 账号业务数据和账号偏好不得在浏览器持久化；禁止使用 LocalForage、IndexedDB、localStorage 或离线 outbox 保存画布、素材、生成记录、媒体和用户偏好。`localStorage` 只允许保存公告已读等非账号、极小型状态。例外：已登录媒体文件（原图及 thumb/cover/preview 变体）可由浏览器 HTTP 缓存按 `Cache-Control: private, max-age=3600` + ETag 短期缓存，必须带 `Vary: Cookie` 等鉴权相关头且不得 `public`；JSON、工作区和账号数据接口仍为 `no-store`，不得写入任何浏览器存储。

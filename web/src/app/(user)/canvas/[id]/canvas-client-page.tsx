@@ -3240,9 +3240,11 @@ function InfiniteCanvasPage() {
             const selectedReferences = request.useSelectedImages ? nodesRef.current.filter((node) => selectedNodeIdsRef.current.has(node.id) && node.type === CanvasNodeType.Image && node.metadata?.content).slice(0, 4) : [];
             const center = getCanvasCenter();
             const origin = selectedReferences.length ? { x: Math.max(...selectedReferences.map((node) => node.position.x + node.width)) + 180, y: Math.min(...selectedReferences.map((node) => node.position.y)) } : { x: center.x - 400, y: center.y - 120 };
+            // 只生成文案时用不到参考图，不往画布上放孤立的 SKU 图片节点
+            const skuImageKeys = request.assets.every((asset) => asset === "copy") ? [] : (request.sku?.imageStorageKeys || []).slice(0, 4);
             const skuReferenceNodes: CanvasNodeData[] = selectedReferences.length
                 ? []
-                : (request.sku?.imageStorageKeys || []).slice(0, 4).map((storageKey, index) => ({
+                : skuImageKeys.map((storageKey, index) => ({
                       id: nanoid(),
                       type: CanvasNodeType.Image,
                       title: `${request.sku?.name || request.product.name} · 参考图 ${index + 1}`,
@@ -4535,8 +4537,9 @@ function InfiniteCanvasPage() {
 
                 {commercePackageOpen ? (
                     <CanvasCommercePackagePanel
-                        open
-                        selectedImageCount={nodes.filter((node) => selectedNodeIds.has(node.id) && node.type === CanvasNodeType.Image && node.metadata?.content).length}
+                        key={historyOwnerId}
+                        selectedImages={nodes.filter((node) => selectedNodeIds.has(node.id) && node.type === CanvasNodeType.Image && node.metadata?.content)}
+                        rightInset={assistantInset}
                         onClose={() => setCommercePackageOpen(false)}
                         onCreate={createCommercePackage}
                     />

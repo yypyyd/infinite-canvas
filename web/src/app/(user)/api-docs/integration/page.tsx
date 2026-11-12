@@ -3,11 +3,14 @@
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
+import { useConfigStore } from "@/stores/use-config-store";
 import { Block, Docs, DocsIntro, Params, Sample, useApiEndpoint } from "./guide-ui";
 
 export default function ApiIntegrationIndexPage() {
     const router = useRouter();
     const endpoint = useApiEndpoint();
+    const keyConcurrency = useConfigStore((state) => state.publicSettings?.api?.keyConcurrency);
+    const lead = `把官方 SDK 的 base_url 设成这个地址。模型 ID 到模型广场复制，不要传企业编号。${keyConcurrency ? `每个账号最多同时进行 ${keyConcurrency} 个生成，超出时返回 429。` : ""}`;
 
     useEffect(() => {
         const topic = new URLSearchParams(window.location.search).get("topic");
@@ -21,7 +24,7 @@ export default function ApiIntegrationIndexPage() {
             current="index"
             sections={[
                 {
-                    text: <DocsIntro title="API 参考" lead="把官方 SDK 的 base_url 设成这个地址。模型 ID 到模型广场复制，不要传企业编号。" endpoint={endpoint} />,
+                    text: <DocsIntro title="API 参考" lead={lead} endpoint={endpoint} />,
                     code: (
                         <div className="space-y-8">
                             <Sample code={`curl ${endpoint}/models \\\n  -H "Authorization: Bearer ic_live_..."`} />

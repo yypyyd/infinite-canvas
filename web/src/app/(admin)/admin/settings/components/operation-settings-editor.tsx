@@ -1,6 +1,6 @@
 "use client";
 
-import { BellRing, CalendarCheck2, ListTodo, MailWarning, ShieldBan, Trash2, UserPlus } from "lucide-react";
+import { BellRing, CalendarCheck2, KeyRound, ListTodo, MailWarning, ShieldBan, Trash2, UserPlus } from "lucide-react";
 import dayjs from "dayjs";
 import { Alert, Button, Card, Col, DatePicker, Empty, Flex, Form, Input, InputNumber, Row, Select, Space, Switch, Tag, Typography } from "antd";
 
@@ -213,6 +213,20 @@ export function AccessAndRegistrationSettingsEditor() {
             >
                 <Form.Item name={["public", "access", "blockChina"]} label="限制中国大陆访问网站" extra="开启后，仅限制中国大陆 IP 访问网站页面；API 接口不受此开关影响，仍需正常鉴权并按规则计费" valuePropName="checked" style={{ marginBottom: 0 }}>
                     <Switch checkedChildren="已限制" unCheckedChildren="已放行" />
+                </Form.Item>
+            </Card>
+
+            <Card
+                size="small"
+                title={
+                    <Space>
+                        <KeyRound className="size-4" />
+                        API 调用
+                    </Space>
+                }
+            >
+                <Form.Item name={["public", "api", "keyConcurrency"]} label="每人 API Key 并发上限" extra="每个用户通过 API Key 同时进行的生成任务数，超出时返回 429；网页端生成不计入" style={{ marginBottom: 0 }}>
+                    <InputNumber min={1} precision={0} className="!w-48" addonAfter="个" />
                 </Form.Item>
             </Card>
 

@@ -250,6 +250,7 @@ func normalizePublicSettingWithChannels(setting model.PublicSetting, channels []
 	if setting.CheckIn.RewardCredits < 0 {
 		setting.CheckIn.RewardCredits = 0
 	}
+	setting.API.KeyConcurrency = apiKeyConcurrency(setting.API)
 	managedModels := enabledManagedModelIDs(setting.ModelChannel.Models)
 	if len(managedModels) > 0 {
 		setting.ModelChannel.AvailableModels = managedModels

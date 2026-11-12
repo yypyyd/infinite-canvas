@@ -56,7 +56,7 @@ func classifyOpenAIError(msg string) (int, string, string, *string) {
 		return http.StatusUnauthorized, "authentication_error", "invalid_api_key", nil
 	case strings.Contains(msg, "AI 接口鉴权失败"):
 		return http.StatusBadGateway, "api_error", "upstream_auth_error", nil
-	case strings.Contains(msg, "限流"), strings.Contains(msg, "过于频繁"):
+	case strings.Contains(msg, "限流"), strings.Contains(msg, "过于频繁"), strings.Contains(msg, "并发"):
 		return http.StatusTooManyRequests, "rate_limit_error", "rate_limit_exceeded", nil
 	case strings.Contains(msg, "余额不足"), strings.Contains(msg, "预算不足"), strings.Contains(msg, "额度不足"):
 		return http.StatusTooManyRequests, "insufficient_quota", "insufficient_quota", nil

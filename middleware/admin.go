@@ -80,7 +80,7 @@ func APIAuth(c *gin.Context) {
 		return
 	}
 	c.Request.Header.Set("X-Organization-ID", apiKey.OrganizationID)
-	c.Request = c.Request.WithContext(service.WithUser(c.Request.Context(), user))
+	c.Request = c.Request.WithContext(service.WithAPIKey(service.WithUser(c.Request.Context(), user), apiKey.ID))
 	c.Set("user_api_key_id", apiKey.ID)
 	c.Next()
 }

@@ -479,6 +479,7 @@ Agent 的长期记忆表。记忆同时绑定企业、用户和可选画布项�
 | `organization_id` | string | 当前企业 ID |
 | `user_id` | string | 发起任务的用户 ID |
 | `request_id` | string | 请求幂等编号；与企业、用户组成唯一索引 |
+| `api_key_id` | string | 通过用户 API Key 发起时记录 Key ID；网页、批量生产和画布助手任务为空，用于统计每人 API Key 并发 |
 | `model` | string | 前台请求的对外模型 |
 | `upstream_model` | string | 实际发送给上游的模型 |
 | `channel_name` | string | 命中的后台渠道名称 |

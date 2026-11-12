@@ -303,6 +303,7 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		UserID:          user.ID,
 		OrganizationID:  user.OrganizationID,
 		RequestID:       strings.TrimSpace(r.Header.Get("Idempotency-Key")),
+		APIKeyID:        service.APIKeyIDFromContext(r.Context()),
 		Model:           requestMeta.ModelName,
 		UpstreamModel:   selection.Model.UpstreamModel,
 		ChannelName:     selection.Channel.Name,

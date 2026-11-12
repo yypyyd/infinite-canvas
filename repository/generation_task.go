@@ -594,6 +594,16 @@ func CountActiveUsersSince(since string) (int64, error) {
 	return total, err
 }
 
+func CountRunningAPIKeyGenerationTasks(userID string) (int64, error) {
+	db, err := DB()
+	if err != nil {
+		return 0, err
+	}
+	var total int64
+	err = db.Model(&model.GenerationTask{}).Where("user_id = ? AND status = ? AND api_key_id <> ''", userID, model.GenerationTaskStatusRunning).Count(&total).Error
+	return total, err
+}
+
 func CountGenerationTasksSince(since string) (int64, error) {
 	db, err := DB()
 	if err != nil {

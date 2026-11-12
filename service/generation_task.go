@@ -7,16 +7,24 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/yypyyd/infinite-canvas/model"
 	"github.com/yypyyd/infinite-canvas/repository"
 )
 
+const defaultAPIKeyConcurrency = 3
+
+// apiKeyTaskLocks serializes the running-count check and task insert per user.
+// It only covers one API process; separate API instances do not share it.
+var apiKeyTaskLocks sync.Map
+
 type GenerationTaskInput struct {
 	UserID          string
 	OrganizationID  string
 	RequestID       string
+	APIKeyID        string
 	BatchJobID      string
 	BatchItemID     string
 	Model           string
@@ -176,11 +184,21 @@ func BeginGenerationTask(input GenerationTaskInput) (model.GenerationTask, error
 	if input.RequestID == "" {
 		input.RequestID = newID("request")
 	}
+	if input.APIKeyID != "" {
+		value, _ := apiKeyTaskLocks.LoadOrStore(input.UserID, &sync.Mutex{})
+		lock := value.(*sync.Mutex)
+		lock.Lock()
+		defer lock.Unlock()
+		if err := checkAPIKeyConcurrency(input.UserID); err != nil {
+			return model.GenerationTask{}, err
+		}
+	}
 	task := model.GenerationTask{
 		ID:              newID("task"),
 		UserID:          input.UserID,
 		OrganizationID:  input.OrganizationID,
 		RequestID:       input.RequestID,
+		APIKeyID:        input.APIKeyID,
 		BatchJobID:      strings.TrimSpace(input.BatchJobID),
 		BatchItemID:     strings.TrimSpace(input.BatchItemID),
 		Model:           input.Model,
@@ -231,6 +249,29 @@ func BeginGenerationTask(input GenerationTaskInput) (model.GenerationTask, error
 		return task, safeMessageError{message: "请求已提交，请勿重复操作"}
 	}
 	return task, err
+}
+
+func checkAPIKeyConcurrency(userID string) error {
+	settings, err := repository.GetSettings()
+	if err != nil {
+		return err
+	}
+	limit := apiKeyConcurrency(settings.Public.API)
+	running, err := repository.CountRunningAPIKeyGenerationTasks(userID)
+	if err != nil {
+		return err
+	}
+	if running >= int64(limit) {
+		return safeMessageError{message: fmt.Sprintf("API Key 并发已达上限：每个账号最多同时进行 %d 个生成，请等待已有任务完成后再试", limit)}
+	}
+	return nil
+}
+
+func apiKeyConcurrency(setting model.PublicAPISetting) int {
+	if setting.KeyConcurrency <= 0 {
+		return defaultAPIKeyConcurrency
+	}
+	return setting.KeyConcurrency
 }
 
 // FinishGenerationTask is the sole refund point for generation tasks. Failed

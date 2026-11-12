@@ -44,6 +44,7 @@ type GenerationTask struct {
 	OrganizationID   string                      `json:"organizationId" gorm:"index;uniqueIndex:idx_generation_task_request"`
 	UserID           string                      `json:"userId" gorm:"index;uniqueIndex:idx_generation_task_request"`
 	RequestID        string                      `json:"requestId" gorm:"size:191;uniqueIndex:idx_generation_task_request"`
+	APIKeyID         string                      `json:"-" gorm:"size:191"`
 	BatchJobID       string                      `json:"batchJobId,omitempty" gorm:"index"`
 	BatchItemID      string                      `json:"batchItemId,omitempty" gorm:"index"`
 	Model            string                      `json:"model" gorm:"index"`

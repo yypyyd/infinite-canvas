@@ -544,6 +544,9 @@ export type AdminPublicSettings = {
         reward: boolean;
         rewardCredits: number;
     };
+    api: {
+        keyConcurrency: number;
+    };
 };
 
 export type AdminAnnouncement = {

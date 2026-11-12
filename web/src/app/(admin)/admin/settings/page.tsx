@@ -50,6 +50,7 @@ const emptySettings: AdminSettings = {
         access: { blockChina: false },
         announcements: { enabled: false, items: [] },
         checkIn: { enabled: false, reward: false, rewardCredits: 0 },
+        api: { keyConcurrency: 3 },
     },
     private: {
         channels: [],
@@ -565,6 +566,9 @@ function normalizePublicSetting(setting: Partial<AdminSettings["public"]> = {}):
             enabled: setting.checkIn?.enabled === true,
             reward: setting.checkIn?.reward === true,
             rewardCredits: Math.max(0, Number(setting.checkIn?.rewardCredits) || 0),
+        },
+        api: {
+            keyConcurrency: Math.max(1, Math.floor(Number(setting.api?.keyConcurrency)) || 3),
         },
     };
 }

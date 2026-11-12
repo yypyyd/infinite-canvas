@@ -176,10 +176,15 @@ type PublicSetting struct {
 	Access        PublicAccessSetting       `json:"access"`
 	Announcements AnnouncementSetting       `json:"announcements"`
 	CheckIn       CheckInSetting            `json:"checkIn"`
+	API           PublicAPISetting          `json:"api"`
 }
 
 type PublicAccessSetting struct {
 	BlockChina bool `json:"blockChina"`
+}
+
+type PublicAPISetting struct {
+	KeyConcurrency int `json:"keyConcurrency"`
 }
 
 type PublicAuthSetting struct {

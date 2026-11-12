@@ -118,3 +118,4 @@
 - 生产通过 GitHub Actions docker-image.yml → scripts/deploy-production.sh 部署到服务器；该脚本在 API 健康后启动 sibling 容器 infinite-canvas-video-worker（/app/video-worker）与 infinite-canvas-batch-worker（/app/batch-worker），共用同一镜像、.env 与 /app/data。
 - Docker Compose 的 worker profile 仅用于本地；不要以为生产 compose up 了就会跑 video-worker。
 - 入口 docker-entrypoint.sh 只启动 Go API + Next.js，不会自动拉起 claim worker。
+- 本仓库是 GitHub fork，GitHub 可能自动停用 fork 的工作流：推送后 Actions 没有新运行、手动触发返回 `Actions has been disabled for this repository` 时，到仓库 Actions 页点击「I understand my workflows, go ahead and re-enable them」，再推送一次才会构建和部署；停用期间的推送不会补跑。

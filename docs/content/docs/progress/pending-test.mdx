@@ -10,12 +10,13 @@ description: 当前版本已实现但仍需人工或自动化验证的变更项
 - 登录页不再区分用户和管理员：去掉「管理员登录 / 返回用户登录」入口以及 `/api/admin/login`、`/api/admin/login-challenge`，统一走 `/api/auth/login`；Turnstile 站点密钥改由 `/api/auth/login-challenge` 返回，验证动作改为 `login`。登录页左侧标题和右侧说明改为免费生图说法。
 - 配置 Turnstile 时，所有账号登录都要先完成人机验证再校验密码；未配置时普通用户可直接登录（不显示验证组件），管理员登录返回 503。管理员账号登录后仍签发独立后台 Cookie（Path=/api、SameSite=Strict、最长 12 小时），普通用户签发普通会话 Cookie。
 - 需要验证：普通用户在 huantu.xyz 和 canvas.xinghengcode.shop（含 New API 内嵌）完成人机验证后能登录，未完成验证时登录按钮不可点，密码错误后验证组件自动重置；管理员从 `/login` 登录后能进入 `/admin`，未登录访问后台跳转到 `/login?redirect=/admin`，登录后回到后台；普通账号带 `redirect=/admin` 登录后回到首页；注册流程不受影响。确认后把 `features.mdx` 中「后台登录使用独立入口」改为统一登录。
+- 上线：GitHub 曾自动停用本 fork 的工作流，`79e2d38` 推送后没有触发部署；在 Actions 页重新启用后随 `28d47f6` 部署成功。线上已确认 `/api/auth/login-challenge` 返回站点密钥、旧 `/api/admin/login-challenge` 返回 404、登录页只剩一个表单。自动化浏览器中 Turnstile 显示验证失败，属于 Cloudflare 拦截自动化，需要用正常浏览器验证普通用户和管理员登录。
 
 ## 每人 API Key 并发上限
 
 - 用户通过 API Key 调用 `/api/v1/*` 生成时，按用户统计由 API Key 创建且仍在进行中的生成任务；达到上限（默认 3）时直接返回 429 `rate_limit_exceeded`，不创建任务也不扣费。视频任务在服务端归档前一直占用名额；网页端、批量生产和画布助手不计入。上限在后台「系统设置 → 访问与注册 → API 调用」修改，API 接入文档首页显示当前上限。
 - 计数与建任务在单个 API 进程内按用户加锁；多个 API 实例同时运行时不保证严格不超限。
-- 上线：`d6c5869` 的 GitHub 部署步骤运行约 2 分钟后显示已取消，但线上 `/api/settings` 已返回 `api.keyConcurrency`，API 与网页已是新版本；两个 Worker 容器是否换成新镜像需在服务器确认。
+- 上线：`d6c5869` 的部署步骤因 GitHub 自动停用 fork 工作流被中途取消，但 API 与网页已切到新版本；之后 `28d47f6` 的完整部署已把 API 和两个 Worker 都换成最新镜像。
 - 需要验证：同一用户用 API Key 同时发起 4 个生图请求，第 4 个立即返回 429，没有任务和扣费记录；任一完成后可以再提交；3 个视频任务进行中时，第 4 个视频或图片请求返回 429；网页端同时生成不受影响；后台改成 5 后立即生效，保存其他设置后该值不丢失；上线前已存在的任务不计入。
 
 ## 免费 AI 生图定位

@@ -50,6 +50,26 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
         if (needsWorkspaceSync) setWorkspaceActivated(true);
     }, [needsWorkspaceSync]);
 
+    useEffect(() => {
+        // 只处理页面上显示的媒体；new Image() 等未挂载元素的错误不会传到 document，图片处理流程仍按失败处理。
+        const showExpiredPlaceholder = (event: Event) => {
+            const media = event.target;
+            if (!(media instanceof HTMLImageElement || media instanceof HTMLVideoElement)) return;
+            const src = media.currentSrc || media.getAttribute("src") || "";
+            if (!src.includes("/api/workspace/files/") || media.dataset.expiredCheck === src || media.closest("[data-own-fallback]")) return;
+            media.dataset.expiredCheck = src;
+            void fetch(src, { method: "HEAD" })
+                .then((response) => {
+                    if (response.status !== 404) return;
+                    if (media instanceof HTMLImageElement) media.src = "/file-expired.svg";
+                    else media.poster = "/file-expired.svg";
+                })
+                .catch(() => undefined);
+        };
+        document.addEventListener("error", showExpiredPlaceholder, true);
+        return () => document.removeEventListener("error", showExpiredPlaceholder, true);
+    }, []);
+
     return (
         <>
             {userId && (workspaceActivated || needsWorkspaceSync) ? <WorkspaceProvider /> : null}

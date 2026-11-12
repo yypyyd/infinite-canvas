@@ -95,6 +95,7 @@ export default function ImagePage() {
     const groupRatios = useConfigStore((state) => state.publicSettings?.modelChannel.groupRatios);
     const managedModels = useConfigStore((state) => state.publicSettings?.modelChannel.models);
     const modelAspectRatios = useConfigStore((state) => state.publicSettings?.modelChannel.modelAspectRatios);
+    const fileMaxAgeDays = useConfigStore((state) => state.publicSettings?.fileMaxAgeDays || 0);
     const userGroup = useUserStore((state) => state.user?.group || "default");
     const specPricing = usePricingStore((state) => state.specPricing);
     const currentGroupRatio = usePricingStore((state) => state.groupRatio);
@@ -459,7 +460,7 @@ export default function ImagePage() {
                                 <div className="min-w-0">
                                     <div className="mb-2 text-xs font-medium text-primary">AI 生图</div>
                                     <h1 className="text-3xl font-semibold tracking-[-.035em]">一句话，免费生成好图。</h1>
-                                    <p className="mt-2 text-sm leading-6 text-muted-foreground">输入描述直接出图，也可以上传参考图来改图、换风格。</p>
+                                    <p className="mt-2 text-sm leading-6 text-muted-foreground">输入描述直接出图，也可以上传参考图来改图、换风格。{fileMaxAgeDays ? `生成的图片保留 ${fileMaxAgeDays} 天，请及时下载。` : ""}</p>
                                 </div>
                                 <div className="flex shrink-0 gap-2 lg:hidden">
                                     <Button icon={<History className="size-4" />} onClick={() => setLogsOpen(true)}>

@@ -171,12 +171,13 @@ type PublicModelChannelSetting struct {
 
 // PublicSetting stores frontend-visible settings.
 type PublicSetting struct {
-	ModelChannel  PublicModelChannelSetting `json:"modelChannel"`
-	Auth          PublicAuthSetting         `json:"auth"`
-	Access        PublicAccessSetting       `json:"access"`
-	Announcements AnnouncementSetting       `json:"announcements"`
-	CheckIn       CheckInSetting            `json:"checkIn"`
-	API           PublicAPISetting          `json:"api"`
+	ModelChannel   PublicModelChannelSetting `json:"modelChannel"`
+	Auth           PublicAuthSetting         `json:"auth"`
+	Access         PublicAccessSetting       `json:"access"`
+	Announcements  AnnouncementSetting       `json:"announcements"`
+	CheckIn        CheckInSetting            `json:"checkIn"`
+	API            PublicAPISetting          `json:"api"`
+	FileMaxAgeDays int                       `json:"fileMaxAgeDays,omitempty"`
 }
 
 type PublicAccessSetting struct {

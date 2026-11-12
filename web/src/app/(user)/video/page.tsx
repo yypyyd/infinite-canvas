@@ -93,6 +93,7 @@ export default function VideoPage() {
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const pricingRules = useConfigStore((state) => state.publicSettings?.modelChannel.pricingRules);
     const groupRatios = useConfigStore((state) => state.publicSettings?.modelChannel.groupRatios);
+    const fileMaxAgeDays = useConfigStore((state) => state.publicSettings?.fileMaxAgeDays || 0);
     const addAsset = useAssetStore((state) => state.addAsset);
     const userGroup = useUserStore((state) => state.user?.group || "default");
     const specPricing = usePricingStore((state) => state.specPricing);
@@ -457,7 +458,7 @@ export default function VideoPage() {
                             <div>
                                 <div className="mb-2 text-xs font-medium text-primary">AI 视频</div>
                                 <h1 className="text-3xl font-semibold tracking-[-.035em]">让画面动起来。</h1>
-                                <p className="mt-2 text-sm leading-6 text-muted-foreground">输入描述或上传参考图生成短视频，可灵 Kling 免费使用。</p>
+                                <p className="mt-2 text-sm leading-6 text-muted-foreground">输入描述或上传参考图生成短视频，可灵 Kling 免费使用。{fileMaxAgeDays ? `生成的视频保留 ${fileMaxAgeDays} 天，请及时下载。` : ""}</p>
                             </div>
                             <div className="flex shrink-0 gap-2 lg:hidden">
                                 <Button icon={<History className="size-4" />} onClick={() => setLogsOpen(true)}>

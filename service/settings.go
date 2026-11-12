@@ -67,6 +67,8 @@ func PublicSettings() (model.PublicSetting, error) {
 	public = restrictPublicModelsToEnabledChannels(public, runtimeChannelsFor(normalized.Private))
 	public.ModelChannel.PricingRules = filterPricingRulesToModelCapabilities(public.ModelChannel.PricingRules, public.ModelChannel.Models)
 	public.Announcements.Items = publishedAnnouncements(public.Announcements)
+	// Mirrors the private storage setting so pages can state the retention period; never stored in public settings.
+	public.FileMaxAgeDays = normalized.Private.Storage.MaxAgeDays
 	return public, err
 }
 

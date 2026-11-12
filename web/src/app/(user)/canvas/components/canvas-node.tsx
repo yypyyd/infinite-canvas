@@ -623,10 +623,11 @@ function ImageContent({
                 {imageUnavailable ? (
                     <div className="flex h-full w-full flex-col items-center justify-center gap-2 border border-dashed text-sm" style={{ background: theme.node.fill, borderColor: theme.toolbar.border, color: theme.node.text }} data-image-unavailable>
                         <ImageOff className="size-8 opacity-60" />
-                        <span className="opacity-70">图片文件无法加载</span>
+                        <span className="opacity-70">文件已过期或无法加载</span>
                     </div>
                 ) : null}
                 <img
+                    data-own-fallback
                     hidden={imageUnavailable}
                     onError={() => setFailedSrc((value) => (value.includes(imageSrc) ? value : [...value, imageSrc]))}
                     src={imageSrc}

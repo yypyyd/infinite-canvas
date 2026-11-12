@@ -547,6 +547,7 @@ export type AdminPublicSettings = {
     api: {
         keyConcurrency: number;
     };
+    fileMaxAgeDays?: number;
 };
 
 export type AdminAnnouncement = {

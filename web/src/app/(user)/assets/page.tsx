@@ -10,6 +10,7 @@ import { formatBytes, readFileAsDataUrl } from "@/lib/image-utils";
 import { uploadImage } from "@/services/image-storage";
 import { cn } from "@/lib/utils";
 import { useAssetStore, type Asset, type AssetKind, type ImageAsset } from "@/stores/use-asset-store";
+import { useConfigStore } from "@/stores/use-config-store";
 import { exportAssets, readAssetPackage } from "./asset-transfer";
 
 type AssetFormValues = {
@@ -35,6 +36,7 @@ export default function AssetsPage() {
     const { message } = App.useApp();
     const copyText = useCopyText();
     const openMedia = useOpenMedia();
+    const fileMaxAgeDays = useConfigStore((state) => state.publicSettings?.fileMaxAgeDays || 0);
     const [form] = Form.useForm<AssetFormValues>();
     const coverInputRef = useRef<HTMLInputElement>(null);
     const imageInputRef = useRef<HTMLInputElement>(null);
@@ -198,7 +200,7 @@ export default function AssetsPage() {
                             素材库
                         </div>
                         <h1 className="text-3xl font-semibold tracking-[-.04em] sm:text-4xl">每份素材，随时取用。</h1>
-                        <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-muted-foreground">集中管理参考图、提示词和生成结果，在生图、视频和画布里随时调用。</p>
+                        <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-muted-foreground">集中管理参考图、提示词和生成结果，在生图、视频和画布里随时调用。{fileMaxAgeDays ? `图片和视频保留 ${fileMaxAgeDays} 天，请及时下载。` : ""}</p>
                     </div>
 
                     <div className="mx-auto mt-9 w-full max-w-2xl rounded-xl border border-border bg-card p-1.5">

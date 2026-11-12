@@ -3,24 +3,27 @@
 import Script from "next/script";
 import { useEffect, useRef, useState } from "react";
 
-import { fetchAdminLoginChallenge } from "@/services/api/auth";
+import { fetchLoginChallenge } from "@/services/api/auth";
 
 type Turnstile = {
     render: (element: HTMLElement, options: { sitekey: string; action: string; theme: "auto"; callback: (token: string) => void; "expired-callback": () => void; "error-callback": () => void }) => string;
     remove: (id: string) => void;
 };
 
-export function AdminLoginChallenge({ onChange }: { onChange: (token: string) => void }) {
+// onChange(null) 表示服务端未配置 Turnstile，本次登录不需要验证令牌。
+export function LoginChallenge({ onChange }: { onChange: (token: string | null) => void }) {
     const container = useRef<HTMLDivElement>(null);
     const [ready, setReady] = useState(false);
-    const [siteKey, setSiteKey] = useState("");
+    const [siteKey, setSiteKey] = useState<string | null>(null);
     const [error, setError] = useState("");
 
     useEffect(() => {
         let active = true;
-        fetchAdminLoginChallenge()
+        fetchLoginChallenge()
             .then((result) => {
-                if (active) setSiteKey(result.siteKey);
+                if (!active) return;
+                setSiteKey(result.siteKey);
+                if (!result.siteKey) onChange(null);
             })
             .catch((reason: unknown) => {
                 if (active) setError(reason instanceof Error ? reason.message : "验证加载失败，请刷新重试");
@@ -28,14 +31,14 @@ export function AdminLoginChallenge({ onChange }: { onChange: (token: string) =>
         return () => {
             active = false;
         };
-    }, []);
+    }, [onChange]);
 
     useEffect(() => {
         const turnstile = (window as Window & { turnstile?: Turnstile }).turnstile;
         if (!ready || !siteKey || !container.current || !turnstile) return;
         const id = turnstile.render(container.current, {
             sitekey: siteKey,
-            action: "admin_login",
+            action: "login",
             theme: "auto",
             callback: (token) => {
                 setError("");
@@ -53,8 +56,10 @@ export function AdminLoginChallenge({ onChange }: { onChange: (token: string) =>
         };
     }, [ready, siteKey, onChange]);
 
+    if (siteKey === "") return null;
+
     return (
-        <div className="mb-4" aria-label="后台登录人机验证">
+        <div className="mb-4" aria-label="登录人机验证">
             <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" onReady={() => setReady(true)} onError={() => setError("验证加载失败，请刷新重试")} />
             <div ref={container} />
             {error ? (

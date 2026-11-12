@@ -18,6 +18,7 @@ func New() *gin.Engine {
 	api.POST("/auth/register", gin.WrapF(handler.Register))
 	api.POST("/auth/email-code", gin.WrapF(handler.SendRegistrationEmailCode))
 	api.POST("/auth/login", gin.WrapF(handler.Login))
+	api.GET("/auth/login-challenge", gin.WrapF(handler.LoginChallenge))
 	api.POST("/auth/logout", gin.WrapF(handler.Logout))
 	api.GET("/auth/me", middleware.OptionalAuth, gin.WrapF(handler.CurrentUser))
 	api.POST("/auth/profile", middleware.UserAuth, gin.WrapF(handler.UpdateProfile))
@@ -210,8 +211,6 @@ func New() *gin.Engine {
 	})
 	api.GET("/prompts", middleware.OptionalAuth, gin.WrapF(handler.Prompts))
 	api.GET("/assets", middleware.OptionalAuth, gin.WrapF(handler.Assets))
-	api.POST("/admin/login", gin.WrapF(handler.AdminLogin))
-	api.GET("/admin/login-challenge", gin.WrapF(handler.AdminLoginChallenge))
 
 	admin := api.Group("/admin", middleware.AdminAuth)
 	admin.GET("/users", gin.WrapF(handler.AdminUsers))

@@ -156,17 +156,14 @@ func recordLogin(identifier, ip, requestID string, admin bool, err error) {
 	slog.Info("auth_login", "account_hash", loginLimitKey("account", strings.ToLower(identifier)), "client_ip", ip, "request_id", requestID, "admin", admin, "result", result, "status", status)
 }
 
-func AdminLoginChallenge() (string, error) {
+func LoginChallengeSiteKey() string {
 	if config.Cfg.TurnstileSiteKey == "" || config.Cfg.TurnstileSecretKey == "" || config.Cfg.TurnstileHostnames == "" {
-		return "", authError{503, "后台登录验证尚未配置，请联系管理员", 0}
+		return ""
 	}
-	return config.Cfg.TurnstileSiteKey, nil
+	return config.Cfg.TurnstileSiteKey
 }
 
-func verifyAdminChallenge(ctx context.Context, token, ip string) error {
-	if _, err := AdminLoginChallenge(); err != nil {
-		return err
-	}
+func verifyLoginChallenge(ctx context.Context, token, ip string) error {
 	if token == "" || len(token) > 2048 {
 		return authError{401, "请先完成人机验证", 0}
 	}
@@ -196,7 +193,7 @@ func verifyAdminChallenge(ctx context.Context, token, ip string) error {
 		return authError{503, "登录验证暂不可用，请稍后重试", 0}
 	}
 	for _, hostname := range strings.Split(config.Cfg.TurnstileHostnames, ",") {
-		if result.Success && result.Action == "admin_login" && strings.EqualFold(result.Hostname, strings.TrimSpace(hostname)) {
+		if result.Success && result.Action == "login" && strings.EqualFold(result.Hostname, strings.TrimSpace(hostname)) {
 			return nil
 		}
 	}

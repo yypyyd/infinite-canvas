@@ -9,7 +9,7 @@ import { sendRegistrationEmailCode } from "@/services/api/auth";
 import { useConfigStore } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 
-import { AdminLoginChallenge } from "./components/admin-login-challenge";
+import { LoginChallenge } from "./components/login-challenge";
 
 type LoginFormValues = {
     username: string;
@@ -78,9 +78,8 @@ function LoginContent() {
     const [codeCountdown, setCodeCountdown] = useState(0);
     const redirect = safeRedirect(searchParams.get("redirect"));
     const referralFromUrl = (searchParams.get("ref") || searchParams.get("referralCode") || "").trim().toUpperCase();
-    const isAdmin = redirect === "/admin" || redirect.startsWith("/admin/");
-    const isRegister = !isAdmin && mode === "register";
-    const [challenge, setChallenge] = useState("");
+    const isRegister = mode === "register";
+    const [challenge, setChallenge] = useState<string | null>("");
     const [challengeAttempt, setChallengeAttempt] = useState(0);
 
     useEffect(() => {
@@ -123,15 +122,15 @@ function LoginContent() {
             }
             const user = isRegister
                 ? await register({ username: values.username, email: values.email || "", code: values.code || "", password: values.password, referralCode: values.referralCode?.trim() || referralFromUrl || undefined })
-                : await login({ username: values.username, password: values.password, admin: isAdmin, turnstileToken: challenge });
+                : await login({ username: values.username, password: values.password, turnstileToken: challenge ?? undefined });
             message.success(isRegister ? "注册成功" : "登录成功");
             router.replace(redirect);
             router.refresh();
-            if (isAdmin && user.role !== "admin") router.replace("/");
+            if ((redirect === "/admin" || redirect.startsWith("/admin/")) && user.role !== "admin") router.replace("/");
         } catch (error) {
             message.error(error instanceof Error ? error.message : "登录失败");
         } finally {
-            if (isAdmin) {
+            if (!isRegister && challenge !== null) {
                 setChallenge("");
                 setChallengeAttempt((value) => value + 1);
             }
@@ -156,9 +155,9 @@ function LoginContent() {
                     </Link>
                     <div className="relative">
                         <h1 className="max-w-[280px] text-[34px] font-semibold leading-[1.18] tracking-[-.04em]">
-                            一张实拍，
+                            免费 AI 生图，
                             <br />
-                            出整套上新图。
+                            一句话出好图。
                         </h1>
                         <ul className="mt-8 space-y-3.5 text-[13px] leading-6 text-white/72">
                             {highlights.map((item) => (
@@ -179,8 +178,8 @@ function LoginContent() {
                         幻图
                     </Link>
                     <div className="mb-7">
-                        <h2 className="text-[26px] font-semibold tracking-[-.04em]">{isRegister ? "创建账号" : isAdmin ? "后台登录" : "欢迎回来"}</h2>
-                        <p className="mt-1.5 text-sm text-muted-foreground">{isRegister ? "几秒钟完成注册，立刻开始出图。" : "登录后继续生成商品图与营销素材。"}</p>
+                        <h2 className="text-[26px] font-semibold tracking-[-.04em]">{isRegister ? "创建账号" : "欢迎回来"}</h2>
+                        <p className="mt-1.5 text-sm text-muted-foreground">{isRegister ? "几秒钟完成注册，立刻开始出图。" : "登录后继续免费生图和生成视频。"}</p>
                     </div>
                     <Form<LoginFormValues>
                         form={form}
@@ -235,28 +234,21 @@ function LoginContent() {
                                 <Input.Password className={inputClass} autoComplete="new-password" placeholder="再次输入密码" />
                             </Form.Item>
                         ) : null}
-                        {isAdmin ? <AdminLoginChallenge key={challengeAttempt} onChange={setChallenge} /> : null}
-                        <Button block htmlType="submit" disabled={isAdmin && !challenge} loading={isLoading} className="!mt-1 !h-11 !rounded-[10px] !border-0 !bg-foreground !font-medium !text-background hover:!opacity-90">
+                        {!isRegister ? <LoginChallenge key={challengeAttempt} onChange={setChallenge} /> : null}
+                        <Button block htmlType="submit" disabled={!isRegister && challenge === ""} loading={isLoading} className="!mt-1 !h-11 !rounded-[10px] !border-0 !bg-foreground !font-medium !text-background hover:!opacity-90">
                             {isRegister ? "创建账号" : "登录"}
                         </Button>
                     </Form>
-                    {!isRegister ? (
-                        <Link className="mt-4 block text-center text-sm text-muted-foreground" href={isAdmin ? "/login" : "/login?redirect=/admin"}>
-                            {isAdmin ? "返回用户登录" : "管理员登录"}
-                        </Link>
-                    ) : null}
-                    {!isAdmin ? (
-                        <p className="mt-8 border-t border-border pt-6 text-center text-[15px] text-muted-foreground">
-                            {isRegister ? "已有账号？" : "还没有账号？"}
-                            {allowRegister && !isAdmin ? (
-                                <button type="button" className="ml-1.5 font-semibold text-primary underline underline-offset-[5px] transition hover:opacity-80" onClick={() => setMode(isRegister ? "login" : "register")}>
-                                    {isRegister ? "直接登录" : "免费注册"}
-                                </button>
-                            ) : (
-                                <span className="ml-1.5">请联系管理员开通</span>
-                            )}
-                        </p>
-                    ) : null}
+                    <p className="mt-8 border-t border-border pt-6 text-center text-[15px] text-muted-foreground">
+                        {isRegister ? "已有账号？" : "还没有账号？"}
+                        {allowRegister ? (
+                            <button type="button" className="ml-1.5 font-semibold text-primary underline underline-offset-[5px] transition hover:opacity-80" onClick={() => setMode(isRegister ? "login" : "register")}>
+                                {isRegister ? "直接登录" : "免费注册"}
+                            </button>
+                        ) : (
+                            <span className="ml-1.5">请联系管理员开通</span>
+                        )}
+                    </p>
                 </div>
             </section>
         </main>

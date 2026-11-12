@@ -181,12 +181,13 @@ func createRegisteredUser(user model.User, settings model.Settings, verification
 
 type LoginInput struct {
 	Username, Password, Challenge, IP, RequestID string
-	Admin                                        bool
 }
 
 func Login(ctx context.Context, input LoginInput) (session model.AuthSession, err error) {
 	identifier := strings.TrimSpace(input.Username)
-	defer func() { recordLogin(identifier, input.IP, input.RequestID, input.Admin, err) }()
+	defer func() {
+		recordLogin(identifier, input.IP, input.RequestID, session.User.Role == model.UserRoleAdmin, err)
+	}()
 	finishIP, err := beginLoginAttempt(loginLimitKey("ip", input.IP))
 	if err != nil {
 		return session, err
@@ -214,8 +215,9 @@ func Login(ctx context.Context, input LoginInput) (session model.AuthSession, er
 		return session, err
 	}
 	defer func() { finishAccount(success) }()
-	if input.Admin {
-		if err := verifyAdminChallenge(ctx, input.Challenge, input.IP); err != nil {
+	challengeConfigured := LoginChallengeSiteKey() != ""
+	if challengeConfigured {
+		if err := verifyLoginChallenge(ctx, input.Challenge, input.IP); err != nil {
 			return session, err
 		}
 	}
@@ -228,11 +230,8 @@ func Login(ctx context.Context, input LoginInput) (session model.AuthSession, er
 	if !ok || passwordErr != nil || user.Status == model.UserStatusBan {
 		return session, authError{401, "账号或密码错误", 0}
 	}
-	if input.Admin && user.Role != model.UserRoleAdmin {
-		return session, authError{403, "需要管理员权限", 0}
-	}
-	if !input.Admin && user.Role == model.UserRoleAdmin {
-		return session, authError{403, "管理员请使用后台登录入口", 0}
+	if user.Role == model.UserRoleAdmin && !challengeConfigured {
+		return session, authError{503, "后台登录验证尚未配置，请联系管理员", 0}
 	}
 	normalizeUserDefaults(&user)
 	user.LastLoginAt = now()

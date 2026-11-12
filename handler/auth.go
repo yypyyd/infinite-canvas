@@ -77,31 +77,22 @@ func SendRegistrationEmailCode(w http.ResponseWriter, r *http.Request) {
 
 func requestRemoteIP(r *http.Request) string { return service.RequestClientIP(r) }
 
-func Login(w http.ResponseWriter, r *http.Request) { credentialLogin(w, r, false) }
-
-func AdminLogin(w http.ResponseWriter, r *http.Request) { credentialLogin(w, r, true) }
-
-func AdminLoginChallenge(w http.ResponseWriter, r *http.Request) {
-	siteKey, err := service.AdminLoginChallenge()
-	if err != nil {
-		FailError(w, err)
-		return
-	}
-	OK(w, map[string]string{"siteKey": siteKey})
+func LoginChallenge(w http.ResponseWriter, _ *http.Request) {
+	OK(w, map[string]string{"siteKey": service.LoginChallengeSiteKey()})
 }
 
-func credentialLogin(w http.ResponseWriter, r *http.Request, admin bool) {
+func Login(w http.ResponseWriter, r *http.Request) {
 	var request loginRequest
 	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&request) != nil {
 		FailStatus(w, http.StatusBadRequest, "登录参数无效")
 		return
 	}
-	session, err := service.Login(r.Context(), service.LoginInput{Username: request.Username, Password: request.Password, Challenge: request.TurnstileToken, IP: service.RequestClientIP(r), RequestID: r.Header.Get("X-Request-ID"), Admin: admin})
+	session, err := service.Login(r.Context(), service.LoginInput{Username: request.Username, Password: request.Password, Challenge: request.TurnstileToken, IP: service.RequestClientIP(r), RequestID: r.Header.Get("X-Request-ID")})
 	if err != nil {
 		FailError(w, err)
 		return
 	}
-	if admin {
+	if session.User.Role == model.UserRoleAdmin {
 		http.SetCookie(w, &http.Cookie{Name: "infinite_canvas_admin_session", Value: session.Token, Path: "/api", MaxAge: service.AdminSessionMaxAge(), HttpOnly: true, Secure: requestIsSecure(r), SameSite: http.SameSiteStrictMode})
 	} else {
 		setUserSessionCookie(w, r, session.Token)

@@ -730,6 +730,7 @@ export type AdminPrivateSettings = {
 export type AdminStorageSetting = {
     driver: "qiniu" | "local";
     retentionDays: number;
+    maxAgeDays: number;
     localPath: string;
     qiniuAccessKey: string;
     qiniuSecretKey: string;

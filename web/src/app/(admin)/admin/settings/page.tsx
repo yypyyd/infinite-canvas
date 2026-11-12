@@ -55,7 +55,7 @@ const emptySettings: AdminSettings = {
     private: {
         channels: [],
         protocolTemplates: [],
-        storage: { driver: "local", retentionDays: 0, localPath: "data/user-files", qiniuAccessKey: "", qiniuSecretKey: "", qiniuBucket: "", qiniuRegion: "as0", qiniuDownloadDomain: "", qiniuSecretKeyConfigured: false },
+        storage: { driver: "local", retentionDays: 0, maxAgeDays: 0, localPath: "data/user-files", qiniuAccessKey: "", qiniuSecretKey: "", qiniuBucket: "", qiniuRegion: "as0", qiniuDownloadDomain: "", qiniuSecretKeyConfigured: false },
         promptSync: { enabled: true, cron: "*/5 * * * *" },
         email: { smtpHost: "", smtpPort: 587, smtpUsername: "", smtpPassword: "", smtpFromEmail: "", smtpFromName: "幻图", smtpSecurity: "starttls", passwordConfigured: false },
         payment: {
@@ -698,6 +698,7 @@ function normalizePrivateSetting(setting: Partial<AdminSettings["private"]> = {}
         storage: {
             driver: setting.storage?.driver === "local" ? "local" : "qiniu",
             retentionDays: Math.min(36500, Math.max(0, Math.floor(Number(setting.storage?.retentionDays) || 0))),
+            maxAgeDays: Math.min(36500, Math.max(0, Math.floor(Number(setting.storage?.maxAgeDays) || 0))),
             localPath: setting.storage?.localPath?.trim() || "data/user-files",
             qiniuAccessKey: setting.storage?.qiniuAccessKey?.trim() || "",
             qiniuSecretKey: setting.storage?.qiniuSecretKey || "",

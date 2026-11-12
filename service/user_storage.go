@@ -490,11 +490,19 @@ func cleanupUserWorkspaceFiles(organizationID string) error {
 		return err
 	}
 	timestamp := now()
-	cutoff := "0001-01-01T00:00:00Z"
-	if storageSetting.RetentionDays > 0 {
-		cutoff = time.Now().UTC().Add(-time.Duration(storageSetting.RetentionDays) * 24 * time.Hour).Format(timestampLayout)
+	cutoff, createdBefore := userFileCutoffs(storageSetting)
+	return repository.CollectUserFileGarbage(organizationID, timestamp, cutoff, createdBefore, userStorageQuotaBytes())
+}
+
+func userFileCutoffs(setting model.StorageSetting) (cutoff string, createdBefore string) {
+	cutoff = "0001-01-01T00:00:00Z"
+	if setting.RetentionDays > 0 {
+		cutoff = time.Now().UTC().Add(-time.Duration(setting.RetentionDays) * 24 * time.Hour).Format(timestampLayout)
 	}
-	return repository.CollectUserFileGarbage(organizationID, timestamp, cutoff, userStorageQuotaBytes())
+	if setting.MaxAgeDays > 0 {
+		createdBefore = time.Now().UTC().Add(-time.Duration(setting.MaxAgeDays) * 24 * time.Hour).Format(timestampLayout)
+	}
+	return cutoff, createdBefore
 }
 
 func cleanupPendingUserObjects() error {
@@ -539,11 +547,8 @@ func StartUserFileMaintenanceWorker() {
 		for {
 			timestamp := now()
 			storageSetting, settingErr := currentUserStorageSetting()
-			cutoff := "0001-01-01T00:00:00Z"
-			if settingErr == nil && storageSetting.RetentionDays > 0 {
-				cutoff = time.Now().UTC().Add(-time.Duration(storageSetting.RetentionDays) * 24 * time.Hour).Format(timestampLayout)
-			}
-			organizationIDs, err := repository.ListUserFileMaintenanceOrganizations(timestamp, cutoff)
+			cutoff, createdBefore := userFileCutoffs(storageSetting)
+			organizationIDs, err := repository.ListUserFileMaintenanceOrganizations(timestamp, cutoff, createdBefore)
 			if err != nil {
 				logWorkerError("file_maintenance", "organization_list_failed", err)
 			}

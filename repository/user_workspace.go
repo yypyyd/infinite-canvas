@@ -32,6 +32,9 @@ const (
 	maxWorkspaceUploadRequestsPerUserMinute             = 120
 )
 
+// Files used by enterprise records are kept regardless of the maximum file age.
+var enterpriseFileReferenceDomains = []string{"brand", "sku", "batch_input", "batch_result", "video_project_draft", "video_project_version"}
+
 func ConsumeUserFileUploadRateLimit(organizationID string, userID string, windowStartedAt string, timestamp string) error {
 	db, err := DB()
 	if err != nil {
@@ -626,7 +629,7 @@ func ListUserFiles(organizationID string) ([]model.UserFile, error) {
 	return items, err
 }
 
-func CollectUserFileGarbage(organizationID string, timestamp string, cutoff string, quota int64) error {
+func CollectUserFileGarbage(organizationID string, timestamp string, cutoff string, createdBefore string, quota int64) error {
 	db, err := DB()
 	if err != nil {
 		return err
@@ -662,8 +665,10 @@ func CollectUserFileGarbage(organizationID string, timestamp string, cutoff stri
 			return nil
 		}
 		references := tx.Model(&model.UserFileReference{}).Select("storage_key").Where("organization_id = ?", organizationID)
+		enterpriseReferences := tx.Model(&model.UserFileReference{}).Select("storage_key").Where("organization_id = ? AND domain IN ?", organizationID, enterpriseFileReferenceDomains)
 		reservations := tx.Model(&model.UserFileUploadReservation{}).Select("storage_key").Where("organization_id = ? AND expires_at > ?", organizationID, timestamp)
-		query := tx.Where("organization_id = ? AND storage_key NOT IN (?) AND storage_key NOT IN (?) AND unreferenced_at <> '' AND unreferenced_at <= ?", organizationID, references, reservations, cutoff)
+		expired := tx.Where("storage_key NOT IN (?) AND unreferenced_at <> '' AND unreferenced_at <= ?", references, cutoff).Or("created_at <= ? AND storage_key NOT IN (?)", createdBefore, enterpriseReferences)
+		query := tx.Where("organization_id = ? AND storage_key NOT IN (?)", organizationID, reservations).Where(expired)
 		var files []model.UserFile
 		limit := int64(maxWorkspaceCleanupBatchSize)
 		if remainingCleanupObjects < limit {
@@ -679,7 +684,7 @@ func CollectUserFileGarbage(organizationID string, timestamp string, cutoff stri
 			if err := queueUserObjectDeletion(tx, file.OrganizationID, file.UserID, file.StorageDriver, file.ObjectKey, file.Size, timestamp, timestamp); err != nil {
 				return err
 			}
-			if err := tx.Where("organization_id = ? AND id = ? AND unreferenced_at <= ?", organizationID, file.ID, cutoff).Delete(&model.UserFile{}).Error; err != nil {
+			if err := tx.Where("organization_id = ? AND id = ? AND (unreferenced_at <= ? OR created_at <= ?)", organizationID, file.ID, cutoff, createdBefore).Delete(&model.UserFile{}).Error; err != nil {
 				return err
 			}
 			remainingCleanupBytes -= file.Size
@@ -796,7 +801,7 @@ func FinishUserObjectDeletion(item model.UserObjectDeletion, succeeded bool, mes
 	return nil
 }
 
-func ListUserFileMaintenanceOrganizations(timestamp string, cutoff string) ([]string, error) {
+func ListUserFileMaintenanceOrganizations(timestamp string, cutoff string, createdBefore string) ([]string, error) {
 	db, err := DB()
 	if err != nil {
 		return nil, err
@@ -805,7 +810,8 @@ func ListUserFileMaintenanceOrganizations(timestamp string, cutoff string) ([]st
 	if err := db.Model(&model.UserFileUploadReservation{}).Where("expires_at <= ?", timestamp).Distinct("organization_id").Pluck("organization_id", &uploadIDs).Error; err != nil {
 		return nil, err
 	}
-	if err := db.Model(&model.UserFile{}).Where("unreferenced_at <> '' AND unreferenced_at <= ?", cutoff).Distinct("organization_id").Pluck("organization_id", &fileIDs).Error; err != nil {
+	enterpriseReferences := db.Model(&model.UserFileReference{}).Select("storage_key").Where("domain IN ?", enterpriseFileReferenceDomains)
+	if err := db.Model(&model.UserFile{}).Where("(unreferenced_at <> '' AND unreferenced_at <= ?) OR (created_at <= ? AND storage_key NOT IN (?))", cutoff, createdBefore, enterpriseReferences).Distinct("organization_id").Pluck("organization_id", &fileIDs).Error; err != nil {
 		return nil, err
 	}
 	seen := make(map[string]bool, len(uploadIDs)+len(fileIDs))

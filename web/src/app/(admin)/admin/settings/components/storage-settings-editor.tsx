@@ -28,6 +28,15 @@ export function StorageSettingsEditor() {
                         <InputNumber min={0} max={36500} precision={0} className="!w-full" addonAfter="天" />
                     </Form.Item>
                 </Col>
+                <Col xs={24} md={12}>
+                    <Form.Item
+                        name={["private", "storage", "maxAgeDays"]}
+                        label="文件最长保留天数"
+                        extra="从文件生成或上传时开始计算，到期后删除画布、我的素材和生成记录里的图片与视频，即使仍在使用；企业中心的品牌、商品、批量生产和视频工程文件不受影响。0 表示不限制。"
+                    >
+                        <InputNumber min={0} max={36500} precision={0} className="!w-full" addonAfter="天" />
+                    </Form.Item>
+                </Col>
                 {driver === "local" ? (
                     <Col span={24}>
                         <Form.Item

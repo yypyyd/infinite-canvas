@@ -66,7 +66,7 @@ type UserFile struct {
 	MimeType       string `json:"mimeType"`
 	Size           int64  `json:"size"`
 	UnreferencedAt string `json:"-" gorm:"index;index:idx_workspace_file_gc,priority:2"`
-	CreatedAt      string `json:"createdAt"`
+	CreatedAt      string `json:"createdAt" gorm:"index"`
 	UpdatedAt      string `json:"updatedAt"`
 }
 

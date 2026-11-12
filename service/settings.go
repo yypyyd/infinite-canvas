@@ -1079,6 +1079,7 @@ func normalizeStorageSetting(setting model.StorageSetting) model.StorageSetting 
 		setting.Driver = "qiniu"
 	}
 	setting.RetentionDays = max(0, setting.RetentionDays)
+	setting.MaxAgeDays = max(0, setting.MaxAgeDays)
 	setting.LocalPath = strings.TrimSpace(setting.LocalPath)
 	if setting.LocalPath == "" {
 		setting.LocalPath = strings.TrimSpace(config.Cfg.LocalStoragePath)
@@ -1108,6 +1109,9 @@ func normalizeStorageSetting(setting model.StorageSetting) model.StorageSetting 
 func validateStorageSetting(setting model.StorageSetting) error {
 	if setting.RetentionDays < 0 || setting.RetentionDays > 36500 {
 		return safeMessageError{message: "旧文件保留天数必须在 0 到 36500 之间"}
+	}
+	if setting.MaxAgeDays < 0 || setting.MaxAgeDays > 36500 {
+		return safeMessageError{message: "文件最长保留天数必须在 0 到 36500 之间"}
 	}
 	if setting.Driver == "local" {
 		path, err := filepath.Abs(setting.LocalPath)

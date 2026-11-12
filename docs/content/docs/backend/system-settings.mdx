@@ -178,6 +178,7 @@ description: settings 表中 public 和 private 配置结构说明
   "storage": {
     "driver": "qiniu",
     "retentionDays": 0,
+    "maxAgeDays": 0,
     "localPath": "/app/data/user-files",
     "qiniuAccessKey": "ak-xxx",
     "qiniuSecretKey": "<仅保存，不返回>",
@@ -230,7 +231,7 @@ description: settings 表中 public 和 private 配置结构说明
 
 `storage.driver` 可选 `qiniu` 或 `local`。七牛模式使用后台私有配置中的 Access Key、Secret Key、Bucket、区域和 HTTPS 私有下载域名；Secret Key 读取时始终为空，提交空值表示沿用旧值。环境变量中的既有七牛配置仅作为未填写设置的默认值。`local` 模式把新文件写入 `localPath`，浏览器仍通过企业鉴权接口读取，不返回服务器绝对路径；生产部署必须将该目录挂载到持久化磁盘。切换驱动只影响新文件，文件表中的 `storage_driver` 负责继续读取和清理已有文件，不自动迁移对象。
 
-`storage.retentionDays` 控制无业务引用文件的保留时间，从 `unreferenced_at` 开始计算；`0` 表示不自动删除正式文件。上传取消、过期预留和失败写入产生的临时对象不受该开关影响，仍由删除队列及时回收。清理 Worker 只按数据库文件记录和引用状态入队，不扫描目录后直接删除；删除任务按文件记录固化的存储驱动选择七牛或本地磁盘，并保持租约、重试和幂等语义。
+`storage.retentionDays` 控制无业务引用文件的保留时间，从 `unreferenced_at` 开始计算；`0` 表示不自动删除正式文件。`storage.maxAgeDays` 控制文件最长保留时间，从 `created_at` 开始计算，到期后即使仍被画布、素材或生成记录引用也会删除；被品牌、SKU、批量输入、批量结果或视频工程引用的文件不按该天数删除；`0` 表示不限制。上传取消、过期预留和失败写入产生的临时对象不受该开关影响，仍由删除队列及时回收。清理 Worker 只按数据库文件记录和引用状态入队，不扫描目录后直接删除；删除任务按文件记录固化的存储驱动选择七牛或本地磁盘，并保持租约、重试和幂等语义。
 
 `channels` 每项字段：
 

@@ -281,6 +281,7 @@ type PoolModelAlias struct {
 type StorageSetting struct {
 	Driver                   string `json:"driver"`
 	RetentionDays            int    `json:"retentionDays"`
+	MaxAgeDays               int    `json:"maxAgeDays"`
 	LocalPath                string `json:"localPath"`
 	QiniuAccessKey           string `json:"qiniuAccessKey"`
 	QiniuSecretKey           string `json:"qiniuSecretKey"`

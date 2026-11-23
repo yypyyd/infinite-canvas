@@ -14,13 +14,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/yypyyd/infinite-canvas/internal/errtext"
 	"github.com/yypyyd/infinite-canvas/model"
 	"github.com/yypyyd/infinite-canvas/repository"
 )
 
 var protocolHTTPClient = &http.Client{Transport: batchResultTransport(), Timeout: 90 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 
-var errProtocolConnection = errors.New("上游连接中断或等待超时")
+var errProtocolConnection = errors.New("连接中断或等待超时")
 
 type protocolFile struct {
 	Kind string
@@ -114,14 +115,24 @@ func protocolRequest(ctx context.Context, channel model.ModelChannel, template m
 	return response, nil
 }
 
-func readProtocolJSON(response *http.Response) ([]byte, error) {
+// Read only the error document; media endpoints can also return large binary bodies.
+func protocolHTTPFailure(response *http.Response, apiKey string) error {
+	const limit = 8192
+	body, err := io.ReadAll(io.LimitReader(response.Body, limit+1))
+	if err != nil || len(body) > limit {
+		body = nil
+	}
+	return errors.New(errtext.HTTP(response.StatusCode, body, apiKey))
+}
+
+func readProtocolJSON(response *http.Response, apiKey string) ([]byte, error) {
 	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return nil, protocolHTTPFailure(response, apiKey)
+	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, maxGenerationTaskStatusSize+1))
 	if err != nil || len(body) > maxGenerationTaskStatusSize || !json.Valid(body) {
-		return nil, errors.New("上游响应不是有效的 JSON 或响应过大")
-	}
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, fmt.Errorf("上游返回 HTTP %d", response.StatusCode)
+		return nil, errors.New("响应不是有效的 JSON 或响应过大")
 	}
 	return body, nil
 }
@@ -136,10 +147,10 @@ func decodeProtocolResponse(reader io.Reader, mapping model.ProtocolResponse, co
 			return nil
 		}
 		if err != nil {
-			return errors.New("上游结果流中断或 JSON 无效")
+			return errors.New("结果流中断或 JSON 无效")
 		}
 		if decoder.InputOffset() > maxStandardBatchResponseBytes {
-			return errors.New("上游结果响应过大")
+			return errors.New("结果响应过大")
 		}
 		frames++
 		result, err := parseProtocolResult(raw, mapping)
@@ -158,7 +169,7 @@ func decodeProtocolResponse(reader io.Reader, mapping model.ProtocolResponse, co
 			return nil
 		}
 	}
-	return errors.New("上游结果帧数量过多")
+	return errors.New("结果帧数量过多")
 }
 
 func parseProtocolResult(raw []byte, mapping model.ProtocolResponse) (protocolTaskResult, error) {
@@ -183,18 +194,18 @@ func parseProtocolResult(raw []byte, mapping model.ProtocolResponse) (protocolTa
 		result.Status = "success"
 		result.URLs, result.Base64 = stringsAt(mapping.ResultURL), stringsAt(mapping.ResultBase64)
 		if len(result.URLs)+len(result.Base64) == 0 || len(result.URLs)+len(result.Base64) > 10 {
-			return result, errors.New("上游成功响应缺少结果，或结果数量超过限制")
+			return result, errors.New("成功响应缺少结果，或结果数量超过限制")
 		}
 	case containsPricingValue(mapping.Failure, status):
 		result.Status = "failed"
-		result.Error = protocolField(raw, mapping.Error).String()
+		result.Error = errtext.Detail(protocolField(raw, mapping.Error).Value())
 		if result.Error == "" {
-			result.Error = "上游生成失败"
+			result.Error = firstPricingNonEmpty(errtext.Body(raw), "生成失败")
 		}
 	case containsPricingValue(mapping.Running, status):
 		result.Status = "running"
 	default:
-		return result, errors.New("上游返回了模板未声明的任务状态")
+		return result, errors.New("任务状态不在协议模板中")
 	}
 	return result, nil
 }
@@ -215,7 +226,7 @@ func fetchProtocolModels(channel model.ModelChannel) ([]model.DiscoveredModel, e
 	if err != nil {
 		return nil, err
 	}
-	body, err := readProtocolJSON(response)
+	body, err := readProtocolJSON(response, channel.APIKey)
 	if err != nil {
 		return nil, err
 	}
@@ -292,7 +303,7 @@ func uploadProtocolFiles(ctx context.Context, channel model.ModelChannel, templa
 		if err != nil {
 			return nil, err
 		}
-		body, err := readProtocolJSON(response)
+		body, err := readProtocolJSON(response, channel.APIKey)
 		if err != nil {
 			return nil, err
 		}
@@ -315,10 +326,12 @@ func uploadProtocolFiles(ctx context.Context, channel model.ModelChannel, templa
 			if err != nil {
 				return nil, errors.New("素材直传失败")
 			}
-			_ = response.Body.Close()
 			if response.StatusCode < 200 || response.StatusCode >= 300 {
-				return nil, fmt.Errorf("素材直传返回 HTTP %d", response.StatusCode)
+				err := protocolHTTPFailure(response, channel.APIKey)
+				_ = response.Body.Close()
+				return nil, err
 			}
+			_ = response.Body.Close()
 		}
 		keys = append(keys, key)
 	}

@@ -49,6 +49,22 @@ func writeOpenAIError(w http.ResponseWriter, status int, message, errType, code 
 	}})
 }
 
+// The HTTP category is independent of the original, possibly localized message.
+func failGeneration(w http.ResponseWriter, status int, message string) {
+	if !isOpenAIResponse(w) {
+		Fail(w, message)
+		return
+	}
+	switch status {
+	case http.StatusUnauthorized, http.StatusForbidden:
+		writeOpenAIError(w, http.StatusBadGateway, message, "api_error", "upstream_auth_error", nil)
+	case http.StatusTooManyRequests:
+		writeOpenAIError(w, status, message, "rate_limit_error", "rate_limit_exceeded", nil)
+	default:
+		writeOpenAIError(w, status, message, "api_error", "upstream_error", nil)
+	}
+}
+
 func classifyOpenAIError(msg string) (int, string, string, *string) {
 	modelParam := "model"
 	switch {

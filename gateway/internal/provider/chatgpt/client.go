@@ -24,6 +24,7 @@ import (
 	"github.com/yypyyd/infinite-canvas/gateway/internal/netguard"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/proxypool"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/proxysession"
+	"github.com/yypyyd/infinite-canvas/internal/errtext"
 
 	http "github.com/bogdanfinn/fhttp"
 	tlsclient "github.com/bogdanfinn/tls-client"
@@ -258,7 +259,7 @@ func (c *Client) prepareTextConversation(ctx context.Context, session tlsclient.
 	if readErr != nil {
 		return "", readErr
 	}
-	if err := ensureOK(resp.StatusCode, respBody, "text_prepare"); err != nil {
+	if err := ensureOK(resp.StatusCode, respBody, "text_prepare", accessToken); err != nil {
 		return "", err
 	}
 	var data map[string]any
@@ -303,7 +304,7 @@ func (c *Client) startTextConversation(ctx context.Context, session tlsclient.Ht
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		respBody, _ := io.ReadAll(resp.Body)
-		return "", "", ensureOK(resp.StatusCode, respBody, "text_start")
+		return "", "", ensureOK(resp.StatusCode, respBody, "text_start", accessToken)
 	}
 
 	latest := ""
@@ -1017,7 +1018,7 @@ func (c *Client) getChatRequirements(ctx context.Context, session tlsclient.Http
 	if err != nil {
 		return nil, err
 	}
-	if err := ensureOK(resp.StatusCode, body, "chat_requirements_prepare"); err != nil {
+	if err := ensureOK(resp.StatusCode, body, "chat_requirements_prepare", accessToken); err != nil {
 		return nil, err
 	}
 	var prepare map[string]any
@@ -1061,7 +1062,7 @@ func (c *Client) getChatRequirements(ctx context.Context, session tlsclient.Http
 	if err != nil {
 		return nil, err
 	}
-	if err := ensureOK(resp.StatusCode, body, "chat_requirements_finalize"); err != nil {
+	if err := ensureOK(resp.StatusCode, body, "chat_requirements_finalize", accessToken); err != nil {
 		return nil, err
 	}
 	var data map[string]any
@@ -1225,7 +1226,7 @@ func (c *Client) createFileEntry(ctx context.Context, session tlsclient.HttpClie
 	if err != nil {
 		return nil, err
 	}
-	if err := ensureOK(resp.StatusCode, respBody, "file_create"); err != nil {
+	if err := ensureOK(resp.StatusCode, respBody, "file_create", accessToken); err != nil {
 		return nil, err
 	}
 	var data map[string]any
@@ -1311,7 +1312,7 @@ func (c *Client) processUploadStream(ctx context.Context, session tlsclient.Http
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		respBody, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		if err := ensureOK(resp.StatusCode, respBody, "file_process_upload"); err != nil {
+		if err := ensureOK(resp.StatusCode, respBody, "file_process_upload", accessToken); err != nil {
 			return "", err
 		}
 	}
@@ -1429,7 +1430,7 @@ func (c *Client) prepareImageConversation(ctx context.Context, session tlsclient
 	if err != nil {
 		return "", err
 	}
-	if err := ensureOK(resp.StatusCode, respBody, "image_prepare"); err != nil {
+	if err := ensureOK(resp.StatusCode, respBody, "image_prepare", accessToken); err != nil {
 		return "", err
 	}
 	var data map[string]any
@@ -1492,7 +1493,7 @@ func (c *Client) startImageGeneration(ctx context.Context, session tlsclient.Htt
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		respBody, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		if err := ensureOK(resp.StatusCode, respBody, "image_start"); err != nil {
+		if err := ensureOK(resp.StatusCode, respBody, "image_start", accessToken); err != nil {
 			if resp.StatusCode >= 500 {
 				return "", nil, nil, AcceptedFailure("", err)
 			}
@@ -1623,7 +1624,7 @@ func (c *Client) getConversation(ctx context.Context, session tlsclient.HttpClie
 	if err != nil {
 		return nil, err
 	}
-	if err := ensureOK(resp.StatusCode, body, "conversation_get"); err != nil {
+	if err := ensureOK(resp.StatusCode, body, "conversation_get", accessToken); err != nil {
 		return nil, err
 	}
 	if dir := os.Getenv("CHATGPT_DEBUG_DUMP"); dir != "" {
@@ -1665,11 +1666,25 @@ func (c *Client) pollForImage(ctx context.Context, session tlsclient.HttpClient,
 	start := time.Now()
 	fileIDs := dropIDs(append([]string{}, initialFileIDs...), refIDs)
 	sedimentIDs := dropIDs(append([]string{}, initialSedimentIDs...), refIDs)
-	if len(fileIDs) == 0 {
-		time.Sleep(8 * time.Second)
-	} else {
-		time.Sleep(2 * time.Second)
+	// Recovery already has an accepted conversation and can read it immediately.
+	if refIDs != nil {
+		if len(fileIDs) == 0 {
+			time.Sleep(8 * time.Second)
+		} else {
+			time.Sleep(2 * time.Second)
+		}
 	}
+	collect := func(conversation map[string]any) {
+		exclude := refIDs
+		if exclude == nil {
+			exclude = conversationReferenceIDs(conversation)
+		}
+		files, sediments := extractImageIDs(conversation)
+		fileIDs = dropIDs(mergeStrings(fileIDs, files), exclude)
+		sedimentIDs = dropIDs(mergeStrings(sedimentIDs, sediments), exclude)
+	}
+	var observation imagePollError
+	consecutiveDenials := 0
 	attempt := 0
 	for time.Since(start) < timeout {
 		// Bail out immediately if the caller's context is already done — without
@@ -1681,7 +1696,26 @@ func (c *Client) pollForImage(ctx context.Context, session tlsclient.HttpClient,
 		attempt++
 		conv, err := c.getConversation(ctx, session, accessToken, conversationID)
 		if err != nil {
-			if errors.Is(err, ErrTemporaryUpstream) {
+			if len(fileIDs) > 0 || len(sedimentIDs) > 0 {
+				return fileIDs, sedimentIDs, nil
+			}
+			observation.readErrors++
+			var httpErr *providerHTTPError
+			observation.lastHTTP, observation.lastDetail = 0, ""
+			if errors.As(err, &httpErr) {
+				observation.lastHTTP, observation.lastDetail = httpErr.status, httpErr.detail
+			}
+			denied := observation.lastHTTP == stdhttp.StatusUnauthorized || observation.lastHTTP == stdhttp.StatusForbidden
+			if denied {
+				consecutiveDenials++
+				if consecutiveDenials >= 3 {
+					observation.accessDenied = true
+					return nil, nil, &observation
+				}
+			} else {
+				consecutiveDenials = 0
+			}
+			if denied || errors.Is(err, ErrTemporaryUpstream) {
 				time.Sleep(time.Duration(minInt(1<<minInt(attempt, 4), 8)) * time.Second)
 				continue
 			}
@@ -1693,9 +1727,9 @@ func (c *Client) pollForImage(ctx context.Context, session tlsclient.HttpClient,
 			}
 			return nil, nil, err
 		}
-		newFiles, newSeds := extractImageIDs(conv)
-		fileIDs = mergeStrings(fileIDs, dropIDs(newFiles, refIDs))
-		sedimentIDs = mergeStrings(sedimentIDs, dropIDs(newSeds, refIDs))
+		consecutiveDenials = 0
+		observation.readable++
+		collect(conv)
 		// Fail fast on a content-audit refusal: the assistant turn carries the
 		// rejection text and no image will ever land, so polling to timeout only
 		// wastes the whole budget. Only bail while we have no asset yet.
@@ -1706,15 +1740,18 @@ func (c *Client) pollForImage(ctx context.Context, session tlsclient.HttpClient,
 			time.Sleep(2 * time.Second)
 			conv, err = c.getConversation(ctx, session, accessToken, conversationID)
 			if err == nil {
-				finalFiles, finalSeds := extractImageIDs(conv)
-				fileIDs = mergeStrings(fileIDs, dropIDs(finalFiles, refIDs))
-				sedimentIDs = mergeStrings(sedimentIDs, dropIDs(finalSeds, refIDs))
+				collect(conv)
 			}
-			return fileIDs, sedimentIDs, nil
+			if len(fileIDs) > 0 || len(sedimentIDs) > 0 {
+				return fileIDs, sedimentIDs, nil
+			}
 		}
 		time.Sleep(5 * time.Second)
 	}
-	return nil, nil, fmt.Errorf("%w: image poll timeout", ErrTemporaryUpstream)
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	return nil, nil, &observation
 }
 
 // uploadedRefIDSet collects every id belonging to the user's uploaded
@@ -1781,7 +1818,7 @@ func (c *Client) fetchDownloadURL(ctx context.Context, session tlsclient.HttpCli
 	if err != nil {
 		return "", err
 	}
-	if err := ensureOK(resp.StatusCode, body, "file_download_url"); err != nil {
+	if err := ensureOK(resp.StatusCode, body, "file_download_url", accessToken); err != nil {
 		return "", err
 	}
 	var payload map[string]any
@@ -1830,7 +1867,7 @@ func (c *Client) resolveImageURLs(ctx context.Context, session tlsclient.HttpCli
 			lastErr = readErr
 			continue
 		}
-		if err := ensureOK(resp.StatusCode, body, "file_download_url"); err != nil {
+		if err := ensureOK(resp.StatusCode, body, "file_download_url", accessToken); err != nil {
 			lastErr = err
 			continue
 		}
@@ -1878,7 +1915,7 @@ func (c *Client) downloadBytes(ctx context.Context, session tlsclient.HttpClient
 		if readErr != nil {
 			return nil, readErr
 		}
-		if err := ensureOK(resp.StatusCode, body, "image_download"); err != nil {
+		if err := ensureOK(resp.StatusCode, body, "image_download", accessToken); err != nil {
 			return nil, err
 		}
 		if len(body) > 0 {
@@ -1888,10 +1925,15 @@ func (c *Client) downloadBytes(ctx context.Context, session tlsclient.HttpClient
 	return out, nil
 }
 
-func ensureOK(statusCode int, body []byte, context string) error {
+func ensureOK(statusCode int, body []byte, context string, credentials ...string) error {
 	if statusCode >= 200 && statusCode < 300 {
 		return nil
 	}
+	detail := errtext.Body(body, credentials...)
+	return &providerHTTPError{status: statusCode, detail: detail, cause: classifyHTTPError(statusCode, body, context)}
+}
+
+func classifyHTTPError(statusCode int, body []byte, context string) error {
 	switch statusCode {
 	case 401:
 		return fmt.Errorf("%w: %s %d %s", ErrAuth, context, statusCode, clip(body, 400))

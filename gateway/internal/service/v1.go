@@ -33,6 +33,7 @@ import (
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/grok"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/repo"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/storage"
+	"github.com/yypyyd/infinite-canvas/internal/errtext"
 
 	"gorm.io/gorm"
 )
@@ -506,13 +507,13 @@ func (s *V1Service) logRejectedEvent(ctx context.Context, kind, modelID string, 
 		Model:     strings.TrimSpace(modelID),
 		Prompt:    prompt,
 		Source:    source,
-		Error:     safeGenerationErrorText(reason),
+		Error:     PublicGenerationMessage(reason),
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
 	var parameter *ParameterError
 	if errors.As(reason, &parameter) {
-		event.Error = ErrUnsupportedParams.Error()
+		event.Error = (errtext.Failure{Status: http.StatusBadRequest, Detail: parameter.Message}).Stored()
 		event.ErrorParam = parameter.Param
 	}
 	if m, err := s.models.Get(ctx, event.Model); err == nil {
@@ -1067,7 +1068,7 @@ func (s *V1Service) prepareChatCompletion(ctx context.Context, principal *APIPri
 func (s *V1Service) failChatCompletion(ctx context.Context, principal *APIPrincipal, eventID string, releaseUser func(), cause error) error {
 	releaseUser()
 	publicErr := publicGenerationError(cause)
-	recordBookkeepingError("update failed chat event", s.events.UpdateStatus(ctx, eventID, "failed", safeGenerationErrorText(cause), 0))
+	recordBookkeepingError("update failed chat event", s.events.UpdateStatus(ctx, eventID, "failed", PublicGenerationMessage(cause), 0))
 	return publicErr
 }
 
@@ -1296,7 +1297,14 @@ func (s *V1Service) waitForImageResult(ctx context.Context, principal *APIPrinci
 				if current["error"] == ErrGenerationOutcomeUnknown.Error() {
 					return nil, ErrGenerationOutcomeUnknown
 				}
-				return nil, fmt.Errorf("%w: previous idempotent image request failed", ErrProviderExecution)
+				if message := stringValue(current["error"]); message != "" {
+					status, _ := current["error_status"].(int)
+					if status < 400 || status > 599 {
+						status = http.StatusBadGateway
+					}
+					return nil, &errtext.Failure{Status: status, Detail: message}
+				}
+				return nil, ErrProviderExecution
 			case "queued", "in_progress":
 				// The event row is durable and already carries request_id/poll_url.
 				// Do not add another 12-minute synchronous wait after BytePlus has
@@ -1392,16 +1400,21 @@ func asyncImageJobResponse(job *asyncImageJob, requestID, pollURL string) (map[s
 			if imageJobStillPending(job.err) {
 				return asyncImagePendingResponse(requestID, pollURL), true
 			}
-			return map[string]any{
+			response := map[string]any{
 				"id":         requestID,
 				"object":     "image.generation.task",
 				"reroutable": imageRerouteSafe(job.err),
 				"status":     "failed",
 				"request_id": requestID,
 				"poll_url":   pollURL,
-				"error":      safeGenerationErrorText(job.err),
+				"error":      PublicGenerationMessage(job.err),
 				"data":       []any{},
-			}, false
+			}
+			var detail *errtext.Failure
+			if errors.As(job.err, &detail) {
+				response["error_status"] = detail.Status
+			}
+			return response, false
 		}
 		response := make(map[string]any, len(job.response)+5)
 		for key, value := range job.response {
@@ -1558,7 +1571,7 @@ func (s *V1Service) prepareImageExecution(ctx context.Context, principal *APIPri
 				// The beta-instability exception has exhausted its bounded distinct-account
 				// chain (or no alternate existed). Every accepted parent represented by
 				// this error is terminal, so close the event instead of starting recovery.
-				recordBookkeepingError("update failed beta image event", s.events.UpdateStatus(ctx, eventID, "failed", safeGenerationErrorText(execErr), 0))
+				recordBookkeepingError("update failed beta image event", s.events.UpdateStatus(ctx, eventID, "failed", PublicGenerationMessage(execErr), 0))
 				return nil, publicGenerationError(execErr)
 			}
 			if errors.Is(execErr, byteplus.ErrTaskAccepted) || errors.Is(execErr, chatgpt.ErrTaskAccepted) {
@@ -1574,8 +1587,14 @@ func (s *V1Service) prepareImageExecution(ctx context.Context, principal *APIPri
 			}
 			return nil, errors.Join(ErrProviderTemporary, execErr)
 		}
-		recordBookkeepingError("update failed image event", s.events.UpdateStatus(ctx, eventID, "failed", safeGenerationErrorText(execErr), 0))
-		return nil, publicGenerationError(execErr)
+		publicErr := publicGenerationError(execErr)
+		message := publicErr.Error()
+		if detail := chatgpt.HTTPFailure(execErr); detail != nil {
+			message = detail.Stored()
+			publicErr = errors.Join(publicErr, detail)
+		}
+		recordBookkeepingError("update failed image event", s.events.UpdateStatus(ctx, eventID, "failed", message, 0))
+		return nil, publicErr
 	}
 	if apiRequest && in.ResponseFormat == "b64_json" && len(imageBytes) == 0 {
 		recordBookkeepingError("update empty image event", s.events.UpdateStatus(ctx, eventID, "failed", ErrProviderExecution.Error(), 0))
@@ -1785,6 +1804,9 @@ func (s *V1Service) imageTaskFromEvent(ctx context.Context, principal *APIPrinci
 	case "failed":
 		result["status"] = "failed"
 		result["error"] = safeStoredGenerationError(event.Error)
+		if detail := errtext.FromStored(event.Error); detail != nil {
+			result["error_status"] = detail.Status
+		}
 	default:
 		result["status"] = "in_progress"
 		s.startAcceptedImageRecovery(ctx, event)
@@ -1853,7 +1875,7 @@ func (s *V1Service) runAdminVideoTest(ctx context.Context, in V1VideoRequest, mo
 			recordBookkeepingError("queue accepted admin video recovery", s.events.SetPhase(ctx, eventID, "recovery"))
 			return
 		}
-		recordBookkeepingError("update failed admin video test", s.events.UpdateStatus(ctx, eventID, "failed", safeGenerationErrorText(execErr), 0))
+		recordBookkeepingError("update failed admin video test", s.events.UpdateStatus(ctx, eventID, "failed", PublicGenerationMessage(execErr), 0))
 		return
 	}
 	if strings.TrimSpace(videoURL) == "" {
@@ -2002,7 +2024,7 @@ func (s *V1Service) runVideoJob(ctx context.Context, principal *APIPrincipal, in
 		slot := "video:" + eventID
 		admitted, gateErr := s.credentialAcquire(ctx, principal, slot)
 		if gateErr != nil {
-			recordBookkeepingError("update video concurrency failure", s.events.UpdateStatus(ctx, eventID, "failed", safeGenerationErrorText(gateErr), 0))
+			recordBookkeepingError("update video concurrency failure", s.events.UpdateStatus(ctx, eventID, "failed", PublicGenerationMessage(gateErr), 0))
 			return
 		}
 		if !admitted {
@@ -2036,7 +2058,7 @@ func (s *V1Service) runVideoJob(ctx context.Context, principal *APIPrincipal, in
 			recordBookkeepingError("queue accepted async video recovery", s.events.SetPhase(ctx, eventID, "recovery"))
 			return
 		}
-		recordBookkeepingError("update async video failure", s.events.UpdateStatus(ctx, eventID, "failed", safeGenerationErrorText(execErr), 0))
+		recordBookkeepingError("update async video failure", s.events.UpdateStatus(ctx, eventID, "failed", PublicGenerationMessage(execErr), 0))
 		return
 	}
 	if strings.TrimSpace(videoURL) == "" {

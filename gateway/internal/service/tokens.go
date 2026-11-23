@@ -737,10 +737,10 @@ func (s *TokenService) checkPendingAdobe(tokenID, cookie string) {
 		s.finishPending(ctx, "adobe", tokenID, "disabled", true, nil)
 		_, _ = s.refresh.Update(ctx, tokenID, map[string]any{
 			"last_attempt_at":      time.Now(),
-			"last_error":           safeGenerationErrorText(err),
+			"last_error":           PublicGenerationMessage(err),
 			"consecutive_failures": 1,
 		})
-		s.recordAdobeSessionHealthCheckResult(ctx, tokenID, false, safeGenerationErrorText(err), 0)
+		s.recordAdobeSessionHealthCheckResult(ctx, tokenID, false, PublicGenerationMessage(err), 0)
 		return
 	}
 	// Seed the real access token, then activate so the pool can schedule it.

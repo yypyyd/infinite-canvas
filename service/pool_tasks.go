@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/yypyyd/infinite-canvas/gateway"
+	"github.com/yypyyd/infinite-canvas/internal/errtext"
 	"github.com/yypyyd/infinite-canvas/model"
 )
 
@@ -143,7 +144,7 @@ func reconcilePoolImageTask(ctx context.Context, task model.GenerationTask) bool
 func deliverPoolImage(ctx context.Context, task model.GenerationTask, status map[string]any, age time.Duration) {
 	data, _ := status["data"].([]any)
 	if PoolImageArchiver == nil || len(data) == 0 {
-		finishPoolTask(task, model.GenerationTaskStatusFailed, "AI 接口请求失败：上游任务没有返回图片")
+		finishPoolTask(task, model.GenerationTaskStatusFailed, "没有返回图片")
 		return
 	}
 	body, keys, err := PoolImageArchiver(ctx, task, status["created"], data)
@@ -191,10 +192,10 @@ func finishPoolTask(task model.GenerationTask, status model.GenerationTaskStatus
 }
 
 func poolFailureMessage(status map[string]any) string {
-	if message := strings.TrimSpace(stringField(status, "error")); message != "" {
-		return "AI 接口请求失败：" + message
+	if message := errtext.Detail(status["error"]); message != "" {
+		return message
 	}
-	return "AI 接口请求失败：上游生图任务失败"
+	return "图片生成失败"
 }
 
 func stringField(values map[string]any, key string) string {

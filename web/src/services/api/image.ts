@@ -18,7 +18,7 @@ export type ChatCompletionMessage = {
 };
 
 type ImageApiResponse = {
-    data?: Array<Record<string, unknown>>;
+    data?: Array<Record<string, unknown>> | { status: "running" };
     error?: { message?: string };
     message?: string;
     detail?: string;
@@ -163,14 +163,17 @@ async function composeFrameSheets(images: ReturnType<typeof parseImagePayload>) 
     );
 }
 
+class PendingImageTask extends Error {}
+
 function parseImagePayload(payload: ImageApiResponse) {
     if (typeof payload.code === "number" && payload.code !== 0) {
+        if (!Array.isArray(payload.data) && payload.data?.status === "running") throw new PendingImageTask(payload.msg);
         throw new Error(payload.msg || "请求失败");
     }
-    const images = payload.data?.map(parseStoredImage).filter((value): value is NonNullable<ReturnType<typeof parseStoredImage>> => Boolean(value)) || [];
+    const images = (Array.isArray(payload.data) ? payload.data : []).map(parseStoredImage).filter((value): value is NonNullable<ReturnType<typeof parseStoredImage>> => Boolean(value));
 
     if (images.length === 0) {
-        throw new Error(readImagePayloadError(payload) || "上游没有返回图片");
+        throw new Error(readImagePayloadError(payload) || "没有返回图片");
     }
 
     return images;
@@ -179,13 +182,13 @@ function parseImagePayload(payload: ImageApiResponse) {
 function readImagePayloadError(payload: ImageApiResponse) {
     const topLevel = payload.error?.message || payload.message || payload.msg || payload.detail;
     if (topLevel) return topLevel;
-    for (const item of payload.data || []) {
+    for (const item of Array.isArray(payload.data) ? payload.data : []) {
         for (const key of ["error", "message", "msg", "detail", "reason"]) {
             const value = item[key];
             if (typeof value === "string" && value.trim()) return value.trim();
             if (value && typeof value === "object") {
                 const nested = value as Record<string, unknown>;
-                const message = [nested.code, nested.message, nested.msg, nested.detail, nested.reason].filter((part): part is string => typeof part === "string" && Boolean(part.trim())).join(" ");
+                const message = [nested.message, nested.msg, nested.detail, nested.reason, nested.code].find((part): part is string => typeof part === "string" && Boolean(part.trim()));
                 if (message) return message;
             }
         }
@@ -201,16 +204,10 @@ function readAxiosError(error: unknown, fallback: string) {
     if (axios.isCancel(error)) return "请求已取消";
     if (axios.isAxiosError<{ error?: { message?: string }; msg?: string; code?: number }>(error)) {
         const responseData = error.response?.data;
-        return responseData?.msg || responseData?.error?.message || readStatusError(error.response?.status, fallback);
+        return responseData?.msg || responseData?.error?.message || (error.response ? `HTTP ${error.response.status} ${error.response.statusText || ""}`.trim() : fallback);
     }
     if (error instanceof DOMException && error.name === "AbortError") return "请求已取消";
     return error instanceof Error ? error.message : fallback;
-}
-
-function readStatusError(status: number | undefined, fallback: string) {
-    if (status === 401 || status === 403) return "鉴权失败，请联系管理员检查模型权限";
-    if (status === 429) return "请求被限流或额度不足，请稍后重试";
-    return status ? `${fallback}：${status}` : fallback;
 }
 
 function parseStreamChunk(chunk: string, onDelta: (value: string) => void) {
@@ -247,8 +244,14 @@ function refreshRemoteUser(_config: AiConfig) {
 
 async function recoverInterruptedImages(error: unknown, config: AiConfig, options?: RequestOptions) {
     const requestId = options?.idempotencyKey;
-    const status = axios.isAxiosError(error) ? error.response?.status : undefined;
-    if (!requestId || axios.isCancel(error) || (status !== undefined && !RECOVERABLE_GATEWAY_STATUSES.has(status))) return null;
+    if (!(error instanceof PendingImageTask) && !axios.isAxiosError(error)) return null;
+    if (!requestId || axios.isCancel(error)) return null;
+    if (axios.isAxiosError(error) && error.response) {
+        const { status, data } = error.response;
+        if (!RECOVERABLE_GATEWAY_STATUSES.has(status)) return null;
+        const code = data?.error?.code;
+        if (code && code !== "generation_pending" && code !== "submission_pending") return null;
+    }
 
     const task = await waitForGenerationTaskRecovery(requestId, (current) => current.status === "success" && current.result !== undefined, options.signal);
     const images = await parseRecoveredImageGeneration(task.result);

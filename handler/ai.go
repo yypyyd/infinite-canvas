@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/yypyyd/infinite-canvas/internal/errtext"
 	"github.com/yypyyd/infinite-canvas/model"
 	"github.com/yypyyd/infinite-canvas/service"
 )
@@ -172,7 +173,7 @@ func proxyAIGetRequest(w http.ResponseWriter, r *http.Request, path string) {
 	}
 	request, err := http.NewRequest(http.MethodGet, service.BuildModelChannelURL(channel, path), nil)
 	if err != nil {
-		Fail(w, "AI 接口请求失败")
+		Fail(w, "无法创建模型请求")
 		return
 	}
 	request.Header.Set("Authorization", "Bearer "+channel.APIKey)
@@ -230,8 +231,11 @@ func proxyAIGetRequest(w http.ResponseWriter, r *http.Request, path string) {
 func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 	body, contentType, requestMeta, err := readAIRequest(r)
 	if err != nil {
-		log.Printf("AI proxy request read failed: %v", err)
-		Fail(w, "AI 接口请求失败")
+		if errors.Is(err, errMissingModel) {
+			Fail(w, errMissingModel.Error())
+		} else {
+			Fail(w, "请求正文读取失败")
+		}
 		return
 	}
 	if path == "/videos" && hasStorageReferences(requestMeta) && !canBuildStorageReferenceRequest(requestMeta) {
@@ -296,7 +300,7 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 	defer cleanup()
 	if err != nil {
 		log.Printf("AI proxy build request failed: model=%s channel=%s err=%v", requestMeta.ModelName, selection.Channel.Name, err)
-		Fail(w, "AI 接口请求失败")
+		Fail(w, "无法创建模型请求")
 		return
 	}
 	task, err := service.BeginGenerationTask(service.GenerationTaskInput{
@@ -342,11 +346,15 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		asyncAccepted := requestErr == nil && isAsyncImageTaskAccepted(path, response)
 		shouldRecover := asyncAccepted || requestErr == nil && response != nil && isAIImageGatewayTimeout(response.StatusCode) && !isAIContentPolicyRejection(responseBody)
 		if shouldRecover {
-			recoveredBody, message, recovery := recoverImageTask(w, request, asyncAccepted)
+			recoveredBody, failure, recovery := recoverImageTask(w, request, asyncAccepted)
 			timeoutRecovery = recovery
 			if recovery == imageTaskRecoveryDeferred {
 				_ = response.Body.Close()
-				Fail(w, message)
+				if isOpenAIResponse(w) {
+					writeOpenAIError(w, failure.status, failure.message, "api_error", "generation_pending", nil)
+				} else {
+					writeJSON(w, map[string]any{"code": 1, "data": map[string]string{"status": "running"}, "msg": failure.message})
+				}
 				return
 			}
 			if recovery == imageTaskRecoveryReroute {
@@ -368,20 +376,20 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 						return
 					}
 				}
-				finishTask(model.GenerationTaskStatusFailed, message)
-				Fail(w, message)
+				finishTask(model.GenerationTaskStatusFailed, failure.message)
+				failGeneration(w, failure.status, failure.message)
 				return
 			}
 			if recovery == imageTaskRecoveryHandled {
 				_ = response.Body.Close()
-				if message != "" {
-					finishTask(model.GenerationTaskStatusFailed, message)
-					Fail(w, message)
+				if failure.message != "" {
+					finishTask(model.GenerationTaskStatusFailed, failure.message)
+					failGeneration(w, failure.status, failure.message)
 					return
 				}
-				if message := aiImageResponseError(recoveredBody); message != "" {
+				if message := aiImageResponseError(recoveredBody, selection.Channel.APIKey); message != "" {
 					finishTask(model.GenerationTaskStatusFailed, message)
-					Fail(w, message)
+					failGeneration(w, http.StatusBadGateway, message)
 					return
 				}
 				archiveCtx, cancelArchive := generatedArchiveContext(r.Context())
@@ -397,9 +405,9 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 			}
 			if asyncAccepted {
 				_ = response.Body.Close()
-				message := "AI 接口请求失败：上游异步任务查询不可用"
+				message := "图片任务查询不可用"
 				finishTask(model.GenerationTaskStatusFailed, message)
-				Fail(w, message)
+				failGeneration(w, http.StatusBadGateway, message)
 				return
 			}
 		}
@@ -446,9 +454,9 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 			if path == "/videos" {
 				upstreamTaskID = generationUpstreamTaskID(responseBody)
 			} else {
-				if message := aiImageResponseError(responseBody); message != "" {
+				if message := aiImageResponseError(responseBody, selection.Channel.APIKey); message != "" {
 					finishTask(model.GenerationTaskStatusFailed, message)
-					Fail(w, message)
+					failGeneration(w, http.StatusBadGateway, message)
 					return
 				}
 				archiveCtx, cancelArchive := generatedArchiveContext(r.Context())
@@ -517,7 +525,7 @@ func proxyManagedMediaGeneration(w http.ResponseWriter, r *http.Request, body []
 		case <-waitCtx.Done():
 			timer.Stop()
 			if errors.Is(waitCtx.Err(), context.DeadlineExceeded) {
-				message := "AutoDL 图片任务超过 30 分钟未完成，已自动结束"
+				message := "图片任务超过 30 分钟未完成，已自动结束"
 				finishTask(model.GenerationTaskStatusFailed, message)
 				Fail(w, message)
 			}
@@ -844,15 +852,16 @@ type chatGPT2APIImageTask struct {
 	ID     string           `json:"id"`
 	Status string           `json:"status"`
 	Data   []map[string]any `json:"data"`
-	Error  string           `json:"error"`
+	Error  any              `json:"error"`
 }
 
 type recoverableImageTask struct {
-	Status     string           `json:"status"`
-	Reroutable bool             `json:"reroutable"`
-	Created    int64            `json:"created"`
-	Data       []map[string]any `json:"data"`
-	Error      string           `json:"error"`
+	ErrorStatus int              `json:"error_status"`
+	Status      string           `json:"status"`
+	Reroutable  bool             `json:"reroutable"`
+	Created     int64            `json:"created"`
+	Data        []map[string]any `json:"data"`
+	Error       any              `json:"error"`
 }
 
 type imageTaskRecoveryState uint8
@@ -880,7 +889,7 @@ func isChatGPT2APIImageTaskChannel(baseURL string, path string) bool {
 func copyChatGPT2APIImageTaskResponse(w http.ResponseWriter, baseURL string, apiKey string, body []byte, onFailure func(string)) {
 	var payload map[string]any
 	if err := json.Unmarshal(body, &payload); err != nil {
-		message := "AI 接口请求失败：请求参数无效"
+		message := "请求参数无效"
 		onFailure(message)
 		Fail(w, message)
 		return
@@ -901,13 +910,13 @@ func copyChatGPT2APIImageTaskResponse(w http.ResponseWriter, baseURL string, api
 	if err != nil || statusCode >= http.StatusBadRequest || task.ID == "" {
 		log.Printf("AI async image task submit failed: status=%d err=%v", statusCode, err)
 		if statusCode >= http.StatusBadRequest {
-			message := aiUpstreamStatusMessage(statusCode, responseBody)
+			message := errtext.HTTP(statusCode, responseBody, apiKey)
 			onFailure(message)
-			Fail(w, message)
+			failGeneration(w, statusCode, message)
 		} else {
-			message := "AI 接口请求失败：上游任务提交失败"
+			message := "图片任务提交失败"
 			onFailure(message)
-			Fail(w, message)
+			failGeneration(w, http.StatusBadGateway, message)
 		}
 		return
 	}
@@ -921,37 +930,37 @@ func copyChatGPT2APIImageTaskResponse(w http.ResponseWriter, baseURL string, api
 		case "success":
 			data := normalizeChatGPT2APIImageTaskData(upstreamBaseURL, apiKey, task.Data)
 			if len(data) == 0 {
-				message := "AI 接口请求失败：上游任务没有返回图片"
+				message := "没有返回图片"
 				onFailure(message)
-				Fail(w, message)
+				failGeneration(w, http.StatusBadGateway, message)
 				return
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"created": time.Now().Unix(), "data": data})
 			return
 		case "error", "failed":
-			message := "AI 接口请求失败：" + safeUpstreamText(task.Error)
+			message := imageTaskErrorMessage(task.Error, apiKey)
 			onFailure(message)
-			Fail(w, message)
+			failGeneration(w, http.StatusBadGateway, message)
 			return
 		}
 		if time.Now().After(deadline) {
-			message := "AI 接口请求失败：上游生图任务等待超时"
+			message := "等待图片生成超时"
 			onFailure(message)
-			Fail(w, message)
+			failGeneration(w, http.StatusGatewayTimeout, message)
 			return
 		}
 		writeAIKeepAlive(w)
 		time.Sleep(10 * time.Second)
 		pollURL := upstreamBaseURL + "/api/image-tasks?ids=" + url.QueryEscape(task.ID)
-		nextTask, _, pollStatus, pollErr := requestChatGPT2APIImageTask(http.MethodGet, pollURL, apiKey, nil)
+		nextTask, pollBody, pollStatus, pollErr := requestChatGPT2APIImageTask(http.MethodGet, pollURL, apiKey, nil)
 		if pollErr != nil || pollStatus >= http.StatusInternalServerError {
 			log.Printf("AI async image task poll failed: id=%s status=%d err=%v", task.ID, pollStatus, pollErr)
 			continue
 		}
 		if pollStatus >= http.StatusBadRequest {
-			message := "AI 接口请求失败：上游任务查询失败"
+			message := errtext.HTTP(pollStatus, pollBody, apiKey)
 			onFailure(message)
-			Fail(w, message)
+			failGeneration(w, pollStatus, message)
 			return
 		}
 		task = nextTask
@@ -1038,11 +1047,23 @@ func imageTaskRecoveryWindow(requestURL string) time.Duration {
 	return 7 * time.Minute
 }
 
-func recoverImageTask(w http.ResponseWriter, request *http.Request, knownSupported bool) ([]byte, string, imageTaskRecoveryState) {
+type imageTaskFailure struct {
+	status  int
+	message string
+}
+
+func imageTaskErrorMessage(value any, apiKey string) string {
+	if message := errtext.Detail(value, apiKey); message != "" {
+		return message
+	}
+	return "图片生成失败"
+}
+
+func recoverImageTask(w http.ResponseWriter, request *http.Request, knownSupported bool) ([]byte, imageTaskFailure, imageTaskRecoveryState) {
 	requestID := strings.TrimSpace(request.Header.Get("Idempotency-Key"))
 	path := request.URL.Path
 	if requestID == "" || (!strings.HasSuffix(path, "/images/generations") && !strings.HasSuffix(path, "/images/edits")) {
-		return nil, "", imageTaskRecoveryUnavailable
+		return nil, imageTaskFailure{}, imageTaskRecoveryUnavailable
 	}
 	taskURL := *request.URL
 	if strings.HasSuffix(path, "/generations") {
@@ -1061,31 +1082,31 @@ func recoverImageTask(w http.ResponseWriter, request *http.Request, knownSupport
 	for {
 		pollRequest, err := http.NewRequest(http.MethodGet, taskURL.String(), nil)
 		if err != nil {
-			return nil, "", imageTaskRecoveryUnavailable
+			return nil, imageTaskFailure{}, imageTaskRecoveryUnavailable
 		}
 		pollRequest.Header.Set("Authorization", request.Header.Get("Authorization"))
 		response, err := imageTaskHTTPClient.Do(pollRequest)
 		if err != nil {
 			if !supported {
-				return nil, "", imageTaskRecoveryUnavailable
+				return nil, imageTaskFailure{}, imageTaskRecoveryUnavailable
 			}
 		} else {
 			body, readErr := io.ReadAll(io.LimitReader(response.Body, 48<<20))
 			_ = response.Body.Close()
 			if response.StatusCode == http.StatusMethodNotAllowed || response.StatusCode == http.StatusNotImplemented {
 				if !supported {
-					return nil, "", imageTaskRecoveryUnsupported
+					return nil, imageTaskFailure{}, imageTaskRecoveryUnsupported
 				}
-				return nil, "AI 接口请求失败：上游任务不存在", imageTaskRecoveryHandled
+				return nil, imageTaskFailure{response.StatusCode, errtext.HTTP(response.StatusCode, body, apiKey)}, imageTaskRecoveryHandled
 			}
 			if response.StatusCode == http.StatusNotFound {
 				if !supported {
-					return nil, "", imageTaskRecoveryUnavailable
+					return nil, imageTaskFailure{}, imageTaskRecoveryUnavailable
 				}
-				return nil, "AI 接口请求失败：上游任务不存在", imageTaskRecoveryHandled
+				return nil, imageTaskFailure{response.StatusCode, errtext.HTTP(response.StatusCode, body, apiKey)}, imageTaskRecoveryHandled
 			}
 			if response.StatusCode >= http.StatusBadRequest && response.StatusCode < http.StatusInternalServerError && response.StatusCode != http.StatusTooManyRequests {
-				return nil, "AI 接口请求失败：上游任务查询失败", imageTaskRecoveryHandled
+				return nil, imageTaskFailure{response.StatusCode, errtext.HTTP(response.StatusCode, body, apiKey)}, imageTaskRecoveryHandled
 			}
 			if readErr == nil && response.StatusCode < http.StatusBadRequest {
 				var task recoverableImageTask
@@ -1096,37 +1117,37 @@ func recoverImageTask(w http.ResponseWriter, request *http.Request, knownSupport
 					case "completed", "success":
 						data := normalizeChatGPT2APIImageTaskData(baseURL, apiKey, task.Data)
 						if len(data) == 0 {
-							return nil, "AI 接口请求失败：上游任务没有返回图片", imageTaskRecoveryHandled
+							return nil, imageTaskFailure{http.StatusBadGateway, "没有返回图片"}, imageTaskRecoveryHandled
 						}
 						result, _ := json.Marshal(map[string]any{"created": task.Created, "data": data})
-						return result, "", imageTaskRecoveryHandled
+						return result, imageTaskFailure{}, imageTaskRecoveryHandled
 					case "failed", "error":
-						message := safeUpstreamText(task.Error)
-						if message == "" {
-							message = "上游生图任务失败"
+						failure := imageTaskFailure{task.ErrorStatus, imageTaskErrorMessage(task.Error, apiKey)}
+						if failure.status < 400 || failure.status > 599 {
+							failure.status = http.StatusBadGateway
 						}
 						if task.Reroutable {
-							return nil, "AI 接口请求失败：" + message, imageTaskRecoveryReroute
+							return nil, failure, imageTaskRecoveryReroute
 						}
-						return nil, "AI 接口请求失败：" + message, imageTaskRecoveryHandled
+						return nil, failure, imageTaskRecoveryHandled
 					case "queued", "pending", "running", "processing", "in_progress":
 						// Keep polling below.
 					default:
 						if !supported {
-							return nil, "", imageTaskRecoveryUnavailable
+							return nil, imageTaskFailure{}, imageTaskRecoveryUnavailable
 						}
 					}
 				}
 			}
 		}
 		if !supported {
-			return nil, "", imageTaskRecoveryUnavailable
+			return nil, imageTaskFailure{}, imageTaskRecoveryUnavailable
 		}
 		if time.Now().After(deadline) {
 			if service.IsBuiltinPoolBaseURL(request.URL.String()) {
-				return nil, poolImageDeferredMessage, imageTaskRecoveryDeferred
+				return nil, imageTaskFailure{http.StatusGatewayTimeout, poolImageDeferredMessage}, imageTaskRecoveryDeferred
 			}
-			return nil, "AI 接口请求失败：上游生图任务等待超时", imageTaskRecoveryHandled
+			return nil, imageTaskFailure{http.StatusGatewayTimeout, "等待图片生成超时"}, imageTaskRecoveryHandled
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-cache, no-transform")
@@ -1169,6 +1190,9 @@ func downloadChatGPT2APIImage(baseURL string, apiKey string, imageURL string) st
 }
 
 func writeAIKeepAlive(w http.ResponseWriter) {
+	if isOpenAIResponse(w) {
+		return // An API key response must still be able to send its final HTTP status.
+	}
 	_, _ = io.WriteString(w, strings.Repeat(" ", 2048)+"\n")
 	if flusher, ok := w.(http.Flusher); ok {
 		flusher.Flush()
@@ -1183,23 +1207,23 @@ func copyAIResponse(w http.ResponseWriter, request *http.Request, onFailure func
 func writeAIResponse(w http.ResponseWriter, request *http.Request, response *http.Response, body []byte, err error, onFailure func(string), adapter func([]byte) ([]byte, string, bool)) {
 	if err != nil {
 		log.Printf("AI proxy request failed: url=%s err=%v", request.URL.String(), err)
-		message := "AI 接口请求失败：上游连接中断，请稍后重试"
+		message := "连接中断，请稍后重试"
 		if onFailure != nil {
 			onFailure(message)
 		}
-		Fail(w, message)
+		failGeneration(w, http.StatusBadGateway, message)
 		return
 	}
 	defer response.Body.Close()
 
 	if response.StatusCode >= http.StatusBadRequest {
 		if isAIImageGatewayTimeout(response.StatusCode) && !isAIContentPolicyRejection(body) {
-			if recoveredBody, message, recovery := recoverImageTask(w, request, false); recovery == imageTaskRecoveryHandled {
-				if message != "" {
+			if recoveredBody, failure, recovery := recoverImageTask(w, request, false); recovery == imageTaskRecoveryHandled {
+				if failure.message != "" {
 					if onFailure != nil {
-						onFailure(message)
+						onFailure(failure.message)
 					}
-					Fail(w, message)
+					failGeneration(w, failure.status, failure.message)
 					return
 				}
 				w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -1208,11 +1232,11 @@ func writeAIResponse(w http.ResponseWriter, request *http.Request, response *htt
 			}
 		}
 		log.Printf("AI upstream error: url=%s status=%d", request.URL.String(), response.StatusCode)
-		message := aiUpstreamStatusMessage(response.StatusCode, body)
+		message := errtext.HTTP(response.StatusCode, body, strings.TrimPrefix(request.Header.Get("Authorization"), "Bearer "))
 		if onFailure != nil {
 			onFailure(message)
 		}
-		Fail(w, message)
+		failGeneration(w, response.StatusCode, message)
 		return
 	}
 
@@ -1325,14 +1349,14 @@ func copyVideoGenerationsContent(w http.ResponseWriter, request *http.Request) {
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		log.Printf("AI proxy request failed: url=%s err=%v", request.URL.String(), err)
-		Fail(w, "AI 接口请求失败：上游连接中断，请稍后重试")
+		Fail(w, "连接中断，请稍后重试")
 		return
 	}
 	defer response.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(response.Body, 8192))
 	if response.StatusCode >= http.StatusBadRequest {
 		log.Printf("AI upstream error: url=%s status=%d", request.URL.String(), response.StatusCode)
-		Fail(w, aiUpstreamStatusMessage(response.StatusCode, body))
+		failGeneration(w, response.StatusCode, errtext.HTTP(response.StatusCode, body, strings.TrimPrefix(request.Header.Get("Authorization"), "Bearer ")))
 		return
 	}
 	videoURL := videoGenerationsContentURL(body)
@@ -2620,9 +2644,9 @@ func videoGenerationsStatusPayload(body []byte) string {
 func videoGenerationsError(body []byte) string {
 	payload := videoGenerationsResponsePayload(body)
 	if message := nestedStringValue(payload, "error", "message"); message != "" {
-		return safeUpstreamText(message)
+		return errtext.Text(message)
 	}
-	return safeUpstreamText(firstStringValue(payload, "message", "error"))
+	return errtext.Text(firstStringValue(payload, "message", "error"))
 }
 
 func videoGenerationsResponsePayload(body []byte) map[string]any {
@@ -2679,27 +2703,7 @@ func nestedStringValue(payload map[string]any, key string, nestedKey string) str
 	return firstStringValue(object, nestedKey)
 }
 
-func aiStatusMessage(statusCode int) string {
-	switch statusCode {
-	case http.StatusUnauthorized, http.StatusForbidden:
-		return "AI 接口鉴权失败，请检查 API Key、套餐权限或模型权限"
-	case http.StatusTooManyRequests:
-		return "AI 接口限流或额度不足，请稍后重试或检查额度"
-	default:
-		return "AI 接口请求失败"
-	}
-}
-
-func aiUpstreamStatusMessage(statusCode int, body []byte) string {
-	base := aiStatusMessage(statusCode)
-	detail := aiUpstreamErrorDetail(body)
-	if detail == "" {
-		return base
-	}
-	return base + "：" + detail
-}
-
-func aiImageResponseError(body []byte) string {
+func aiImageResponseError(body []byte, apiKey string) string {
 	var payload map[string]any
 	if json.Unmarshal(body, &payload) == nil {
 		if items, ok := payload["data"].([]any); ok {
@@ -2709,111 +2713,13 @@ func aiImageResponseError(body []byte) string {
 				}
 			}
 		}
-		if detail := nestedUpstreamErrorDetail(payload); detail != "" {
-			return "AI 接口请求失败：" + safeUpstreamText(detail)
-		}
-		return "AI 接口请求失败：上游没有返回图片"
-	}
-	detail := aiUpstreamErrorDetail(body)
-	if detail == "" {
-		detail = "上游没有返回图片"
-	}
-	return "AI 接口请求失败：" + detail
-}
-
-func aiUpstreamErrorDetail(body []byte) string {
-	text := strings.TrimSpace(string(body))
-	if text == "" {
-		return ""
-	}
-	var payload struct {
-		Msg     string `json:"msg"`
-		Message string `json:"message"`
-		Detail  string `json:"detail"`
-		Error   struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	if err := json.Unmarshal(body, &payload); err == nil {
-		if payload.Error.Message != "" {
-			if detail := friendlyUpstreamError(payload.Error.Code, payload.Error.Message); detail != "" {
-				return safeUpstreamText(detail)
-			}
-			if payload.Error.Code != "" {
-				return safeUpstreamText(payload.Error.Code + " " + payload.Error.Message)
-			}
-			return safeUpstreamText(payload.Error.Message)
-		}
-		if payload.Msg != "" {
-			return safeUpstreamText(payload.Msg)
-		}
-		if payload.Message != "" {
-			return safeUpstreamText(payload.Message)
-		}
-		if payload.Detail != "" {
-			return safeUpstreamText(payload.Detail)
-		}
-		var generic any
-		if json.Unmarshal(body, &generic) == nil {
-			if detail := nestedUpstreamErrorDetail(generic); detail != "" {
-				return safeUpstreamText(detail)
-			}
-		}
-	}
-	return safeUpstreamText(text)
-}
-
-func nestedUpstreamErrorDetail(value any) string {
-	switch typed := value.(type) {
-	case map[string]any:
-		code, _ := typed["code"].(string)
-		withCode := func(detail string) string {
-			if strings.TrimSpace(code) != "" && !strings.Contains(detail, code) {
-				return strings.TrimSpace(code + " " + detail)
-			}
+		if detail := errtext.Detail(payload, apiKey); detail != "" {
 			return detail
 		}
-		for _, key := range []string{"error", "message", "msg", "detail", "reason"} {
-			candidate, exists := typed[key]
-			if !exists {
-				continue
-			}
-			if text, ok := candidate.(string); ok && strings.TrimSpace(text) != "" {
-				return withCode(text)
-			}
-			if detail := nestedUpstreamErrorDetail(candidate); detail != "" {
-				return withCode(detail)
-			}
-		}
-		if data, exists := typed["data"]; exists {
-			return nestedUpstreamErrorDetail(data)
-		}
-	case []any:
-		for _, item := range typed {
-			if detail := nestedUpstreamErrorDetail(item); detail != "" {
-				return detail
-			}
-		}
+	} else if detail := errtext.Body(body, apiKey); detail != "" {
+		return detail
 	}
-	return ""
-}
-
-func friendlyUpstreamError(code string, message string) string {
-	lowerCode := strings.ToLower(strings.TrimSpace(code))
-	if strings.Contains(lowerCode, "inputvideosensitivecontentdetected") || strings.Contains(lowerCode, "privacyinformation") {
-		return strings.TrimSpace(code + " 参考视频疑似包含真人或隐私信息，火山方舟拒绝使用普通 URL 作为真人视频参考；请改用不含真人的视频、官方允许的模型产物，或已授权的 asset:// 素材。原始错误：" + message)
-	}
-	return ""
-}
-
-func safeUpstreamText(text string) string {
-	text = strings.Join(strings.Fields(strings.TrimSpace(text)), " ")
-	runes := []rune(text)
-	if len(runes) > 300 {
-		return string(runes[:300]) + "..."
-	}
-	return text
+	return "没有返回图片"
 }
 
 type aiError struct {

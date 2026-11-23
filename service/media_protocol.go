@@ -15,7 +15,7 @@ import (
 	"github.com/yypyyd/infinite-canvas/repository"
 )
 
-var ErrProtocolSubmissionUncertain = errors.New("上游提交结果待确认，系统不会重复创建任务")
+var ErrProtocolSubmissionUncertain = errors.New("提交结果待确认，系统不会重复创建任务")
 
 func IsManagedMediaChannel(channel model.ModelChannel) bool {
 	return IsAutoDLComfyUIChannel(channel) || IsCustomHTTPChannel(channel)
@@ -157,12 +157,12 @@ func SubmitManagedMediaTask(ctx context.Context, user model.AuthUser, task *mode
 		return err
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		_ = response.Body.Close()
+		defer response.Body.Close()
 		// A server error can occur after accepting a task; never blindly replay it.
 		if response.StatusCode >= 500 || response.StatusCode == http.StatusRequestTimeout {
 			return ErrProtocolSubmissionUncertain
 		}
-		return fmt.Errorf("上游拒绝创建任务（HTTP %d）", response.StatusCode)
+		return protocolHTTPFailure(response, selection.Channel.APIKey)
 	}
 	defer response.Body.Close()
 	err = consumeProtocolTask(ctx, task, selection.Channel, response, operation.Create.Response)
@@ -309,7 +309,7 @@ func ReconcileManagedMediaTask(ctx context.Context, task *model.GenerationTask, 
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return false, fmt.Errorf("上游任务恢复返回 HTTP %d", response.StatusCode)
+		return false, protocolHTTPFailure(response, channel.APIKey)
 	}
 	err = consumeProtocolTask(ctx, task, channel, response, operation.Resume.Response)
 	return err == nil && (task.Status == model.GenerationTaskStatusFailed || len(task.StorageKeys) > 0), err
@@ -319,7 +319,7 @@ func consumeProtocolTask(ctx context.Context, task *model.GenerationTask, channe
 	return decodeProtocolResponse(response.Body, mapping, func(result protocolTaskResult) error {
 		if result.TaskID != "" && result.TaskID != task.UpstreamTaskID {
 			if task.UpstreamTaskID != "" {
-				return errors.New("上游返回了不匹配的任务 ID")
+				return errors.New("任务 ID 不匹配")
 			}
 			if err := UpdateGenerationTaskRecovery(task, result.TaskID, autoDLStatusBody(task.Modality, result.TaskID, "running"), nil); err != nil {
 				return err
@@ -329,7 +329,7 @@ func consumeProtocolTask(ctx context.Context, task *model.GenerationTask, channe
 		case "failed":
 			message := strings.ReplaceAll(result.Error, channel.APIKey, "***")
 			if strings.Contains(strings.ToLower(message), "http") {
-				message = "上游生成失败"
+				message = "生成失败"
 			}
 			message = safeAutoDLError(message)
 			if task.BatchJobID == "" {
@@ -352,7 +352,7 @@ func archiveProtocolResult(ctx context.Context, task *model.GenerationTask, resu
 		expected = max(1, task.Quantity)
 	}
 	if len(result.URLs)+len(result.Base64) != expected {
-		return errors.New("上游返回的作品数量与请求不符，将继续尝试恢复")
+		return errors.New("作品数量与请求不符，将继续尝试恢复")
 	}
 	user, exists, err := repository.GetUserByID(task.UserID)
 	if err != nil || !exists {
@@ -387,7 +387,7 @@ func archiveProtocolResult(ctx context.Context, task *model.GenerationTask, resu
 		keys = append(keys, file.StorageKey)
 	}
 	if len(keys) == 0 {
-		return errors.New("上游未返回可交付的结果")
+		return errors.New("没有可交付的结果")
 	}
 	if task.Modality == "video" && task.UpstreamTaskID == "" {
 		task.UpstreamTaskID = task.ID

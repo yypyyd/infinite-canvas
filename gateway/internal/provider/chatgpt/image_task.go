@@ -3,14 +3,58 @@ package chatgpt
 import (
 	"context"
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/yypyyd/infinite-canvas/internal/errtext"
 )
 
 var (
 	ErrTaskAccepted          = errors.New("chatgpt image task accepted; recovery pending")
 	ErrTaskSubmissionUnknown = errors.New("chatgpt image submission outcome unknown; do not resubmit")
 )
+
+// Keep HTTP status separate from upstream error text, which can contain credentials.
+type providerHTTPError struct {
+	status int
+	detail string
+	cause  error
+}
+
+func (e *providerHTTPError) Error() string { return e.cause.Error() }
+func (e *providerHTTPError) Unwrap() error { return e.cause }
+
+// HTTPFailure extracts a protocol reply after the caller has determined that
+// the request failed. Accepted task errors deliberately hide their cause.
+func HTTPFailure(err error) *errtext.Failure {
+	var reply *providerHTTPError
+	if errors.As(err, &reply) && reply.status >= 400 && reply.status <= 599 {
+		return &errtext.Failure{Status: reply.status, Detail: reply.detail}
+	}
+	return nil
+}
+
+type imagePollError struct {
+	readable, readErrors, lastHTTP int
+	lastDetail                     string
+	accessDenied                   bool
+}
+
+func (e *imagePollError) Error() string {
+	return fmt.Sprintf("image_poll readable=%d read_errors=%d last_error_http=%d repeated_denial=%t", e.readable, e.readErrors, e.lastHTTP, e.accessDenied)
+}
+
+func (e *imagePollError) Unwrap() error { return ErrTemporaryUpstream }
+
+func ImageResultAccessError(err error) *errtext.Failure {
+	var task *ImageTaskError
+	var poll *imagePollError
+	if errors.As(err, &task) && task.ConversationID != "" && errors.As(task.Cause, &poll) && poll.accessDenied {
+		return &errtext.Failure{Status: poll.lastHTTP, Detail: poll.lastDetail}
+	}
+	return nil
+}
 
 // ImageTaskError deliberately hides transport/auth errors after submission from
 // account failover. A failed download does not authorize another generation.
@@ -52,17 +96,7 @@ func (c *Client) ResumeImageTask(ctx context.Context, accessToken, conversationI
 	if err != nil {
 		return nil, nil, AcceptedFailure(conversationID, err)
 	}
-	conversation, err := c.getConversation(ctx, session, accessToken, conversationID)
-	if err != nil {
-		// A throttled or flaky read is retried by the poll loop below.
-		if !errors.Is(err, ErrTemporaryUpstream) && !errors.Is(err, ErrQuotaExhausted) {
-			return nil, nil, AcceptedFailure(conversationID, err)
-		}
-		conversation = nil
-	}
-	refs := conversationReferenceIDs(conversation)
-	files, sediments := extractImageIDs(conversation)
-	files, sediments, err = c.pollForImage(ctx, session, accessToken, conversationID, files, sediments, refs, pollBudget(ctx))
+	files, sediments, err := c.pollForImage(ctx, session, accessToken, conversationID, nil, nil, nil, pollBudget(ctx))
 	if err != nil {
 		return nil, nil, AcceptedFailure(conversationID, err)
 	}
@@ -109,6 +143,10 @@ func FailureSummary(err error) string {
 	var task *ImageTaskError
 	if errors.As(err, &task) && task.Cause != nil {
 		err = task.Cause
+	}
+	var poll *imagePollError
+	if errors.As(err, &poll) {
+		return poll.Error()
 	}
 	class := "error"
 	switch {

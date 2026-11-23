@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/http/middleware"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/service"
+	"github.com/yypyyd/infinite-canvas/internal/errtext"
 )
 
 type V1Handler struct {
@@ -756,6 +757,17 @@ func (h *V1Handler) writeV1Error(c *gin.Context, err error, payload map[string]a
 }
 
 func v1ErrorResponse(err error, payload map[string]any) (int, any) {
+	var detail *errtext.Failure
+	if errors.As(err, &detail) {
+		switch detail.Status {
+		case http.StatusUnauthorized, http.StatusForbidden:
+			return http.StatusBadGateway, openaiErrorResponse("server_error", "upstream_auth_error", detail.Error())
+		case http.StatusTooManyRequests:
+			return detail.Status, openaiErrorResponse("rate_limit_error", "rate_limit_exceeded", detail.Error())
+		default:
+			return detail.Status, openaiErrorResponse("server_error", "", detail.Error())
+		}
+	}
 	var parameter *service.ParameterError
 	if errors.As(err, &parameter) {
 		detail := gin.H{"message": parameter.Message, "type": "invalid_request_error", "param": parameter.Param, "code": "unsupported_parameter"}
@@ -776,25 +788,25 @@ func v1ErrorResponse(err error, payload map[string]any) (int, any) {
 	case errors.Is(err, service.ErrBannedPrompt):
 		return http.StatusBadRequest, openaiErrorResponse("invalid_request_error", "content_policy_violation", "The prompt violates the configured content policy.")
 	case errors.Is(err, service.ErrContentRejected):
-		return http.StatusBadRequest, openaiErrorResponse("invalid_request_error", "content_policy_violation", "The request was rejected by the upstream content policy.")
+		return http.StatusBadRequest, openaiErrorResponse("invalid_request_error", "content_policy_violation", service.PublicGenerationMessage(err))
 	case errors.Is(err, service.ErrInsufficientFunds):
 		return http.StatusPaymentRequired, openaiErrorResponse("insufficient_quota", "insufficient_quota", "Insufficient quota.")
 	case errors.Is(err, service.ErrReferenceTooLarge), errors.Is(err, service.ErrReferenceVideoTooLarge), errors.Is(err, service.ErrReferenceAudioTooLarge):
 		return http.StatusRequestEntityTooLarge, openaiErrorResponse("invalid_request_error", "request_too_large", "Reference media is too large.")
 	case errors.Is(err, service.ErrNoProviderAccount):
-		return http.StatusServiceUnavailable, openaiErrorResponse("server_error", "", "No upstream provider account is currently available.")
+		return http.StatusServiceUnavailable, openaiErrorResponse("server_error", "", service.PublicGenerationMessage(err))
 	case errors.Is(err, service.ErrProviderDisabled):
-		return http.StatusServiceUnavailable, openaiErrorResponse("server_error", "provider_disabled", "All upstream providers for this model are currently disabled.")
+		return http.StatusServiceUnavailable, openaiErrorResponse("server_error", "provider_disabled", service.PublicGenerationMessage(err))
 	case errors.Is(err, service.ErrProviderAuth):
-		return http.StatusServiceUnavailable, openaiErrorResponse("server_error", "", "Upstream provider authentication failed.")
+		return http.StatusServiceUnavailable, openaiErrorResponse("server_error", "", service.PublicGenerationMessage(err))
 	case errors.Is(err, service.ErrAdobeTrialExhausted):
-		return http.StatusTooManyRequests, openaiErrorResponse("insufficient_quota", "adobe_trial_exhausted", "This Adobe model's free trial allowance is exhausted.")
+		return http.StatusTooManyRequests, openaiErrorResponse("insufficient_quota", "adobe_trial_exhausted", service.PublicGenerationMessage(err))
 	case errors.Is(err, service.ErrProviderQuota):
-		return http.StatusTooManyRequests, openaiErrorResponse("insufficient_quota", "insufficient_quota", "Upstream provider quota is exhausted.")
+		return http.StatusTooManyRequests, openaiErrorResponse("insufficient_quota", "insufficient_quota", service.PublicGenerationMessage(err))
 	case errors.Is(err, service.ErrAdobeUpstreamBusy):
-		return http.StatusServiceUnavailable, openaiErrorResponse("server_error", "adobe_upstream_busy", "Adobe upstream is temporarily busy. Please try again later.")
+		return http.StatusServiceUnavailable, openaiErrorResponse("server_error", "adobe_upstream_busy", service.PublicGenerationMessage(err))
 	case errors.Is(err, service.ErrProviderTemporary):
-		return http.StatusServiceUnavailable, openaiErrorResponse("server_error", "", "Upstream provider is temporarily unavailable.")
+		return http.StatusServiceUnavailable, openaiErrorResponse("server_error", "", service.PublicGenerationMessage(err))
 	case errors.Is(err, service.ErrImageTaskNotFound):
 		return http.StatusNotFound, openaiErrorResponse("invalid_request_error", "not_found", "Image task not found.")
 	case errors.Is(err, service.ErrConcurrencyBackendUnavailable):
@@ -806,9 +818,9 @@ func v1ErrorResponse(err error, payload map[string]any) (int, any) {
 	case errors.Is(err, service.ErrVideoNotReady):
 		return http.StatusConflict, openaiErrorResponse("invalid_request_error", "", "Video is not ready yet.")
 	case errors.Is(err, service.ErrProviderUnsupported):
-		return http.StatusNotImplemented, openaiErrorResponse("server_error", "", "The requested operation is not supported by an available provider.")
+		return http.StatusNotImplemented, openaiErrorResponse("server_error", "", service.PublicGenerationMessage(err))
 	case errors.Is(err, service.ErrProviderExecution):
-		return http.StatusBadGateway, openaiErrorResponse("server_error", "", "Upstream provider request failed.")
+		return http.StatusBadGateway, openaiErrorResponse("server_error", "", service.PublicGenerationMessage(err))
 	case errors.Is(err, service.ErrGenerationPending):
 		return http.StatusNotImplemented, payload
 	default:

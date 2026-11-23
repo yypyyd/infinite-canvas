@@ -78,6 +78,12 @@ func (s *V1Service) startAcceptedImageRecovery(parent context.Context, event *mo
 			if event.Provider == "chatgpt" {
 				log.Printf("account pool: image recovery for event %s not finished (%s)", event.ID, chatgpt.FailureSummary(resumeErr))
 			}
+			if denied := chatgpt.ImageResultAccessError(resumeErr); denied != nil {
+				// The provider accepted the generation. Close local delivery without replaying
+				// it or treating the provider's reservation as an uncharged submission.
+				recordBookkeepingError("close unreadable image result", s.models.Dispatch().ResolveInterrupted(ctx, attempt, false, "", denied.Stored()))
+				return
+			}
 			// A transient poll/download failure keeps the accepted task recoverable.
 			// Explicit terminal provider outcomes can safely close the event.
 			// ErrUnsupportedParams here is a finished image that is not the requested gif or transparent output.

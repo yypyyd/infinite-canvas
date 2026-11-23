@@ -11,6 +11,7 @@ import (
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/byteplus"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/chatgpt"
 	"github.com/yypyyd/infinite-canvas/gateway/internal/provider/grok"
+	"github.com/yypyyd/infinite-canvas/internal/errtext"
 )
 
 var ErrAdobeUpstreamBusy = fmt.Errorf("%w: Adobe 上游服务暂时繁忙，请稍后重试", ErrProviderTemporary)
@@ -24,6 +25,10 @@ var ErrAdobeGenerationSession = fmt.Errorf("%w: Adobe 生成会话初始化失�
 func publicGenerationError(cause error) error {
 	if cause == nil {
 		return nil
+	}
+	var completed *errtext.Failure
+	if errors.As(cause, &completed) {
+		return completed
 	}
 	var paramErr *ParameterError
 	if errors.As(cause, &paramErr) {
@@ -96,20 +101,51 @@ func publicGenerationError(cause error) error {
 	}
 }
 
-func safeGenerationErrorText(cause error) string {
-	if safe := publicGenerationError(cause); safe != nil {
+// PublicGenerationMessage keeps internal categories available for routing while
+// presenting a reason that doesn't name the provider or its accounts.
+func PublicGenerationMessage(cause error) string {
+	return displayGenerationError(publicGenerationError(cause))
+}
+
+func displayGenerationError(safe error) string {
+	switch safe {
+	case nil:
+		return ""
+	case ErrProviderAuth:
+		return "生成凭据无效或已过期"
+	case ErrProviderQuota:
+		return "生成额度已用完"
+	case ErrNoProviderAccount:
+		return "当前没有可用的生成账号"
+	case ErrProviderDisabled:
+		return "此模型未启用"
+	case ErrProviderTemporary:
+		return "生成服务暂时不可用"
+	case ErrProviderExecution:
+		return "生成失败"
+	case ErrProviderUnsupported:
+		return "不支持此操作"
+	case ErrAdobeUpstreamBusy:
+		return "生成服务繁忙，请稍后重试"
+	case ErrAdobeGenerationSession:
+		return "生成会话初始化失败"
+	case ErrAdobeTrialExhausted:
+		return "此模型的试用额度已用完"
+	default:
 		return safe.Error()
 	}
-	return ""
 }
 
 // safeStoredGenerationError protects polling/admin reads of rows created by an
 // older build that may have persisted raw provider text. Only exact messages
-// emitted by this service are allowed through; everything else is collapsed.
+// emitted by this service and structured result-read failures are allowed through.
 func safeStoredGenerationError(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return ""
+	}
+	if detail := errtext.FromStored(raw); detail != nil {
+		return detail.Error()
 	}
 	for _, safe := range []error{
 		ErrGenerationOutcomeUnknown, ErrGenerationAbandoned,
@@ -121,11 +157,11 @@ func safeStoredGenerationError(raw string) string {
 		ErrConcurrencyBackendUnavailable, ErrConcurrencyFull, ErrUserConcurrencyFull,
 		ErrReferenceTooLarge, ErrReferenceVideoTooLarge, ErrReferenceAudioTooLarge,
 	} {
-		if raw == safe.Error() {
-			return raw
+		if message := displayGenerationError(safe); raw == safe.Error() || raw == message {
+			return message
 		}
 	}
-	return ErrProviderExecution.Error()
+	return PublicGenerationMessage(ErrProviderExecution)
 }
 
 func recordBookkeepingError(operation string, err error) {

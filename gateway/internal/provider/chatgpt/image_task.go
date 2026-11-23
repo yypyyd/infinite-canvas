@@ -17,9 +17,10 @@ var (
 
 // Keep HTTP status separate from upstream error text, which can contain credentials.
 type providerHTTPError struct {
-	status int
-	detail string
-	cause  error
+	status     int
+	retryAfter string
+	detail     string
+	cause      error
 }
 
 func (e *providerHTTPError) Error() string { return e.cause.Error() }
@@ -36,13 +37,35 @@ func HTTPFailure(err error) *errtext.Failure {
 }
 
 type imagePollError struct {
-	readable, readErrors, lastHTTP int
-	lastDetail                     string
-	accessDenied                   bool
+	readable, readErrors, lastHTTP, throttledReads int
+	lastDetail                                     string
+	accessDenied, rateLimited                      bool
+	lastSnapshot                                   string
 }
 
 func (e *imagePollError) Error() string {
-	return fmt.Sprintf("image_poll readable=%d read_errors=%d last_error_http=%d repeated_denial=%t", e.readable, e.readErrors, e.lastHTTP, e.accessDenied)
+	return fmt.Sprintf("image_poll readable=%d read_errors=%d last_error_http=%d repeated_denial=%t throttled_reads=%d sustained_limit=%t last_snapshot=%s", e.readable, e.readErrors, e.lastHTTP, e.accessDenied, e.throttledReads, e.rateLimited, e.lastSnapshot)
+}
+
+// Record structural facts only. An absent asset doesn't establish render failure.
+func imageSnapshotState(conv map[string]any) string {
+	mapping, _ := conv["mapping"].(map[string]any)
+	if len(mapping) == 0 {
+		return "no_messages"
+	}
+	id, _ := conv["current_node"].(string)
+	node, _ := mapping[id].(map[string]any)
+	message, _ := node["message"].(map[string]any)
+	if len(message) == 0 {
+		return "no_current_message"
+	}
+	status, _ := message["status"].(string)
+	switch status {
+	case "in_progress", "finished_successfully", "finished_with_error":
+		return status
+	default:
+		return "other_status"
+	}
 }
 
 func (e *imagePollError) Unwrap() error { return ErrTemporaryUpstream }
@@ -50,7 +73,7 @@ func (e *imagePollError) Unwrap() error { return ErrTemporaryUpstream }
 func ImageResultAccessError(err error) *errtext.Failure {
 	var task *ImageTaskError
 	var poll *imagePollError
-	if errors.As(err, &task) && task.ConversationID != "" && errors.As(task.Cause, &poll) && poll.accessDenied {
+	if errors.As(err, &task) && task.ConversationID != "" && errors.As(task.Cause, &poll) && (poll.accessDenied || poll.rateLimited) {
 		return &errtext.Failure{Status: poll.lastHTTP, Detail: poll.lastDetail}
 	}
 	return nil

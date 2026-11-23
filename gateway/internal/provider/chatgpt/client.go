@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
+	"math/bits"
 	stdhttp "net/http"
 	"os"
 	"path/filepath"
@@ -42,11 +44,13 @@ var (
 )
 
 type Client struct {
-	proxyMu   sync.RWMutex
-	proxy     string
-	assigner  proxypool.Assigner
-	deviceID  string
-	sessionID string
+	imageReadCooldowns imageReadCooldowns
+	imagePollHistory   sync.Map // conversationReadKey -> *uint8, only between unfinished poll rounds
+	proxyMu            sync.RWMutex
+	proxy              string
+	assigner           proxypool.Assigner
+	deviceID           string
+	sessionID          string
 	// Reusable tls-client sessions keyed by credential. One shared client used
 	// to hop every account onto the same rotating exit and the same
 	// oai-device-id; pinning the residential session label and the TLS jar to
@@ -1625,6 +1629,10 @@ func (c *Client) getConversation(ctx context.Context, session tlsclient.HttpClie
 		return nil, err
 	}
 	if err := ensureOK(resp.StatusCode, body, "conversation_get", accessToken); err != nil {
+		var reply *providerHTTPError
+		if errors.As(err, &reply) && reply.status == stdhttp.StatusTooManyRequests {
+			reply.retryAfter = resp.Header.Get("Retry-After")
+		}
 		return nil, err
 	}
 	if dir := os.Getenv("CHATGPT_DEBUG_DUMP"); dir != "" {
@@ -1664,14 +1672,17 @@ func pollBudget(ctx context.Context) time.Duration {
 
 func (c *Client) pollForImage(ctx context.Context, session tlsclient.HttpClient, accessToken, conversationID string, initialFileIDs, initialSedimentIDs []string, refIDs map[string]bool, timeout time.Duration) ([]string, []string, error) {
 	start := time.Now()
+	pollCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	account := sha256.Sum256([]byte(accessToken))
+	recovering := refIDs == nil
 	fileIDs := dropIDs(append([]string{}, initialFileIDs...), refIDs)
 	sedimentIDs := dropIDs(append([]string{}, initialSedimentIDs...), refIDs)
-	// Recovery already has an accepted conversation and can read it immediately.
-	if refIDs != nil {
-		if len(fileIDs) == 0 {
-			time.Sleep(8 * time.Second)
-		} else {
-			time.Sleep(2 * time.Second)
+	nextRead := time.Duration(0)
+	if !recovering {
+		nextRead = 8 * time.Second
+		if len(fileIDs) > 0 {
+			nextRead = 2 * time.Second
 		}
 	}
 	collect := func(conversation map[string]any) {
@@ -1685,16 +1696,25 @@ func (c *Client) pollForImage(ctx context.Context, session tlsclient.HttpClient,
 	}
 	var observation imagePollError
 	consecutiveDenials := 0
-	attempt := 0
-	for time.Since(start) < timeout {
-		// Bail out immediately if the caller's context is already done — without
-		// this, a cancelled request spins here re-issuing doomed upstream calls
-		// (each fails instantly with "operation was canceled") until `timeout`.
-		if err := ctx.Err(); err != nil {
-			return nil, nil, err
+	key := conversationReadKey{account, conversationID}
+	var recentLimits uint8 // one bit per actual read, newest in bit zero
+	if last, ok := c.imagePollHistory.LoadAndDelete(key); ok {
+		recentLimits = *last.(*uint8)
+	}
+	read := func() (map[string]any, error) {
+		conv, err := c.getConversation(pollCtx, session, accessToken, conversationID)
+		var reply *providerHTTPError
+		if errors.As(err, &reply) && reply.status == stdhttp.StatusTooManyRequests {
+			delay := time.Duration(min(observation.throttledReads+1, 4)) * 15 * time.Second
+			c.imageReadCooldowns.deferUntil(account, imageReadRetryAt(time.Now().Add(delay), reply.retryAfter))
 		}
+		return conv, err
+	}
+	attempt := 0
+	for waitImageRead(pollCtx, nextRead) && c.imageReadCooldowns.wait(pollCtx, account) {
 		attempt++
-		conv, err := c.getConversation(ctx, session, accessToken, conversationID)
+		recentLimits = (recentLimits << 1) & 15
+		conv, err := read()
 		if err != nil {
 			if len(fileIDs) > 0 || len(sedimentIDs) > 0 {
 				return fileIDs, sedimentIDs, nil
@@ -1715,20 +1735,25 @@ func (c *Client) pollForImage(ctx context.Context, session tlsclient.HttpClient,
 			} else {
 				consecutiveDenials = 0
 			}
-			if denied || errors.Is(err, ErrTemporaryUpstream) {
-				time.Sleep(time.Duration(minInt(1<<minInt(attempt, 4), 8)) * time.Second)
+			if observation.lastHTTP == stdhttp.StatusTooManyRequests {
+				recentLimits |= 1
+				observation.throttledReads++
+				if recovering && bits.OnesCount8(recentLimits) >= 3 {
+					observation.rateLimited = true
+					return nil, nil, &observation
+				}
+				nextRead = 0 // the shared cooldown also applies to this conversation
 				continue
 			}
-			// The task is already accepted, so a 429 on this read is read rate
-			// limiting, not a reason to abandon it. Back off and keep polling.
-			if errors.Is(err, ErrQuotaExhausted) {
-				time.Sleep(time.Duration(minInt(5*attempt, 20)) * time.Second)
+			if denied || errors.Is(err, ErrTemporaryUpstream) {
+				nextRead = time.Duration(minInt(1<<minInt(attempt, 4), 8)) * time.Second
 				continue
 			}
 			return nil, nil, err
 		}
 		consecutiveDenials = 0
 		observation.readable++
+		observation.lastSnapshot = imageSnapshotState(conv)
 		collect(conv)
 		// Fail fast on a content-audit refusal: the assistant turn carries the
 		// rejection text and no image will ever land, so polling to timeout only
@@ -1737,19 +1762,32 @@ func (c *Client) pollForImage(ctx context.Context, session tlsclient.HttpClient,
 			return nil, nil, ErrContentPolicy
 		}
 		if len(fileIDs) > 0 || len(sedimentIDs) > 0 {
-			time.Sleep(2 * time.Second)
-			conv, err = c.getConversation(ctx, session, accessToken, conversationID)
-			if err == nil {
-				collect(conv)
+			// The first readable snapshot already contains a deliverable candidate.
+			// Only collect the optional final snapshot if the account can read now.
+			if waitImageRead(pollCtx, 2*time.Second) && !c.imageReadCooldowns.until(account).After(time.Now()) {
+				if final, finalErr := read(); finalErr == nil {
+					collect(final)
+				}
 			}
 			if len(fileIDs) > 0 || len(sedimentIDs) > 0 {
 				return fileIDs, sedimentIDs, nil
 			}
 		}
-		time.Sleep(5 * time.Second)
+		nextRead = 5 * time.Second
+		if recovering || time.Since(start) >= 90*time.Second {
+			nextRead = 20 * time.Second
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
+	}
+	if recentLimits != 0 {
+		// A long Retry-After can split four reads across rounds. Keep the evidence
+		// with this conversation, without retaining abandoned requests indefinitely.
+		last := new(uint8)
+		*last = recentLimits
+		c.imagePollHistory.Store(key, last)
+		time.AfterFunc(time.Hour, func() { c.imagePollHistory.CompareAndDelete(key, last) })
 	}
 	return nil, nil, &observation
 }

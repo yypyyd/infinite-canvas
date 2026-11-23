@@ -19,17 +19,25 @@ type conversationReply struct {
 
 type conversationReader struct {
 	tlsclient.HttpClient
-	replies []conversationReply
-	reads   int
+	replies     []conversationReply
+	reads       int
+	availableAt time.Time
+	retryAfter  string
+	readTimes   []time.Time
 }
 
 func (reader *conversationReader) Do(request *http.Request) (*http.Response, error) {
 	if request.Method != "GET" || request.URL.Path != "/backend-api/conversation/test-conversation" {
 		return nil, fmt.Errorf("unexpected request: %s %s", request.Method, request.URL.Path)
 	}
-	reply := reader.replies[min(reader.reads, len(reader.replies)-1)]
+	index := min(reader.reads, len(reader.replies)-1)
+	if !reader.availableAt.IsZero() && time.Now().Before(reader.availableAt) {
+		index = 0
+	}
+	reply := reader.replies[index]
+	reader.readTimes = append(reader.readTimes, time.Now())
 	reader.reads++
-	return &http.Response{StatusCode: reply.status, Body: io.NopCloser(strings.NewReader(reply.body))}, nil
+	return &http.Response{StatusCode: reply.status, Header: http.Header{"Retry-After": {reader.retryAfter}}, Body: io.NopCloser(strings.NewReader(reply.body))}, nil
 }
 
 func TestAcceptedImageReadOutcomes(t *testing.T) {
@@ -83,13 +91,11 @@ func TestLateReadableImageRemainsRecoverable(t *testing.T) {
 		// One production request delivered after 36m20s. Replay that duration
 		// with readable, pending responses followed by the generated asset.
 		const delay = 36*time.Minute + 20*time.Second
-		replies := make([]conversationReply, int(delay/(5*time.Second)))
-		for i := range replies {
-			replies[i] = conversationReply{200, `{"mapping":{}}`}
-		}
-		replies = append(replies, conversationReply{200, `{"mapping":{"t":{"message":{"author":{"role":"tool"},"content":"file-service://output"}}}}`})
-		reader := &conversationReader{replies: replies}
 		start := time.Now()
+		reader := &conversationReader{availableAt: start.Add(delay), replies: []conversationReply{
+			{200, `{"mapping":{}}`},
+			{200, `{"mapping":{"t":{"message":{"author":{"role":"tool"},"content":"file-service://output"}}}}`},
+		}}
 		for time.Since(start) < 40*time.Minute {
 			files, _, err := new(Client).pollForImage(t.Context(), reader, "fixture", "test-conversation", nil, nil, nil, 6*time.Minute)
 			if err == nil {
@@ -126,4 +132,69 @@ func TestDeniedImageReportsLastHTTPReason(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Production traces showed successful reads without an asset between 429s.
+// A healthy pending read doesn't produce an image or end a throttling episode.
+func TestThrottledResultDoesNotRestartRecovery(t *testing.T) {
+	t.Setenv("CHATGPT_DEBUG_DUMP", "")
+	synctest.Test(t, func(t *testing.T) {
+		pending := conversationReply{200, `{"mapping":{}}`}
+		limited := conversationReply{429, `{"error":{"message":"Result read rate limit exceeded"}}`}
+		reader := &conversationReader{replies: []conversationReply{limited, pending, limited, limited}}
+		start := time.Now()
+		_, _, err := new(Client).pollForImage(t.Context(), reader, "fixture", "test-conversation", nil, nil, nil, 6*time.Minute)
+		failure := ImageResultAccessError(AcceptedFailure("test-conversation", err))
+		if failure == nil || failure.Status != 429 || failure.Error() != "Result read rate limit exceeded" || reader.reads != 4 {
+			t.Fatalf("reads=%d elapsed=%s failure=%v diagnostic=%s", reader.reads, time.Since(start), failure, FailureSummary(AcceptedFailure("test-conversation", err)))
+		}
+		t.Logf("settled after %d reads in %s", reader.reads, time.Since(start))
+	})
+}
+
+func TestImageReadCooldownAcrossTasks(t *testing.T) {
+	t.Setenv("CHATGPT_DEBUG_DUMP", "")
+	synctest.Test(t, func(t *testing.T) {
+		start := time.Now()
+		client := new(Client)
+		limited := &conversationReader{replies: []conversationReply{{429, `{}`}}, retryAfter: "90"}
+		_, _, err := client.pollForImage(t.Context(), limited, "account-a", "test-conversation", nil, nil, nil, 30*time.Second)
+		if err == nil || limited.reads != 1 || time.Since(start) != 30*time.Second {
+			t.Fatalf("first read count=%d, elapsed=%s", limited.reads, time.Since(start))
+		}
+		image := conversationReply{200, `{"mapping":{"t":{"message":{"author":{"role":"tool"},"content":"file-service://output"}}}}`}
+		other := &conversationReader{replies: []conversationReply{image}}
+		if _, _, err := client.pollForImage(t.Context(), other, "account-b", "test-conversation", nil, nil, nil, time.Minute); err != nil || !other.readTimes[0].Equal(start.Add(30*time.Second)) {
+			t.Fatal("unrelated account delayed", err)
+		}
+		resumed := &conversationReader{replies: []conversationReply{image}}
+		if _, _, err := client.pollForImage(t.Context(), resumed, "account-a", "test-conversation", nil, nil, nil, 2*time.Minute); err != nil || !resumed.readTimes[0].Equal(start.Add(90*time.Second)) {
+			t.Fatal("Retry-After not respected across calls", err, resumed.readTimes)
+		}
+	})
+}
+
+func TestImageThrottleEvidenceSurvivesPollDeadline(t *testing.T) {
+	t.Setenv("CHATGPT_DEBUG_DUMP", "")
+	synctest.Test(t, func(t *testing.T) {
+		client := new(Client)
+		reader := &conversationReader{replies: []conversationReply{{429, `{}`}}, retryAfter: "70"}
+		var failureStatus int
+		for round := 0; round < 3; round++ {
+			_, _, err := client.pollForImage(t.Context(), reader, "fixture", "test-conversation", nil, nil, nil, time.Minute)
+			failure := ImageResultAccessError(AcceptedFailure("test-conversation", err))
+			if failure != nil {
+				failureStatus = failure.Status
+				break
+			}
+		}
+		if reader.reads != 3 || failureStatus != 429 {
+			t.Fatalf("reads=%d terminal status=%d", reader.reads, failureStatus)
+		}
+		for i := 1; i < len(reader.readTimes); i++ {
+			if reader.readTimes[i].Sub(reader.readTimes[i-1]) < 70*time.Second {
+				t.Fatal("read before Retry-After")
+			}
+		}
+	})
 }

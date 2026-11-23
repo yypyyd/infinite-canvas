@@ -27,6 +27,7 @@ WORKDIR /app
 COPY go.mod go.sum ./
 COPY config ./config
 COPY handler ./handler
+COPY internal ./internal
 COPY middleware ./middleware
 COPY model ./model
 COPY repository ./repository

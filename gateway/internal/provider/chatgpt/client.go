@@ -2060,7 +2060,7 @@ func injectSizeHint(prompt, aspectRatio, resolution string) string {
 // out to match the 3×3 sheet the gateway checks and the caller cuts into an animation.
 func injectOutputHint(prompt, background, outputFormat string) string {
 	if outputFormat == "gif" {
-		return prompt + "\n\n做成循环播放的 GIF 动图：把连续的 9 帧画在同一张图里，排成 3 列 3 行，按从左到右、从上到下的顺序播放；每格大小完全相同并紧挨着排列，格子之间和四周不要有边框、间隙、文字或编号；每一帧的镜头、主体位置和背景保持一致，最后一帧能自然接回第一帧"
+		return "请绘制一张静态的九宫格分镜图，用连续九帧表现以下场景和动作。\n" + prompt + "\n\n做成循环播放的 GIF 动图：把连续的 9 帧画在同一张图里，排成 3 列 3 行，按从左到右、从上到下的顺序播放；每格大小完全相同并紧挨着排列，格子之间和四周不要有边框、间隙、文字或编号；每一帧的镜头、主体位置和背景保持一致，最后一帧能自然接回第一帧"
 	}
 	if background == "transparent" {
 		return prompt + "\n\n背景设为透明，输出带透明通道的 PNG，不要画棋盘格或纯色背景"

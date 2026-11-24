@@ -198,3 +198,14 @@ func TestImageThrottleEvidenceSurvivesPollDeadline(t *testing.T) {
 		}
 	})
 }
+
+func TestGIFScenePreservedAfterSheetInstruction(t *testing.T) {
+	const scene = "好看的女孩跳舞"
+	gif := injectOutputHint(scene, "", "gif")
+	if !strings.HasPrefix(gif, "请绘制一张静态的九宫格分镜图，用连续九帧表现以下场景和动作。\n"+scene+"\n") || !strings.Contains(gif, "3 列 3 行") || strings.Count(gif, scene) != 1 {
+		t.Fatal("GIF format, scene or layout lost")
+	}
+	if plain := injectOutputHint(scene, "", ""); plain != scene {
+		t.Fatal("unexpected change to static image prompt")
+	}
+}

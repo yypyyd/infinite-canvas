@@ -2180,4 +2180,8 @@ WHERE model = 'gpt-image-2' AND provider = 'chatgpt';
 `,
 	"000049_chatgpt_account_concurrency.sql": "UPDATE provider_accounts SET concurrency = 1, updated_at = NOW() WHERE pool = 'chatgpt' AND concurrency <> 1;\n",
 	"000050_image_dispatch_round.sql":        "ALTER TABLE account_model_routes ADD COLUMN image_dispatch_round BIGINT NOT NULL DEFAULT 0;\n",
+	"000051_delivery_timeout_failure_class.sql": `ALTER TABLE dispatch_attempts DROP CONSTRAINT dispatch_attempts_failure_valid;
+ALTER TABLE dispatch_attempts ADD CONSTRAINT dispatch_attempts_failure_valid
+    CHECK (failure_class IN ('','auth','quota','entitlement','temporary','request','content','outcome_unknown','delivery_timeout'));
+`,
 }

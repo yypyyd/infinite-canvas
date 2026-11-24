@@ -59,13 +59,47 @@ func imageSnapshotState(conv map[string]any) string {
 	if len(message) == 0 {
 		return "no_current_message"
 	}
-	status, _ := message["status"].(string)
-	switch status {
-	case "in_progress", "finished_successfully", "finished_with_error":
-		return status
-	default:
-		return "other_status"
+	// Never log message text, upstream IDs or arbitrary metadata values.
+	status := snapshotEnum(message["status"], "in_progress", "finished_successfully", "finished_with_error")
+	author, _ := message["author"].(map[string]any)
+	role := snapshotEnum(author["role"], "user", "tool", "assistant", "system")
+	content, _ := message["content"].(map[string]any)
+	kind := snapshotEnum(content["content_type"], "text", "code", "multimodal_text", "execution_output", "model_editable_context", "thoughts", "image_asset_pointer")
+	toolTurns, asyncTurns, pointers := 0, 0, 0
+	for _, raw := range mapping {
+		n, _ := raw.(map[string]any)
+		m, _ := n["message"].(map[string]any)
+		author, _ := m["author"].(map[string]any)
+		if author["role"] == "tool" {
+			toolTurns++
+		}
+		meta, _ := m["metadata"].(map[string]any)
+		if stringValue(meta["image_gen_task_id"]) != "" || meta["image_gen_async"] == true {
+			asyncTurns++
+		}
+		if author["role"] != "assistant" && author["role"] != "tool" {
+			continue
+		}
+		c, _ := m["content"].(map[string]any)
+		parts, _ := c["parts"].([]any)
+		for _, rawPart := range parts {
+			part, _ := rawPart.(map[string]any)
+			if pointer, _ := part["asset_pointer"].(string); pointer != "" {
+				pointers++
+			}
+		}
 	}
+	return fmt.Sprintf("%s current_role=%s current_content=%s end_turn=%t current_error=%t tool_turns=%d async_turns=%d output_pointers=%d", status, role, kind, message["end_turn"] == true, message["error"] != nil, toolTurns, asyncTurns, pointers)
+
+}
+
+func snapshotEnum(value any, allowed ...string) string {
+	for _, k := range allowed {
+		if value == k {
+			return k
+		}
+	}
+	return "other"
 }
 
 func (e *imagePollError) Unwrap() error { return ErrTemporaryUpstream }

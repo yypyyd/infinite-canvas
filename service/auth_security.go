@@ -47,7 +47,10 @@ func Logout(r *http.Request) error {
 	}
 	seen := map[string]bool{}
 	for _, token := range tokens {
-		user, ok := CurrentAuthUser(token)
+		user, ok, err := CurrentAuthUser(token)
+		if err != nil {
+			return err
+		}
 		if ok && !seen[user.ID] {
 			if err := repository.RevokeUserSessions(user.ID); err != nil {
 				return err

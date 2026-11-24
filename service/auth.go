@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -262,26 +263,31 @@ func ParseToken(tokenText string) (TokenClaims, error) {
 	return claims, nil
 }
 
-func CurrentAuthUser(tokenText string) (model.AuthUser, bool) {
+var errSessionLookupUnavailable = authError{status: http.StatusServiceUnavailable, message: "暂时无法读取登录状态，请稍后重试", retryAfter: 1}
+
+func CurrentAuthUser(tokenText string) (model.AuthUser, bool, error) {
 	claims, err := ParseToken(tokenText)
 	if err != nil {
-		return model.AuthUser{}, false
+		return model.AuthUser{}, false, nil
 	}
 	user, ok, err := repository.GetUserByID(claims.UserID)
-	if err != nil || !ok {
-		return model.AuthUser{}, false
+	if err != nil {
+		return model.AuthUser{}, false, errSessionLookupUnavailable
+	}
+	if !ok {
+		return model.AuthUser{}, false, nil
 	}
 	if user.Status == model.UserStatusBan || claims.TokenVersion != user.TokenVersion || claims.TokenVersion < 1 {
-		return model.AuthUser{}, false
+		return model.AuthUser{}, false, nil
 	}
 	normalizeUserDefaults(&user)
 	authUser := model.PublicUser(user)
 	organization, _, ensureErr := EnsureSessionOrganization(authUser)
 	if ensureErr != nil {
-		return model.AuthUser{}, false
+		return model.AuthUser{}, false, errSessionLookupUnavailable
 	}
 	authUser = applyOrganizationCredits(authUser, organization)
-	return authUser, true
+	return authUser, true, nil
 }
 
 func ApplyEffectiveCredits(user model.AuthUser) (model.AuthUser, error) {

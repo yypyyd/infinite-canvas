@@ -136,7 +136,8 @@ func ApplyUserWorkspaceMutations(organizationID string, userID string, mutations
 	projects := make([]model.UserProject, 0, len(mutations))
 	assets := make([]model.UserAsset, 0, len(mutations))
 	records := make([]model.UserGenerationRecord, 0, len(mutations))
-	err = db.Transaction(func(tx *gorm.DB) error {
+	err = transactionWithSQLiteRetry(db, func(tx *gorm.DB) error {
+		projects, assets, records = projects[:0], assets[:0], records[:0]
 		var organization model.Organization
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&organization, "id = ?", organizationID).Error; err != nil {
 			return err

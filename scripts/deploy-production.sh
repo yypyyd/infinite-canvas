@@ -56,10 +56,18 @@ if [[ "$BACKUP_DATA" == "1" ]]; then
   stamp="$(date +%Y%m%d-%H%M%S)"
   mkdir -p "$BACKUP_ROOT/$stamp"
   if [[ -f "$DATA_DIR/infinite-canvas.db" ]]; then
-    cp -a "$DATA_DIR/infinite-canvas.db" "$BACKUP_ROOT/$stamp/"
-    if [[ -f "$DATA_DIR/infinite-canvas.db-wal" ]]; then
-      cp -a "$DATA_DIR/infinite-canvas.db-wal" "$BACKUP_ROOT/$stamp/"
-    fi
+    # One consistent snapshot, including committed pages still in the WAL.
+    python3 - "$DATA_DIR/infinite-canvas.db" "$BACKUP_ROOT/$stamp/infinite-canvas.db" <<'PYBACKUP'
+import os
+import sqlite3
+import sys
+from contextlib import closing
+from pathlib import Path
+
+os.umask(0o077)
+with closing(sqlite3.connect(Path(sys.argv[1]).resolve().as_uri() + "?mode=ro", uri=True)) as source, closing(sqlite3.connect(sys.argv[2])) as target:
+    source.backup(target, pages=256)
+PYBACKUP
   fi
   ls -1dt "$BACKUP_ROOT"/*/ 2>/dev/null | tail -n +3 | xargs -r rm -rf
 fi

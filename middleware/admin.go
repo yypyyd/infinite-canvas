@@ -18,7 +18,12 @@ func AdminAuth(c *gin.Context) {
 	if token == "" {
 		token, _ = c.Cookie("infinite_canvas_session")
 	}
-	user, ok := service.CurrentAuthUser(token)
+	user, ok, err := service.CurrentAuthUser(token)
+	if err != nil {
+		handler.FailError(c.Writer, err)
+		c.Abort()
+		return
+	}
 	if !ok {
 		handler.FailStatus(c.Writer, http.StatusUnauthorized, "请先登录后台")
 		c.Abort()
@@ -35,7 +40,12 @@ func AdminAuth(c *gin.Context) {
 }
 
 func UserAuth(c *gin.Context) {
-	user, ok := authUser(c)
+	user, ok, err := authUser(c)
+	if err != nil {
+		handler.FailError(c.Writer, err)
+		c.Abort()
+		return
+	}
 	if !ok || user.Role == model.UserRoleGuest {
 		handler.FailStatus(c.Writer, http.StatusUnauthorized, "未登录或权限不足")
 		c.Abort()
@@ -86,7 +96,13 @@ func APIAuth(c *gin.Context) {
 }
 
 func OptionalAuth(c *gin.Context) {
-	if user, ok := authUser(c); ok {
+	user, ok, err := authUser(c)
+	if err != nil {
+		handler.FailError(c.Writer, err)
+		c.Abort()
+		return
+	}
+	if ok {
 		c.Request = c.Request.WithContext(service.WithUser(c.Request.Context(), user))
 	}
 	c.Next()
@@ -96,18 +112,18 @@ func NotFoundJSON(c *gin.Context) {
 	c.JSON(http.StatusNotFound, gin.H{"code": 1, "data": nil, "msg": "接口不存在"})
 }
 
-func authUser(c *gin.Context) (model.AuthUser, bool) {
+func authUser(c *gin.Context) (model.AuthUser, bool, error) {
 	token := strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer ")
 	if strings.TrimSpace(token) != "" {
 		return service.CurrentAuthUser(token)
 	}
 	for _, name := range []string{"infinite_canvas_admin_session", "infinite_canvas_session"} {
 		token, _ := c.Cookie(name)
-		if user, ok := service.CurrentAuthUser(token); ok {
-			return user, true
+		if user, ok, err := service.CurrentAuthUser(token); ok || err != nil {
+			return user, ok, err
 		}
 	}
-	return model.AuthUser{}, false
+	return model.AuthUser{}, false, nil
 }
 
 func OrganizationAuth(c *gin.Context) {

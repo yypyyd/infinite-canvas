@@ -32,6 +32,18 @@ var (
 	dbErr  error
 )
 
+func sqliteWriteConflict(err error) bool {
+	var sqliteErr interface{ Code() int }
+	if errors.As(err, &sqliteErr) {
+		// SQLite extended codes (including BUSY_SNAPSHOT) retain their primary code.
+		switch sqliteErr.Code() & 0xff {
+		case 5, 6: // SQLITE_BUSY, SQLITE_LOCKED
+			return true
+		}
+	}
+	return false
+}
+
 func transactionWithSQLiteRetry(db *gorm.DB, fn func(*gorm.DB) error) error {
 	for attempt := 0; ; attempt++ {
 		scoped, pending := withAgentEventNotifications(db)
@@ -39,7 +51,7 @@ func transactionWithSQLiteRetry(db *gorm.DB, fn func(*gorm.DB) error) error {
 		if err == nil {
 			pending.flush()
 		}
-		if err == nil || !strings.Contains(strings.ToLower(err.Error()), "sqlite") || (!strings.Contains(strings.ToLower(err.Error()), "busy") && !strings.Contains(strings.ToLower(err.Error()), "locked")) || attempt >= 5 {
+		if err == nil || db.Dialector.Name() != "sqlite" || !sqliteWriteConflict(err) || attempt >= 5 {
 			return err
 		}
 		time.Sleep(time.Duration(attempt+1) * 400 * time.Millisecond)
@@ -72,6 +84,19 @@ func DB() (*gorm.DB, error) {
 		db, dbErr = gorm.Open(dialector(driver, dsn), &gorm.Config{})
 		if dbErr != nil {
 			return
+		}
+		// File-backed SQLite is shared by the API and both workers. WAL allows
+		// session and status reads while a workspace write is in progress.
+		if driver == "sqlite" && !strings.Contains(dsn, ":memory:") && !strings.Contains(dsn, "mode=memory") {
+			var mode string
+			dbErr = db.Raw("PRAGMA journal_mode=WAL").Scan(&mode).Error
+			if dbErr != nil {
+				return
+			}
+			if !strings.EqualFold(mode, "wal") {
+				dbErr = errors.New("failed to enable SQLite WAL")
+				return
+			}
 		}
 		dbErr = db.AutoMigrate(
 			&model.User{},

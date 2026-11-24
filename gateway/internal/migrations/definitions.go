@@ -2179,5 +2179,5 @@ UPDATE event_logs SET model = 'gpt-image-2.6'
 WHERE model = 'gpt-image-2' AND provider = 'chatgpt';
 `,
 	"000049_chatgpt_account_concurrency.sql": "UPDATE provider_accounts SET concurrency = 1, updated_at = NOW() WHERE pool = 'chatgpt' AND concurrency <> 1;\n",
-	"000050_image_dispatch_round.sql": "ALTER TABLE account_model_routes ADD COLUMN image_dispatch_round BIGINT NOT NULL DEFAULT 0;\n",
+	"000050_image_dispatch_round.sql":        "ALTER TABLE account_model_routes ADD COLUMN image_dispatch_round BIGINT NOT NULL DEFAULT 0;\n",
 }

@@ -2178,6 +2178,5 @@ WHERE id = 'image.gpt-image-2.chatgpt';
 UPDATE event_logs SET model = 'gpt-image-2.6'
 WHERE model = 'gpt-image-2' AND provider = 'chatgpt';
 `,
-	"000049_account_concurrency_default.sql": "ALTER TABLE provider_accounts ALTER COLUMN concurrency SET DEFAULT 1;\n" +
-		"UPDATE provider_accounts SET concurrency = 1, updated_at = NOW() WHERE concurrency <> 1;\n",
+	"000049_chatgpt_account_concurrency.sql": "UPDATE provider_accounts SET concurrency = 1, updated_at = NOW() WHERE pool = 'chatgpt' AND concurrency <> 1;\n",
 }

@@ -313,7 +313,7 @@ export function AccountsPanel({ provider, onProviderChange }: { provider: string
                         title: "并发上限",
                         width: 120,
                         render: (_: unknown, item: GatewayAccount) => (
-                            <Tooltip title="新账号默认为 1；手动设为 0 时使用平台默认值">
+                            <Tooltip title={item.provider === "chatgpt" ? "新导入的 ChatGPT 账号默认为 1" : "0 表示不限"}>
                                 <InputNumber
                                     key={`c-${item.id}-${item.max_concurrency}`}
                                     size="small"

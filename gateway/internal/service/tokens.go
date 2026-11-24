@@ -1726,6 +1726,9 @@ func (s *TokenService) createToken(ctx context.Context, pool, tokenID, value, st
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
+	if pool == "chatgpt" {
+		item.Concurrency = 1
+	}
 	if err := s.tokens.Create(ctx, item); err != nil {
 		return nil, err
 	}

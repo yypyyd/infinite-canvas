@@ -5,13 +5,14 @@ import (
 	"errors"
 	"image"
 	"math"
+	"slices"
 
 	"golang.org/x/image/draw"
 )
 
 // ChatGPT Images answers a GIF request with one picture that holds the frames in
 // a grid, read left to right and top to bottom; its own page plays that sheet as
-// an animation. The layout matches the request added by chatgpt.injectOutputHint.
+// an animation. The layout matches the request added by chatgpt.imagePrompt.
 // The gateway only checks the sheet and describes it; the caller cuts the frames
 // and assembles the animation.
 const (
@@ -45,7 +46,7 @@ func checkFrameSheet(data []byte) error {
 		return errNotFrameSheet
 	}
 	const side = 16
-	var previous []float64
+	var frames [][]float64
 	for index := 0; index < frameSheetColumns*frameSheetRows; index++ {
 		origin := bounds.Min.Add(image.Pt(index%frameSheetColumns*cell.Dx(), index/frameSheetColumns*cell.Dy()))
 		small := image.NewRGBA(image.Rect(0, 0, side, side))
@@ -56,10 +57,30 @@ func checkFrameSheet(data []byte) error {
 				current = append(current, float64(value)/255)
 			}
 		}
-		if previous != nil && !thumbnailsAlike(previous, current) {
-			return errNotFrameSheet
+		frames = append(frames, current)
+	}
+	// A large change in pose can separate neighbouring frames. Compare the
+	// composition across the sheet, including non-neighbouring poses.
+	matches := make([]int, len(frames))
+	totalMatches := 0
+	hasMotion := false
+	for i, a := range frames {
+		for j := 0; j < i; j++ {
+			if !slices.Equal(a, frames[j]) {
+				hasMotion = true
+			}
+			if thumbnailsAlike(a, frames[j]) {
+				matches[i]++
+				matches[j]++
+				totalMatches++
+			}
 		}
-		previous = current
+	}
+	// Every frame must share the scene with at least two others, and a
+	// majority of all pairs must agree. Nine copies of a still have no motion.
+	pairs := len(frames) * (len(frames) - 1) / 2
+	if !hasMotion || slices.Min(matches) < 2 || totalMatches*2 <= pairs {
+		return errNotFrameSheet
 	}
 	return nil
 }

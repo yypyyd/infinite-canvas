@@ -499,7 +499,7 @@ func (c *Client) GenerateImage(ctx context.Context, accessToken, prompt, model, 
 	if err != nil {
 		return nil, nil, err
 	}
-	effectivePrompt := injectOutputHint(injectSizeHint(prompt, aspectRatio, resolution), background, outputFormat)
+	effectivePrompt := imagePrompt(prompt, aspectRatio, resolution, background, outputFormat)
 	uploadedRefs, err := c.uploadReferenceImages(ctx, session, directSession, accessToken, refs)
 	if err != nil {
 		return nil, nil, err
@@ -2065,15 +2065,13 @@ func injectSizeHint(prompt, aspectRatio, resolution string) string {
 	return strings.TrimSpace(prompt) + "\n\n将宽高比设为 " + ratio
 }
 
-// injectOutputHint asks for the transparent PNG or looping GIF in words: the web
-// conversation has no output parameter, Images follows the instruction instead.
-// A GIF comes back as one picture holding the frames, so the layout is spelled
-// out to match the 3×3 sheet the gateway checks and the caller cuts into an animation.
-func injectOutputHint(prompt, background, outputFormat string) string {
+// Request the single still sheet consumed by the GIF encoder.
+func imagePrompt(prompt, aspectRatio, resolution, background, outputFormat string) string {
 	if outputFormat == "gif" {
-		return "请绘制一张静态的九宫格分镜图，用连续九帧表现以下场景和动作。\n" + prompt + "\n\n做成循环播放的 GIF 动图：把连续的 9 帧画在同一张图里，排成 3 列 3 行，按从左到右、从上到下的顺序播放；每格大小完全相同并紧挨着排列，格子之间和四周不要有边框、间隙、文字或编号；每一帧的镜头、主体位置和背景保持一致，最后一帧能自然接回第一帧"
+		prompt = "请绘制一张静态的九宫格分镜图，用连续九帧表现以下场景和动作。\n" + prompt + "\n\n分镜排成 3 列 3 行，按从左到右、从上到下的顺序阅读。每格大小相同，紧挨排列，无边框、间隙、文字和编号。九格中人物、服装、机位与背景一致，动作逐格变化，最后一格自然衔接第一格。"
 	}
-	if background == "transparent" {
+	prompt = injectSizeHint(prompt, aspectRatio, resolution)
+	if outputFormat != "gif" && background == "transparent" {
 		return prompt + "\n\n背景设为透明，输出带透明通道的 PNG，不要画棋盘格或纯色背景"
 	}
 	return prompt

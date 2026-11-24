@@ -25,6 +25,20 @@ func (r *DispatchRepository) Start(ctx context.Context, eventID, routeID, accoun
 	return item, nil
 }
 
+// AttemptedAccounts uses the assignment ledger, including unsuccessful work.
+// Activity on a different model does not consume this route's first turn.
+func (r *DispatchRepository) AttemptedAccounts(ctx context.Context, routeID string, ids []string) (map[string]bool, error) {
+	var used []string
+	if err := r.db.WithContext(ctx).Model(&model.DispatchAttempt{}).Where("model_route_id = ? AND account_id IN ?", routeID, ids).Distinct().Pluck("account_id", &used).Error; err != nil {
+		return nil, err
+	}
+	attempted := make(map[string]bool, len(used))
+	for _, id := range used {
+		attempted[id] = true
+	}
+	return attempted, nil
+}
+
 var ErrImageAccountOccupied = errors.New("image account concurrency limit reached")
 
 // The Redis lease ends when foreground polling returns. A paid image that is

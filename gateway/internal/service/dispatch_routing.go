@@ -156,13 +156,14 @@ func (s *V1Service) routeAccounts(ctx context.Context, route model.ModelRoute, a
 }
 
 type routeAccountCandidate struct {
-	account   model.TokenAccount
-	binding   model.AccountModelRoute
-	bucketKey string
-	remaining float64
-	known     bool
-	available int64
-	slotsSeen bool
+	firstImageDispatch bool
+	account            model.TokenAccount
+	binding            model.AccountModelRoute
+	bucketKey          string
+	remaining          float64
+	known              bool
+	available          int64
+	slotsSeen          bool
 }
 
 const routeExistenceSlotChunk = 32
@@ -273,6 +274,16 @@ func (s *V1Service) collectRouteAccounts(ctx context.Context, route model.ModelR
 		cooling[item.account.ID] = s.accountCooling(route.Provider, item.account.ID)
 	}
 	preferIdle := route.Provider == "chatgpt" && strings.HasPrefix(route.ID, "image.")
+	if preferIdle && len(candidates) > 1 {
+		attempted, err := s.models.Dispatch().AttemptedAccounts(ctx, route.ID, lookupIDs)
+		if err != nil {
+			return nil, err
+		}
+		for i := range candidates {
+			item := &candidates[i]
+			item.firstImageDispatch = !attempted[item.account.ID] && item.binding.SuccessTotal == 0 && item.binding.LastSuccessAt == nil && item.binding.LastFailureAt == nil
+		}
+	}
 	sort.SliceStable(candidates, func(i, j int) bool {
 		left, right := candidates[i], candidates[j]
 		// Accounts that just failed upstream are tried last even when they have
@@ -288,6 +299,17 @@ func (s *V1Service) collectRouteAccounts(ctx context.Context, route model.ModelR
 		// Then prefer authoritative quota snapshots and best-fit allowance.
 		if left.account.Weight != right.account.Weight {
 			return left.account.Weight > right.account.Weight
+		}
+		if preferIdle {
+			if left.slotsSeen && right.slotsSeen && (left.available > 0) != (right.available > 0) {
+				return left.available > 0
+			}
+			if left.known != right.known {
+				return left.known
+			}
+			if left.firstImageDispatch != right.firstImageDispatch {
+				return left.firstImageDispatch
+			}
 		}
 		if left.slotsSeen && right.slotsSeen && left.available != right.available {
 			return left.available > right.available

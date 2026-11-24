@@ -28,7 +28,7 @@ export async function acknowledgeGenerationTaskRecoveries(requestIds: string[]) 
 }
 
 export async function waitForGenerationTaskRecovery(requestId: string, ready: (task: GenerationTaskRecovery) => boolean, signal?: AbortSignal) {
-    const deadline = Date.now() + RECOVERY_TIMEOUT_MS;
+    let deadline = Date.now() + RECOVERY_TIMEOUT_MS;
     for (;;) {
         if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
         let task: GenerationTaskRecovery | undefined;
@@ -40,6 +40,8 @@ export async function waitForGenerationTaskRecovery(requestId: string, ready: (t
         }
         if (task?.status === "failed") throw new Error(task.errorMessage || "生成失败");
         if (task && ready(task)) return task;
+        // A confirmed running image can still finish after the browser's polling window.
+        if (task?.modality === "image" && task.status === "running") deadline = Date.now() + RECOVERY_TIMEOUT_MS;
         const remainingMs = deadline - Date.now();
         if (remainingMs <= 0) throw new Error("生成任务等待超时");
         await recoveryDelay(Math.min(RECOVERY_POLL_INTERVAL_MS, remainingMs), signal);
@@ -49,14 +51,14 @@ export async function waitForGenerationTaskRecovery(requestId: string, ready: (t
 function recoveryDelay(ms: number, signal?: AbortSignal) {
     return new Promise<void>((resolve, reject) => {
         if (signal?.aborted) return reject(new DOMException("Aborted", "AbortError"));
-        const timer = window.setTimeout(resolve, ms);
-        signal?.addEventListener(
-            "abort",
-            () => {
-                window.clearTimeout(timer);
-                reject(new DOMException("Aborted", "AbortError"));
-            },
-            { once: true },
-        );
+        const abort = () => {
+            window.clearTimeout(timer);
+            reject(new DOMException("Aborted", "AbortError"));
+        };
+        const timer = window.setTimeout(() => {
+            signal?.removeEventListener("abort", abort);
+            resolve();
+        }, ms);
+        signal?.addEventListener("abort", abort, { once: true });
     });
 }

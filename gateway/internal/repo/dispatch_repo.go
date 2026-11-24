@@ -25,6 +25,85 @@ func (r *DispatchRepository) Start(ctx context.Context, eventID, routeID, accoun
 	return item, nil
 }
 
+var ErrImageAccountOccupied = errors.New("image account concurrency limit reached")
+
+// The Redis lease ends when foreground polling returns. A paid image that is
+// still being recovered occupies its account's slot until the event settles.
+func (r *DispatchRepository) StartImageWithinLimit(ctx context.Context, eventID, routeID, accountID string, limit int) (*model.DispatchAttempt, error) {
+	var attempt *model.DispatchAttempt
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var account model.TokenAccount
+		if err := tx.Select("id").Clauses(clause.Locking{Strength: "UPDATE"}).First(&account, "id = ?", accountID).Error; err != nil {
+			return err
+		}
+		var occupied int64
+		err := tx.Model(&model.DispatchAttempt{}).Distinct("dispatch_attempts.event_id").
+			Joins("JOIN event_logs ON event_logs.id = dispatch_attempts.event_id").
+			Where("dispatch_attempts.account_id = ? AND dispatch_attempts.state IN ? AND event_logs.kind = 'image' AND event_logs.status = 'pending'", accountID, []string{"submitting", "unknown", "accepted", "succeeded"}).Count(&occupied).Error
+		if err != nil {
+			return err
+		}
+		if occupied >= int64(limit) {
+			return ErrImageAccountOccupied
+		}
+		attempt, err = NewDispatchRepository(tx).Start(ctx, eventID, routeID, accountID)
+		return err
+	})
+	return attempt, err
+}
+
+// SettleImageDelivery locks the event before touching its attempt or health.
+// Only the owner of pending -> terminal updates the route and success counters.
+func (r *DispatchRepository) SettleImageDelivery(ctx context.Context, eventID, state, failureClass, message string) (bool, error) {
+	var changed bool
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var event model.EventLog
+		if err := tx.Select("id", "kind", "status", "ts", "provider").Clauses(clause.Locking{Strength: "UPDATE"}).First(&event, "id = ? AND kind = 'image'", eventID).Error; err != nil {
+			return err
+		}
+		if event.Status != "pending" {
+			return nil
+		}
+		dispatch := NewDispatchRepository(tx)
+		attempt, err := dispatch.LatestAcceptedForEvent(ctx, eventID)
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		success := state == "succeeded"
+		if success && attempt == nil {
+			return gorm.ErrRecordNotFound
+		}
+		status := "failed"
+		var cause error = errors.New(message)
+		if success {
+			status, cause = "success", nil
+		}
+		events := NewEventRepository(tx)
+		if state == "unresolved" && attempt != nil {
+			if err := events.SetPhase(ctx, event.ID, "outcome_unknown"); err != nil {
+				return err
+			}
+		}
+		if err := events.UpdateStatus(ctx, event.ID, status, message, max(1, int(time.Since(event.TS).Milliseconds()))); err != nil {
+			return err
+		}
+		changed = true
+		// A request without a durable handle can't be attributed to an accepted render.
+		// If dispatch already succeeded, its route result was recorded by the foreground.
+		if attempt == nil || attempt.State != "accepted" {
+			return nil
+		}
+		if err := dispatch.Finish(ctx, attempt.ID, state, failureClass, attempt.UpstreamTaskID, cause); err != nil {
+			return err
+		}
+		if !success && (event.Provider != "chatgpt" || failureClass != "delivery_timeout") {
+			return nil
+		}
+		return NewModelRouteRepository(tx).RecordAccountRouteResult(ctx, attempt.AccountID, attempt.ModelRouteID, failureClass, success)
+	})
+	return changed && err == nil, err
+}
+
 func (r *DispatchRepository) SetAccount(ctx context.Context, attemptID, accountID string) error {
 	return r.db.WithContext(ctx).Model(&model.DispatchAttempt{}).Where("id = ?", attemptID).
 		Updates(map[string]any{"account_id": accountID, "updated_at": time.Now()}).Error

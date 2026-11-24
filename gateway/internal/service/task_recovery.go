@@ -81,7 +81,8 @@ func (s *V1Service) startAcceptedImageRecovery(parent context.Context, event *mo
 			if failure := chatgpt.ImageResultAccessError(resumeErr); failure != nil {
 				// The provider accepted the generation. Close local delivery without replaying
 				// it or treating the provider's reservation as an uncharged submission.
-				recordBookkeepingError("close unreadable image result", s.models.Dispatch().ResolveInterrupted(ctx, attempt, false, "", failure.Stored()))
+				_, settleErr := s.models.Dispatch().SettleImageDelivery(ctx, event.ID, "unresolved", "outcome_unknown", failure.Stored())
+				recordBookkeepingError("close unreadable image result", settleErr)
 				return
 			}
 			// A transient poll/download failure keeps the accepted task recoverable.
@@ -92,8 +93,8 @@ func (s *V1Service) startAcceptedImageRecovery(parent context.Context, event *mo
 				if errors.Is(resumeErr, byteplus.ErrTaskFailed) {
 					publicErr = ErrProviderExecution
 				}
-				recordBookkeepingError("finish accepted image event", s.events.UpdateStatus(ctx, event.ID, "failed", publicErr.Error(), 0))
-				recordBookkeepingError("finish accepted image dispatch", s.models.Dispatch().Finish(ctx, attempt.ID, "failed", dispatchFailureClassName(resumeErr), attempt.UpstreamTaskID, publicErr))
+				_, settleErr := s.models.Dispatch().SettleImageDelivery(ctx, event.ID, "failed", dispatchFailureClassName(resumeErr), publicErr.Error())
+				recordBookkeepingError("finish accepted image event", settleErr)
 			}
 			return
 		}
@@ -113,17 +114,14 @@ func (s *V1Service) startAcceptedImageRecovery(parent context.Context, event *mo
 			recordBookkeepingError("store accepted image", putErr)
 			return
 		}
-		if !s.eventStillPending(ctx, event.ID) {
-			return // abandoned by the caller meanwhile; it has been settled
-		}
-		elapsed := int(time.Since(event.TS).Milliseconds())
-		if updateErr := s.events.UpdateStatus(ctx, event.ID, "success", "", elapsed); updateErr != nil {
+		changed, updateErr := s.models.Dispatch().SettleImageDelivery(ctx, event.ID, "succeeded", "", "")
+		if updateErr != nil {
 			recordBookkeepingError("complete accepted image event", updateErr)
+		}
+		if !changed {
 			return
 		}
-		recordBookkeepingError("complete accepted image dispatch", s.models.Dispatch().Finish(ctx, attempt.ID, "succeeded", "", attempt.UpstreamTaskID, nil))
-		recordBookkeepingError("complete accepted image route", s.models.Routes().RecordAccountRouteResult(ctx, attempt.AccountID, attempt.ModelRouteID, "", true))
-		_, updateErr := s.tokens.Update(ctx, event.Provider, account.ID, map[string]any{
+		_, updateErr = s.tokens.Update(ctx, event.Provider, account.ID, map[string]any{
 			"last_used_at": time.Now(), "success_total": gorm.Expr("success_total + 1"), "fails": 0,
 		})
 		recordBookkeepingError("complete accepted image account", updateErr)

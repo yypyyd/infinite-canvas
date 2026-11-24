@@ -564,9 +564,7 @@ func metaInt(m datatypes.JSONMap, key string) (int, bool) {
 }
 
 // TouchLastUsed stamps last_used_at at the moment a token is SELECTED, so the
-// accounts view reflects an accurate "last used" time. Rotation order is driven
-// by the in-memory strict round-robin cursor in the service layer (see
-// V1Service.rotateRoundRobin), not by this timestamp.
+// accounts view and least-recently-used image routing see the same selection.
 func (r *TokenRepository) TouchLastUsed(ctx context.Context, id string) error {
 	return r.db.WithContext(ctx).
 		Model(&model.TokenAccount{}).

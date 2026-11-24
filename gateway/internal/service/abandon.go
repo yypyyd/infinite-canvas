@@ -37,9 +37,12 @@ func (s *V1Service) AbandonImageRequest(ctx context.Context, principal *APIPrinc
 		return nil, ErrImageTaskNotFound
 	}
 	if event.Status == "pending" {
-		s.inflight.Cancel(event.ID)
-		if _, err := s.events.FailPending(ctx, event.ID, ErrGenerationAbandoned.Error()); err != nil {
+		changed, err := s.models.Dispatch().SettleImageDelivery(ctx, event.ID, "unresolved", "delivery_timeout", ErrGenerationAbandoned.Error())
+		if err != nil {
 			return nil, err
+		}
+		if changed {
+			s.inflight.Cancel(event.ID)
 		}
 	}
 	s.imageJobs.Delete(imageJobKey(principal.Credential.ID, requestID))
@@ -59,13 +62,6 @@ func (s *V1Service) AbandonVideoJob(ctx context.Context, principal *APIPrincipal
 		}
 	}
 	return s.VideoJob(ctx, principal, id)
-}
-
-// eventStillPending re-reads an event before a recovery stores its result, so
-// a task the caller already abandoned (and refunded) is not completed later.
-func (s *V1Service) eventStillPending(ctx context.Context, eventID string) bool {
-	event, err := s.events.GetByID(ctx, eventID)
-	return err == nil && event != nil && event.Status == "pending"
 }
 
 func (s *V1Service) eventAbandoned(ctx context.Context, eventID string) bool {

@@ -330,7 +330,7 @@ func (r *ModelRouteRepository) RecordAccountRouteResult(ctx context.Context, acc
 	if failureClass == "entitlement" {
 		patch["entitled"] = false
 	}
-	if failureClass == "temporary" {
+	if failureClass == "temporary" || failureClass == "delivery_timeout" {
 		cooldown := now.Add(45 * time.Second)
 		patch["cooldown_until"] = &cooldown
 	}

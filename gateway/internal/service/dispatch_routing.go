@@ -272,6 +272,7 @@ func (s *V1Service) collectRouteAccounts(ctx context.Context, route model.ModelR
 	for _, item := range candidates {
 		cooling[item.account.ID] = s.accountCooling(route.Provider, item.account.ID)
 	}
+	preferIdle := route.Provider == "chatgpt" && strings.HasPrefix(route.ID, "image.")
 	sort.SliceStable(candidates, func(i, j int) bool {
 		left, right := candidates[i], candidates[j]
 		// Accounts that just failed upstream are tried last even when they have
@@ -293,6 +294,15 @@ func (s *V1Service) collectRouteAccounts(ctx context.Context, route model.ModelR
 		}
 		if left.known != right.known {
 			return left.known
+		}
+		// Once both accounts can serve an image, a smaller allowance should
+		// not keep the same account first. Equal timestamps retain the pool cursor.
+		if preferIdle {
+			l, r := left.account.LastUsedAt, right.account.LastUsedAt
+			if l == nil || r == nil {
+				return l == nil && r != nil
+			}
+			return l.Before(*r)
 		}
 		if left.binding.ConsecutiveFails != right.binding.ConsecutiveFails {
 			return left.binding.ConsecutiveFails < right.binding.ConsecutiveFails

@@ -244,6 +244,13 @@ func (s *V1Service) runPoolWithFailoverPolicy(ctx context.Context, eventID, pool
 			if err == nil {
 				return data, nil
 			}
+			if errors.Is(err, repo.ErrImageAccountOccupied) {
+				if !retry {
+					delete(attemptedAccounts, token.ID)
+				}
+				busy++
+				continue
+			}
 			lastErr = err
 			durableErr = err
 			isAuth, isQuota, _, isDead := classify(err)
@@ -335,8 +342,6 @@ func (s *V1Service) tryAccount(ctx context.Context, eventID, pool string, token 
 		return nil, errors.Is(validationErr, ErrNoProviderAccount) || routeFailoverSafe(validationErr), false, validationErr
 	}
 	token = fresh
-	recordBookkeepingError("set generation account", s.events.SetAccount(ctx, eventID, token.ID, token.AccountEmail))
-	recordBookkeepingError("touch generation account", s.tokens.TouchLastUsed(ctx, token.ID))
 	authRefreshed := false
 	for {
 		if authRefreshed {
@@ -349,11 +354,22 @@ func (s *V1Service) tryAccount(ctx context.Context, eventID, pool string, token 
 		var dispatchID string
 		var reservation *model.QuotaReservation
 		if routeID != "" {
-			attemptRow, startErr := s.models.Dispatch().Start(context.WithoutCancel(ctx), eventID, routeID, token.ID)
+			var attemptRow *model.DispatchAttempt
+			var startErr error
+			bookCtx := context.WithoutCancel(ctx)
+			if pool == "chatgpt" && kind == "image" {
+				attemptRow, startErr = s.models.Dispatch().StartImageWithinLimit(bookCtx, eventID, routeID, token.ID, poolAccountConcurrency(pool, token))
+			} else {
+				attemptRow, startErr = s.models.Dispatch().Start(bookCtx, eventID, routeID, token.ID)
+			}
 			if startErr != nil {
 				return nil, false, false, startErr
 			}
 			dispatchID = attemptRow.ID
+		}
+		recordBookkeepingError("set generation account", s.events.SetAccount(ctx, eventID, token.ID, token.AccountEmail))
+		recordBookkeepingError("touch generation account", s.tokens.TouchLastUsed(ctx, token.ID))
+		if dispatchID != "" {
 			plan, _ := dispatchPlanFromContext(ctx)
 			bucketKey := strings.TrimSpace(plan.Route.QuotaBucketKey)
 			if binding, bindingErr := s.models.Routes().AccountRoute(ctx, token.ID, routeID); bindingErr == nil && strings.TrimSpace(binding.QuotaBucketKey) != "" {
@@ -366,6 +382,7 @@ func (s *V1Service) tryAccount(ctx context.Context, eventID, pool string, token 
 				if policy, ok := model.DecodeQuotaCostPolicy(plan.Route.QuotaCosts); ok && strings.TrimSpace(policy.Unit) != "" {
 					unit = strings.TrimSpace(policy.Unit)
 				}
+				var startErr error
 				reservation, startErr = s.models.Quotas().ReserveWithUnit(context.WithoutCancel(ctx), eventID, dispatchID, token.ID, bucketKey, unit, plan.Cost)
 				if startErr != nil {
 					if !errors.Is(startErr, repo.ErrQuotaUnavailable) {

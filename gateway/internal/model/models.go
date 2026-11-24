@@ -156,7 +156,13 @@ type TokenAccount struct {
 	UpdatedAt   time.Time
 	// SchedulingStub is set when credential columns were omitted from a
 	// scheduling query. An empty Value then means "not loaded", not "missing".
-	SchedulingStub bool `gorm:"-" json:"-"`
+	SchedulingStub bool              `gorm:"-" json:"-"`
+	ImageTurn      ImageDispatchTurn `gorm:"-" json:"-"`
+}
+
+// ImageDispatchTurn is the account-route round observed during ranking and the round to claim.
+type ImageDispatchTurn struct {
+	Previous, Next int64
 }
 
 type RefreshProfile struct {

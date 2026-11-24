@@ -156,7 +156,7 @@ func (s *V1Service) routeAccounts(ctx context.Context, route model.ModelRoute, a
 }
 
 type routeAccountCandidate struct {
-	firstImageDispatch bool
+	imageDispatchCount int64
 	account            model.TokenAccount
 	binding            model.AccountModelRoute
 	bucketKey          string
@@ -274,14 +274,27 @@ func (s *V1Service) collectRouteAccounts(ctx context.Context, route model.ModelR
 		cooling[item.account.ID] = s.accountCooling(route.Provider, item.account.ID)
 	}
 	preferIdle := route.Provider == "chatgpt" && strings.HasPrefix(route.ID, "image.")
-	if preferIdle && len(candidates) > 1 {
-		attempted, err := s.models.Dispatch().AttemptedAccounts(ctx, route.ID, lookupIDs)
-		if err != nil {
-			return nil, err
+	if preferIdle {
+		var round int64
+		for _, item := range candidates {
+			round = max(round, item.binding.ImageDispatchRound)
+		}
+		var counts map[string]int64
+		if len(candidates) > 1 {
+			counts, err = s.models.Dispatch().AccountDispatchCounts(ctx, route.ID, lookupIDs)
+			if err != nil {
+				return nil, err
+			}
 		}
 		for i := range candidates {
 			item := &candidates[i]
-			item.firstImageDispatch = !attempted[item.account.ID] && item.binding.SuccessTotal == 0 && item.binding.LastSuccessAt == nil && item.binding.LastFailureAt == nil
+			item.imageDispatchCount = max(counts[item.account.ID], item.binding.SuccessTotal)
+			if item.binding.LastFailureAt != nil || item.binding.LastSuccessAt != nil {
+				item.imageDispatchCount = max(1, item.imageDispatchCount)
+			}
+			// New or returning accounts join the active round in one turn.
+			previous := item.binding.ImageDispatchRound
+			item.account.ImageTurn = model.ImageDispatchTurn{Previous: previous, Next: max(round, previous+1)}
 		}
 	}
 	sort.SliceStable(candidates, func(i, j int) bool {
@@ -307,11 +320,14 @@ func (s *V1Service) collectRouteAccounts(ctx context.Context, route model.ModelR
 			if left.known != right.known {
 				return left.known
 			}
-			if left.firstImageDispatch != right.firstImageDispatch {
-				return left.firstImageDispatch
+			if left.binding.ImageDispatchRound != right.binding.ImageDispatchRound {
+				return left.binding.ImageDispatchRound < right.binding.ImageDispatchRound
+			}
+			if left.imageDispatchCount != right.imageDispatchCount {
+				return left.imageDispatchCount < right.imageDispatchCount
 			}
 		}
-		if left.slotsSeen && right.slotsSeen && left.available != right.available {
+		if !preferIdle && left.slotsSeen && right.slotsSeen && left.available != right.available {
 			return left.available > right.available
 		}
 		if left.known != right.known {

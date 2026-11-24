@@ -41,7 +41,11 @@ func TestImageCapacityAndDelivery(t *testing.T) {
 	ctx := t.Context()
 	repo := NewDispatchRepository(db)
 	start := func(id string, max int) error {
-		_, err := repo.StartImageWithinLimit(ctx, id, route, account, max)
+		var binding model.AccountModelRoute
+		if err := db.First(&binding, "id = ?", "binding").Error; err != nil {
+			return err
+		}
+		_, err := repo.StartImageWithinLimit(ctx, id, route, account, max, model.ImageDispatchTurn{Previous: binding.ImageDispatchRound, Next: binding.ImageDispatchRound + 1})
 		return err
 	}
 	settle := func(id, state, class, reason string, want bool) {
@@ -80,6 +84,10 @@ func TestImageCapacityAndDelivery(t *testing.T) {
 	settle("slow", "unresolved", "delivery_timeout", "deadline", false)
 	settle("slow", "succeeded", "", "", false)
 	health(1, 0)
+	_, staleErr := repo.StartImageWithinLimit(ctx, "extra", route, account, 1, model.ImageDispatchTurn{Previous: 0, Next: 12})
+	if !errors.Is(staleErr, ErrImageTurnClaimed) {
+		t.Fatalf("outdated ranking admitted after slot release: %v", staleErr)
+	}
 	var closed model.DispatchAttempt
 	must(db.First(&closed, "event_id = ?", "slow").Error)
 	if closed.State != "unresolved" || closed.UpstreamTaskID != "confirmed-handle" || closed.FailureClass != "delivery_timeout" {

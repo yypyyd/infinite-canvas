@@ -25,25 +25,31 @@ func (r *DispatchRepository) Start(ctx context.Context, eventID, routeID, accoun
 	return item, nil
 }
 
-// AttemptedAccounts uses the assignment ledger, including unsuccessful work.
-// Activity on a different model does not consume this route's first turn.
-func (r *DispatchRepository) AttemptedAccounts(ctx context.Context, routeID string, ids []string) (map[string]bool, error) {
-	var used []string
-	if err := r.db.WithContext(ctx).Model(&model.DispatchAttempt{}).Where("model_route_id = ? AND account_id IN ?", routeID, ids).Distinct().Pluck("account_id", &used).Error; err != nil {
+// Count each dispatch, including unsuccessful submissions. Polls of the same
+// accepted task never create dispatch attempts.
+func (r *DispatchRepository) AccountDispatchCounts(ctx context.Context, routeID string, ids []string) (map[string]int64, error) {
+	var rows []struct {
+		AccountID string
+		Total     int64
+	}
+	if err := r.db.WithContext(ctx).Model(&model.DispatchAttempt{}).
+		Select("account_id, COUNT(*) AS total").Where("model_route_id = ? AND account_id IN ?", routeID, ids).
+		Group("account_id").Scan(&rows).Error; err != nil {
 		return nil, err
 	}
-	attempted := make(map[string]bool, len(used))
-	for _, id := range used {
-		attempted[id] = true
+	counts := make(map[string]int64, len(rows))
+	for _, row := range rows {
+		counts[row.AccountID] = row.Total
 	}
-	return attempted, nil
+	return counts, nil
 }
 
 var ErrImageAccountOccupied = errors.New("image account concurrency limit reached")
+var ErrImageTurnClaimed = errors.New("image account scheduling turn already claimed")
 
 // The Redis lease ends when foreground polling returns. A paid image that is
 // still being recovered occupies its account's slot until the event settles.
-func (r *DispatchRepository) StartImageWithinLimit(ctx context.Context, eventID, routeID, accountID string, limit int) (*model.DispatchAttempt, error) {
+func (r *DispatchRepository) StartImageWithinLimit(ctx context.Context, eventID, routeID, accountID string, limit int, turn model.ImageDispatchTurn) (*model.DispatchAttempt, error) {
 	var attempt *model.DispatchAttempt
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var account model.TokenAccount
@@ -59,6 +65,19 @@ func (r *DispatchRepository) StartImageWithinLimit(ctx context.Context, eventID,
 		}
 		if occupied >= int64(limit) {
 			return ErrImageAccountOccupied
+		}
+		// A concurrent request can have ranked the same idle account. Only one
+		// dispatch can claim that turn, even if the first has already finished.
+		if turn.Next <= turn.Previous {
+			return errors.New("invalid image dispatch round")
+		}
+		claim := tx.Model(&model.AccountModelRoute{}).Where("account_id = ? AND model_route_id = ? AND image_dispatch_round = ?", accountID, routeID, turn.Previous).
+			UpdateColumn("image_dispatch_round", turn.Next)
+		if claim.Error != nil {
+			return claim.Error
+		}
+		if claim.RowsAffected != 1 {
+			return ErrImageTurnClaimed
 		}
 		attempt, err = NewDispatchRepository(tx).Start(ctx, eventID, routeID, accountID)
 		return err

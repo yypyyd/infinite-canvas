@@ -209,6 +209,7 @@ func (s *V1Service) runPoolWithFailoverPolicy(ctx context.Context, eventID, pool
 		counts, observed := s.conc.ActiveCounts(ctx, accountGateKeys(active))
 		var lastErr error
 		busy := 0
+		staleTurn := false
 		for _, token := range active {
 			if excludedAccounts[token.ID] {
 				continue
@@ -244,7 +245,8 @@ func (s *V1Service) runPoolWithFailoverPolicy(ctx context.Context, eventID, pool
 			if err == nil {
 				return data, nil
 			}
-			if errors.Is(err, repo.ErrImageAccountOccupied) {
+			if errors.Is(err, repo.ErrImageAccountOccupied) || errors.Is(err, repo.ErrImageTurnClaimed) {
+				staleTurn = staleTurn || errors.Is(err, repo.ErrImageTurnClaimed)
 				if !retry {
 					delete(attemptedAccounts, token.ID)
 				}
@@ -292,6 +294,14 @@ func (s *V1Service) runPoolWithFailoverPolicy(ctx context.Context, eventID, pool
 			return nil, lastErr
 		}
 
+		if staleTurn && ctx.Err() == nil && time.Now().Before(queueDeadline) {
+			plan, _ := dispatchPlanFromContext(ctx)
+			active, refreshErr = s.routeAccounts(ctx, plan.Route, active)
+			if refreshErr != nil {
+				return nil, refreshErr
+			}
+			continue
+		}
 		if bytePlusBetaRetry.active && busy == 0 {
 			return nil, bytePlusBetaRetry.lastErr
 		}
@@ -337,6 +347,7 @@ func (s *V1Service) tryAccount(ctx context.Context, eventID, pool string, token 
 	retry bool,
 ) ([]byte, bool, bool, error) {
 	routeID := dispatchRouteFromContext(ctx)
+	imageTurn := token.ImageTurn
 	fresh, validationErr := s.revalidateDispatchAccount(ctx, pool, token.ID, kind, retry)
 	if validationErr != nil {
 		return nil, errors.Is(validationErr, ErrNoProviderAccount) || routeFailoverSafe(validationErr), false, validationErr
@@ -358,7 +369,7 @@ func (s *V1Service) tryAccount(ctx context.Context, eventID, pool string, token 
 			var startErr error
 			bookCtx := context.WithoutCancel(ctx)
 			if pool == "chatgpt" && kind == "image" {
-				attemptRow, startErr = s.models.Dispatch().StartImageWithinLimit(bookCtx, eventID, routeID, token.ID, poolAccountConcurrency(pool, token))
+				attemptRow, startErr = s.models.Dispatch().StartImageWithinLimit(bookCtx, eventID, routeID, token.ID, poolAccountConcurrency(pool, token), imageTurn)
 			} else {
 				attemptRow, startErr = s.models.Dispatch().Start(bookCtx, eventID, routeID, token.ID)
 			}

@@ -98,20 +98,21 @@ type QuotaCostPolicy struct {
 // AccountModelRoute scopes provider entitlements to an account+route pair. An
 // account can be disabled for one model without removing it from the provider.
 type AccountModelRoute struct {
-	ID               string     `gorm:"primaryKey;size:191"`
-	AccountID        string     `gorm:"size:64;not null;uniqueIndex:ux_account_route,priority:1;index"`
-	ModelRouteID     string     `gorm:"size:191;not null;uniqueIndex:ux_account_route,priority:2;index"`
-	Enabled          bool       `gorm:"not null;default:true;index"`
-	Entitled         bool       `gorm:"not null;default:true"`
-	QuotaBucketKey   string     `gorm:"size:128;not null;default:''"`
-	ConsecutiveFails int        `gorm:"not null;default:0"`
-	SuccessTotal     int64      `gorm:"not null;default:0"`
-	CooldownUntil    *time.Time `gorm:"index"`
-	LastFailureClass string     `gorm:"size:32"`
-	LastFailureAt    *time.Time
-	LastSuccessAt    *time.Time
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	ID                 string     `gorm:"primaryKey;size:191"`
+	AccountID          string     `gorm:"size:64;not null;uniqueIndex:ux_account_route,priority:1;index"`
+	ModelRouteID       string     `gorm:"size:191;not null;uniqueIndex:ux_account_route,priority:2;index"`
+	Enabled            bool       `gorm:"not null;default:true;index"`
+	Entitled           bool       `gorm:"not null;default:true"`
+	QuotaBucketKey     string     `gorm:"size:128;not null;default:''"`
+	ImageDispatchRound int64      `gorm:"not null;default:0"`
+	ConsecutiveFails   int        `gorm:"not null;default:0"`
+	SuccessTotal       int64      `gorm:"not null;default:0"`
+	CooldownUntil      *time.Time `gorm:"index"`
+	LastFailureClass   string     `gorm:"size:32"`
+	LastFailureAt      *time.Time
+	LastSuccessAt      *time.Time
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 // AccountQuotaBucket is the durable source of truth for schedulable upstream

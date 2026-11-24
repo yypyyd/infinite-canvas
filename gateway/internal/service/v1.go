@@ -3858,13 +3858,6 @@ func absFloat(v float64) float64 {
 	return v
 }
 
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 func principalCredits(principal *APIPrincipal) float64 {
 	return 0
 }

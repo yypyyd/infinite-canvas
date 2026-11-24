@@ -209,6 +209,7 @@ func (s *V1Service) refreshPoolAccounts(ctx context.Context, pool, kind string, 
 	out := make([]model.TokenAccount, 0, len(fresh))
 	for _, previous := range active {
 		if account, ok := byID[previous.ID]; ok {
+			account.ImageTurn = previous.ImageTurn
 			out = append(out, account)
 		}
 	}

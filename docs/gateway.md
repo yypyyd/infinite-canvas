@@ -25,6 +25,8 @@ Nexa 已并入幻图，作为幻图的**内置账号池**随主进程启动：�
 
 ### 数据库
 
+ChatGPT 图片线路在 `account_model_routes.image_dispatch_round` 保存每个账号最后认领的轮次；轮次和 `dispatch_attempts` 派发记录由同一事务写入。
+
 账号池按以下顺序选择数据库，表放在独立 schema（`POOL_DB_SCHEMA`，默认 `gateway`），启动时自动建 schema 并迁移，不与幻图自身的表冲突：
 
 1. `POOL_POSTGRES_DSN`（显式指定）；

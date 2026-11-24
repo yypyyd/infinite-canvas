@@ -41,6 +41,7 @@ var (
 	// terminal and NOT retryable: the same prompt fails on every account, so the
 	// caller must fail fast rather than poll or fail over.
 	ErrContentPolicy = errors.New("chatgpt content policy rejection")
+	ErrNoImageOutput = errors.New("回复已结束，未生成图片")
 )
 
 type Client struct {
@@ -1608,7 +1609,7 @@ func (c *Client) startImageGeneration(ctx context.Context, session tlsclient.Htt
 	// the conversation endpoint during polling. Rejecting those conversations here
 	// caused the majority of requests to fail before the generated asset had a
 	// chance to arrive. A genuinely text-only/refused turn is still detected by
-	// pollForImage via conversationEndedWithoutImage/conversationRejected.
+	// pollForImage from the current final turn.
 	return conversationID, fileIDs, sedimentIDs, nil
 }
 
@@ -1695,6 +1696,8 @@ func (c *Client) pollForImage(ctx context.Context, session tlsclient.HttpClient,
 		sedimentIDs = dropIDs(mergeStrings(sedimentIDs, sediments), exclude)
 	}
 	var observation imagePollError
+	var textNode string
+	var textSince time.Time
 	consecutiveDenials := 0
 	key := conversationReadKey{account, conversationID}
 	var recentLimits uint8 // one bit per actual read, newest in bit zero
@@ -1755,11 +1758,19 @@ func (c *Client) pollForImage(ctx context.Context, session tlsclient.HttpClient,
 		observation.readable++
 		observation.lastSnapshot = imageSnapshotState(conv)
 		collect(conv)
-		// Fail fast on a content-audit refusal: the assistant turn carries the
-		// rejection text and no image will ever land, so polling to timeout only
-		// wastes the whole budget. Only bail while we have no asset yet.
-		if len(fileIDs) == 0 && len(sedimentIDs) == 0 && (conversationRejected(conv) || conversationEndedWithoutImage(conv)) {
-			return nil, nil, ErrContentPolicy
+		if len(fileIDs) == 0 && len(sedimentIDs) == 0 {
+			if conversationRejected(conv) {
+				return nil, nil, ErrContentPolicy
+			}
+			if recovering {
+				id := completedTextNode(conv)
+				if id != textNode {
+					textNode, textSince = id, time.Now()
+				}
+				if id != "" && time.Since(textSince) >= 30*time.Second {
+					return nil, nil, ErrNoImageOutput
+				}
+			}
 		}
 		if len(fileIDs) > 0 || len(sedimentIDs) > 0 {
 			// The first readable snapshot already contains a deliverable candidate.

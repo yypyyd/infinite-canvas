@@ -1,6 +1,7 @@
 package chatgpt
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -15,6 +16,58 @@ import (
 type conversationReply struct {
 	status int
 	body   string
+}
+
+func TestRecoveryDistinguishesFinalTextFromPendingImage(t *testing.T) {
+	t.Setenv("CHATGPT_DEBUG_DUMP", "")
+	const final = `{"current_node":"answer","mapping":{"history":{"message":{"author":{"role":"assistant"},"content":{"content_type":"code"}}},"answer":{"message":{"author":{"role":"assistant"},"content":{"content_type":"text","parts":["Example response"]},"recipient":"all","status":"finished_successfully","end_turn":true}}}}`
+	const image = `{"mapping":{"output":{"message":{"author":{"role":"tool"},"content":"file-service://result"}}}}`
+	for _, tc := range []struct {
+		name       string
+		snapshots  []string
+		foreground bool
+		want       string
+	}{
+		{"confirmed text", []string{final}, false, "text"},
+		{"submission still settling", []string{final}, true, "pending"},
+		{"image arrives during confirmation", []string{final, image}, false, "result"},
+		{"image queued", []string{strings.Replace(final, `"recipient":"all"`, `"metadata":{"image_gen_async":true}`, 1)}, false, "pending"},
+		{"tool started", []string{strings.Replace(final, `"role":"assistant"`, `"role":"tool"`, 1)}, false, "pending"},
+		{"tool requested", []string{strings.Replace(final, `"history":{"message":{`, `"history":{"message":{"recipient":"image_tool",`, 1)}, false, "pending"},
+		{"turn in progress", []string{strings.Replace(final, "finished_successfully", "in_progress", 1)}, false, "pending"},
+		{"empty final placeholder", []string{strings.Replace(final, "Example response", " ", 1)}, false, "pending"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				reader := &conversationReader{}
+				for _, snapshot := range tc.snapshots {
+					reader.replies = append(reader.replies, conversationReply{200, snapshot})
+				}
+				var refs map[string]bool
+				if tc.foreground {
+					refs = map[string]bool{}
+				}
+				start := time.Now()
+				const budget = 2 * time.Minute
+				files, _, err := new(Client).pollForImage(t.Context(), reader, "fixture", "test-conversation", nil, nil, refs, budget)
+				switch tc.want {
+				case "text":
+					wrapped := AcceptedFailure("test-conversation", err)
+					if !errors.Is(wrapped, ErrNoImageOutput) || errors.Is(wrapped, ErrContentPolicy) || !errors.Is(wrapped, ErrTaskAccepted) || time.Since(start) < 30*time.Second || time.Since(start) >= budget {
+						t.Fatalf("err=%v elapsed=%s", err, time.Since(start))
+					}
+				case "pending":
+					if err == nil || errors.Is(err, ErrNoImageOutput) || time.Since(start) < budget {
+						t.Fatalf("err=%v elapsed=%s", err, time.Since(start))
+					}
+				case "result":
+					if err != nil || len(files) != 1 || files[0] != tc.want {
+						t.Fatalf("files=%v err=%v", files, err)
+					}
+				}
+			})
+		})
+	}
 }
 
 type conversationReader struct {

@@ -50,6 +50,8 @@ func publicGenerationError(cause error) error {
 		return ErrAdobeUpstreamBusy
 	case errors.Is(cause, ErrAdobeGenerationSession), errors.Is(cause, adobe.ErrGenerationSession):
 		return ErrAdobeGenerationSession
+	case errors.Is(cause, chatgpt.ErrNoImageOutput):
+		return &errtext.Failure{Status: 502, Detail: chatgpt.ErrNoImageOutput.Error()}
 	case errors.Is(cause, ErrGenerationOutcomeUnknown):
 		return ErrGenerationOutcomeUnknown
 	case errors.Is(cause, ErrIdempotencyConflict):
@@ -148,7 +150,7 @@ func safeStoredGenerationError(raw string) string {
 		return detail.Error()
 	}
 	for _, safe := range []error{
-		ErrGenerationOutcomeUnknown, ErrGenerationAbandoned,
+		ErrGenerationOutcomeUnknown, ErrGenerationAbandoned, chatgpt.ErrNoImageOutput,
 		ErrUnknownModel, ErrIdempotencyConflict, ErrInsufficientFunds, ErrUnsupportedParams,
 		ErrBannedPrompt, ErrContentRejected, ErrNoProviderAccount, ErrProviderDisabled,
 		ErrProviderAuth, ErrProviderQuota, ErrProviderTemporary, ErrProviderExecution,

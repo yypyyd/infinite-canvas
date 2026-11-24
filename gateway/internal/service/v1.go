@@ -1560,9 +1560,10 @@ func (s *V1Service) prepareImageExecution(ctx context.Context, principal *APIPri
 	imageBytes, upstreamURL, execErr := s.dispatchImageRoutes(genCtx, eventID, modelItem, in, aspectRatio, resolution, urlOnly)
 	if execErr != nil {
 		if noRouteFailover(execErr) {
-			if errors.Is(execErr, chatgpt.ErrContentPolicy) {
-				recordBookkeepingError("update rejected image event", s.events.UpdateStatus(ctx, eventID, "failed", ErrContentRejected.Error(), int(time.Since(startedAt).Milliseconds())))
-				return nil, ErrContentRejected
+			if errors.Is(execErr, chatgpt.ErrContentPolicy) || errors.Is(execErr, chatgpt.ErrNoImageOutput) {
+				publicErr := publicGenerationError(execErr)
+				recordBookkeepingError("finish image without output", s.events.UpdateStatus(ctx, eventID, "failed", publicErr.Error(), int(time.Since(startedAt).Milliseconds())))
+				return nil, publicErr
 			}
 			// create_task is non-idempotent. Accepted and submission-unknown
 			// outcomes stay pending so task lookup can resume a known task id or

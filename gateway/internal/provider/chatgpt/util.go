@@ -145,64 +145,47 @@ func conversationRejected(conversation map[string]any) bool {
 	return false
 }
 
-// conversationEndedWithoutImage reports whether the model finished its turn
-// with a plain-text answer and never engaged the async image pipeline (no tool
-// turn, no image_gen task). ChatGPT localizes audit refusals, so this catches
-// rejections in ANY language structurally: a closed text-only turn can never
-// produce an image, and polling further only burns the budget.
-func conversationEndedWithoutImage(conversation map[string]any) bool {
-	mapping, _ := conversation["mapping"].(map[string]any)
-	if len(mapping) == 0 {
-		return false
+// Only a closed, current assistant text turn establishes that no image was returned.
+// Tool turns and async markers still take precedence over a text completion.
+func completedTextNode(conv map[string]any) string {
+	mapping, _ := conv["mapping"].(map[string]any)
+	id, _ := conv["current_node"].(string)
+	node, _ := mapping[id].(map[string]any)
+	m, _ := node["message"].(map[string]any)
+	author, _ := m["author"].(map[string]any)
+	content, _ := m["content"].(map[string]any)
+	if id == "" || author["role"] != "assistant" || content["content_type"] != "text" || m["status"] != "finished_successfully" || m["end_turn"] != true {
+		return ""
 	}
-	for _, rawNode := range mapping {
-		node, _ := rawNode.(map[string]any)
-		message, _ := node["message"].(map[string]any)
-		if message == nil {
-			continue
-		}
-		if metadata, _ := message["metadata"].(map[string]any); metadata != nil {
-			if stringValue(metadata["image_gen_task_id"]) != "" || metadata["image_gen_async"] == true {
-				return false
-			}
-		}
-		author, _ := message["author"].(map[string]any)
-		role := strings.ToLower(strings.TrimSpace(stringValue(author["role"])))
-		if role == "tool" {
-			return false
-		}
-		if role == "assistant" {
-			if content, _ := message["content"].(map[string]any); content != nil {
-				// Only tool-invoking content types mean generation is underway.
-				// Context nodes (model_editable_context, thoughts, …) also appear
-				// on refused turns and must NOT suppress the detection.
-				switch stringValue(content["content_type"]) {
-				case "code", "multimodal_text":
-					return false
-				}
-			}
+	if recipient := stringValue(m["recipient"]); recipient != "" && recipient != "all" {
+		return ""
+	}
+	if channel := stringValue(m["channel"]); channel != "" && channel != "final" {
+		return ""
+	}
+	parts, _ := content["parts"].([]any)
+	hasText := false
+	for _, part := range parts {
+		if s, ok := part.(string); ok && strings.TrimSpace(s) != "" {
+			hasText = true
+			break
 		}
 	}
-	for _, rawNode := range mapping {
-		node, _ := rawNode.(map[string]any)
-		message, _ := node["message"].(map[string]any)
-		if message == nil {
-			continue
-		}
-		author, _ := message["author"].(map[string]any)
-		if strings.ToLower(strings.TrimSpace(stringValue(author["role"]))) != "assistant" {
-			continue
-		}
-		if message["end_turn"] != true || stringValue(message["status"]) != "finished_successfully" {
-			continue
-		}
-		var sb strings.Builder
-		collectText(message["content"], &sb)
-		if strings.TrimSpace(sb.String()) != "" {
-			return true
+	if !hasText {
+		return ""
+	}
+	for _, v := range mapping {
+		n, _ := v.(map[string]any)
+		msg, _ := n["message"].(map[string]any)
+		meta, _ := msg["metadata"].(map[string]any)
+		a, _ := msg["author"].(map[string]any)
+		recipient, _ := msg["recipient"].(string)
+		if a["role"] == "tool" || (a["role"] == "assistant" && recipient != "" && recipient != "all") ||
+			stringValue(meta["image_gen_task_id"]) != "" || meta["image_gen_async"] == true || meta["trigger_async_ux"] == true {
+			return ""
 		}
 	}
-	return false
+	return id
 }
 
 func stringValue(v any) string {

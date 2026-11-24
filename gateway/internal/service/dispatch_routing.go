@@ -605,6 +605,9 @@ func runTextRouteFailover(routes []model.ModelRoute, attempt func(model.ModelRou
 }
 
 func dispatchFailureClass(err error) (state, class string) {
+	if errors.Is(err, chatgpt.ErrNoImageOutput) {
+		return "failed", "request"
+	}
 	if errors.Is(err, chatgpt.ErrContentPolicy) {
 		return "failed", "content"
 	}

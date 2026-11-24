@@ -88,7 +88,7 @@ func (s *V1Service) startAcceptedImageRecovery(parent context.Context, event *mo
 			// A transient poll/download failure keeps the accepted task recoverable.
 			// Explicit terminal provider outcomes can safely close the event.
 			// ErrUnsupportedParams here is a finished image that is not the requested gif or transparent output.
-			if errors.Is(resumeErr, byteplus.ErrQuotaExhausted) || errors.Is(resumeErr, byteplus.ErrRiskControl) || errors.Is(resumeErr, byteplus.ErrInvalidParams) || errors.Is(resumeErr, byteplus.ErrTaskFailed) || errors.Is(resumeErr, chatgpt.ErrContentPolicy) || errors.Is(resumeErr, ErrUnsupportedParams) {
+			if errors.Is(resumeErr, byteplus.ErrQuotaExhausted) || errors.Is(resumeErr, byteplus.ErrRiskControl) || errors.Is(resumeErr, byteplus.ErrInvalidParams) || errors.Is(resumeErr, byteplus.ErrTaskFailed) || errors.Is(resumeErr, chatgpt.ErrContentPolicy) || errors.Is(resumeErr, chatgpt.ErrNoImageOutput) || errors.Is(resumeErr, ErrUnsupportedParams) {
 				publicErr := publicGenerationError(resumeErr)
 				if errors.Is(resumeErr, byteplus.ErrTaskFailed) {
 					publicErr = ErrProviderExecution

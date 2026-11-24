@@ -89,8 +89,7 @@ func imageSnapshotState(conv map[string]any) string {
 			}
 		}
 	}
-	return fmt.Sprintf("%s current_role=%s current_content=%s end_turn=%t current_error=%t tool_turns=%d async_turns=%d output_pointers=%d", status, role, kind, message["end_turn"] == true, message["error"] != nil, toolTurns, asyncTurns, pointers)
-
+	return fmt.Sprintf("%s current_role=%s current_content=%s end_turn=%t current_error=%t tool_turns=%d async_turns=%d output_pointers=%d final_text_only=%t", status, role, kind, message["end_turn"] == true, message["error"] != nil, toolTurns, asyncTurns, pointers, completedTextNode(conv) != "")
 }
 
 func snapshotEnum(value any, allowed ...string) string {
@@ -128,8 +127,8 @@ func (e *ImageTaskError) Error() string {
 }
 
 func (e *ImageTaskError) Is(target error) bool {
-	if target == ErrContentPolicy {
-		return errors.Is(e.Cause, ErrContentPolicy)
+	if target == ErrContentPolicy || target == ErrNoImageOutput {
+		return errors.Is(e.Cause, target)
 	}
 	return (target == ErrTaskAccepted && e.ConversationID != "") ||
 		(target == ErrTaskSubmissionUnknown && e.ConversationID == "")

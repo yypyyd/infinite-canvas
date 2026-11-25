@@ -124,15 +124,16 @@ function ActivityList() {
         {
             title: "用户",
             dataIndex: "username",
-            width: 155,
+            width: 175,
             render: (_, row) => {
+                const username = row.username || "未知用户";
                 const id = String(row.publicUserId ?? row.userId);
                 return (
-                    <Flex vertical>
-                        <Typography.Text strong ellipsis>
-                            {row.username || "未知用户"}
+                    <Flex align="baseline" gap={8}>
+                        <Typography.Text strong ellipsis={{ tooltip: username }} className="min-w-0">
+                            {username}
                         </Typography.Text>
-                        <Typography.Text type="secondary" copyable={{ text: id }} ellipsis>
+                        <Typography.Text type="secondary" copyable={{ text: id }} ellipsis={{ tooltip: id }} style={{ flexShrink: 0, maxWidth: "65%" }}>
                             {id}
                         </Typography.Text>
                     </Flex>
@@ -213,18 +214,19 @@ function ActivityList() {
         {
             title: "算力变动",
             key: "credits",
-            width: 140,
-            render: (_, { task, creditLogs }) =>
-                creditLogs.length ? (
-                    <Flex vertical>
+            width: 180,
+            render: (_, { task, creditLogs }) => {
+                if (!creditLogs.length) return task?.credits ? <Typography.Text type="secondary">计价 {task.credits}</Typography.Text> : "—";
+                const detail = task ? `${creditLogs.length} 笔流水` : `余额 ${creditLogs[0].balance}`;
+                return (
+                    <Flex align="baseline" gap={8} className="whitespace-nowrap">
                         <CreditAmount amount={creditLogs.reduce((sum, log) => sum + log.amount, 0)} />
-                        {task ? <Typography.Text type="secondary">{creditLogs.length} 笔流水</Typography.Text> : <Typography.Text type="secondary">余额 {creditLogs[0].balance}</Typography.Text>}
+                        <Typography.Text type="secondary" ellipsis={{ tooltip: detail }} className="min-w-0">
+                            {detail}
+                        </Typography.Text>
                     </Flex>
-                ) : task?.credits ? (
-                    <Typography.Text type="secondary">计价 {task.credits}</Typography.Text>
-                ) : (
-                    "—"
-                ),
+                );
+            },
         },
         {
             title: "操作",
@@ -294,7 +296,7 @@ function ActivityList() {
                 search={false}
                 defaultSize="middle"
                 tableLayout="fixed"
-                scroll={{ x: 1450 }}
+                scroll={{ x: 1500 }}
                 cardProps={{ variant: "borderless" }}
                 headerTitle={<Tag>{query.data?.total ?? 0} 条记录</Tag>}
                 toolBarRender={() => [

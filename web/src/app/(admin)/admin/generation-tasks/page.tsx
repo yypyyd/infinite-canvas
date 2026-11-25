@@ -1,134 +1,265 @@
 "use client";
 
-import { ReloadOutlined, SearchOutlined } from "@ant-design/icons";
+import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { ProTable, type ProColumns } from "@ant-design/pro-components";
-import { useQuery } from "@tanstack/react-query";
-import { Button, Card, Col, Form, Input, Row, Select, Space, Tabs, Tag, Typography } from "antd";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Alert, App, Button, Card, Col, Flex, Form, Input, Row, Select, Space, Tabs, Tag, Tooltip, Typography } from "antd";
 import dayjs from "dayjs";
-import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { generationTaskPollInterval } from "@/lib/query-polling";
-import { fetchAdminGenerationTasks, type AdminGenerationTask } from "@/services/api/admin";
+import { deleteAdminCreditLog, fetchAdminGenerationActivity, saveAdminCreditLog, type AdminCreditLog, type AdminGenerationActivity } from "@/services/api/admin";
 import { useUserStore } from "@/stores/use-user-store";
 
+import { CreditLogEditor } from "./components/credit-log-editor";
 import { GeneratedImages } from "./components/generated-images";
 
-const CreditLogsPanel = dynamic(() => import("./components/credit-logs"));
-const PoolLogsPanel = dynamic(() => import("./components/pool-logs"));
-
-const recordTabs = [
-    { key: "tasks", label: "任务列表", children: <TaskList /> },
-    { key: "images", label: "用户生成图片", children: <GeneratedImages /> },
-    { key: "credits", label: "算力流水", children: <CreditLogsPanel /> },
-    { key: "upstream", label: "上游调用", children: <PoolLogsPanel /> },
-];
-
-const statusOptions = [
-    { label: "全部状态", value: "" },
-    { label: "运行中", value: "running" },
-    { label: "成功", value: "success" },
-    { label: "失败", value: "failed" },
-];
-
-const modalityOptions = [
-    { label: "全部类型", value: "" },
-    { label: "图片", value: "image" },
-    { label: "视频", value: "video" },
-    { label: "文本", value: "text" },
-    { label: "音频", value: "audio" },
-];
-
+const activityKey = ["admin-generation-activity"];
 const statusMeta = {
     running: { label: "运行中", color: "processing" },
     success: { label: "成功", color: "success" },
     failed: { label: "失败", color: "error" },
 } as const;
-const modalityLabels: Record<string, string> = { image: "图片", video: "视频", text: "文本", audio: "音频" };
+const statusOptions = [{ label: "全部状态", value: "" }, ...Object.entries(statusMeta).map(([value, { label }]) => ({ label, value }))];
+const modalityLabels: Record<string, string> = { image: "图片任务", video: "视频任务", text: "文本任务", audio: "音频任务" };
+const categoryOptions = [{ label: "全部记录", value: "" }, ...Object.entries(modalityLabels).map(([value, label]) => ({ value, label })), { label: "有算力变动", value: "credits" }];
+const creditLabels: Record<string, string> = {
+    admin_adjust: "后台调整",
+    ai_consume: "模型消费",
+    ai_refund: "失败返还",
+    ai_late_recharge: "延迟送达补扣",
+    redeem_code: "兑换码充值",
+    balance_exchange: "余额兑换",
+    daily_check_in: "每日签到",
+    new_user_reward: "新用户赠送",
+    organization_transfer_out: "转入企业",
+    organization_transfer_in: "企业收款",
+};
+
+function updateParam(key: string, value: string) {
+    const url = new URL(window.location.href);
+    if (value) url.searchParams.set(key, value);
+    else url.searchParams.delete(key);
+    window.history.pushState(null, "", url);
+}
 
 export default function AdminGenerationTasksPage() {
-    const tab = useSearchParams().get("tab");
-    const activeKey = recordTabs.find(({ key }) => key === tab)?.key ?? "tasks";
-
+    const tab = useSearchParams().get("tab") === "images" ? "images" : "tasks";
     return (
         <main style={{ padding: 24 }}>
-            <Tabs activeKey={activeKey} items={recordTabs} destroyOnHidden onChange={(key) => window.history.pushState(null, "", key === "tasks" ? "/admin/generation-tasks" : `?tab=${key}`)} />
+            <Tabs
+                activeKey={tab}
+                onChange={(key) => updateParam("tab", key === "images" ? key : "")}
+                destroyOnHidden
+                items={[
+                    { key: "tasks", label: "任务与算力流水", children: <ActivityList /> },
+                    { key: "images", label: "用户生成图片", children: <GeneratedImages /> },
+                ]}
+            />
         </main>
     );
 }
 
-function TaskList() {
+function ActivityList() {
     const token = useUserStore((state) => state.token);
+    const queryClient = useQueryClient();
+    const { message, modal } = App.useApp();
+    const categoryParam = useSearchParams().get("category") ?? "";
+    const category = categoryOptions.some(({ value }) => value === categoryParam) ? categoryParam : "";
     const [keywordText, setKeywordText] = useState("");
     const [keyword, setKeyword] = useState("");
     const [status, setStatus] = useState("");
-    const [modality, setModality] = useState("");
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(20);
+    const [editingLog, setEditingLog] = useState<Partial<AdminCreditLog> | null>(null);
+    const taskStatus = category === "credits" ? "" : status;
     const query = useQuery({
-        queryKey: ["admin-generation-tasks", token, keyword, status, modality, page, pageSize],
-        queryFn: () => fetchAdminGenerationTasks(token, { keyword, type: status, category: modality, page, pageSize }),
+        queryKey: [...activityKey, token, keyword, taskStatus, category, page, pageSize],
+        queryFn: () => fetchAdminGenerationActivity(token, { keyword, type: taskStatus, category, page, pageSize }),
         enabled: Boolean(token),
-        refetchInterval: (result) => generationTaskPollInterval(result.state.data?.items),
+        refetchInterval: (result) => generationTaskPollInterval(result.state.data?.items.flatMap(({ task }) => (task ? [task] : []))),
+    });
+    const refresh = () => void queryClient.invalidateQueries({ queryKey: activityKey });
+    const saveLog = useMutation({
+        mutationFn: (item: Partial<AdminCreditLog>) => saveAdminCreditLog(token, item),
+        onSuccess: () => {
+            setEditingLog(null);
+            refresh();
+            message.success("算力流水已保存");
+        },
+        onError: (error) => message.error(error.message),
+    });
+    const deleteLog = useMutation({
+        mutationFn: (id: string) => deleteAdminCreditLog(token, id),
+        onSuccess: () => {
+            refresh();
+            message.success("算力流水已删除");
+        },
+        onError: (error) => message.error(error.message),
     });
 
-    useEffect(() => setPage(1), [keyword, status, modality]);
+    useEffect(() => setPage(1), [keyword, taskStatus, category]);
 
-    const columns: ProColumns<AdminGenerationTask>[] = [
-        { title: "创建时间", dataIndex: "createdAt", width: 170, render: (_, item) => <Typography.Text type="secondary">{dayjs(item.createdAt).format("YYYY-MM-DD HH:mm:ss")}</Typography.Text> },
+    const creditActions = (log: AdminCreditLog) => (
+        <Space size={4}>
+            <Tooltip title="编辑流水">
+                <Button type="text" size="small" aria-label="编辑流水" icon={<EditOutlined />} onClick={() => setEditingLog(log)} />
+            </Tooltip>
+            <Tooltip title="删除流水">
+                <Button
+                    danger
+                    type="text"
+                    size="small"
+                    aria-label="删除流水"
+                    icon={<DeleteOutlined />}
+                    onClick={() => modal.confirm({ title: "删除算力流水", content: "确定删除这条算力流水吗？", okText: "删除", cancelText: "取消", okType: "danger", onOk: () => deleteLog.mutateAsync(log.id) })}
+                />
+            </Tooltip>
+        </Space>
+    );
+
+    const columns: ProColumns<AdminGenerationActivity>[] = [
+        { title: "时间", dataIndex: "createdAt", width: 165, render: (_, row) => <Typography.Text type="secondary">{formatTime(row.createdAt)}</Typography.Text> },
         {
-            title: "用户 ID",
-            dataIndex: "publicUserId",
+            title: "用户",
+            dataIndex: "username",
+            width: 155,
+            render: (_, row) => {
+                const id = String(row.publicUserId ?? row.userId);
+                return (
+                    <Flex vertical>
+                        <Typography.Text strong ellipsis>
+                            {row.username || "未知用户"}
+                        </Typography.Text>
+                        <Typography.Text type="secondary" copyable={{ text: id }} ellipsis>
+                            {id}
+                        </Typography.Text>
+                    </Flex>
+                );
+            },
+        },
+        {
+            title: "类型",
+            key: "kind",
             width: 125,
-            render: (_, item) => (
-                <Typography.Text copyable ellipsis style={{ maxWidth: 200 }}>
-                    {String(item.publicUserId ?? item.userId)}
-                </Typography.Text>
-            ),
+            render: (_, row) => <Tag>{row.task ? modalityLabels[row.task.modality] || row.task.modality : creditLabel(row.creditLogs[0]?.type)}</Tag>,
         },
-        { title: "模型", dataIndex: "model", width: 220, ellipsis: true },
-        { title: "上游模型", dataIndex: "upstreamModel", width: 220, ellipsis: true },
         {
-            title: "渠道",
-            dataIndex: "channelName",
-            width: 200,
-            ellipsis: true,
-            render: (_, item) => (
-                <Space direction="vertical" size={0}>
-                    <span>{item.channelName}</span>
-                    {item.poolAccount ? <Typography.Text type="secondary">账号：{item.poolAccount}</Typography.Text> : null}
-                </Space>
-            ),
+            title: "模型 / 备注",
+            key: "description",
+            width: 240,
+            render: (_, { task, creditLogs }) =>
+                task ? (
+                    <Flex vertical>
+                        <Typography.Text strong ellipsis={{ tooltip: task.model }}>
+                            {task.model}
+                        </Typography.Text>
+                        {task.errorMessage ? (
+                            <Typography.Text type="danger" ellipsis={{ tooltip: task.errorMessage }}>
+                                {task.errorMessage}
+                            </Typography.Text>
+                        ) : null}
+                    </Flex>
+                ) : (
+                    <Typography.Text ellipsis={{ tooltip: creditLogs[0]?.remark }}>{creditLogs[0]?.remark || "—"}</Typography.Text>
+                ),
         },
-        { title: "类型", dataIndex: "modality", width: 96, render: (_, item) => <Tag>{modalityLabel(item.modality)}</Tag> },
-        { title: "操作", dataIndex: "operation", width: 110 },
-        { title: "分辨率", dataIndex: "resolutionTier", width: 100, render: (_, item) => item.resolutionTier || "-" },
-        { title: "数量", dataIndex: "quantity", width: 80, align: "right" },
-        { title: "消耗", dataIndex: "credits", width: 80, align: "right" },
-        { title: "状态", dataIndex: "status", width: 96, render: (_, item) => <Tag color={statusMeta[item.status]?.color}>{statusMeta[item.status]?.label || item.status}</Tag> },
-        { title: "耗时", dataIndex: "durationMs", width: 90, render: (_, item) => (item.durationMs ? `${(item.durationMs / 1000).toFixed(1)}s` : "-") },
-        { title: "错误", dataIndex: "errorMessage", width: 260, ellipsis: true, render: (_, item) => <Typography.Text type="danger">{item.errorMessage}</Typography.Text> },
+        {
+            title: "渠道 / 账本",
+            key: "source",
+            width: 225,
+            render: (_, { task, creditLogs }) =>
+                task ? (
+                    <Flex vertical>
+                        <Typography.Text ellipsis={{ tooltip: task.channelName }}>{task.channelName || "—"}</Typography.Text>
+                        {task.upstreamModel && task.upstreamModel !== task.model ? (
+                            <Typography.Text type="secondary" ellipsis={{ tooltip: task.upstreamModel }}>
+                                {task.upstreamModel}
+                            </Typography.Text>
+                        ) : null}
+                        {task.poolAccount ? (
+                            <Typography.Text type="secondary" ellipsis={{ tooltip: task.poolAccount }}>
+                                {task.poolAccount}
+                            </Typography.Text>
+                        ) : null}
+                    </Flex>
+                ) : creditLogs[0] ? (
+                    <CreditSourceTag source={creditLogs[0].creditSource} />
+                ) : (
+                    "—"
+                ),
+        },
+        {
+            title: "规格",
+            key: "spec",
+            width: 135,
+            render: (_, { task }) => (task ? [task.operation === "generation" ? "生成" : task.operation === "edit" ? "编辑" : task.operation, task.resolutionTier, task.quantity > 0 ? `×${task.quantity}` : ""].filter(Boolean).join(" · ") || "—" : "—"),
+        },
+        {
+            title: "状态",
+            key: "status",
+            width: 105,
+            render: (_, { task }) =>
+                task ? (
+                    <Flex vertical align="start" gap={4}>
+                        <Tag color={statusMeta[task.status]?.color}>{statusMeta[task.status]?.label || task.status}</Tag>
+                        {task.durationMs ? <Typography.Text type="secondary">{(task.durationMs / 1000).toFixed(1)}s</Typography.Text> : null}
+                    </Flex>
+                ) : (
+                    "—"
+                ),
+        },
+        {
+            title: "算力变动",
+            key: "credits",
+            width: 140,
+            render: (_, { task, creditLogs }) =>
+                creditLogs.length ? (
+                    <Flex vertical>
+                        <CreditAmount amount={creditLogs.reduce((sum, log) => sum + log.amount, 0)} />
+                        {task ? <Typography.Text type="secondary">{creditLogs.length} 笔流水</Typography.Text> : <Typography.Text type="secondary">余额 {creditLogs[0].balance}</Typography.Text>}
+                    </Flex>
+                ) : task?.credits ? (
+                    <Typography.Text type="secondary">计价 {task.credits}</Typography.Text>
+                ) : (
+                    "—"
+                ),
+        },
+        {
+            title: "操作",
+            key: "actions",
+            width: 100,
+            align: "right",
+            render: (_, row) => (row.kind === "credit" && row.creditLogs[0] ? creditActions(row.creditLogs[0]) : null),
+        },
     ];
 
     return (
-        <Space direction="vertical" size={16} style={{ width: "100%" }}>
+        <Flex vertical gap={16}>
             <Card variant="borderless">
                 <Form layout="vertical">
                     <Row gutter={16} align="bottom">
                         <Col flex="360px">
                             <Form.Item label="关键词">
-                                <Input.Search value={keywordText} placeholder="搜索用户、模型、渠道或错误" allowClear enterButton={<SearchOutlined />} onSearch={(value) => setKeyword(value)} onChange={(event) => setKeywordText(event.target.value)} />
+                                <Input.Search
+                                    value={keywordText}
+                                    placeholder="搜索用户、模型、请求编号或流水备注"
+                                    allowClear
+                                    enterButton={<SearchOutlined />}
+                                    onSearch={(value) => setKeyword(value.trim())}
+                                    onChange={(event) => setKeywordText(event.target.value)}
+                                />
                             </Form.Item>
                         </Col>
                         <Col flex="180px">
-                            <Form.Item label="状态">
-                                <Select value={status} onChange={setStatus} options={statusOptions} />
+                            <Form.Item label="记录类型">
+                                <Select value={category} onChange={(value) => updateParam("category", value)} options={categoryOptions} />
                             </Form.Item>
                         </Col>
                         <Col flex="180px">
-                            <Form.Item label="类型">
-                                <Select value={modality} onChange={setModality} options={modalityOptions} />
+                            <Form.Item label="任务状态">
+                                <Select value={taskStatus} disabled={category === "credits"} onChange={setStatus} options={statusOptions} />
                             </Form.Item>
                         </Col>
                         <Col flex="none">
@@ -139,7 +270,8 @@ function TaskList() {
                                             setKeywordText("");
                                             setKeyword("");
                                             setStatus("");
-                                            setModality("");
+                                            setPage(1);
+                                            if (category) updateParam("category", "");
                                         }}
                                     >
                                         重置
@@ -153,40 +285,71 @@ function TaskList() {
                     </Row>
                 </Form>
             </Card>
-            <ProTable<AdminGenerationTask>
-                rowKey="id"
+            {query.isError ? <Alert type="error" showIcon message={query.error.message} /> : null}
+            <ProTable<AdminGenerationActivity>
+                rowKey={(row) => `${row.kind}:${row.id}`}
                 columns={columns}
                 dataSource={query.data?.items || []}
                 loading={query.isFetching}
                 search={false}
                 defaultSize="middle"
                 tableLayout="fixed"
-                scroll={{ x: 1880 }}
+                scroll={{ x: 1450 }}
                 cardProps={{ variant: "borderless" }}
-                headerTitle={
-                    <Space>
-                        <Typography.Text strong>生成任务</Typography.Text>
-                        <Tag>{query.data?.total || 0} 条</Tag>
-                    </Space>
-                }
+                headerTitle={<Tag>{query.data?.total ?? 0} 条记录</Tag>}
+                toolBarRender={() => [
+                    <Button key="add-credit" icon={<PlusOutlined />} onClick={() => setEditingLog({})}>
+                        新增算力流水
+                    </Button>,
+                ]}
                 options={{ density: true, setting: true, reload: () => void query.refetch() }}
+                expandable={{
+                    rowExpandable: (row) => Boolean(row.task && row.creditLogs.length),
+                    expandedRowRender: (row) => (
+                        <Flex vertical gap={8} aria-label="任务算力明细">
+                            {row.creditLogs.map((log) => (
+                                <Flex key={log.id} align="center" gap={12} wrap>
+                                    <Typography.Text type="secondary">{formatTime(log.createdAt)}</Typography.Text>
+                                    <Tag>{creditLabel(log.type)}</Tag>
+                                    <CreditSourceTag source={log.creditSource} />
+                                    <CreditAmount amount={log.amount} />
+                                    <Typography.Text type="secondary">余额 {log.balance}</Typography.Text>
+                                    <Typography.Text>{log.remark}</Typography.Text>
+                                    {creditActions(log)}
+                                </Flex>
+                            ))}
+                        </Flex>
+                    ),
+                }}
                 pagination={{
                     current: page,
                     pageSize,
                     total: query.data?.total || 0,
                     showSizeChanger: true,
                     pageSizeOptions: [20, 50, 100, 200],
-                    showTotal: (value) => `共 ${value} 条`,
-                    onChange: (nextPage, nextPageSize) => {
-                        setPage(nextPage);
-                        setPageSize(nextPageSize);
+                    onChange: (next, size) => {
+                        setPage(next);
+                        setPageSize(size);
                     },
                 }}
             />
-        </Space>
+            {editingLog ? <CreditLogEditor key={editingLog.id ?? "new"} log={editingLog} saving={saveLog.isPending} onClose={() => setEditingLog(null)} onSave={saveLog.mutate} /> : null}
+        </Flex>
     );
 }
 
-function modalityLabel(value: string) {
-    return modalityLabels[value] || value || "-";
+function formatTime(value: string) {
+    return value ? dayjs(value).format("YYYY-MM-DD HH:mm:ss") : "—";
+}
+
+function creditLabel(type?: string) {
+    return type ? creditLabels[type] || type : "—";
+}
+
+function CreditSourceTag({ source }: { source: AdminCreditLog["creditSource"] }) {
+    return <Tag color={source === "organization" ? "blue" : undefined}>{source === "organization" ? "企业" : "个人"}</Tag>;
+}
+
+function CreditAmount({ amount }: { amount: number }) {
+    return <Typography.Text type={amount < 0 ? "danger" : amount > 0 ? "success" : undefined}>{amount > 0 ? `+${amount}` : amount}</Typography.Text>;
 }

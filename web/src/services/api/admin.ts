@@ -65,11 +65,6 @@ export type AdminCreditLog = {
     createdAt: string;
 };
 
-export type AdminCreditLogListResponse = {
-    items: AdminCreditLog[];
-    total: number;
-};
-
 export type AdminRedemptionCodeStatus = "active" | "used" | "disabled";
 
 export type AdminRedemptionCode = {
@@ -158,9 +153,15 @@ export function adminGeneratedImageUrl(id: string) {
     return `/api/admin/generated-images/${encodeURIComponent(id)}`;
 }
 
-export type AdminGenerationTaskListResponse = {
-    items: AdminGenerationTask[];
-    total: number;
+export type AdminGenerationActivity = {
+    id: string;
+    kind: "task" | "credit";
+    createdAt: string;
+    userId: string;
+    username: string;
+    publicUserId: number | null;
+    task?: AdminGenerationTask;
+    creditLogs: AdminCreditLog[];
 };
 
 export type AdminGenerationTaskQuery = {
@@ -216,10 +217,6 @@ export async function saveAdminUserPricingDiscounts(token: string, id: string, i
     return apiPost<AdminUserPricingDiscount[]>(`/api/admin/users/${encodeURIComponent(id)}/pricing-discounts`, { items }, token);
 }
 
-export async function fetchAdminCreditLogs(token: string, query: AdminUserQuery = {}) {
-    return apiGet<AdminCreditLogListResponse>("/api/admin/credit-logs", compactApiParams(query), token);
-}
-
 export async function saveAdminCreditLog(token: string, log: Partial<AdminCreditLog>) {
     return apiPost<AdminCreditLog>("/api/admin/credit-logs", log, token);
 }
@@ -232,8 +229,8 @@ export async function fetchAdminDashboard(token: string) {
     return apiGet<AdminDashboard>("/api/admin/dashboard", undefined, token);
 }
 
-export async function fetchAdminGenerationTasks(token: string, query: AdminGenerationTaskQuery = {}) {
-    return apiGet<AdminGenerationTaskListResponse>("/api/admin/generation-tasks", compactApiParams(query), token);
+export async function fetchAdminGenerationActivity(token: string, query: AdminGenerationTaskQuery) {
+    return apiGet<{ items: AdminGenerationActivity[]; total: number }>("/api/admin/generation-activity", compactApiParams(query), token);
 }
 
 export async function fetchAdminPoolUsage(token: string, days: number) {

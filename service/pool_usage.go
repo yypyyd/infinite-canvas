@@ -211,14 +211,14 @@ func sortedUsageRows(rows map[string]*PoolUsageRow) []PoolUsageRow {
 }
 
 // attachPoolAccounts fills PoolAccount on pool-served tasks for admin views.
-func attachPoolAccounts(ctx context.Context, tasks []model.GenerationTask) {
+func attachPoolAccounts(ctx context.Context, tasks []*model.GenerationTask) {
 	source := currentPoolEvents()
 	if source == nil {
 		return
 	}
 	var requestIDs, eventIDs []string
 	for _, task := range tasks {
-		if IsBuiltinPoolTask(task) {
+		if IsBuiltinPoolTask(*task) {
 			requestIDs = append(requestIDs, task.RequestID)
 			if task.UpstreamTaskID != "" {
 				eventIDs = append(eventIDs, task.UpstreamTaskID)
@@ -241,16 +241,16 @@ func attachPoolAccounts(ctx context.Context, tasks []model.GenerationTask) {
 		}
 		byID[event.ID] = event
 	}
-	for i := range tasks {
-		if !IsBuiltinPoolTask(tasks[i]) {
+	for _, task := range tasks {
+		if !IsBuiltinPoolTask(*task) {
 			continue
 		}
-		event, ok := byRequest[tasks[i].RequestID]
+		event, ok := byRequest[task.RequestID]
 		if !ok {
-			event, ok = byID[tasks[i].UpstreamTaskID]
+			event, ok = byID[task.UpstreamTaskID]
 		}
 		if ok {
-			tasks[i].PoolAccount = poolAccountLabel(event)
+			task.PoolAccount = poolAccountLabel(event)
 		}
 	}
 }

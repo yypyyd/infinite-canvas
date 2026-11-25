@@ -22,7 +22,7 @@ type AdminMenuItem = {
 
 const adminMenus: AdminMenuItem[] = [
     { key: "/admin", icon: <BarChartOutlined />, label: "运营看板", exact: true },
-    { key: "/admin/generation-tasks", icon: <CloudServerOutlined />, label: "生成与日志" },
+    { key: "/admin/generation-tasks", icon: <CloudServerOutlined />, label: "生成任务" },
     { key: "/admin/users", icon: <UserOutlined />, label: "用户管理" },
     { key: "/admin/redeem-codes", icon: <KeyOutlined />, label: "兑换码" },
     { key: "/admin/prompts", icon: <FileTextOutlined />, label: "提示词管理" },
@@ -33,13 +33,14 @@ const adminMenus: AdminMenuItem[] = [
 
 const pageTitles: Record<string, string> = {
     "/admin": "运营看板",
-    "/admin/generation-tasks": "生成与日志",
+    "/admin/generation-tasks": "生成任务",
     "/admin/users": "用户管理",
     "/admin/redeem-codes": "兑换码",
     "/admin/prompts": "提示词管理",
     "/admin/assets": "素材库管理",
     "/admin/models": "供应源",
     "/admin/settings": "系统设置",
+    "/admin/account-pool/logs": "供应源 · 号池日志",
     "/admin/account-pool/banned-words": "内容安全",
     "/admin/account-pool/settings": "供应源 · 号池设置",
 };

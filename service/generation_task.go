@@ -48,12 +48,31 @@ func AdminGeneratedImage(id string) (model.UserFile, error) {
 	return repository.GetAdminGeneratedImage(id)
 }
 
+func ListAdminGenerationActivity(ctx context.Context, q model.Query) (model.AdminGenerationActivityList, error) {
+	result, err := repository.ListAdminGenerationActivity(q)
+	if err != nil {
+		return result, err
+	}
+	var tasks []*model.GenerationTask
+	for _, item := range result.Items {
+		if item.Task != nil {
+			tasks = append(tasks, item.Task)
+		}
+	}
+	attachPoolAccounts(ctx, tasks)
+	return result, nil
+}
+
 func ListGenerationTasks(q model.Query) (model.GenerationTaskList, error) {
 	items, total, err := repository.ListGenerationTasks(q)
 	if err != nil {
 		return model.GenerationTaskList{}, err
 	}
-	attachPoolAccounts(context.Background(), items)
+	tasks := make([]*model.GenerationTask, len(items))
+	for i := range items {
+		tasks[i] = &items[i]
+	}
+	attachPoolAccounts(context.Background(), tasks)
 	return model.GenerationTaskList{Items: items, Total: int(total)}, nil
 }
 

@@ -62,7 +62,7 @@ export function PoolUsageCard() {
     return (
         <Card variant="borderless" title="用量与算力" extra={<Segmented options={rangeOptions} value={days} onChange={(value) => setDays(Number(value))} />}>
             <Space direction="vertical" style={{ width: "100%" }}>
-                <Typography.Text type="secondary">算力来自幻图的生成任务记录（按请求编号关联上游调用日志），账号池本身不计费。</Typography.Text>
+                <Typography.Text type="secondary">算力来自幻图的生成任务记录（按请求编号关联账号池日志），账号池本身不计费。</Typography.Text>
                 {usage.isError ? <Alert type="warning" showIcon message="无法读取用量" /> : null}
                 <Tabs
                     items={[

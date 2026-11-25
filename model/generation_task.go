@@ -93,6 +93,22 @@ type GenerationTaskRecovery struct {
 	UpdatedAt      string               `json:"updatedAt"`
 }
 
+type AdminGenerationActivity struct {
+	ID           string          `json:"id"`
+	Kind         string          `json:"kind"`
+	CreatedAt    string          `json:"createdAt"`
+	UserID       string          `json:"userId"`
+	PublicUserID *int64          `json:"publicUserId"`
+	Username     string          `json:"username"`
+	Task         *GenerationTask `json:"task,omitempty" gorm:"-"`
+	CreditLogs   []CreditLog     `json:"creditLogs" gorm:"-"`
+}
+
+type AdminGenerationActivityList struct {
+	Items []AdminGenerationActivity `json:"items"`
+	Total int64                     `json:"total"`
+}
+
 type AdminGeneratedImage struct {
 	ID           string `json:"id"`
 	PublicUserID *int64 `json:"publicUserId"`

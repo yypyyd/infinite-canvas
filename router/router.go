@@ -219,6 +219,7 @@ func New() *gin.Engine {
 	admin.GET("/generated-images", gin.WrapF(handler.AdminGeneratedImages))
 	admin.GET("/generated-images/:id", func(c *gin.Context) { handler.AdminGeneratedImage(c.Writer, c.Request, c.Param("id")) })
 	admin.GET("/generation-tasks", gin.WrapF(handler.AdminGenerationTasks))
+	admin.GET("/generation-activity", gin.WrapF(handler.AdminGenerationActivity))
 	admin.GET("/pool-usage", gin.WrapF(handler.AdminPoolUsage))
 	admin.GET("/pool-models", gin.WrapF(handler.AdminPoolModels))
 	admin.GET("/model-overview", gin.WrapF(handler.AdminModelOverview))

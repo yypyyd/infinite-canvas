@@ -30,6 +30,7 @@ import { ChannelHealthBadge, ModelTags, PoolChannelDrawer, PoolModelTags, usePoo
 import { ChannelModelCapabilitiesEditor } from "./components/channel-model-capabilities-editor";
 import { ProtocolTemplatesEditor } from "./components/protocol-templates-editor";
 import { AccountsPanel } from "./components/accounts-panel";
+import PoolLogsPanel from "../account-pool/logs/logs-panel";
 import PoolSettingsPanel from "../account-pool/settings/settings-panel";
 
 const emptyChannel: AdminModelChannel = { id: "", templateId: "", protocol: "openai", name: "", baseUrl: "", apiKey: "", models: [], weight: 1, priority: 0, enabled: true, remark: "" };
@@ -59,7 +60,7 @@ export default function AdminModelsPage() {
             setActiveTab("external");
             setProtocolDrawerOpen(true);
         }
-        if (nextPoolTab && ["platforms", "accounts", "settings"].includes(nextPoolTab)) setPoolTab(nextPoolTab);
+        if (nextPoolTab && ["platforms", "accounts", "logs", "settings"].includes(nextPoolTab)) setPoolTab(nextPoolTab);
         setAccountProvider((params.get("provider") || "").trim());
     }, []);
     const changeTab = (tab: string) => {
@@ -637,6 +638,7 @@ export default function AdminModelsPage() {
                         items={[
                             { key: "platforms", label: "平台", disabled: isSaving },
                             { key: "accounts", label: "账号", disabled: isSaving },
+                            { key: "logs", label: "账号池日志", disabled: isSaving },
                             { key: "settings", label: "号池设置", disabled: isSaving },
                         ]}
                     />
@@ -756,6 +758,9 @@ export default function AdminModelsPage() {
                         />
                     </div>
                     {activeTab === "pool" && poolTab === "accounts" ? <AccountsPanel provider={accountProvider} onProviderChange={(provider) => changePoolTab("accounts", provider)} /> : null}
+                    <div hidden={poolTab !== "logs"}>
+                        <PoolLogsPanel />
+                    </div>
                     <div hidden={poolTab !== "settings"}>
                         <PoolSettingsPanel />
                     </div>

@@ -40,6 +40,7 @@ const (
 
 // GenerationTask records backend model requests for user task center and admin operations.
 type GenerationTask struct {
+	PublicUserID     *int64                      `json:"publicUserId,omitempty" gorm:"->;-:migration"`
 	ID               string                      `json:"id" gorm:"primaryKey"`
 	OrganizationID   string                      `json:"organizationId" gorm:"index;uniqueIndex:idx_generation_task_request"`
 	UserID           string                      `json:"userId" gorm:"index;uniqueIndex:idx_generation_task_request"`
@@ -90,6 +91,18 @@ type GenerationTaskRecovery struct {
 	ErrorMessage   string               `json:"errorMessage,omitempty"`
 	CreatedAt      string               `json:"createdAt"`
 	UpdatedAt      string               `json:"updatedAt"`
+}
+
+type AdminGeneratedImage struct {
+	ID           string `json:"id"`
+	PublicUserID *int64 `json:"publicUserId"`
+	Username     string `json:"username"`
+	CreatedAt    string `json:"createdAt"`
+}
+
+type AdminGeneratedImageList struct {
+	Items []AdminGeneratedImage `json:"items"`
+	Total int64                 `json:"total"`
 }
 
 type GenerationTaskList struct {

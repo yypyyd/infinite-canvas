@@ -3,13 +3,15 @@
 import { ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { ProTable, type ProColumns } from "@ant-design/pro-components";
 import { useQuery } from "@tanstack/react-query";
-import { Button, Card, Col, Form, Input, Row, Select, Space, Tag, Typography } from "antd";
+import { Button, Card, Col, Form, Input, Row, Select, Space, Tabs, Tag, Typography } from "antd";
 import dayjs from "dayjs";
 import { useEffect, useState } from "react";
 
 import { generationTaskPollInterval } from "@/lib/query-polling";
 import { fetchAdminGenerationTasks, type AdminGenerationTask } from "@/services/api/admin";
 import { useUserStore } from "@/stores/use-user-store";
+
+import { GeneratedImages } from "./components/generated-images";
 
 const statusOptions = [
     { label: "全部状态", value: "" },
@@ -34,6 +36,20 @@ const statusMeta = {
 const modalityLabels: Record<string, string> = { image: "图片", video: "视频", text: "文本", audio: "音频" };
 
 export default function AdminGenerationTasksPage() {
+    return (
+        <main style={{ padding: 24 }}>
+            <Tabs
+                destroyOnHidden
+                items={[
+                    { key: "tasks", label: "任务列表", children: <TaskList /> },
+                    { key: "images", label: "用户生成图片", children: <GeneratedImages /> },
+                ]}
+            />
+        </main>
+    );
+}
+
+function TaskList() {
     const token = useUserStore((state) => state.token);
     const [keywordText, setKeywordText] = useState("");
     const [keyword, setKeyword] = useState("");
@@ -54,11 +70,11 @@ export default function AdminGenerationTasksPage() {
         { title: "创建时间", dataIndex: "createdAt", width: 170, render: (_, item) => <Typography.Text type="secondary">{dayjs(item.createdAt).format("YYYY-MM-DD HH:mm:ss")}</Typography.Text> },
         {
             title: "用户 ID",
-            dataIndex: "userId",
-            width: 210,
+            dataIndex: "publicUserId",
+            width: 125,
             render: (_, item) => (
                 <Typography.Text copyable ellipsis style={{ maxWidth: 200 }}>
-                    {item.userId}
+                    {String(item.publicUserId ?? item.userId)}
                 </Typography.Text>
             ),
         },
@@ -87,80 +103,78 @@ export default function AdminGenerationTasksPage() {
     ];
 
     return (
-        <main style={{ padding: 24 }}>
-            <Space direction="vertical" size={16} style={{ width: "100%" }}>
-                <Card variant="borderless">
-                    <Form layout="vertical">
-                        <Row gutter={16} align="bottom">
-                            <Col flex="360px">
-                                <Form.Item label="关键词">
-                                    <Input.Search value={keywordText} placeholder="搜索用户、模型、渠道或错误" allowClear enterButton={<SearchOutlined />} onSearch={(value) => setKeyword(value)} onChange={(event) => setKeywordText(event.target.value)} />
-                                </Form.Item>
-                            </Col>
-                            <Col flex="180px">
-                                <Form.Item label="状态">
-                                    <Select value={status} onChange={setStatus} options={statusOptions} />
-                                </Form.Item>
-                            </Col>
-                            <Col flex="180px">
-                                <Form.Item label="类型">
-                                    <Select value={modality} onChange={setModality} options={modalityOptions} />
-                                </Form.Item>
-                            </Col>
-                            <Col flex="none">
-                                <Form.Item>
-                                    <Space>
-                                        <Button
-                                            onClick={() => {
-                                                setKeywordText("");
-                                                setKeyword("");
-                                                setStatus("");
-                                                setModality("");
-                                            }}
-                                        >
-                                            重置
-                                        </Button>
-                                        <Button type="primary" icon={<ReloadOutlined />} onClick={() => void query.refetch()}>
-                                            刷新
-                                        </Button>
-                                    </Space>
-                                </Form.Item>
-                            </Col>
-                        </Row>
-                    </Form>
-                </Card>
-                <ProTable<AdminGenerationTask>
-                    rowKey="id"
-                    columns={columns}
-                    dataSource={query.data?.items || []}
-                    loading={query.isFetching}
-                    search={false}
-                    defaultSize="middle"
-                    tableLayout="fixed"
-                    scroll={{ x: 1880 }}
-                    cardProps={{ variant: "borderless" }}
-                    headerTitle={
-                        <Space>
-                            <Typography.Text strong>生成任务</Typography.Text>
-                            <Tag>{query.data?.total || 0} 条</Tag>
-                        </Space>
-                    }
-                    options={{ density: true, setting: true, reload: () => void query.refetch() }}
-                    pagination={{
-                        current: page,
-                        pageSize,
-                        total: query.data?.total || 0,
-                        showSizeChanger: true,
-                        pageSizeOptions: [20, 50, 100, 200],
-                        showTotal: (value) => `共 ${value} 条`,
-                        onChange: (nextPage, nextPageSize) => {
-                            setPage(nextPage);
-                            setPageSize(nextPageSize);
-                        },
-                    }}
-                />
-            </Space>
-        </main>
+        <Space direction="vertical" size={16} style={{ width: "100%" }}>
+            <Card variant="borderless">
+                <Form layout="vertical">
+                    <Row gutter={16} align="bottom">
+                        <Col flex="360px">
+                            <Form.Item label="关键词">
+                                <Input.Search value={keywordText} placeholder="搜索用户、模型、渠道或错误" allowClear enterButton={<SearchOutlined />} onSearch={(value) => setKeyword(value)} onChange={(event) => setKeywordText(event.target.value)} />
+                            </Form.Item>
+                        </Col>
+                        <Col flex="180px">
+                            <Form.Item label="状态">
+                                <Select value={status} onChange={setStatus} options={statusOptions} />
+                            </Form.Item>
+                        </Col>
+                        <Col flex="180px">
+                            <Form.Item label="类型">
+                                <Select value={modality} onChange={setModality} options={modalityOptions} />
+                            </Form.Item>
+                        </Col>
+                        <Col flex="none">
+                            <Form.Item>
+                                <Space>
+                                    <Button
+                                        onClick={() => {
+                                            setKeywordText("");
+                                            setKeyword("");
+                                            setStatus("");
+                                            setModality("");
+                                        }}
+                                    >
+                                        重置
+                                    </Button>
+                                    <Button type="primary" icon={<ReloadOutlined />} onClick={() => void query.refetch()}>
+                                        刷新
+                                    </Button>
+                                </Space>
+                            </Form.Item>
+                        </Col>
+                    </Row>
+                </Form>
+            </Card>
+            <ProTable<AdminGenerationTask>
+                rowKey="id"
+                columns={columns}
+                dataSource={query.data?.items || []}
+                loading={query.isFetching}
+                search={false}
+                defaultSize="middle"
+                tableLayout="fixed"
+                scroll={{ x: 1880 }}
+                cardProps={{ variant: "borderless" }}
+                headerTitle={
+                    <Space>
+                        <Typography.Text strong>生成任务</Typography.Text>
+                        <Tag>{query.data?.total || 0} 条</Tag>
+                    </Space>
+                }
+                options={{ density: true, setting: true, reload: () => void query.refetch() }}
+                pagination={{
+                    current: page,
+                    pageSize,
+                    total: query.data?.total || 0,
+                    showSizeChanger: true,
+                    pageSizeOptions: [20, 50, 100, 200],
+                    showTotal: (value) => `共 ${value} 条`,
+                    onChange: (nextPage, nextPageSize) => {
+                        setPage(nextPage);
+                        setPageSize(nextPageSize);
+                    },
+                }}
+            />
+        </Space>
     );
 }
 

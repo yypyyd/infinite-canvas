@@ -77,6 +77,15 @@ func UserGenerationTasks(w http.ResponseWriter, r *http.Request) {
 	OK(w, result)
 }
 
+func AdminGeneratedImages(w http.ResponseWriter, r *http.Request) {
+	result, err := service.ListAdminGeneratedImages(parseQuery(r))
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, result)
+}
+
 func AdminGenerationTasks(w http.ResponseWriter, r *http.Request) {
 	result, err := service.ListGenerationTasks(parseQuery(r))
 	if err != nil {

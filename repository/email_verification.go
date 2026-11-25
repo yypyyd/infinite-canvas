@@ -24,6 +24,9 @@ func CreateVerifiedUserWithCreditLog(user model.User, organization model.Organiz
 		if result.RowsAffected != 1 {
 			return ErrEmailVerificationUnavailable
 		}
+		if err := assignUserNumber(tx, &user); err != nil {
+			return err
+		}
 		if err := tx.Create(&user).Error; err != nil {
 			return err
 		}

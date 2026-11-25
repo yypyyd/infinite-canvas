@@ -23,7 +23,7 @@ func ListRedemptionCodes(q model.Query) ([]model.RedemptionCode, int64, error) {
 	tx := db.Model(&model.RedemptionCode{})
 	if keyword := strings.TrimSpace(q.Keyword); keyword != "" {
 		like := "%" + keyword + "%"
-		tx = tx.Where("code LIKE ? OR status LIKE ? OR used_by LIKE ? OR remark LIKE ?", like, like, like, like)
+		tx = tx.Where("code LIKE ? OR status LIKE ? OR used_by LIKE ? OR remark LIKE ? OR used_by IN (SELECT id FROM users WHERE public_id = ?)", like, like, like, like, searchUserNumber(keyword))
 	}
 
 	var total int64
@@ -32,7 +32,7 @@ func ListRedemptionCodes(q model.Query) ([]model.RedemptionCode, int64, error) {
 	}
 
 	var codes []model.RedemptionCode
-	err = tx.Order("created_at desc").Offset(q.Offset()).Limit(q.PageSize).Find(&codes).Error
+	err = tx.Select("redemption_codes.*, (SELECT public_id FROM users WHERE users.id = redemption_codes.used_by) AS public_user_id").Order("created_at desc").Offset(q.Offset()).Limit(q.PageSize).Find(&codes).Error
 	return codes, total, err
 }
 

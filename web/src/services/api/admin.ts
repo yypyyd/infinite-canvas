@@ -11,6 +11,7 @@ export type AdminPromptCategory = {
 };
 
 export type AdminUser = {
+    publicId: number;
     id: string;
     username: string;
     email: string;
@@ -49,6 +50,7 @@ export type AdminUserPricingDiscount = {
 };
 
 export type AdminCreditLog = {
+    publicUserId?: number;
     id: string;
     userId: string;
     username: string;
@@ -71,6 +73,7 @@ export type AdminCreditLogListResponse = {
 export type AdminRedemptionCodeStatus = "active" | "used" | "disabled";
 
 export type AdminRedemptionCode = {
+    publicUserId?: number;
     id: string;
     code: string;
     credits: number;
@@ -101,6 +104,7 @@ export type AdminUserQuery = {
 };
 
 export type AdminGenerationTask = {
+    publicUserId?: number;
     id: string;
     userId: string;
     model: string;
@@ -143,6 +147,16 @@ export type AdminPoolUsageReport = {
     unlinked: number;
     unattributed: AdminPoolUsageRow;
 };
+
+export type AdminGeneratedImage = { id: string; publicUserId: number | null; username: string; createdAt: string };
+
+export function fetchAdminGeneratedImages(token: string, query: AdminUserQuery) {
+    return apiGet<{ items: AdminGeneratedImage[]; total: number }>("/api/admin/generated-images", compactApiParams(query), token);
+}
+
+export function adminGeneratedImageUrl(id: string) {
+    return `/api/admin/generated-images/${encodeURIComponent(id)}`;
+}
 
 export type AdminGenerationTaskListResponse = {
     items: AdminGenerationTask[];

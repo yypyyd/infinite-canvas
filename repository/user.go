@@ -2,12 +2,64 @@ package repository
 
 import (
 	"errors"
+	"strconv"
 	"strings"
 
 	"github.com/yypyyd/infinite-canvas/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+const maxUserNumber = 999999999
+
+func searchUserNumber(keyword string) int64 {
+	n, err := strconv.ParseUint(keyword, 10, 32)
+	if err != nil || n > maxUserNumber {
+		return -1
+	}
+	return int64(n)
+}
+
+func assignUserNumber(tx *gorm.DB, user *model.User) error {
+	result := tx.Model(&model.UserNumberSequence{}).Where("id = 1 AND last_number < ?", maxUserNumber).UpdateColumn("last_number", gorm.Expr("last_number + 1"))
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return errors.New("用户编号已用完")
+	}
+	var seq model.UserNumberSequence
+	if err := tx.First(&seq, 1).Error; err != nil {
+		return err
+	}
+	user.PublicID = &seq.LastNumber
+	return nil
+}
+
+func initializeUserNumbers(db *gorm.DB) error {
+	return transactionWithSQLiteRetry(db, func(tx *gorm.DB) error {
+		seq := model.UserNumberSequence{ID: 1, LastNumber: -1}
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&seq).Error; err != nil {
+			return err
+		}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&seq, 1).Error; err != nil {
+			return err
+		}
+		var users []model.User
+		if err := tx.Select("id").Where("public_id IS NULL").Order("created_at, id").Find(&users).Error; err != nil {
+			return err
+		}
+		for _, user := range users {
+			if err := assignUserNumber(tx, &user); err != nil {
+				return err
+			}
+			if err := tx.Model(&user).UpdateColumn("public_id", *user.PublicID).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
 
 // ListUsers 分页查询用户。
 func ListUsers(q model.Query) ([]model.User, int64, error) {
@@ -19,7 +71,7 @@ func ListUsers(q model.Query) ([]model.User, int64, error) {
 	tx := db.Model(&model.User{})
 	if keyword := strings.TrimSpace(q.Keyword); keyword != "" {
 		like := "%" + keyword + "%"
-		tx = tx.Where("id LIKE ? OR username LIKE ? OR display_name LIKE ? OR email LIKE ?", like, like, like, like)
+		tx = tx.Where("public_id = ? OR id LIKE ? OR username LIKE ? OR display_name LIKE ? OR email LIKE ?", searchUserNumber(keyword), like, like, like, like)
 	}
 
 	var total int64
@@ -91,6 +143,13 @@ func SaveUser(user model.User) (model.User, error) {
 		if errors.Is(err, gorm.ErrRecordNotFound) || current.Password != user.Password || current.Role != user.Role || current.Status != user.Status {
 			user.TokenVersion++
 		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			if err := assignUserNumber(tx, &user); err != nil {
+				return err
+			}
+			return tx.Create(&user).Error
+		}
+		user.PublicID = current.PublicID
 		return tx.Save(&user).Error
 	})
 	return user, err
@@ -154,6 +213,9 @@ func CreateUserWithCreditLog(user model.User, log *model.CreditLog) (model.User,
 		return user, err
 	}
 	err = db.Transaction(func(tx *gorm.DB) error {
+		if err := assignUserNumber(tx, &user); err != nil {
+			return err
+		}
 		if err := tx.Create(&user).Error; err != nil {
 			return err
 		}
@@ -171,6 +233,13 @@ func SaveCreditLog(log model.CreditLog) (model.CreditLog, error) {
 	db, err := DB()
 	if err != nil {
 		return log, err
+	}
+	if n := searchUserNumber(log.UserID); n >= 0 {
+		var user model.User
+		if err := db.Select("id").Where("public_id = ?", n).Take(&user).Error; err != nil {
+			return log, err
+		}
+		log.UserID = user.ID
 	}
 	return log, db.Save(&log).Error
 }
@@ -196,7 +265,7 @@ func listCreditLogs(tx *gorm.DB, q model.Query, includeUsername bool) ([]model.C
 	if keyword := strings.TrimSpace(q.Keyword); keyword != "" {
 		like := "%" + keyword + "%"
 		if includeUsername {
-			tx = tx.Where("(credit_logs.user_id LIKE ? OR users.username LIKE ? OR credit_logs.type LIKE ? OR credit_logs.remark LIKE ? OR credit_logs.related_id LIKE ?)", like, like, like, like, like)
+			tx = tx.Where("(users.public_id = ? OR credit_logs.user_id LIKE ? OR users.username LIKE ? OR credit_logs.type LIKE ? OR credit_logs.remark LIKE ? OR credit_logs.related_id LIKE ?)", searchUserNumber(keyword), like, like, like, like, like)
 		} else {
 			tx = tx.Where("(credit_logs.user_id LIKE ? OR credit_logs.type LIKE ? OR credit_logs.remark LIKE ? OR credit_logs.related_id LIKE ?)", like, like, like, like)
 		}
@@ -210,7 +279,7 @@ func listCreditLogs(tx *gorm.DB, q model.Query, includeUsername bool) ([]model.C
 	}
 	var logs []model.CreditLog
 	if includeUsername {
-		tx = tx.Select("credit_logs.*, users.username AS username")
+		tx = tx.Select("credit_logs.*, users.username AS username, users.public_id AS public_user_id")
 	}
 	err := tx.Order("credit_logs.created_at desc").Offset(q.Offset()).Limit(q.PageSize).Find(&logs).Error
 	return logs, total, err

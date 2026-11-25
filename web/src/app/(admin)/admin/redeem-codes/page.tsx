@@ -94,7 +94,7 @@ export default function AdminRedeemCodesPage() {
             title: "使用用户",
             dataIndex: "usedBy",
             width: 220,
-            render: (_, item) => (item.usedBy ? <Typography.Text copyable>{item.usedBy}</Typography.Text> : <Typography.Text type="secondary">-</Typography.Text>),
+            render: (_, item) => (item.usedBy ? <Typography.Text copyable>{String(item.publicUserId ?? item.usedBy)}</Typography.Text> : <Typography.Text type="secondary">-</Typography.Text>),
         },
         {
             title: "使用时间",

@@ -40,6 +40,14 @@ type GenerationTaskInput struct {
 	PricingSnapshot model.PricingSnapshot
 }
 
+func ListAdminGeneratedImages(q model.Query) (model.AdminGeneratedImageList, error) {
+	return repository.ListAdminGeneratedImages(q)
+}
+
+func AdminGeneratedImage(id string) (model.UserFile, error) {
+	return repository.GetAdminGeneratedImage(id)
+}
+
 func ListGenerationTasks(q model.Query) (model.GenerationTaskList, error) {
 	items, total, err := repository.ListGenerationTasks(q)
 	if err != nil {

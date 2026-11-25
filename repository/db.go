@@ -100,6 +100,7 @@ func DB() (*gorm.DB, error) {
 		}
 		dbErr = db.AutoMigrate(
 			&model.User{},
+			&model.UserNumberSequence{},
 			&model.UserPricingDiscount{},
 			&model.UserAPIKey{},
 			&model.Organization{},
@@ -151,6 +152,9 @@ func DB() (*gorm.DB, error) {
 			&model.Asset{},
 			&model.Setting{},
 		)
+		if dbErr == nil {
+			dbErr = initializeUserNumbers(db)
+		}
 		if dbErr == nil {
 			dbErr = dropLegacyWorkspaceUniqueIndexes(db)
 		}

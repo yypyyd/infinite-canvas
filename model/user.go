@@ -15,8 +15,15 @@ const (
 	UserStatusBan    UserStatus = "ban"
 )
 
+// UserNumberSequence stores the last public number issued, including deleted users.
+type UserNumberSequence struct {
+	ID         int `gorm:"primaryKey;autoIncrement:false"`
+	LastNumber int64
+}
+
 // User 系统用户。
 type User struct {
+	PublicID        *int64     `json:"publicId" gorm:"uniqueIndex"`
 	ID              string     `json:"id" gorm:"primaryKey"`
 	Username        string     `json:"username" gorm:"uniqueIndex"`
 	Password        string     `json:"password,omitempty"`
@@ -52,6 +59,7 @@ type UserList struct {
 
 // AuthUser 用户公开信息。
 type AuthUser struct {
+	PublicID         *int64                 `json:"publicId"`
 	ID               string                 `json:"id"`
 	Username         string                 `json:"username"`
 	Email            string                 `json:"email"`
@@ -77,6 +85,7 @@ type AuthSession struct {
 func PublicUser(user User) AuthUser {
 	return AuthUser{
 		ID:               user.ID,
+		PublicID:         user.PublicID,
 		Username:         user.Username,
 		Email:            user.Email,
 		DisplayName:      user.DisplayName,
@@ -112,6 +121,7 @@ const (
 
 // CreditLog 用户算力点变更流水。
 type CreditLog struct {
+	PublicUserID   *int64        `json:"publicUserId,omitempty" gorm:"->;-:migration"`
 	ID             string        `json:"id" gorm:"primaryKey"`
 	UserID         string        `json:"userId" gorm:"index"`
 	Username       string        `json:"username" gorm:"->;-:migration"`

@@ -3,6 +3,7 @@ import { apiDelete, apiGet, apiPost, compactApiParams } from "@/services/api/req
 export type UserRole = "guest" | "user" | "admin";
 
 export type AuthUser = {
+    publicId: number;
     id: string;
     username: string;
     email: string;

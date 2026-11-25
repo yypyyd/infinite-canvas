@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/yypyyd/infinite-canvas/model"
 	"github.com/yypyyd/infinite-canvas/service"
 )
 
@@ -139,6 +140,19 @@ func UserWorkspaceFile(w http.ResponseWriter, r *http.Request, storageKey string
 		Fail(w, "未登录或权限不足")
 		return
 	}
+	serveWorkspaceFile(w, r, user, storageKey)
+}
+
+func AdminGeneratedImage(w http.ResponseWriter, r *http.Request, id string) {
+	file, err := service.AdminGeneratedImage(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	serveWorkspaceFile(w, r, model.AuthUser{OrganizationID: file.OrganizationID}, file.StorageKey)
+}
+
+func serveWorkspaceFile(w http.ResponseWriter, r *http.Request, user model.AuthUser, storageKey string) {
 	if r.Method != http.MethodHead {
 		if file, mimeType, item, exists := service.OpenLocalUserWorkspaceImageVariant(user, storageKey, r.URL.Query().Get("variant")); exists {
 			defer file.Close()

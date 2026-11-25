@@ -80,11 +80,11 @@ export default function AdminUsersPage() {
         },
         {
             title: "用户 ID",
-            dataIndex: "id",
-            width: 240,
+            dataIndex: "publicId",
+            width: 130,
             render: (_, item) => (
-                <Typography.Text type="secondary" copyable={{ text: item.id }} ellipsis>
-                    {item.id}
+                <Typography.Text type="secondary" copyable={{ text: String(item.publicId) }} ellipsis>
+                    {item.publicId}
                 </Typography.Text>
             ),
         },

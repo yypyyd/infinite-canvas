@@ -21,6 +21,45 @@ var (
 	ErrAgentRunNotActive                = errors.New("agent run is no longer active")
 )
 
+// The archive writer also stores upstream reference images in generated/. Only expose outputs.
+func generatedImageFiles(db *gorm.DB) *gorm.DB {
+	return db.Model(&model.UserFile{}).Where("user_files.mime_type IN ?", []string{"image/png", "image/jpeg", "image/webp", "image/gif", "image/avif"}).
+		Where("(user_files.object_key LIKE ? AND user_files.storage_key LIKE ? AND user_files.storage_key NOT LIKE ?) OR (user_files.object_key LIKE ? AND user_files.storage_key LIKE ?)",
+			"organizations/%/generated/%", "image:generated-%", "%-reference-%", "organizations/%/batch-results/%", "image:batch-result-%")
+}
+
+func ListAdminGeneratedImages(q model.Query) (model.AdminGeneratedImageList, error) {
+	var result model.AdminGeneratedImageList
+	db, err := DB()
+	if err != nil {
+		return result, err
+	}
+	q.Normalize()
+	tx := generatedImageFiles(db).Joins("LEFT JOIN users ON users.id = user_files.user_id")
+	if keyword := strings.TrimSpace(q.Keyword); keyword != "" {
+		if number := searchUserNumber(keyword); number >= 0 {
+			tx = tx.Where("users.public_id = ? OR users.username = ?", number, keyword)
+		} else {
+			tx = tx.Where("users.username LIKE ?", "%"+keyword+"%")
+		}
+	}
+	if err := tx.Count(&result.Total).Error; err != nil {
+		return result, err
+	}
+	err = tx.Select("user_files.id, user_files.created_at, users.username, users.public_id AS public_user_id").Order("user_files.created_at DESC, user_files.id DESC").Offset(q.Offset()).Limit(q.PageSize).Scan(&result.Items).Error
+	return result, err
+}
+
+func GetAdminGeneratedImage(id string) (model.UserFile, error) {
+	db, err := DB()
+	if err != nil {
+		return model.UserFile{}, err
+	}
+	var file model.UserFile
+	err = generatedImageFiles(db).Select("organization_id, storage_key").Where("user_files.id = ?", id).Take(&file).Error
+	return file, err
+}
+
 func ListGenerationTasks(q model.Query) ([]model.GenerationTask, int64, error) {
 	db, err := DB()
 	if err != nil {
@@ -33,7 +72,7 @@ func ListGenerationTasks(q model.Query) ([]model.GenerationTask, int64, error) {
 		return nil, 0, err
 	}
 	var items []model.GenerationTask
-	err = tx.Order("created_at desc").Offset(q.Offset()).Limit(q.PageSize).Find(&items).Error
+	err = tx.Select("generation_tasks.*, (SELECT public_id FROM users WHERE users.id = generation_tasks.user_id) AS public_user_id").Order("created_at desc").Offset(q.Offset()).Limit(q.PageSize).Find(&items).Error
 	return items, total, err
 }
 
@@ -708,7 +747,7 @@ func groupedGenerationTaskCounts(since string, column string, extraWhere string,
 func applyGenerationTaskFilters(tx *gorm.DB, q model.Query) *gorm.DB {
 	if q.Keyword != "" {
 		like := "%" + q.Keyword + "%"
-		tx = tx.Where("model LIKE ? OR upstream_model LIKE ? OR channel_name LIKE ? OR error_message LIKE ? OR user_id LIKE ?", like, like, like, like, like)
+		tx = tx.Where("model LIKE ? OR upstream_model LIKE ? OR channel_name LIKE ? OR error_message LIKE ? OR user_id LIKE ? OR user_id IN (SELECT id FROM users WHERE public_id = ?)", like, like, like, like, like, searchUserNumber(q.Keyword))
 	}
 	if q.Type != "" && q.Type != "all" {
 		tx = tx.Where("status = ?", q.Type)

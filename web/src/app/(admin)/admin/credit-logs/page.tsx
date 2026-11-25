@@ -33,7 +33,7 @@ export default function AdminCreditLogsPage() {
     useEffect(() => setKeywordText(keyword), [keyword]);
 
     useEffect(() => {
-        if (editingLog) form.setFieldsValue({ type: "admin_adjust", amount: 0, balance: 0, ...editingLog });
+        if (editingLog) form.setFieldsValue({ type: "admin_adjust", amount: 0, balance: 0, ...editingLog, userId: String(editingLog.publicUserId ?? editingLog.userId ?? "") });
     }, [editingLog, form]);
 
     const saveLog = async () => {
@@ -52,8 +52,8 @@ export default function AdminCreditLogsPage() {
                     <Typography.Text strong ellipsis>
                         {item.username || "未知用户"}
                     </Typography.Text>
-                    <Typography.Text type="secondary" copyable={{ text: item.userId }} ellipsis>
-                        {item.userId}
+                    <Typography.Text type="secondary" copyable={{ text: String(item.publicUserId ?? item.userId) }} ellipsis>
+                        {item.publicUserId ?? item.userId}
                     </Typography.Text>
                 </Flex>
             ),

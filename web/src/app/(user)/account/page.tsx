@@ -365,8 +365,8 @@ function ProfileSection() {
                             ))}
                             <div className="min-w-0 sm:col-span-2">
                                 <div className="text-xs text-muted-foreground">用户 ID</div>
-                                <Typography.Text copyable={{ text: user.id }} ellipsis={{ tooltip: user.id }} className="mt-1.5 block max-w-full font-mono text-xs text-foreground">
-                                    {user.id}
+                                <Typography.Text copyable={{ text: String(user.publicId) }} ellipsis={{ tooltip: String(user.publicId) }} className="mt-1.5 block max-w-full font-mono text-xs text-foreground">
+                                    {user.publicId}
                                 </Typography.Text>
                             </div>
                         </div>

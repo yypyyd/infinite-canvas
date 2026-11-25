@@ -16,7 +16,12 @@ export default function nextConfig(phase: string): NextConfig {
     return {
         output: "standalone",
         async redirects() {
-            return [{ source: "/admin/login", destination: "/login?redirect=/admin", permanent: false }];
+            return [
+                { source: "/admin/login", destination: "/login?redirect=/admin", permanent: false },
+                { source: "/admin/credit-logs", destination: "/admin/generation-tasks?tab=credits", permanent: false },
+                { source: "/admin/account-pool/logs", destination: "/admin/generation-tasks?tab=upstream", permanent: false },
+                { source: "/admin/models", has: [{ type: "query", key: "poolTab", value: "logs" }], destination: "/admin/generation-tasks?tab=upstream", permanent: false },
+            ];
         },
         async headers() {
             return [

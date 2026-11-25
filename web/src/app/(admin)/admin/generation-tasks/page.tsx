@@ -5,6 +5,8 @@ import { ProTable, type ProColumns } from "@ant-design/pro-components";
 import { useQuery } from "@tanstack/react-query";
 import { Button, Card, Col, Form, Input, Row, Select, Space, Tabs, Tag, Typography } from "antd";
 import dayjs from "dayjs";
+import dynamic from "next/dynamic";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { generationTaskPollInterval } from "@/lib/query-polling";
@@ -12,6 +14,16 @@ import { fetchAdminGenerationTasks, type AdminGenerationTask } from "@/services/
 import { useUserStore } from "@/stores/use-user-store";
 
 import { GeneratedImages } from "./components/generated-images";
+
+const CreditLogsPanel = dynamic(() => import("./components/credit-logs"));
+const PoolLogsPanel = dynamic(() => import("./components/pool-logs"));
+
+const recordTabs = [
+    { key: "tasks", label: "任务列表", children: <TaskList /> },
+    { key: "images", label: "用户生成图片", children: <GeneratedImages /> },
+    { key: "credits", label: "算力流水", children: <CreditLogsPanel /> },
+    { key: "upstream", label: "上游调用", children: <PoolLogsPanel /> },
+];
 
 const statusOptions = [
     { label: "全部状态", value: "" },
@@ -36,15 +48,12 @@ const statusMeta = {
 const modalityLabels: Record<string, string> = { image: "图片", video: "视频", text: "文本", audio: "音频" };
 
 export default function AdminGenerationTasksPage() {
+    const tab = useSearchParams().get("tab");
+    const activeKey = recordTabs.find(({ key }) => key === tab)?.key ?? "tasks";
+
     return (
         <main style={{ padding: 24 }}>
-            <Tabs
-                destroyOnHidden
-                items={[
-                    { key: "tasks", label: "任务列表", children: <TaskList /> },
-                    { key: "images", label: "用户生成图片", children: <GeneratedImages /> },
-                ]}
-            />
+            <Tabs activeKey={activeKey} items={recordTabs} destroyOnHidden onChange={(key) => window.history.pushState(null, "", key === "tasks" ? "/admin/generation-tasks" : `?tab=${key}`)} />
         </main>
     );
 }

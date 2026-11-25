@@ -7,7 +7,7 @@ import dayjs from "dayjs";
 import { useEffect, useState } from "react";
 
 import type { AdminCreditLog } from "@/services/api/admin";
-import { useAdminCreditLogs } from "./use-admin-credit-logs";
+import { useAdminCreditLogs } from "../use-admin-credit-logs";
 
 type CreditLogFormValues = Partial<AdminCreditLog>;
 
@@ -23,7 +23,7 @@ const creditLogTypeLabels: Record<string, string> = {
     organization_transfer_in: "企业收款",
 };
 
-export default function AdminCreditLogsPage() {
+export default function CreditLogsPanel() {
     const { logs, keyword, page, pageSize, total, isLoading, searchLogs, changePage, changePageSize, resetFilters, refreshLogs, saveLog: saveAdminLog, deleteLog } = useAdminCreditLogs();
     const [form] = Form.useForm<CreditLogFormValues>();
     const [keywordText, setKeywordText] = useState(keyword);
@@ -112,7 +112,7 @@ export default function AdminCreditLogsPage() {
     ];
 
     return (
-        <main style={{ padding: 24 }}>
+        <>
             <Space direction="vertical" size={16} style={{ width: "100%" }}>
                 <Card variant="borderless">
                     <Form layout="vertical">
@@ -160,7 +160,7 @@ export default function AdminCreditLogsPage() {
                     cardProps={{ variant: "borderless" }}
                     headerTitle={
                         <Space>
-                            <Typography.Text strong>算力点日志</Typography.Text>
+                            <Typography.Text strong>算力流水</Typography.Text>
                             <Tag>{total} 条</Tag>
                         </Space>
                     }
@@ -242,8 +242,8 @@ export default function AdminCreditLogsPage() {
                 okButtonProps={{ danger: true }}
                 cancelText="取消"
             >
-                确定删除这条算力点日志吗？
+                确定删除这条算力流水吗？
             </Modal>
-        </main>
+        </>
     );
 }
